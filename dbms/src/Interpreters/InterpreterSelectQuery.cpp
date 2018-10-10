@@ -549,6 +549,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (query.limit_length)
                     executePreLimit(pipeline);
             }
+
+             if (!expressions.subqueries_for_sets.empty())
+                executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
         }
 
         if (expressions.second_stage)
@@ -653,9 +656,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             executeLimit(pipeline);
         }
     }
-
-    if (!expressions.subqueries_for_sets.empty())
-        executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
 }
 
 
