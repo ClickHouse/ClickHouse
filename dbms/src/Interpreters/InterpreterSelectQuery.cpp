@@ -1166,7 +1166,7 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
     size_t limit = 0;
-    if (!query.distinct && !query.limit_by_expression_list)
+    if (!query.distinct && !query.limit_by_expression_list && !query.limit_length)
     {
         size_t limit_length = 0;
         size_t limit_offset = 0;
