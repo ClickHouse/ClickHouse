@@ -2952,12 +2952,13 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
     if (settings.select_sequential_consistency)
     {
+        ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
+
         for (const auto & data_part : data.getDataParts())
         {
-            max_added_blocks[data_part->info.partition_id] = data_part->info.max_block;
+            max_added_blocks[data_part->info.partition_id] = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
         }
 
         auto zookeeper = getZooKeeper();
@@ -2993,12 +2994,11 @@ BlockInputStreams StorageReplicatedMergeTree::read(
             for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
                 max_added_blocks[max_block.first] = max_block.second;
         }
+
+        return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
     }
 
-    if (max_added_blocks.empty())
-        return reader.read(column_names, query_info, context, max_block_size, num_streams);
-    else
-        return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
+    return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
 
