@@ -224,6 +224,10 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
         const auto block = actions->getSampleBlock();
 
+        for (auto action : actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception{"Cannot CREATE table. Unsupported default value ", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE};
+
         for (auto & column : defaulted_columns)
         {
             const auto name_and_type_ptr = column.first;
