@@ -574,14 +574,20 @@ void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
     {
         /// For GLOBAL IN.
         if (do_global && (func->name == "globalIn" || func->name == "globalNotIn"))
+        {
             addExternalStorage(func->arguments->children.at(1));
+            has_global_subqueries = true;
+        }
     }
     else if (ASTTablesInSelectQueryElement * table_elem = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
         /// For GLOBAL JOIN.
         if (do_global && table_elem->table_join
             && static_cast<const ASTTableJoin &>(*table_elem->table_join).locality == ASTTableJoin::Locality::Global)
+        {
             addExternalStorage(table_elem->table_expression);
+            has_global_subqueries = true;
+        }
     }
 }
 

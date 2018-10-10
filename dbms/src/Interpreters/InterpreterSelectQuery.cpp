@@ -549,6 +549,10 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (query.limit_length)
                     executePreLimit(pipeline);
             }
+
+            // If there is no global subqueries, we can run subqueries only when recieve them on server.
+            if (!query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
+                executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
         }
 
         if (expressions.second_stage)
@@ -654,7 +658,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         }
     }
 
-    if (!expressions.subqueries_for_sets.empty())
+    if (query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
 }
 
