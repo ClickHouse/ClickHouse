@@ -149,7 +149,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     {
         /// Replace *, alias.*, database.table.* with a list of columns.
         ASTs & asts = expr_list->children;
-        for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
+        for (ssize_t i = asts.size() - 1; i >= 0; --i)
         {
             if (typeid_cast<const ASTAsterisk *>(asts[i].get()) && !all_column_names.empty())
             {
@@ -166,13 +166,13 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
 
                 for (const auto & [table_name, table_all_column_names] : table_names_and_column_names)
                 {
-                    if ((num_components == 2
-                        && !table_name.database.empty()
-                        && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
-                        && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
-                        || (num_components == 0
-                            && ((!table_name.table.empty() && identifier->name == table_name.table)
-                                || (!table_name.alias.empty() && identifier->name == table_name.alias))))
+                    if ((num_components == 2                    /// database.table.*
+                            && !table_name.database.empty()     /// This is normal (not a temporary) table.
+                            && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
+                            && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
+                        || (num_components == 0                                                         /// t.*
+                            && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
+                                || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
                     {
                         asts.erase(asts.begin() + i);
                         for (size_t idx = 0; idx < table_all_column_names.size(); idx++)
