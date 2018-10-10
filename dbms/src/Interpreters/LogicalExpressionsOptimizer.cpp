@@ -228,10 +228,17 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
     ASTPtr value_list = std::make_shared<ASTExpressionList>();
+    const char * min_range_first = nullptr;
+    const char * max_range_second = nullptr;
     for (const auto function : equality_functions)
     {
         const auto & operands = getFunctionOperands(function);
         value_list->children.push_back(operands[1]);
+        /// Get range min/max from all literals x1...xN, which will be used as tuple_functions' range
+        if (min_range_first == nullptr || min_range_first > operands[1]->range.first)
+            min_range_first = operands[1]->range.first;
+        if (max_range_second < operands[1]->range.second)
+            max_range_second = operands[1]->range.second;
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
@@ -253,6 +260,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     auto tuple_function = std::make_shared<ASTFunction>();
     tuple_function->name = "tuple";
+    tuple_function->range = StringRange(min_range_first, max_range_second);
     tuple_function->arguments = value_list;
     tuple_function->children.push_back(tuple_function->arguments);
 
