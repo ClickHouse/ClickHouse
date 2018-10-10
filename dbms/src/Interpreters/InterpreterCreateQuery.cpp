@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int THERE_IS_NO_DEFAULT_VALUE;
 }
 
 
