@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int THERE_IS_NO_DEFAULT_VALUE;
 }
 
 
@@ -223,6 +224,10 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
     {
         const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
         const auto block = actions->getSampleBlock();
+
+        for (auto action : actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         for (auto & column : defaulted_columns)
         {
