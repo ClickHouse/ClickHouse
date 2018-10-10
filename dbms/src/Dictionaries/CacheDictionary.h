@@ -5,6 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <ext/bit_cast.h>
 #include <cmath>
@@ -80,8 +81,11 @@ public:
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
 #define DECLARE(TYPE)\
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -93,6 +97,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
@@ -100,7 +107,7 @@ public:
 #define DECLARE(TYPE)\
     void get##TYPE(\
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
-        PaddedPODArray<TYPE> & out) const;
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -112,6 +119,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(
@@ -119,8 +129,7 @@ public:
         ColumnString * const out) const;
 
 #define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const;
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -132,6 +141,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(
@@ -174,12 +186,14 @@ private:
             UInt8, UInt16, UInt32, UInt64,
             UInt128,
             Int8, Int16, Int32, Int64,
+            Decimal32, Decimal64, Decimal128,
             Float32, Float64,
             String> null_values;
         std::tuple<
             ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
             ContainerPtrType<UInt128>,
             ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
+            ContainerPtrType<Decimal32>, ContainerPtrType<Decimal64>, ContainerPtrType<Decimal128>,
             ContainerPtrType<Float32>, ContainerPtrType<Float64>,
             ContainerPtrType<StringRef>> arrays;
     };
@@ -193,14 +207,14 @@ private:
     void getItemsNumber(
         Attribute & attribute,
         const PaddedPODArray<Key> & ids,
-        PaddedPODArray<OutputType> & out,
+        ResultArrayType<OutputType> & out,
         DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
         Attribute & attribute,
         const PaddedPODArray<Key> & ids,
-        PaddedPODArray<OutputType> & out,
+        ResultArrayType<OutputType> & out,
         DefaultGetter && get_default) const;
 
     template <typename DefaultGetter>

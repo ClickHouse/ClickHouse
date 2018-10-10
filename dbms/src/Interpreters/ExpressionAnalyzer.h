@@ -4,7 +4,6 @@
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/evaluateQualified.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Parsers/StringRange.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -420,7 +419,6 @@ private:
       *  only one ("main") table is supported. Ambiguity is not detected or resolved.
       */
     void translateQualifiedNames();
-    void translateQualifiedNamesImpl(ASTPtr & node, const std::vector<DatabaseAndTableWithAlias> & tables);
 
     /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.

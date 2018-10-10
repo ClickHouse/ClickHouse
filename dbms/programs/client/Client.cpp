@@ -904,7 +904,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end);
+        ParserQuery parser(end, true);
         ASTPtr res;
 
         const auto ignore_error = config().getBool("ignore-error", false);

@@ -9,7 +9,7 @@ namespace ErrorCodes
 
 #define DECLARE(TYPE)                                                                                                                   \
     void ComplexKeyCacheDictionary::get##TYPE(                                                                                          \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<TYPE> & out) const \
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
     {                                                                                                                                   \
         dict_struct.validateKeyTypes(key_types);                                                                                        \
                                                                                                                                         \
@@ -33,5 +33,8 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 }

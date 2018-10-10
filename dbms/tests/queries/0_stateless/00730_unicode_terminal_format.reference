@@ -97,5 +97,5 @@ Row 1:
 'Invalid UTF-8 which eats pending characters �, and invalid by itself � with zero width': Invalid UTF-8 which eats pending characters �, and invalid by itself � with zero width
 Row 1:
 ──────
-'Russian ё and ё':            Russian ё and ё
+'Russian ё and ё':            Russian ё and ё
 'Zero bytes \0 \0 in middle': Zero bytes     in middle
