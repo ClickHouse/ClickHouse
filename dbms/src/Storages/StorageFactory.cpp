@@ -95,11 +95,11 @@ StoragePtr StorageFactory::get(
                     ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if ((storage_def->partition_by || storage_def->order_by || storage_def->sample_by)
+            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, ORDER BY or SAMPLE BY clauses. "
+                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 

@@ -16,6 +16,7 @@ class ASTStorage : public IAST
 public:
     ASTFunction * engine = nullptr;
     IAST * partition_by = nullptr;
+    IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     ASTSetQuery * settings = nullptr;
@@ -31,6 +32,8 @@ public:
             res->set(res->engine, engine->clone());
         if (partition_by)
             res->set(res->partition_by, partition_by->clone());
+        if (primary_key)
+            res->set(res->primary_key, primary_key->clone());
         if (order_by)
             res->set(res->order_by, order_by->clone());
         if (sample_by)
@@ -52,6 +55,11 @@ public:
         {
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PARTITION BY " << (s.hilite ? hilite_none : "");
             partition_by->formatImpl(s, state, frame);
+        }
+        if (primary_key)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PRIMARY KEY " << (s.hilite ? hilite_none : "");
+            primary_key->formatImpl(s, state, frame);
         }
         if (order_by)
         {
