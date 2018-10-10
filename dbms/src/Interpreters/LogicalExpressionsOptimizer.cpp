@@ -237,7 +237,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         /// Get range min/max from all literals x1...xN, which will be used as tuple_functions' range
         if (min_range_first == nullptr || min_range_first > operands[1]->range.first)
             min_range_first = operands[1]->range.first;
-        if (max_range_second < operands[1]->range.second)
+        if (max_range_second == nullptr || max_range_second < operands[1]->range.second)
             max_range_second = operands[1]->range.second;
     }
 
