@@ -349,7 +349,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         */
 
     bool is_extended_storage_def =
-        args.storage_def->partition_by || args.storage_def->order_by || args.storage_def->sample_by || args.storage_def->settings;
+        args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by || args.storage_def->sample_by || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
