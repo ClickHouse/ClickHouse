@@ -32,10 +32,10 @@ bool functionIsInOrGlobalInOperator(const String & name)
 }
 
 QueryNormalizer::QueryNormalizer(ASTPtr & query, const QueryNormalizer::Aliases & aliases,
-                                 const Settings & settings, const Names & all_columns_name,
-                                 const TableNamesAndColumnsName & table_names_and_columns_name)
-    : query(query), aliases(aliases), settings(settings), all_columns_name(all_columns_name),
-      table_names_and_columns_name(table_names_and_columns_name)
+                                 const Settings & settings, const Names & all_column_names,
+                                 const TableNamesAndColumnNames & table_names_and_column_names)
+    : query(query), aliases(aliases), settings(settings), all_column_names(all_column_names),
+      table_names_and_column_names(table_names_and_column_names)
 {
 }
 
@@ -151,24 +151,21 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
         ASTs & asts = expr_list->children;
         for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
         {
-            if (typeid_cast<ASTAsterisk *>(asts[i].get()) && !all_columns_name.empty())
+            if (typeid_cast<const ASTAsterisk *>(asts[i].get()) && !all_column_names.empty())
             {
                 asts.erase(asts.begin() + i);
 
-                for (size_t idx = 0; idx < all_columns_name.size(); idx++)
-                    asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(all_columns_name[idx]));
+                for (size_t idx = 0; idx < all_column_names.size(); idx++)
+                    asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(all_column_names[idx]));
             }
-            else if (typeid_cast<ASTQualifiedAsterisk *>(asts[i].get()) && !table_names_and_columns_name.empty())
+            else if (typeid_cast<const ASTQualifiedAsterisk *>(asts[i].get()) && !table_names_and_column_names.empty())
             {
                 ASTQualifiedAsterisk * qualified_asterisk = static_cast<ASTQualifiedAsterisk *>(asts[i].get());
                 ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(qualified_asterisk->children[0].get());
                 size_t num_components = identifier->children.size();
 
-                for (const auto & table_name_and_columns_name : table_names_and_columns_name)
+                for (const auto & [table_name, table_all_column_names] : table_names_and_column_names)
                 {
-                    const auto & table_name = table_name_and_columns_name.first;
-                    const auto & table_all_columns_name = table_name_and_columns_name.second;
-
                     if ((num_components == 2
                         && !table_name.database.empty()
                         && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
@@ -178,8 +175,8 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                                 || (!table_name.alias.empty() && identifier->name == table_name.alias))))
                     {
                         asts.erase(asts.begin() + i);
-                        for (size_t idx = 0; idx < table_all_columns_name.size(); idx++)
-                            asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(table_all_columns_name[idx]));
+                        for (size_t idx = 0; idx < table_all_column_names.size(); idx++)
+                            asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(table_all_column_names[idx]));
                     }
                 }
             }
