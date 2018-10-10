@@ -68,7 +68,7 @@ public:
         Stream() = default;
         Stream(size_t from_mark, size_t to_mark, size_t index_granularity, MergeTreeReader * merge_tree_reader);
 
-        /// Returns the n
+        /// Returns the number of rows added to block.
         size_t read(Block & block, size_t num_rows, bool skip_remaining_rows_in_current_granule);
         size_t finalize(Block & block);
         void skip(size_t num_rows);

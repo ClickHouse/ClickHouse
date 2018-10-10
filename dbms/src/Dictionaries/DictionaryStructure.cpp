@@ -330,10 +330,15 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             const auto null_value_string = config.getString(prefix + "null_value");
             try
             {
-                ReadBufferFromString null_value_buffer{null_value_string};
-                auto column_with_null_value = type->createColumn();
-                type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
-                null_value = (*column_with_null_value)[0];
+                if (null_value_string.empty())
+                    null_value = type->getDefault();
+                else
+                {
+                    ReadBufferFromString null_value_buffer{null_value_string};
+                    auto column_with_null_value = type->createColumn();
+                    type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    null_value = (*column_with_null_value)[0];
+                }
             }
             catch (Exception & e)
             {

@@ -16,7 +16,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class ExpressionAnalyzer;
 class ASTSelectQuery;
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
