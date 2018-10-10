@@ -860,7 +860,7 @@ void ExpressionAnalyzer::normalizeTree()
     if (all_columns_name.empty())
         throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    TableNamesAndColumnsName table_names_and_columns_name;
+    TableNamesAndColumnNames table_names_and_column_names;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
         std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
@@ -881,11 +881,11 @@ void ExpressionAnalyzer::normalizeTree()
 
             first = false;
 
-            table_names_and_columns_name.emplace_back(std::pair(table_name, names_and_types.getNames()));
+            table_names_and_column_names.emplace_back(std::pair(table_name, names_and_types.getNames()));
         }
     }
 
-    QueryNormalizer(query, aliases, settings, all_columns_name, table_names_and_columns_name).perform();
+    QueryNormalizer(query, aliases, settings, all_columns_name, table_names_and_column_names).perform();
 }
 
 
