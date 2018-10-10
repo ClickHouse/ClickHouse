@@ -658,20 +658,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         }
     }
 
-    LOG_DEBUG(log, "is first_stage: " << expressions.first_stage);
-    LOG_DEBUG(log, "is second_stage: " << expressions.second_stage);
-    LOG_DEBUG(log, "has_join: " << expressions.has_join);
-    LOG_DEBUG(log, "subqueries size: " << expressions.subqueries_for_sets.size());
-    LOG_DEBUG(log, "has global subqueries: " << query_analyzer->hasGlobalSubqueries());
-    for (auto s : expressions.subqueries_for_sets)
-    {
-        LOG_DEBUG(log, "set: " << !!s.second.set);
-        LOG_DEBUG(log, "join: " << !!s.second.join);
-        LOG_DEBUG(log, "table: " << !!s.second.table);
-        for (auto name : s.second.joined_block_aliases)
-            LOG_DEBUG(log, "name with alias: " << name.first << "; " << name.second);
-    }
-
     if (query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
         executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
 }
