@@ -31,4 +31,3 @@ SYSTEM SYNC REPLICA test.quorum1;
 
 SELECT count(*) FROM test.quorum1;
 SELECT count(*) FROM test.quorum2;
-
