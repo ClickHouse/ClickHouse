@@ -22,7 +22,7 @@ std::string getIdentifierQuote(SQLHDBC hdbc)
     std::string identifier;
 
     SQLSMALLINT t;
-    SQLRETURN r = POCO_SQL_ODBC_CLASS::SQLGetInfo(hdbc, SQL_IDENTIFIER_QUOTE_CHAR, NULL, 0, &t);
+    SQLRETURN r = POCO_SQL_ODBC_CLASS::SQLGetInfo(hdbc, SQL_IDENTIFIER_QUOTE_CHAR, nullptr, 0, &t);
 
     if (POCO_SQL_ODBC_CLASS::Utility::isError(r))
         throw POCO_SQL_ODBC_CLASS::ConnectionException(hdbc);
