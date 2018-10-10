@@ -1,4 +1,3 @@
-SET allow_experimental_decimal_type = 1;
 SET send_logs_level = 'none';
 
 CREATE DATABASE IF NOT EXISTS test;

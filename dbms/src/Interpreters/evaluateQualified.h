@@ -1,12 +1,17 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/Context.h>
+#include <memory>
+#include <Core/Types.h>
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
+class ASTIdentifier;
+struct ASTTableExpression;
+
 
 struct DatabaseAndTableWithAlias
 {
@@ -24,7 +29,7 @@ struct DatabaseAndTableWithAlias
 void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip);
 
 DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const ASTTableExpression & table_expression,
-                                                                          const Context & context);
+                                                                   const String & current_database);
 
 size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
                                                               const DatabaseAndTableWithAlias & names);
