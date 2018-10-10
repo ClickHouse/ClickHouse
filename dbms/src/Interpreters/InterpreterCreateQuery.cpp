@@ -226,7 +226,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
 
         for (auto action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                throw Exception{"Cannot CREATE table. Unsupported default value ", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE};
+                throw Exception("Cannot CREATE table. Unsupported default value ", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 
         for (auto & column : defaulted_columns)
         {
