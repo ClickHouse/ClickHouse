@@ -25,6 +25,9 @@ using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
+class SequentialTransformExecutor;
+using SequentialTransformExecutorPtr = std::shared_ptr<SequentialTransformExecutor>;
+
 class IPreparedFunction;
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
 
@@ -95,6 +98,8 @@ public:
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
     PreparedFunctionPtr function;
+    /// Part of pipeline which is used in function execution.
+    SequentialTransformExecutorPtr function_executor;
     Names argument_names;
     bool is_function_compiled = false;
 

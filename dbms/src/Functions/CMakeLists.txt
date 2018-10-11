@@ -42,7 +42,6 @@ generate_function_register(Projection
 
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
-add_headers_and_sources(clickhouse_functions ./Helpers)
 add_headers_and_sources(clickhouse_functions ./Conditional)
 #add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
 add_headers_and_sources(clickhouse_functions ${FUNCTIONS_GENERATED_DIR})

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Processors/Executors/SequentialTransformExecutor.h>
 
 #include <set>
 #include <optional>
@@ -190,26 +191,30 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
             bool all_const = true;
 
-            ColumnNumbers arguments(argument_names.size());
+            Block tmp_block;
+            ColumnNumbers arguments;
             for (size_t i = 0; i < argument_names.size(); ++i)
             {
-                arguments[i] = sample_block.getPositionByName(argument_names[i]);
-                ColumnPtr col = sample_block.safeGetByPosition(arguments[i]).column;
-                if (!col || !col->isColumnConst())
+                auto pos = sample_block.getPositionByName(argument_names[i]);
+                auto & col = sample_block.safeGetByPosition(pos);
+
+                tmp_block.insert(col);
+                arguments.push_back(i);
+
+                if (!col.column || !col.column->isColumnConst())
                     all_const = false;
             }
 
-            size_t result_position = sample_block.columns();
-            sample_block.insert({nullptr, result_type, result_name});
-            function = function_base->prepare(sample_block, arguments, result_position);
-
-            if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
-                prepared_function->createLowCardinalityResultCache(settings.max_threads);
+            tmp_block.insert({nullptr, result_type, result_name});
+            function_executor = function_base->createPipeline(tmp_block, arguments, arguments.size(), settings.max_threads);
 
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
             if (all_const && function_base->isSuitableForConstantFolding())
             {
-                function->execute(sample_block, arguments, result_position, sample_block.rows());
+                tmp_block.setNumRows(sample_block.rows());
+                function_executor->execute(tmp_block);
+                size_t result_position = sample_block.columns();
+                sample_block.insert(std::move(tmp_block.getByPosition(arguments.size())));
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -227,6 +232,8 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                         col.column = col.column->cloneResized(1);
                 }
             }
+            else
+                sample_block.insert({nullptr, result_type, result_name});
 
             break;
         }
@@ -378,21 +385,36 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
     {
         case APPLY_FUNCTION:
         {
-            ColumnNumbers arguments(argument_names.size());
+            /// Now we are not sure that all blocks has columns on the same positions, so create temporary block.
+            Block tmp_block;
             for (size_t i = 0; i < argument_names.size(); ++i)
             {
                 if (!block.has(argument_names[i]))
                     throw Exception("Not found column: '" + argument_names[i] + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-                arguments[i] = block.getPositionByName(argument_names[i]);
+                auto pos = block.getPositionByName(argument_names[i]);
+                tmp_block.insert(block.getByPosition(pos));
             }
 
-            size_t num_columns_without_result = block.columns();
-            block.insert({ nullptr, result_type, result_name});
+            tmp_block.insert({ nullptr, result_type, result_name});
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            function->execute(block, arguments, num_columns_without_result, input_rows_count);
+
+            if (function)
+            {
+                ColumnNumbers arguments(argument_names.size());
+                for (size_t i = 0; i < argument_names.size(); ++i)
+                    arguments[i] = i;
+
+                function->execute(tmp_block, arguments, arguments.size(), input_rows_count);
+            }
+            else
+            {
+                tmp_block.setNumRows(input_rows_count);
+                function_executor->execute(tmp_block);
+            }
+            block.insert(std::move(tmp_block.getByPosition(argument_names.size())));
 
             break;
         }
@@ -925,6 +947,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                         action.function_builder = nullptr;
                         action.function_base = nullptr;
                         action.function = nullptr;
+                        action.function_executor = nullptr;
                         action.argument_names.clear();
                         in.clear();
                     }

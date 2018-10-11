@@ -1372,11 +1372,6 @@ protected:
         wrapper_function(block, new_arguments, result, input_rows_count);
     }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
 private:
     WrapperType wrapper_function;
     const char * name;
@@ -1418,6 +1413,11 @@ public:
     {
         return monotonicity_for_range(type, left, right);
     }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
 

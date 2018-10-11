@@ -1,4 +1,4 @@
-#pragma once;
+#pragma once
 
 #include <Processors/ISimpleTransform.h>
 #include <Core/ColumnNumbers.h>
@@ -11,11 +11,13 @@ class WrapConstantsTransform : public ISimpleTransform
 public:
     WrapConstantsTransform(Block input_header, const ColumnNumbers & column_numbers, size_t result);
 
+    String getName() const override { return "WrapConstantsTransform"; }
+
 protected:
     void transform(Block & block) override;
 
 private:
-    const ColumnNumbers & column_numbers;
+    ColumnNumbers column_numbers;
     size_t result;
 };
 

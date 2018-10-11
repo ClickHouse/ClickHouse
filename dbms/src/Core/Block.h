@@ -36,7 +36,7 @@ private:
     /// The number of rows in block.
     /// Now it's a temporary value with setter and getter.
     /// TODO: support and check invariant that all columns sizes == num_rows, use num_rows for empty block (e.g. for select count())
-    size_t num_rows;
+    size_t num_rows = 0;
 
 public:
     BlockInfo info;

@@ -19,7 +19,7 @@ private:
     IProcessor * current_processor = nullptr;
 
 public:
-    SequentialPipelineExecutor(const Processors & processors);
+    explicit SequentialPipelineExecutor(const Processors & processors);
 
     String getName() const override { return "SequentialPipelineExecutor"; }
 

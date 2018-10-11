@@ -327,10 +327,6 @@ public:
 
     String getName() const override { return name; }
 
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    bool useDefaultImplementationForConstants() const override { return true; }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t block_size) override
     {
         auto col_res = block.getByPosition(result).type->createColumn()->cloneResized(block_size);

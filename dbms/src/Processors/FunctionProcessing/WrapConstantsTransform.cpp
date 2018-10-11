@@ -1,4 +1,4 @@
-#include <Functions/Helpers/WrapConstantsTransform.h>
+#include <Processors/FunctionProcessing/WrapConstantsTransform.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnConst.h>
@@ -15,13 +15,19 @@ static Block wrapConstants(
 
     auto wrapByPosition = [&](size_t position)
     {
-        const ColumnWithTypeAndName & col = block.getByPosition(position);
+        ColumnWithTypeAndName & col = block.getByPosition(position);
 
         if (col.column && !col.column->isColumnConst())
         {
             col.column = ColumnConst::create(col.column, num_rows);
         }
     };
+
+    size_t num_args = column_numbers.size();
+    for (size_t i = 0; i < num_args; ++i)
+        wrapByPosition(i);
+
+    wrapByPosition(result);
 
     return block;
 }

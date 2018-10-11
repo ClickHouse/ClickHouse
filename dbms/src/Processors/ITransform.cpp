@@ -198,6 +198,7 @@ ITransform::Status ITransform::prepare()
 void ITransform::work()
 {
     output_blocks = transform(std::move(input_blocks));
+    input_blocks.clear();
 }
 
 }

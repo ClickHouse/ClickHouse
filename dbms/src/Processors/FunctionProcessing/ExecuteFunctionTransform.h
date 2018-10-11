@@ -1,4 +1,4 @@
-#pragma once;
+#pragma once
 
 #include <Processors/ISimpleTransform.h>
 #include <Core/ColumnNumbers.h>
@@ -18,12 +18,14 @@ public:
         const ColumnNumbers & column_numbers,
         size_t result);
 
+    String getName() const override { return "ExecuteFunctionTransform"; }
+
 protected:
     void transform(Block & block) override;
 
 private:
     PreparedFunctionPtr prepared_function;
-    const ColumnNumbers & column_numbers;
+    ColumnNumbers column_numbers;
     size_t result;
 };
 

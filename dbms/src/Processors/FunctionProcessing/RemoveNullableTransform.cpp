@@ -1,4 +1,4 @@
-#include <Functions/Helpers/RemoveNullableTransform.h>
+#include <Processors/FunctionProcessing/RemoveNullableTransform.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>

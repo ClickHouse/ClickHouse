@@ -1,4 +1,4 @@
-#include <Functions/Helpers/RemoveConstantsTransform.h>
+#include <Processors/FunctionProcessing/RemoveConstantsTransform.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnConst.h>
@@ -14,7 +14,7 @@ static Block removeConstants(
 {
     for (auto number : column_numbers)
     {
-        const ColumnWithTypeAndName & col = block.getByPosition(number);
+        ColumnWithTypeAndName & col = block.getByPosition(number);
 
         if (!col.column)
             continue;

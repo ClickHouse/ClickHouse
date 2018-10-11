@@ -1,33 +1,30 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
-#include <Common/LRUCache.h>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnLowCardinality.h>
+
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/Native.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Functions/FunctionHelpers.h>
-
-#include <Functions/Helpers/ExecuteFunctionTransform.h>
-#include <Functions/Helpers/RemoveConstantsTransform.h>
-#include <Functions/Helpers/RemoveLowCardinalityTransform.h>
-#include <Functions/Helpers/RemoveNullableTransform.h>
-#include <Functions/Helpers/WrapConstantsTransform.h>
-#include <Functions/Helpers/WrapLowCardinalityTransform.h>
-#include <Functions/Helpers/WrapNullableTransform.h>
-#include <Functions/Helpers/CreateConstantColumnTransform.h>
-#include <Processors/Executors/SequentialTransformExecutor.h>
+#include <DataTypes/Native.h>
 
 #include <Functions/IFunction.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Functions/FunctionHelpers.h>
+#include <Processors/FunctionProcessing/ExecuteFunctionTransform.h>
+#include <Processors/FunctionProcessing/RemoveConstantsTransform.h>
+#include <Processors/FunctionProcessing/RemoveLowCardinalityTransform.h>
+#include <Processors/FunctionProcessing/RemoveNullableTransform.h>
+#include <Processors/FunctionProcessing/WrapConstantsTransform.h>
+#include <Processors/FunctionProcessing/WrapLowCardinalityTransform.h>
+#include <Processors/FunctionProcessing/WrapNullableTransform.h>
+#include <Processors/FunctionProcessing/CreateConstantColumnTransform.h>
+#include <Processors/FunctionProcessing/removeLowCardinality.h>
+#include <Processors/FunctionProcessing/PreparedFunctionLowCardinalityResultCache.h>
+
+#include <Processors/Executors/SequentialTransformExecutor.h>
+
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
@@ -52,56 +49,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-static DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
-{
-    if (!type)
-        return type;
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        DataTypes elements = tuple_type->getElements();
-        for (auto & element : elements)
-            element = recursiveRemoveLowCardinality(element);
-
-        if (tuple_type->haveExplicitNames())
-            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
-        else
-            return std::make_shared<DataTypeTuple>(elements);
-    }
-
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        return low_cardinality_type->getDictionaryType();
-
-    return type;
-}
-
-static ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
-{
-    if (!column)
-        return column;
-
-    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
-        return ColumnArray::create(recursiveRemoveLowCardinality(column_array->getDataPtr()), column_array->getOffsetsPtr());
-
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), column_const->size());
-
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
-    {
-        Columns columns = column_tuple->getColumns();
-        for (auto & element : columns)
-            element = recursiveRemoveLowCardinality(element);
-        return ColumnTuple::create(columns);
-    }
-
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
-        return column_low_cardinality->convertToFullColumn();
-
-    return column;
-}
+class PreparedFunctionLowCardinalityResultCache;
+using PreparedFunctionLowCardinalityResultCachePtr = std::shared_ptr<PreparedFunctionLowCardinalityResultCache>;
+PreparedFunctionLowCardinalityResultCachePtr createPreparedFunctionLowCardinalityResultCache(size_t cache_size);
 
 namespace
 {
@@ -147,8 +97,11 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
 bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 {
     for (auto arg : args)
-        if (!block.getByPosition(arg).column->isColumnConst())
+    {
+        auto & column = block.getByPosition(arg).column;
+        if (!column || !column->isColumnConst())
             return false;
+    }
     return true;
 }
 
@@ -167,17 +120,80 @@ void checkArgumentsToRemainConstantsAreConstants(
 }
 
 
-SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
+{
+    ColumnPtr result_null_map_column;
+
+    /// If result is already nullable.
+    ColumnPtr src_not_nullable = src;
+
+    if (src->onlyNull())
+        return src;
+    else if (src->isColumnNullable())
+    {
+        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
+        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
+    }
+
+    for (const auto & arg : args)
+    {
+        const ColumnWithTypeAndName & elem = block.getByPosition(arg);
+        if (!elem.type->isNullable())
+            continue;
+
+        /// Const Nullable that are NULL.
+        if (elem.column->onlyNull())
+            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
+
+        if (elem.column->isColumnConst())
+            continue;
+
+        if (elem.column->isColumnNullable())
+        {
+            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
+            if (!result_null_map_column)
+            {
+                result_null_map_column = null_map_column;
+            }
+            else
+            {
+                MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
+
+                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
+                const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    if (src_null_map[i])
+                        result_null_map[i] = 1;
+
+                result_null_map_column = std::move(mutable_result_null_map_column);
+            }
+        }
+    }
+
+    if (!result_null_map_column)
+        return makeNullable(src);
+
+    if (src_not_nullable->isColumnConst())
+        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
+    else
+        return ColumnNullable::create(src_not_nullable, result_null_map_column);
+}
+
+
+SequentialTransformExecutorPtr IFunctionBase::createPipeline(Block & block, const ColumnNumbers & arguments,
+                                                             size_t result, size_t low_cardinality_cache_size) const
 {
     Processors processors;
 
     std::function<ProcessorPtr(const Block & header)> executeWithoutLowCardinality;
 
-    auto executePreparedFunction = [&](const Block & header)
+    auto executePreparedFunction = [&](const Block & header) -> ProcessorPtr
     {
         auto function = prepare(header, arguments, result);
         auto processor = std::make_shared<ExecuteFunctionTransform>(function, header, arguments, result);
         processors.emplace_back(processor);
+        return processor;
     };
 
     auto executeRemoveNullable = [&](const Block & header) -> ProcessorPtr
@@ -185,7 +201,7 @@ SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const Colum
         if (arguments.empty() || !useDefaultImplementationForNulls())
             return nullptr;
 
-        NullPresence null_presence = getNullPresense(block, arguments);
+        NullPresence null_presence = getNullPresense(header, arguments);
 
         if (null_presence.has_null_constant)
         {
@@ -206,7 +222,7 @@ SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const Colum
             auto & in_func_result = exec_function_head->getInputs().at(0);
             auto & out_func_result = exec_function_tail->getOutputs().at(0);
 
-            Blocks wrap_nullable_headers = {output_port_func_result.getHeader(), out_null_maps.getHeader()};
+            Blocks wrap_nullable_headers = {out_func_result.getHeader(), out_null_maps.getHeader()};
             auto wrap_nullable = std::make_shared<WrapNullableTransform>(wrap_nullable_headers, arguments, result);
             auto & in_wrap_nullable = wrap_nullable->getInputs().at(0);
             auto & in_null_maps = wrap_nullable->getInputs().at(1);
@@ -228,7 +244,7 @@ SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const Colum
         ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
         checkArgumentsToRemainConstantsAreConstants(header, arguments, arguments_to_remain_constants, getName());
 
-        if (arguments.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
+        if (arguments.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(header, arguments))
             return nullptr;
 
         auto remove_constants = std::make_shared<RemoveConstantsTransform>(
@@ -255,22 +271,25 @@ SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const Colum
 
     executeWithoutLowCardinality = [&](const Block & header) -> ProcessorPtr
     {
-        if (auto remove_constants = executeRemoveConstants(block))
+        if (auto remove_constants = executeRemoveConstants(header))
             return remove_constants;
 
-        if (auto remove_nullable = executeRemoveNullable(block))
+        if (auto remove_nullable = executeRemoveNullable(header))
             return remove_nullable;
 
-        executePreparedFunction(block);
+        return executePreparedFunction(header);
     };
 
     auto executeRemoveLowCardinality = [&](const Block & header) -> ProcessorPtr
     {
         if (!useDefaultImplementationForLowCardinalityColumns())
-            return executeWithoutLowCardinality(block);
+            return executeWithoutLowCardinality(header);
+
+        bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
+        auto cache = std::make_shared<PreparedFunctionLowCardinalityResultCache>(low_cardinality_cache_size);
 
         auto remove_low_cardinality = std::make_shared<RemoveLowCardinalityTransform>(
-                header, arguments, result, canBeExecutedOnDefaultArguments());
+                header, arguments, result, can_be_executed_on_default_arguments, cache);
         auto & out_remove_low_cardinality = remove_low_cardinality->getOutputs().at(0);
         auto & out_positions = remove_low_cardinality->getOutputs().at(1);
 
@@ -281,8 +300,9 @@ SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const Colum
         auto & in_func_result = exec_function_head->getInputs().at(0);
         auto & out_func_result = exec_function_tail->getOutputs().at(0);
 
-        Blocks wrap_lc_headers = {out_func_result.ghetHeader(), out_positions.getHeader()};
-        auto wrap_low_cardinality = std::make_shared<WrapLowCardinalityTransform>(wrap_lc_headers, arguments, result);
+        Blocks headers = {out_func_result.getHeader(), out_positions.getHeader()};
+        auto wrap_low_cardinality = std::make_shared<WrapLowCardinalityTransform>(
+                headers, arguments, result, can_be_executed_on_default_arguments, cache);
         auto & in_wrap_low_cardinality = wrap_low_cardinality->getInputs().at(0);
         auto & in_positions = wrap_low_cardinality->getInputs().at(1);
 
@@ -303,18 +323,6 @@ SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const Colum
     return std::make_shared<SequentialTransformExecutor>(processors, input, output);
 }
 
-void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
-{
-    if (isVariadic())
-        return;
-
-    size_t expected_number_of_arguments = getNumberOfArguments();
-
-    if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-}
 
 DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
 {
@@ -449,4 +457,18 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
     return getReturnTypeWithoutLowCardinality(arguments);
 }
+
+void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
+{
+    if (isVariadic())
+        return;
+
+    size_t expected_number_of_arguments = getNumberOfArguments();
+
+    if (number_of_arguments != expected_number_of_arguments)
+        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+}
+
 }

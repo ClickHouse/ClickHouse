@@ -56,6 +56,9 @@ public:
 
     std::shared_ptr<LLVMContext> getContext() const { return context; }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
 };
 
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
