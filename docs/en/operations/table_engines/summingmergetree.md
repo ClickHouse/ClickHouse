@@ -36,7 +36,7 @@ When creating a `SummingMergeTree` table the same [clauses](mergetree.md#table_e
 
 ### Deprecated Method for Creating a Table
 
-!!!attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
@@ -129,4 +129,3 @@ Examples:
 When requesting data, use the [sumMap(key, value)](../../query_language/agg_functions/reference.md#agg_function-summary) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
-

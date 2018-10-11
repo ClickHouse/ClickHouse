@@ -38,7 +38,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 ### Устаревший способ создания таблицы
 
-!!!attention
+!!! attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```sql

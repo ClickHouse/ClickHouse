@@ -33,7 +33,7 @@ When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table
 
 ### Deprecated Method for Creating a Table
 
-!!!attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
@@ -89,4 +89,3 @@ FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
-
