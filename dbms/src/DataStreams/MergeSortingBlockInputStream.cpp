@@ -306,9 +306,9 @@ void MergeSortingBlockInputStream::remerge()
 }
 
 
-FinishMergeSortingBlockInputStream::FinishMergeSortingBlockInputStream(
+FinishSortingBlockInputStream::FinishSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_sorted_,
-    SortDescription & description_to_sort_, 
+    SortDescription & description_to_sort_,
     size_t max_merged_block_size_, size_t limit_)
     : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
     max_merged_block_size(max_merged_block_size_), limit(limit_)
@@ -325,7 +325,7 @@ struct Less
     const ColumnsWithSortDescriptions & left_columns;
     const ColumnsWithSortDescriptions & right_columns;
 
-    Less(const ColumnsWithSortDescriptions & left_columns_, const ColumnsWithSortDescriptions & right_columns_) : 
+    Less(const ColumnsWithSortDescriptions & left_columns_, const ColumnsWithSortDescriptions & right_columns_) :
         left_columns(left_columns_), right_columns(right_columns_) {}
 
     bool operator() (size_t a, size_t b) const
@@ -342,7 +342,7 @@ struct Less
     }
 };
 
-Block FinishMergeSortingBlockInputStream::readImpl()
+Block FinishSortingBlockInputStream::readImpl()
 {
     if (limit && total_rows_processed == limit)
         return {};
@@ -393,12 +393,12 @@ Block FinishMergeSortingBlockInputStream::readImpl()
                 auto last_columns = getColumnsWithSortDescription(last_block, description_sorted);
                 auto current_columns = getColumnsWithSortDescription(block, description_sorted);
 
-                Less less(last_columns, current_columns); 
-                
+                Less less(last_columns, current_columns);
+
                 IColumn::Permutation perm(size);
                 for (size_t i = 0; i < size; ++i)
                     perm[i] = i;
-                
+
                 auto it = std::upper_bound(perm.begin(), perm.end(), last_block.rows() - 1, less);
                 if (it != perm.end())
                 {
@@ -406,8 +406,8 @@ Block FinishMergeSortingBlockInputStream::readImpl()
                     break;
                 }
             }
-            
-            /// If we reach here, that means that current block is first in chunk 
+
+            /// If we reach here, that means that current block is first in chunk
             /// or it all consists of rows with the same key as tail of a previous block.
             blocks.push_back(block);
         }
@@ -424,7 +424,7 @@ Block FinishMergeSortingBlockInputStream::readImpl()
                 tail_block.getByPosition(i).column = block.getByPosition(i).column->cut(tail_pos, block.rows() - tail_pos);
             }
             if (head_block.rows())
-                blocks.push_back(head_block);   
+                blocks.push_back(head_block);
         }
 
         impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
@@ -433,9 +433,9 @@ Block FinishMergeSortingBlockInputStream::readImpl()
 
     if (res)
         enrichBlockWithConstants(res, header);
-    
+
     total_rows_processed += res.rows();
-    
+
     return res;
 }
 

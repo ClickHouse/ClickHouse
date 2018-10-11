@@ -49,7 +49,7 @@ int main(int argc, char ** argv)
 
         for (auto & block : blocks)
             sortBlock(block, sort_descr);
-        
+
         BlockInputStreamPtr stream = std::make_shared<MergeSortingBlocksBlockInputStream>(blocks, sort_descr, n);
 
         SortDescription sort_descr_final;
@@ -57,29 +57,29 @@ int main(int argc, char ** argv)
         sort_descr_final.emplace_back("col2", 1, 1);
 
         stream = std::make_shared<PartialSortingBlockInputStream>(stream, sort_descr_final);
-        stream = std::make_shared<FinishMergeSortingBlockInputStream>(stream, sort_descr, sort_descr_final, n, 0);
-        
+        stream = std::make_shared<FinishSortingBlockInputStream>(stream, sort_descr, sort_descr_final, n, 0);
+
         {
             Stopwatch stopwatch;
             stopwatch.start();
 
-            Block res = blocks[0].cloneEmpty();
+            Block res_block = blocks[0].cloneEmpty();
 
             while (Block block = stream->read())
             {
                 for (size_t i = 0; i < block.columns(); ++i)
                 {
-                    MutableColumnPtr ptr = (*std::move(res.getByPosition(i).column)).mutate();
+                    MutableColumnPtr ptr = (*std::move(res_block.getByPosition(i).column)).mutate();
                     ptr->insertRangeFrom(*block.getByPosition(i).column.get(), 0, block.rows());
                 }
             }
 
-            if (res.rows() != n * m)
+            if (res_block.rows() != n * m)
                 throw Exception("Result block size mismatch");
 
-            const auto & columns = res.getColumns();
+            const auto & columns = res_block.getColumns();
 
-            for (size_t i = 1; i < res.rows(); ++i)
+            for (size_t i = 1; i < res_block.rows(); ++i)
                 for (const auto & col : columns)
                 {
                     int res = col->compareAt(i - 1, i, *col, 1);
@@ -88,7 +88,7 @@ int main(int argc, char ** argv)
                     else if (res > 0)
                         throw Exception("Result stream not sorted");
                 }
-                
+
             stopwatch.stop();
             std::cout << std::fixed << std::setprecision(2)
                 << "Elapsed " << stopwatch.elapsedSeconds() << " sec."
