@@ -95,7 +95,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     storage.setColumns(std::move(columns_in_zk));
 
                     /// Reinitialize primary key because primary key column types might have changed.
-                    storage.data.initPrimaryKey();
+                    storage.data.setPrimaryKey(storage.data.primary_key_expr_ast, storage.data.sort_expr_ast);
 
                     LOG_INFO(log, "Applied changes to table.");
                 }

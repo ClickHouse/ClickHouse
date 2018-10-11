@@ -102,8 +102,6 @@ MergeTreeData::MergeTreeData(
     index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
     settings(settings_),
-    primary_key_expr_ast(primary_key_expr_ast_),
-    sort_expr_ast(sort_expr_ast_),
     partition_expr_ast(partition_expr_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
@@ -116,10 +114,7 @@ MergeTreeData::MergeTreeData(
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    if (!primary_key_expr_ast)
-        throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-    initPrimaryKey();
+    setPrimaryKey(primary_key_expr_ast_, sort_expr_ast_);
 
     if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
         && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
@@ -214,48 +209,78 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::initPrimaryKey()
+void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_expr_ast, const ASTPtr & new_sort_expr_ast)
 {
-    auto add_columns = [](Names & out, const ASTPtr & expr_ast)
+    if (!new_sort_expr_ast)
+        throw Exception("Sorting key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+    if (!new_primary_key_expr_ast)
+        new_primary_key_expr_ast = new_sort_expr_ast->clone();
+
+    if (new_sort_expr_ast.get() != sort_expr_ast.get()
+        && merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
-        out.reserve(out.size() + expr_ast->children.size());
-        for (const ASTPtr & ast : expr_ast->children)
-            out.emplace_back(ast->getColumnName());
-    };
-
-    primary_key_columns.clear();
-    add_columns(primary_key_columns, primary_key_expr_ast);
-
-    primary_key_expr = ExpressionAnalyzer(primary_key_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
-
-    {
-        ExpressionActionsPtr projected_expr =
-            ExpressionAnalyzer(primary_key_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
-        primary_key_sample = projected_expr->getSampleBlock();
+        new_sort_expr_ast->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
     }
 
-    checkKeyExpression(*primary_key_expr, primary_key_sample, "Primary");
+    size_t primary_key_size = new_primary_key_expr_ast->children.size();
+    size_t sort_key_size = new_sort_expr_ast->children.size();
+    if (primary_key_size > sort_key_size)
+        throw Exception("Primary key must be a prefix of the sorting key, but its length: "
+            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sort_key_size),
+            ErrorCodes::BAD_ARGUMENTS);
 
-    size_t primary_key_size = primary_key_sample.columns();
-    primary_key_data_types.resize(primary_key_size);
+    Names new_primary_key_columns;
+    Names new_sort_key_columns;
+
+    for (size_t i = 0; i < sort_key_size; ++i)
+    {
+        String sort_key_column = new_sort_expr_ast->children[i]->getColumnName();
+        new_sort_key_columns.push_back(sort_key_column);
+
+        if (i < primary_key_size)
+        {
+            String pk_column = new_primary_key_expr_ast->children[i]->getColumnName();
+            if (pk_column != sort_key_column)
+                throw Exception("Primary key must be a prefix of the sorting key, but in position "
+                    + toString(i) + " its column is " + pk_column + ", not " + sort_key_column,
+                    ErrorCodes::BAD_ARGUMENTS);
+
+            new_primary_key_columns.push_back(pk_column);
+        }
+    }
+
+    auto all_columns = getColumns().getAllPhysical();
+
+    auto new_sort_expr = ExpressionAnalyzer(new_sort_expr_ast, context, nullptr, all_columns)
+        .getActions(false);
+    auto new_sort_expr_sample =
+        ExpressionAnalyzer(new_sort_expr_ast, context, nullptr, all_columns)
+        .getActions(true)->getSampleBlock();
+
+    checkKeyExpression(*new_sort_expr, new_sort_expr_sample, "Sorting");
+
+    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_ast, context, nullptr, all_columns)
+        .getActions(false);
+
+    Block new_primary_key_sample;
+    DataTypes new_primary_key_data_types;
     for (size_t i = 0; i < primary_key_size; ++i)
-        primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
-
-    sort_columns.clear();
-    if (sort_expr_ast)
     {
-        add_columns(sort_columns, sort_expr_ast);
-        sort_expr = ExpressionAnalyzer(sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
-
-        ExpressionActionsPtr projected_expr =
-            ExpressionAnalyzer(sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
-        auto sort_expr_sample = projected_expr->getSampleBlock();
-
-        checkKeyExpression(*sort_expr, sort_expr_sample, "Sorting");
+        const auto & elem = new_sort_expr_sample.getByPosition(i);
+        new_primary_key_sample.insert(elem);
+        new_primary_key_data_types.push_back(elem.type);
     }
 
-    /// TODO: make more transactional
-    /// TODO: check that sort key is a prefix of the primary key
+    sort_expr_ast = new_sort_expr_ast;
+    sort_columns = std::move(new_sort_key_columns);
+    sort_expr = std::move(new_sort_expr);
+
+    primary_key_expr_ast = new_primary_key_expr_ast;
+    primary_key_columns = std::move(new_primary_key_columns);
+    primary_key_expr = std::move(new_primary_key_expr);
+    primary_key_sample = std::move(new_primary_key_sample);
+    primary_key_data_types = std::move(new_primary_key_data_types);
 }
 
 

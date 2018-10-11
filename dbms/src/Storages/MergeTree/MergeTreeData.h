@@ -687,7 +687,7 @@ private:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void initPrimaryKey();
+    void setPrimaryKey(ASTPtr new_primary_key_expr_ast, const ASTPtr & new_sort_expr_ast);
 
     void initPartitionKey();
 
