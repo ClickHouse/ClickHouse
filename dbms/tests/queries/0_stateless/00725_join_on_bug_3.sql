@@ -1,5 +1,3 @@
-create database if not exists test;
-
 drop table if exists test.t;
 drop table if exists test.z;
 
