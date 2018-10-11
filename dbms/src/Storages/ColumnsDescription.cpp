@@ -20,6 +20,7 @@
 #include <ext/map.h>
 
 #include <boost/range/join.hpp>
+#include <Compression/CompressionFactory.h>
 
 #include <optional>
 
@@ -193,6 +194,18 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
     }
 
     assertChar('\n', buf);
+}
+
+CompressionCodecPtr ColumnsDescription::getCodec(const String & column_name, const CompressionSettings & /*compression_settings*/) const
+{
+    const auto codec = codecs.find(column_name);
+
+    /// TODO get
+    if (codec == codecs.end())
+        return CompressionCodecFactory::instance().getDefaultCodec();
+//        return CompressionCodecFactory::instance().get(compression_settings.method, compression_settings.level);
+
+    return codec->second;
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)

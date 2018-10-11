@@ -72,6 +72,7 @@ add_headers_and_sources(dbms src/Storages/Kafka)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
+add_headers_and_sources(dbms src/Compression)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})

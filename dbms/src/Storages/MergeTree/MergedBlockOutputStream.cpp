@@ -41,6 +41,7 @@ void IMergedBlockOutputStream::addStreams(
     const String & path,
     const String & name,
     const IDataType & type,
+    const CompressionCodecPtr & codec,
     size_t estimated_size,
     bool skip_offsets)
 {
@@ -59,8 +60,8 @@ void IMergedBlockOutputStream::addStreams(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
             path + stream_name, MARKS_FILE_EXTENSION,
+            codec,
             max_compress_block_size,
-            compression_settings,
             estimated_size,
             aio_threshold);
     };
@@ -183,15 +184,15 @@ IMergedBlockOutputStream::ColumnStream::ColumnStream(
     const std::string & data_file_extension_,
     const std::string & marks_path,
     const std::string & marks_file_extension_,
+    const CompressionCodecPtr & compression_codec,
     size_t max_compress_block_size,
-    CompressionSettings compression_settings,
     size_t estimated_size,
     size_t aio_threshold) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(createWriteBufferFromFileBase(data_path + data_file_extension, estimated_size, aio_threshold, max_compress_block_size)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_settings), compressed(compressed_buf),
+    plain_hashing(*plain_file), compressed_buf(compression_codec->liftCompressed(plain_hashing)), compressed(*compressed_buf.get()),
     marks_file(marks_path + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
 {
 }
@@ -239,7 +240,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 {
     init();
     for (const auto & it : columns_list)
-        addStreams(part_path, it.name, *it.type, 0, false);
+    {
+        const auto columns = storage.getColumns();
+        addStreams(part_path, it.name, *it.type, columns.getCodec(it.name, compression_settings), 0, false);
+    }
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -270,7 +274,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     }
 
     for (const auto & it : columns_list)
-        addStreams(part_path, it.name, *it.type, total_size, false);
+    {
+        const auto columns = storage.getColumns();
+        addStreams(part_path, it.name, *it.type, columns.getCodec(it.name, compression_settings), total_size, false);
+    }
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -532,7 +539,8 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         {
             const auto & col = block.safeGetByPosition(i);
 
-            addStreams(part_path, col.name, *col.type, 0, skip_offsets);
+            const auto columns = storage.getColumns();
+            addStreams(part_path, col.name, *col.type, columns.getCodec(col.name, compression_settings), 0, skip_offsets);
             serialization_states.emplace_back(nullptr);
             settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());

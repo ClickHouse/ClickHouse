@@ -402,6 +402,8 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR = 425;
     extern const int NULL_POINTER_DEREFERENCE = 426;
     extern const int CANNOT_COMPILE_REGEXP = 427;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 428;
+    extern const int UNKNOWN_CODEC = 429;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
