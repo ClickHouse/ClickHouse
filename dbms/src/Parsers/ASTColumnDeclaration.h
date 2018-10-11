@@ -15,6 +15,7 @@ public:
     ASTPtr type;
     String default_specifier;
     ASTPtr default_expression;
+    ASTPtr codec;
     ASTPtr comment;
 
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
@@ -34,6 +35,12 @@ public:
         {
             res->default_expression = default_expression->clone();
             res->children.push_back(res->default_expression);
+        }
+
+        if (codec)
+        {
+            res->codec=codec->clone();
+            res->children.push_back(res->codec);
         }
 
         if (comment)
@@ -61,6 +68,12 @@ public:
         {
             settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "") << ' ';
             default_expression->formatImpl(settings, state, frame);
+        }
+
+        if (codec)
+        {
+            settings.ostr << ' ';
+            codec->formatImpl(settings, state, frame);
         }
 
         if (comment)

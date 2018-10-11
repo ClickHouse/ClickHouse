@@ -37,8 +37,8 @@ protected:
             const std::string & data_file_extension_,
             const std::string & marks_path,
             const std::string & marks_file_extension_,
+            const CompressionCodecPtr & compression_codec,
             size_t max_compress_block_size,
-            CompressionSettings compression_settings,
             size_t estimated_size,
             size_t aio_threshold);
 
@@ -49,7 +49,7 @@ protected:
         /// compressed -> compressed_buf -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         HashingWriteBuffer plain_hashing;
-        CompressedWriteBuffer compressed_buf;
+        WriteBufferPtr compressed_buf;
         HashingWriteBuffer compressed;
 
         /// marks -> marks_file
@@ -65,7 +65,8 @@ protected:
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-    void addStreams(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
+    void addStreams(const String & path, const String & name, const IDataType & type,
+                    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
 
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
