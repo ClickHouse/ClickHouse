@@ -32,10 +32,19 @@ ITransform::ITransform(Blocks input_headers, Blocks output_headers)
 {
 }
 
-static bool hasNeededOutput(const OutputPorts & outputs)
+static bool allUnneededOutput(const OutputPorts & outputs)
 {
     for (const auto & output : outputs)
         if (output.isNeeded())
+            return false;
+
+    return true;
+}
+
+static bool hasUnneededOutput(const OutputPorts & outputs)
+{
+    for (const auto & output : outputs)
+        if (!output.isNeeded())
             return true;
 
     return false;
@@ -59,23 +68,25 @@ static bool allHasData(const InputPorts & inputs)
     return true;
 }
 
-static bool allHasOrNeedData(const InputPorts & inputs)
+static bool allFinished(const InputPorts & inputs)
 {
     for (const auto & input : inputs)
-        if (input.isFinished() && !input.hasData())
+        if (!input.isFinished())
             return false;
 
     return true;
 }
 
-static bool allFinishedAndHasNoData(const InputPorts & inputs)
+static bool hasFinished(const InputPorts & inputs)
 {
     for (const auto & input : inputs)
-        if (!input.isFinished() || input.hasData())
-            return false;
+        if (input.isFinished())
+            return true;
 
-    return true;
+    return false;
 }
+
+
 
 static void pushToOutputPorts(Blocks & blocks, OutputPorts & ports)
 {
@@ -107,10 +118,45 @@ static void setAllFinished(OutputPorts & ports)
         port.setFinished();
 }
 
+void throwHasNeededAndUnneededOutputs(const OutputPorts & ports)
+{
+    size_t needed = 0;
+    size_t unneeded = 0;
+    for (size_t i = 0; i < ports.size(); ++i)
+        (ports[i].isNeeded() ? needed : unneeded) = i;
+
+    throw Exception("Transform processor cannot transform all data because output port "
+                    + toString(needed) + " is needed, but output port " + toString(unneeded) + " is not",
+                    ErrorCodes::PROCESSOR_CANNOT_PROCESS_ALL_DATA);
+}
+
+void throwHasFinishedAndUnfinishedInput(const InputPorts & ports)
+{
+    size_t finished_port = 0;
+    size_t unfinished_port = 0;
+    bool has_data = false;
+
+    for (size_t i = 0; i < ports.size(); ++i)
+    {
+        (ports[i].isFinished() ? finished_port : unfinished_port) = i;
+        if (!ports[i].isFinished())
+            has_data = ports[i].hasData();
+    }
+
+    throw Exception(
+            "Transform processor cannot transform all data because port "
+            + toString(finished_port) + " is finished, but port " + toString(unfinished_port)
+            + (has_data ? " has data" : " needs data"),
+            ErrorCodes::PROCESSOR_CANNOT_PROCESS_ALL_DATA);
+}
+
 ITransform::Status ITransform::prepare()
 {
-    if (!hasNeededOutput(outputs))
+    if (allUnneededOutput(outputs))
         return Status::Unneeded;
+
+    if (hasUnneededOutput(outputs))
+        throwHasNeededAndUnneededOutputs(outputs);
 
     if (!input_blocks.empty())
         return Status::Ready;
@@ -123,9 +169,9 @@ ITransform::Status ITransform::prepare()
         pushToOutputPorts(output_blocks, outputs);
     }
 
-    bool all_has_or_need_data = allHasOrNeedData(inputs);
-    bool all_has_data =  allHasData(inputs);
-    bool all_finished_and_has_no_data = allFinishedAndHasNoData(inputs);
+    bool all_has_data = allHasData(inputs);
+    bool all_finished = allFinished(inputs);
+    bool has_finished = hasFinished(inputs);
 
     if (all_has_data)
     {
@@ -133,45 +179,20 @@ ITransform::Status ITransform::prepare()
         return Status::Ready;
     }
 
-    /// Has input without data.
-
-    if (all_has_or_need_data)
-    {
-        setAllNeededIfHasNoData(inputs);
-        return Status::NeedData;
-    }
-
-    /// Has finished input without data.
-
-    if (all_finished_and_has_no_data)
+    if (all_finished)
     {
         setAllFinished(outputs);
         return Status::Finished;
     }
 
-    /// Has finished input without data and input with pending data. Let's throw exception.
-
-    size_t finished_port_without_data = 0;
-    size_t port_with_pending_data = 0;
-    bool port_with_pending_data_has_data = false;
-
-    for (size_t i = 0; i < inputs.size(); ++i)
+    if (!has_finished)
     {
-        if (inputs[i].isFinished() && !inputs[i].hasData())
-        {
-            finished_port_without_data = i;
-            continue;
-        }
-
-        port_with_pending_data = i;
-        port_with_pending_data_has_data = inputs[i].hasData();
+        setAllNeededIfHasNoData(inputs);
+        return Status::NeedData;
     }
 
-    throw Exception(
-            "Transform processor cannot transform all data because port "
-            + toString(finished_port_without_data) + " is finished and has no data, but port "
-            + toString(port_with_pending_data) + (port_with_pending_data_has_data ? " has data" : "is not finished"),
-            ErrorCodes::PROCESSOR_CANNOT_PROCESS_ALL_DATA);
+    throwHasFinishedAndUnfinishedInput(inputs);
+    return Status::Finished; /// Never returns.
 }
 
 void ITransform::work()

@@ -17,7 +17,7 @@ static Block executeFunction(
     return block;
 }
 
-ExecuteFunctionTransform::WrapConstantsTransform(
+ExecuteFunctionTransform::ExecuteFunctionTransform(
     const PreparedFunctionPtr & function,
     Block input_header,
     const ColumnNumbers & column_numbers,

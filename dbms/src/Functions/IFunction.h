@@ -61,39 +61,11 @@ public:
 
 protected:
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
-
-    /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
-      *  if some of arguments are NULL constants then return NULL constant,
-      *  if some of arguments are Nullable, then execute function as usual for block,
-      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
-      *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
-      */
-    virtual bool useDefaultImplementationForNulls() const { return true; }
-
-    /** If the function have non-zero number of arguments,
-      *  and if all arguments are constant, that we could automatically provide default implementation:
-      *  arguments are converted to ordinary columns with single value, then function is executed as usual,
-      *  and then the result is converted to constant column.
-      */
-    virtual bool useDefaultImplementationForConstants() const { return false; }
-
-    /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
-      * Otherwise, convert all low cardinality columns to ordinary columns.
-      * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
-      */
-    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
-
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
-      * Counterexample: modulo(0, 0)
-      */
-    virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 };
 
 using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
+class SequentialTransformExecutor;
+using SequentialTransformExecutorPtr = std::shared_ptr<SequentialTransformExecutor>;
 
 /// Function with known arguments and return type.
 class IFunctionBase
@@ -111,7 +83,7 @@ public:
     /// sample_block should contain data types of arguments and values of constants, if relevant.
     virtual PreparedFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
-    virtual ProcessorPtr execute(Block & block, const ColumnNumbers & arguments, size_t result);
+    virtual SequentialTransformExecutorPtr execute(Block & block, const ColumnNumbers & arguments, size_t result);
 
     /// TODO: make const
 //    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
@@ -204,6 +176,36 @@ public:
     {
         throw Exception("Function " + getName() + " has no information about its monotonicity.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
+      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are Nullable, then execute function as usual for block,
+      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
+      *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
+      */
+    virtual bool useDefaultImplementationForNulls() const { return true; }
+
+    /** If the function have non-zero number of arguments,
+      *  and if all arguments are constant, that we could automatically provide default implementation:
+      *  arguments are converted to ordinary columns with single value, then function is executed as usual,
+      *  and then the result is converted to constant column.
+      */
+    virtual bool useDefaultImplementationForConstants() const { return false; }
+
+    /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all low cardinality columns to ordinary columns.
+      * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
+      */
+    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
+
+    /** Some arguments could remain constant during this implementation.
+      */
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
+    /** True if function can be called on default arguments (include Nullable's) and won't throw.
+      * Counterexample: modulo(0, 0)
+      */
+    virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 };
 
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;

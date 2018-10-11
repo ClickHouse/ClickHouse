@@ -24,6 +24,7 @@
 #include <Functions/Helpers/WrapLowCardinalityTransform.h>
 #include <Functions/Helpers/WrapNullableTransform.h>
 #include <Functions/Helpers/CreateConstantColumnTransform.h>
+#include <Processors/Executors/SequentialTransformExecutor.h>
 
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -50,68 +51,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
-
-
-/// Cache for functions result if it was executed on low cardinality column.
-/// It's LRUCache which stores function result executed on dictionary and index mapping.
-/// It's expected that cache_size is a number of reading streams (so, will store single cached value per thread).
-class PreparedFunctionLowCardinalityResultCache
-{
-public:
-    /// Will assume that dictionaries with same hash has the same keys.
-    /// Just in case, check that they have also the same size.
-    struct DictionaryKey
-    {
-        UInt128 hash;
-        UInt64 size;
-
-        bool operator== (const DictionaryKey & other) const { return hash == other.hash && size == other.size; }
-    };
-
-    struct DictionaryKeyHash
-    {
-        size_t operator()(const DictionaryKey & key) const
-        {
-            SipHash hash;
-            hash.update(key.hash.low);
-            hash.update(key.hash.high);
-            hash.update(key.size);
-            return hash.get64();
-        }
-    };
-
-    struct CachedValues
-    {
-        /// Store ptr to dictionary to be sure it won't be deleted.
-        ColumnPtr dictionary_holder;
-        ColumnUniquePtr function_result;
-        /// Remap positions. new_pos = index_mapping->index(old_pos);
-        ColumnPtr index_mapping;
-    };
-
-    using CachedValuesPtr = std::shared_ptr<CachedValues>;
-
-    explicit PreparedFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
-
-    CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
-    void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
-    CachedValuesPtr getOrSet(const DictionaryKey & key, const CachedValuesPtr & mapped)
-    {
-        return cache.getOrSet(key, [&]() { return mapped; }).first;
-    }
-
-private:
-    using Cache = LRUCache<DictionaryKey, CachedValues, DictionaryKeyHash>;
-    Cache cache;
-};
-
-
-void PreparedFunctionImpl::createLowCardinalityResultCache(size_t cache_size)
-{
-    if (!low_cardinality_result_cache)
-        low_cardinality_result_cache = std::make_shared<PreparedFunctionLowCardinalityResultCache>(cache_size);
-}
-
 
 static DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 {
@@ -164,68 +103,6 @@ static ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
     return column;
 }
 
-
-ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
-{
-    ColumnPtr result_null_map_column;
-
-    /// If result is already nullable.
-    ColumnPtr src_not_nullable = src;
-
-    if (src->onlyNull())
-        return src;
-    else if (src->isColumnNullable())
-    {
-        src_not_nullable = static_cast<const ColumnNullable &>(*src).getNestedColumnPtr();
-        result_null_map_column = static_cast<const ColumnNullable &>(*src).getNullMapColumnPtr();
-    }
-
-    for (const auto & arg : args)
-    {
-        const ColumnWithTypeAndName & elem = block.getByPosition(arg);
-        if (!elem.type->isNullable())
-            continue;
-
-        /// Const Nullable that are NULL.
-        if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
-
-        if (elem.column->isColumnConst())
-            continue;
-
-        if (elem.column->isColumnNullable())
-        {
-            const ColumnPtr & null_map_column = static_cast<const ColumnNullable &>(*elem.column).getNullMapColumnPtr();
-            if (!result_null_map_column)
-            {
-                result_null_map_column = null_map_column;
-            }
-            else
-            {
-                MutableColumnPtr mutable_result_null_map_column = (*std::move(result_null_map_column)).mutate();
-
-                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mutable_result_null_map_column).getData();
-                const NullMap & src_null_map = static_cast<const ColumnUInt8 &>(*null_map_column).getData();
-
-                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
-                    if (src_null_map[i])
-                        result_null_map[i] = 1;
-
-                result_null_map_column = std::move(mutable_result_null_map_column);
-            }
-        }
-    }
-
-    if (!result_null_map_column)
-        return makeNullable(src);
-
-    if (src_not_nullable->isColumnConst())
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
-    else
-        return ColumnNullable::create(src_not_nullable, result_null_map_column);
-}
-
-
 namespace
 {
 
@@ -274,255 +151,27 @@ bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
             return false;
     return true;
 }
-}
 
-bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
-                                                                     size_t input_rows_count)
+void checkArgumentsToRemainConstantsAreConstants(
+    const Block & header,
+    const ColumnNumbers & arguments,
+    const ColumnNumbers & arguments_to_remain_constants,
+    const String & function_name)
 {
-    ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
-
-    /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
-        if (arg_num < args.size() && !block.getByPosition(args[arg_num]).column->isColumnConst())
-            throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+        if (arg_num < arguments.size() && !header.getByPosition(arguments[arg_num]).column->isColumnConst())
+            throw Exception("Argument at index " + toString(arg_num) + " for function " + function_name
+                            + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+}
 
-    if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
-        return false;
-
-    Block temporary_block;
-    bool have_converted_columns = false;
-
-    size_t arguments_size = args.size();
-    for (size_t arg_num = 0; arg_num < arguments_size; ++arg_num)
-    {
-        const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
-
-        if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
-            temporary_block.insert(column);
-        else
-        {
-            have_converted_columns = true;
-            temporary_block.insert({ static_cast<const ColumnConst *>(column.column.get())->getDataColumnPtr(), column.type, column.name });
-        }
-    }
-
-    /** When using default implementation for constants, the function requires at least one argument
-      *  not in "arguments_to_remain_constants" set. Otherwise we get infinite recursion.
-      */
-    if (!have_converted_columns)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: the function requires more arguments",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    temporary_block.insert(block.getByPosition(result));
-
-    ColumnNumbers temporary_argument_numbers(arguments_size);
-    for (size_t i = 0; i < arguments_size; ++i)
-        temporary_argument_numbers[i] = i;
-
-    executeWithoutLowCardinalityColumns(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
-
-    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, input_rows_count);
-    return true;
 }
 
 
-bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
-                                                         size_t input_rows_count)
-{
-    if (args.empty() || !useDefaultImplementationForNulls())
-        return false;
-
-    NullPresence null_presence = getNullPresense(block, args);
-
-    if (null_presence.has_null_constant)
-    {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
-        return true;
-    }
-
-    if (null_presence.has_nullable)
-    {
-        Block temporary_block = createBlockWithNestedColumns(block, args, result);
-        executeWithoutLowCardinalityColumns(temporary_block, args, result, temporary_block.rows());
-        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args,
-                                                            result, input_rows_count);
-        return true;
-    }
-
-    return false;
-}
-
-void PreparedFunctionImpl::executeWithoutLowCardinalityColumns(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
-{
-    if (defaultImplementationForConstantArguments(block, args, result, input_rows_count))
-        return;
-
-    if (defaultImplementationForNulls(block, args, result, input_rows_count))
-        return;
-
-    executeImpl(block, args, result, input_rows_count);
-}
-
-static const ColumnLowCardinality * findLowCardinalityArgument(const Block & block, const ColumnNumbers & args)
-{
-    const ColumnLowCardinality * result_column = nullptr;
-
-    for (auto arg : args)
-    {
-        const ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
-        {
-            if (result_column)
-                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
-
-            result_column = low_cardinality_column;
-        }
-    }
-
-    return result_column;
-}
-
-static ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-    Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments)
-{
-    size_t num_rows = 0;
-    ColumnPtr indexes;
-
-    for (auto arg : args)
-    {
-        ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
-        {
-            if (indexes)
-                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
-
-            indexes = low_cardinality_column->getIndexesPtr();
-            num_rows = low_cardinality_column->getDictionary().size();
-        }
-    }
-
-    for (auto arg : args)
-    {
-        ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
-            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
-        else if (auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
-        {
-            auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
-
-            if (!low_cardinality_type)
-                throw Exception("Incompatible type for low cardinality column: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            if (can_be_executed_on_default_arguments)
-                column.column = low_cardinality_column->getDictionary().getNestedColumn();
-            else
-            {
-                auto dict_encoded = low_cardinality_column->getMinimalDictionaryEncodedColumn(0, low_cardinality_column->size());
-                column.column = dict_encoded.dictionary;
-                indexes = dict_encoded.indexes;
-            }
-            column.type = low_cardinality_type->getDictionaryType();
-        }
-    }
-
-    return indexes;
-}
-
-static void convertLowCardinalityColumnsToFull(Block & block, const ColumnNumbers & args)
-{
-    for (auto arg : args)
-    {
-        ColumnWithTypeAndName & column = block.getByPosition(arg);
-
-        column.column = recursiveRemoveLowCardinality(column.column);
-        column.type = recursiveRemoveLowCardinality(column.type);
-    }
-}
-
-void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
-{
-    if (useDefaultImplementationForLowCardinalityColumns())
-    {
-        auto & res = block.safeGetByPosition(result);
-        Block block_without_low_cardinality = block.cloneWithoutColumns();
-
-        for (auto arg : args)
-            block_without_low_cardinality.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
-
-        if (auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(res.type.get()))
-        {
-            const auto * low_cardinality_column = findLowCardinalityArgument(block, args);
-            bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
-            bool use_cache = low_cardinality_result_cache && can_be_executed_on_default_arguments
-                             && low_cardinality_column && low_cardinality_column->isSharedDictionary();
-            PreparedFunctionLowCardinalityResultCache::DictionaryKey key;
-
-            if (use_cache)
-            {
-                const auto & dictionary = low_cardinality_column->getDictionary();
-                key = {dictionary.getHash(), dictionary.size()};
-
-                auto cached_values = low_cardinality_result_cache->get(key);
-                if (cached_values)
-                {
-                    auto indexes = cached_values->index_mapping->index(low_cardinality_column->getIndexes(), 0);
-                    res.column = ColumnLowCardinality::create(cached_values->function_result, indexes, true);
-                    return;
-                }
-            }
-
-            block_without_low_cardinality.safeGetByPosition(result).type = res_low_cardinality_type->getDictionaryType();
-            ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                    block_without_low_cardinality, args, can_be_executed_on_default_arguments);
-
-            executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, block_without_low_cardinality.rows());
-
-            auto & keys = block_without_low_cardinality.safeGetByPosition(result).column;
-            if (auto full_column = keys->convertToFullColumnIfConst())
-                keys = full_column;
-
-            auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
-            ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
-            ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
-
-            if (indexes)
-            {
-                if (use_cache)
-                {
-                    auto cache_values = std::make_shared<PreparedFunctionLowCardinalityResultCache::CachedValues>();
-                    cache_values->dictionary_holder = low_cardinality_column->getDictionaryPtr();
-                    cache_values->function_result = res_dictionary;
-                    cache_values->index_mapping = res_indexes;
-
-                    cache_values = low_cardinality_result_cache->getOrSet(key, cache_values);
-                    res_dictionary = cache_values->function_result;
-                    res_indexes = cache_values->index_mapping;
-                }
-
-                res.column = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), use_cache);
-            }
-            else
-            {
-                res.column = ColumnLowCardinality::create(res_dictionary, res_indexes);
-            }
-        }
-        else
-        {
-            convertLowCardinalityColumnsToFull(block_without_low_cardinality, args);
-            executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, input_rows_count);
-            res.column = block_without_low_cardinality.safeGetByPosition(result).column;
-        }
-    }
-    else
-        executeWithoutLowCardinalityColumns(block, args, result, input_rows_count);
-}
-
-ProcessorPtr IFunctionBase::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+SequentialTransformExecutorPtr IFunctionBase::execute(Block & block, const ColumnNumbers & arguments, size_t result)
 {
     Processors processors;
 
-    std::function<void(const Block & header)> executeWithoutLowCardinality;
+    std::function<ProcessorPtr(const Block & header)> executeWithoutLowCardinality;
 
     auto executePreparedFunction = [&](const Block & header)
     {
@@ -531,63 +180,77 @@ ProcessorPtr IFunctionBase::execute(Block & block, const ColumnNumbers & argumen
         processors.emplace_back(processor);
     };
 
-    auto executeRemoveNullables = [&](const Block & header) -> bool
+    auto executeRemoveNullable = [&](const Block & header) -> ProcessorPtr
     {
         if (arguments.empty() || !useDefaultImplementationForNulls())
-            return false;
+            return nullptr;
 
         NullPresence null_presence = getNullPresense(block, arguments);
 
         if (null_presence.has_null_constant)
         {
             processors.emplace_back(std::make_shared<CreateConstantColumnTransform>(header, result, Null()));
-            return true;
+            return processors.back();
         }
 
         if (null_presence.has_nullable)
         {
             auto remove_nullable = std::make_shared<RemoveNullableTransform>(header, arguments, result);
+            auto & out_remove_nullable = remove_nullable->getOutputs().at(0);
+            auto & out_null_maps = remove_nullable->getOutputs().at(1);
+
             processors.emplace_back(remove_nullable);
-            const auto & header_without_nullable = remove_nullable->getOutputs().at(0).getHeader();
-            const auto & header_null_maps = remove_nullable->getOutputs().at(1).getHeader();
 
-            executeWithoutLowCardinality(header_without_nullable, arguments, result);
-            const auto & exec_function = processors.back();
-            const auto & header_func_result = exec_function->getOutputs().at(0).getHeader();
+            auto exec_function_head = executeWithoutLowCardinality(out_remove_nullable.getHeader());
+            auto & exec_function_tail = processors.back();
+            auto & in_func_result = exec_function_head->getInputs().at(0);
+            auto & out_func_result = exec_function_tail->getOutputs().at(0);
 
-            auto wrap_nullable = std::make_shared<WrapNullableTransform>({header_func_result, header_null_maps}, arguments, result);
+            Blocks wrap_nullable_headers = {output_port_func_result.getHeader(), out_null_maps.getHeader()};
+            auto wrap_nullable = std::make_shared<WrapNullableTransform>(wrap_nullable_headers, arguments, result);
+            auto & in_wrap_nullable = wrap_nullable->getInputs().at(0);
+            auto & in_null_maps = wrap_nullable->getInputs().at(1);
+
             processors.emplace_back(wrap_nullable);
 
-            return true;
+            connect(out_remove_nullable, in_func_result);
+            connect(out_func_result, in_wrap_nullable);
+            connect(out_null_maps, in_null_maps);
+
+            return remove_nullable;
         }
 
-        return false;
+        return nullptr;
     };
 
     auto executeRemoveConstants = [&](const Block & header) -> ProcessorPtr
     {
         ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
-
-        /// Check that these arguments are really constant.
-        for (auto arg_num : arguments_to_remain_constants)
-            if (arg_num < arguments.size() && !header.getByPosition(arguments[arg_num]).column->isColumnConst())
-                throw Exception("Argument at index " + toString(arg_num) + " for function " + getName()
-                                + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+        checkArgumentsToRemainConstantsAreConstants(header, arguments, arguments_to_remain_constants, getName());
 
         if (arguments.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
             return nullptr;
 
-        auto remove_constants = std::make_shared<RemoveConstantsTransform>(header, arguments_to_remain_constants, arguments, result);
-        const auto & header_without_constants = remove_constants->getOutputs().at(0).getHeader();
-
-        auto exec_function = executeWithoutLowCardinality(header_without_constants, arguments, result);
-        const auto & header_func_result = exec_function->getOutputs().at(0).getHeader();
-
-        auto wrap_constants = std::make_shared<WrapConstantsTransform>(header_func_result, arguments, result);
+        auto remove_constants = std::make_shared<RemoveConstantsTransform>(
+                header, arguments_to_remain_constants, arguments, result);
+        auto & out_remove_constants = remove_constants->getOutputs().at(0);
 
         processors.emplace_back(remove_constants);
+
+        auto exec_function_head = executeWithoutLowCardinality(out_remove_constants.getHeader());
+        auto & exec_function_tail = processors.back();
+        auto & in_func_result = exec_function_head->getInputs().at(0);
+        auto & out_func_result = exec_function_tail->getOutputs().at(0);
+
+        auto wrap_constants = std::make_shared<WrapConstantsTransform>(out_func_result.getHeader(), arguments, result);
+        auto & in_wrap_constants = wrap_constants->getInputs().at(0);
+
         processors.emplace_back(wrap_constants);
-        return wrap_constants;
+
+        connect(out_remove_constants, in_func_result);
+        connect(out_func_result, in_wrap_constants);
+
+        return remove_constants;
     };
 
     executeWithoutLowCardinality = [&](const Block & header) -> ProcessorPtr
@@ -595,32 +258,49 @@ ProcessorPtr IFunctionBase::execute(Block & block, const ColumnNumbers & argumen
         if (auto remove_constants = executeRemoveConstants(block))
             return remove_constants;
 
-        if (auto remove_nullable = executeRemoveNullables(block))
+        if (auto remove_nullable = executeRemoveNullable(block))
             return remove_nullable;
 
         executePreparedFunction(block);
     };
 
-    auto executeRemoveLowCardinality = [&](const Block & header)
+    auto executeRemoveLowCardinality = [&](const Block & header) -> ProcessorPtr
     {
         if (!useDefaultImplementationForLowCardinalityColumns())
             return executeWithoutLowCardinality(block);
 
-        auto remove_low_cadrinality = std::make_shared<RemoveLowCardinalityTransform>(header, arguments, result, canBeExecutedOnDefaultArguments());
-        const auto & header_without_low_cardinality = remove_low_cadrinality->getOutputs().at(0).getHeader();
-        const auto & header_positions = header_without_low_cardinality->getOutputs().at(1).getHeader();
+        auto remove_low_cardinality = std::make_shared<RemoveLowCardinalityTransform>(
+                header, arguments, result, canBeExecutedOnDefaultArguments());
+        auto & out_remove_low_cardinality = remove_low_cardinality->getOutputs().at(0);
+        auto & out_positions = remove_low_cardinality->getOutputs().at(1);
 
-        auto exec_function = executeWithoutLowCardinality(header_without_low_cardinality, arguments, result);
-        const auto & header_func_result = exec_function->getOutputs().at(0).getHeader();
+        processors.emplace_back(remove_low_cardinality);
 
-        auto wrap_low_cardinality = std::make_shared<WrapLowCardinalityTransform>({header_func_result, header_positions}, arguments, result);
+        auto exec_function_head = executeWithoutLowCardinality(out_remove_low_cardinality.getHeader());
+        auto & exec_function_tail = processors.back();
+        auto & in_func_result = exec_function_head->getInputs().at(0);
+        auto & out_func_result = exec_function_tail->getOutputs().at(0);
 
-        processors.emplace_back(remove_low_cadrinality);
+        Blocks wrap_lc_headers = {out_func_result.ghetHeader(), out_positions.getHeader()};
+        auto wrap_low_cardinality = std::make_shared<WrapLowCardinalityTransform>(wrap_lc_headers, arguments, result);
+        auto & in_wrap_low_cardinality = wrap_low_cardinality->getInputs().at(0);
+        auto & in_positions = wrap_low_cardinality->getInputs().at(1);
+
         processors.emplace_back(wrap_low_cardinality);
-        return wrap_low_cardinality;
+
+        connect(out_remove_low_cardinality, in_func_result);
+        connect(out_func_result, in_wrap_low_cardinality);
+        connect(out_positions, in_positions);
+
+        return remove_low_cardinality;
     };
 
+    auto head = executeRemoveLowCardinality(block);
+    auto & tail = processors.back();
+    auto & input = head->getInputs().at(0);
+    auto & output = tail->getOutputs().at(0);
 
+    return std::make_shared<SequentialTransformExecutor>(processors, input, output);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
