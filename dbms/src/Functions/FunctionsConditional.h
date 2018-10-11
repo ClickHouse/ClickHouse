@@ -975,7 +975,7 @@ public:
         if (auto rigth_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
             right_id = rigth_array->getNestedType()->getTypeId();
 
-        bool executed_with_nums = callOnBasicTypes<true, true, true>(left_id, right_id, call);
+        bool executed_with_nums = callOnBasicTypes<true, true, true, true>(left_id, right_id, call);
 
         if (!( executed_with_nums
             || executeString(cond_col, block, arguments, result)
