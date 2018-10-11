@@ -110,6 +110,8 @@ private:
     /// Don't execute new queries after timelimit or SIGINT or exception
     std::atomic<bool> shutdown{false};
 
+    std::atomic<size_t> queries_executed{0};
+
     struct Stats
     {
         Stopwatch watch;
@@ -241,7 +243,6 @@ private:
                 break;
         }
 
-        shutdown = true;
         pool.wait();
         info_total.watch.stop();
 
@@ -274,11 +275,12 @@ private:
                 {
                     extracted = queue.tryPop(query, 100);
 
-                    if (shutdown)
+                    if (shutdown || (max_iterations && queries_executed == max_iterations))
                         return;
                 }
 
                 execute(connection, query);
+                ++queries_executed;
             }
         }
         catch (...)
