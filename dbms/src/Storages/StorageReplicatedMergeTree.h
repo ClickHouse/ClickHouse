@@ -195,7 +195,7 @@ public:
 
     ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
 
-    ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
+    ASTPtr getPrimaryExpression() const override { return data.primary_key_expr_ast; }
 
 private:
     /// Delete old parts from disk and from ZooKeeper.
@@ -523,7 +523,7 @@ protected:
         const ColumnsDescription & columns_,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
-        const ASTPtr & secondary_sorting_expr_list_,
+        const ASTPtr & sort_expr_ast_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_,

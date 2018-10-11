@@ -294,7 +294,7 @@ public:
                   const ColumnsDescription & columns_,
                   Context & context_,
                   const ASTPtr & primary_expr_ast_,
-                  const ASTPtr & secondary_sort_expr_ast_,
+                  const ASTPtr & sort_expr_ast_,
                   const String & date_column_name,
                   const ASTPtr & partition_expr_ast_,
                   const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
@@ -486,10 +486,11 @@ public:
         broken_part_callback(name);
     }
 
-    bool hasPrimaryKey() const { return !primary_sort_columns.empty(); }
-    ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
-    ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
-    Names getPrimarySortColumns() const { return primary_sort_columns; }
+    bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
+    ExpressionActionsPtr getPrimaryKeyExpression() const { return primary_key_expr; }
+    bool hasSortExpression() const { return !sort_columns.empty(); }
+    ExpressionActionsPtr getSortExpression() const { return sort_expr; } /// may return nullptr
+    Names getPrimaryKeyColumns() const { return primary_key_columns; }
     Names getSortColumns() const { return sort_columns; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
@@ -548,8 +549,8 @@ public:
 
     const MergeTreeSettings settings;
 
-    ASTPtr primary_expr_ast;
-    ASTPtr secondary_sort_expr_ast;
+    ASTPtr primary_key_expr_ast;
+    ASTPtr sort_expr_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
@@ -578,11 +579,10 @@ private:
 
     bool require_part_metadata;
 
-    ExpressionActionsPtr primary_expr;
-    /// Additional expression for sorting (of rows with the same primary keys).
-    ExpressionActionsPtr secondary_sort_expr;
+    ExpressionActionsPtr primary_key_expr;
+    ExpressionActionsPtr sort_expr;
     /// Names of columns for primary key. Is the prefix of sort_columns.
-    Names primary_sort_columns;
+    Names primary_key_columns;
     /// Names of columns for primary key + secondary sorting columns.
     Names sort_columns;
 

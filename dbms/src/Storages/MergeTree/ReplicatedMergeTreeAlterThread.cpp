@@ -131,7 +131,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                     /// node /flags/force_alter.
                     auto transaction = storage.data.alterDataPart(
-                        part, columns_for_parts, storage.data.primary_expr_ast, false);
+                        part, columns_for_parts, storage.data.primary_key_expr_ast, false);
 
                     if (!transaction)
                         continue;
