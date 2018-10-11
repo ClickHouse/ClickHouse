@@ -1188,7 +1188,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
 
-    if (order_descr.size() == 0)
+    if (order_descr.empty())
         return;
 
     const Settings & settings = context.getSettingsRef();
