@@ -41,6 +41,8 @@
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
+#include <Compression/CompressionFactory.h>
+
 
 namespace DB
 {
@@ -167,13 +169,16 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 
 using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
+using ColumnDefaultsAndCodecs = std::pair<ColumnDefaults, ColumnCodecs>;
+using ColumnsDefaultsAndCodecs = std::pair<NamesAndTypesList, ColumnDefaultsAndCodecs>;
 
 /// AST to the list of columns with types. Columns of Nested type are expanded into a list of real columns.
-static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
+static ColumnsDefaultsAndCodecs parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
 {
     /// list of table columns in correct order
     NamesAndTypesList columns{};
     ColumnDefaults defaults{};
+    ColumnCodecs codecs{};
 
     /// Columns requiring type-deduction or default_expression type-check
     std::vector<std::pair<NameAndTypePair *, ASTColumnDeclaration *>> defaulted_columns{};
@@ -216,6 +221,12 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
             }
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+        }
+
+        if (col_decl.codec)
+        {
+            auto codec = CompressionCodecFactory::instance().get(col_decl.codec);
+            codecs.emplace(col_decl.name, codec);
         }
     }
 
@@ -266,14 +277,15 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
     }
 
-    return {Nested::flatten(columns), defaults};
+    return {Nested::flatten(columns), {defaults, codecs}};
 }
 
 
-static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_and_defaults, const ColumnDefaultKind kind)
+static NamesAndTypesList removeAndReturnColumns(ColumnsDefaultsAndCodecs & columns_and_defaults_and_codecs, const ColumnDefaultKind kind)
 {
-    auto & columns = columns_and_defaults.first;
-    auto & defaults = columns_and_defaults.second;
+    auto & columns = columns_and_defaults_and_codecs.first;
+    auto & defaults_and_codecs = columns_and_defaults_and_codecs.second;
+    auto & defaults = defaults_and_codecs.first;
 
     NamesAndTypesList removed{};
 
@@ -341,6 +353,18 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->default_expression = it->second.expression->clone();
         }
 
+        const auto ct = columns.codecs.find(column.name);
+        if (ct != std::end(columns.codecs))
+        {
+            String codec_desc;
+            ct->second->getCodecDesc(codec_desc);
+            codec_desc = "CODEC(" + codec_desc + ")";
+            auto pos = codec_desc.data();
+            const auto end = pos + codec_desc.size();
+            ParserIdentifierWithParameters codec_p;
+            column_declaration->codec = parseQuery(codec_p, pos, end, "column codec", 0);
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 
@@ -352,11 +376,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 {
     ColumnsDescription res;
 
-    auto && columns_and_defaults = parseColumns(columns, context);
-    res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
-    res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
-    res.ordinary = std::move(columns_and_defaults.first);
-    res.defaults = std::move(columns_and_defaults.second);
+    auto && columns_and_defaults_and_codecs = parseColumns(columns, context);
+    res.materialized = removeAndReturnColumns(columns_and_defaults_and_codecs, ColumnDefaultKind::Materialized);
+    res.aliases = removeAndReturnColumns(columns_and_defaults_and_codecs, ColumnDefaultKind::Alias);
+    res.ordinary = std::move(columns_and_defaults_and_codecs.first);
+    res.defaults = std::move(columns_and_defaults_and_codecs.second.first);
+    res.codecs = std::move(columns_and_defaults_and_codecs.second.second);
 
     if (res.ordinary.size() + res.materialized.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};

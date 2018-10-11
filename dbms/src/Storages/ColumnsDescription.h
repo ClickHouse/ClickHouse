@@ -4,6 +4,8 @@
 #include <Core/Names.h>
 #include <Storages/ColumnDefault.h>
 #include <Core/Block.h>
+#include <Storages/ColumnCodec.h>
+#include <IO/CompressionSettings.h>
 
 
 namespace DB
@@ -15,6 +17,7 @@ struct ColumnsDescription
     NamesAndTypesList materialized;
     NamesAndTypesList aliases;
     ColumnDefaults defaults;
+    ColumnCodecs codecs;
 
     ColumnsDescription() = default;
 
@@ -53,8 +56,9 @@ struct ColumnsDescription
 
     bool hasPhysical(const String & column_name) const;
 
-
     String toString() const;
+
+    CompressionCodecPtr getCodec(const String & column_name, const CompressionSettings & compression_settings) const;
 
     static ColumnsDescription parse(const String & str);
 };

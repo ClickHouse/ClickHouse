@@ -98,6 +98,8 @@ class IParserColumnDeclaration : public IParserBase
 protected:
     const char * getName() const { return "column declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    bool isDeclareColumnType(Pos & pos, Expected & expected);
+    bool isDeclareColumnCodec(Pos & pos, Expected & expected);
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -106,33 +108,26 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ASTPtr column_name;
+    ASTPtr column_type;
+    ASTPtr column_codec;
     NameParser name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
-    ParserKeyword s_alias{"ALIAS"};
+    ParserIdentifierWithParameters codec_parser;
     ParserTernaryOperatorExpression expr_parser;
+    ParserIdentifierWithOptionalParameters type_parser;
 
-    /// mandatory column name
-    ASTPtr name;
-    if (!name_parser.parse(pos, name, expected))
+    if (!name_parser.parse(pos, column_name, expected))
         return false;
 
-    /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
-      */
-    ASTPtr type;
-    const auto fallback_pos = pos;
-    if (!s_default.check(pos, expected) &&
-        !s_materialized.check(pos, expected) &&
-        !s_alias.check(pos, expected))
-    {
-        type_parser.parse(pos, type, expected);
-    }
-    else
-        pos = fallback_pos;
+    if (isDeclareColumnType(pos, expected))
+        type_parser.parse(pos, column_type, expected);
 
-    /// parse {DEFAULT, MATERIALIZED, ALIAS}
+    if (isDeclareColumnCodec(pos, expected))
+        codec_parser.parse(pos, column_codec, expected);
+
     String default_specifier;
     ASTPtr default_expression;
     Pos pos_before_specifier = pos;
@@ -146,16 +141,21 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!expr_parser.parse(pos, default_expression, expected))
             return false;
     }
-    else if (!type)
-        return false; /// reject sole column name without type
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
-    node = column_declaration;
-    column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
-    if (type)
+
+    column_declaration->name = typeid_cast<ASTIdentifier *>(column_name.get())->name;
+
+    if (column_type)
     {
-        column_declaration->type = type;
-        column_declaration->children.push_back(std::move(type));
+        column_declaration->type = column_type;
+        column_declaration->children.push_back(std::move(column_type));
+    }
+
+    if (column_codec)
+    {
+        column_declaration->codec = column_codec;
+        column_declaration->children.push_back(std::move(column_codec));
     }
 
     if (default_expression)
@@ -165,7 +165,24 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(default_expression));
     }
 
+    node = column_declaration;
     return true;
+}
+
+template<typename NameParser>
+bool IParserColumnDeclaration<NameParser>::isDeclareColumnType(Pos & pos, Expected & expected)
+{
+    auto check_pos = pos;
+    return !ParserKeyword{"CODEC"}.check(check_pos, expected) &&
+           !ParserKeyword{"ALIAS"}.check(check_pos, expected) &&
+           !ParserKeyword{"DEFAULT"}.check(check_pos, expected) &&
+           !ParserKeyword{"MATERIALIZED"}.check(check_pos, expected);
+}
+template<typename NameParser>
+bool IParserColumnDeclaration<NameParser>::isDeclareColumnCodec(Pos & pos, Expected & expected)
+{
+    auto check_pos = pos;
+    return ParserKeyword{"CODEC"}.check(check_pos, expected);
 }
 
 class ParserColumnDeclarationList : public IParserBase
