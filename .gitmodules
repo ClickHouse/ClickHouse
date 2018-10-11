@@ -48,4 +48,4 @@
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
 [submodule "contrib/base64"]
 	path = contrib/base64
-	url = git@github.com:aklomp/base64.git
+	url = https://github.com/aklomp/base64.git
