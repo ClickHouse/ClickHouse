@@ -322,8 +322,13 @@ class LLVMPreparedFunction : public PreparedFunctionImpl
 
 public:
     LLVMPreparedFunction(std::string name_, std::shared_ptr<LLVMContext> context)
-        : name(std::move(name_)), context(context), function(context->symbols.at(name))
-    {}
+        : name(std::move(name_)), context(context)
+    {
+        auto it = context->symbols.find(name);
+        if (context->symbols.end() == it)
+            throw Exception("Cannot find symbol " + name + " in LLVMContext", ErrorCodes::LOGICAL_ERROR);
+        function = it->second;
+    }
 
     String getName() const override { return name; }
 
@@ -509,6 +514,15 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shar
     }
     compileFunctionToLLVMByteCode(context, *this);
 }
+
+llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const
+{
+    auto it = subexpressions.find(name);
+    if (subexpressions.end() == it)
+        throw Exception("Cannot find subexpression " + name + " in LLVMFunction", ErrorCodes::LOGICAL_ERROR);
+    return it->second(builder, values);
+}
+
 
 PreparedFunctionPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
 
