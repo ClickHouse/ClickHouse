@@ -211,18 +211,18 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     data.check(real_column_names);
 
     const Settings & settings = context.getSettingsRef();
-    Names primary_sort_columns = data.getPrimarySortColumns();
+    Names primary_key_columns = data.getPrimaryKeyColumns();
 
     KeyCondition key_condition(
         query_info, context, available_real_and_virtual_columns,
-        primary_sort_columns, data.getPrimaryExpression());
+        primary_key_columns, data.getPrimaryKeyExpression());
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
         std::stringstream exception_message;
         exception_message << "Primary key (";
-        for (size_t i = 0, size = primary_sort_columns.size(); i < size; ++i)
-            exception_message << (i == 0 ? "" : ", ") << primary_sort_columns[i];
+        for (size_t i = 0, size = primary_key_columns.size(); i < size; ++i)
+            exception_message << (i == 0 ? "" : ", ") << primary_key_columns[i];
         exception_message << ") is not used and setting 'force_primary_key' is set.";
 
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
@@ -379,7 +379,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
+        DataTypePtr type = data.primary_key_sample.getByName(data.sampling_expression->getColumnName()).type;
 
         if (typeid_cast<const DataTypeUInt64 *>(type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
@@ -553,8 +553,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     if (select.final())
     {
-        /// Add columns needed to calculate primary key and the sign.
-        std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
+        /// Add columns needed to calculate the sorting expression and the sign.
+        std::vector<String> add_columns = data.getSortExpression()->getRequiredColumns();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
         if (!data.merging_params.sign_column.empty())
@@ -782,7 +782,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
             prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
-        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
+        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getSortExpression()));
     }
 
     Names sort_columns = data.getSortColumns();

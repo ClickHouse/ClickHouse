@@ -398,31 +398,31 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     WrittenOffsetColumns offset_columns;
 
-    auto sort_columns = storage.getPrimarySortColumns();
+    auto primary_key_column_names = storage.getPrimaryKeyColumns();
 
     /// Here we will add the columns related to the Primary Key, then write the index.
-    std::vector<ColumnWithTypeAndName> primary_columns(sort_columns.size());
-    std::map<String, size_t> primary_columns_name_to_position;
+    std::vector<ColumnWithTypeAndName> primary_key_columns(primary_key_column_names.size());
+    std::map<String, size_t> primary_key_column_name_to_position;
 
-    for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
+    for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
     {
-        const auto & name = sort_columns[i];
+        const auto & name = primary_key_column_names[i];
 
-        if (!primary_columns_name_to_position.emplace(name, i).second)
+        if (!primary_key_column_name_to_position.emplace(name, i).second)
             throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-        primary_columns[i] = block.getByName(name);
+        primary_key_columns[i] = block.getByName(name);
 
-        /// Reorder primary key columns in advance and add them to `primary_columns`.
+        /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
-            primary_columns[i].column = primary_columns[i].column->permute(*permutation, 0);
+            primary_key_columns[i].column = primary_key_columns[i].column->permute(*permutation, 0);
     }
 
     if (index_columns.empty())
     {
-        index_columns.resize(sort_columns.size());
-        for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
-            index_columns[i] = primary_columns[i].column->cloneEmpty();
+        index_columns.resize(primary_key_column_names.size());
+        for (size_t i = 0, size = primary_key_column_names.size(); i < size; ++i)
+            index_columns[i] = primary_key_columns[i].column->cloneEmpty();
     }
 
     if (serialization_states.empty())
@@ -447,10 +447,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
         if (permutation)
         {
-            auto primary_column_it = primary_columns_name_to_position.find(it->name);
-            if (primary_columns_name_to_position.end() != primary_column_it)
+            auto primary_column_it = primary_key_column_name_to_position.find(it->name);
+            if (primary_key_column_name_to_position.end() != primary_column_it)
             {
-                auto & primary_column = *primary_columns[primary_column_it->second].column;
+                auto & primary_column = *primary_key_columns[primary_column_it->second].column;
                 writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i]);
             }
             else
@@ -482,11 +482,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         {
             if (storage.hasPrimaryKey())
             {
-                for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
+                for (size_t j = 0, size = primary_key_columns.size(); j < size; ++j)
                 {
-                    const IColumn & primary_column = *primary_columns[j].column.get();
+                    const IColumn & primary_column = *primary_key_columns[j].column.get();
                     index_columns[j]->insertFrom(primary_column, i);
-                    primary_columns[j].type->serializeBinary(primary_column, i, *index_stream);
+                    primary_key_columns[j].type->serializeBinary(primary_column, i, *index_stream);
                 }
             }
 

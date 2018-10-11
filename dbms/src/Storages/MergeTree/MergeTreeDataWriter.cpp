@@ -175,13 +175,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     dir.createDirectories();
 
     /// If we need to calculate some columns to sort.
-    if (data.hasPrimaryKey())
-    {
-        data.getPrimaryExpression()->execute(block);
-        auto secondary_sort_expr = data.getSecondarySortExpression();
-        if (secondary_sort_expr)
-            secondary_sort_expr->execute(block);
-    }
+    if (data.hasSortExpression())
+        data.getSortExpression()->execute(block);
 
     Names sort_columns = data.getSortColumns();
     SortDescription sort_description;
@@ -196,7 +191,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Sort.
     IColumn::Permutation * perm_ptr = nullptr;
     IColumn::Permutation perm;
-    if (data.hasPrimaryKey())
+    if (!sort_description.empty())
     {
         if (!isAlreadySorted(block, sort_description))
         {

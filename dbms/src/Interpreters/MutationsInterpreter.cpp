@@ -102,19 +102,17 @@ static NameSet getKeyColumns(const StoragePtr & storage)
         for (const String & col : merge_tree_data->partition_expr->getRequiredColumns())
             key_columns.insert(col);
 
-    auto primary_expr = merge_tree_data->getPrimaryExpression();
+    auto primary_expr = merge_tree_data->getSortExpression();
     if (primary_expr)
         for (const String & col : primary_expr->getRequiredColumns())
             key_columns.insert(col);
     /// We don't process sampling_expression separately because it must be among the primary key columns.
 
-    auto secondary_sort_expr = merge_tree_data->getSecondarySortExpression();
-    if (secondary_sort_expr)
-        for (const String & col : secondary_sort_expr->getRequiredColumns())
-            key_columns.insert(col);
-
     if (!merge_tree_data->merging_params.sign_column.empty())
         key_columns.insert(merge_tree_data->merging_params.sign_column);
+
+    if (!merge_tree_data->merging_params.version_column.empty())
+        key_columns.insert(merge_tree_data->merging_params.version_column);
 
     return key_columns;
 }
