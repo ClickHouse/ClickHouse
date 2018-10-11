@@ -132,15 +132,15 @@ private:
 };
 
 
-/** Takes stream already sorted by `x` and finishes sorting it by (`x`, `y`). 
+/** Takes stream already sorted by `x` and finishes sorting it by (`x`, `y`).
  *  During sorting only blocks with rows that equal by `x` saved in RAM.
  * */
-class FinishMergeSortingBlockInputStream : public IProfilingBlockInputStream
+class FinishSortingBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    FinishMergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_sorted_,
-        SortDescription & description_to_sort_, 
+    FinishSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_sorted_,
+        SortDescription & description_to_sort_,
         size_t max_merged_block_size_, size_t limit_);
 
     String getName() const override { return "FinishMergeSorting"; }
