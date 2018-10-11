@@ -203,7 +203,7 @@ void StorageMergeTree::alter(
     bool primary_key_is_modified = false;
 
     ASTPtr new_primary_key_ast = data.primary_key_expr_ast;
-    /// TODO: modify sort expression
+    ASTPtr new_sort_expr_ast = data.sort_expr_ast;
 
     for (const AlterCommand & param : params)
     {
@@ -211,6 +211,7 @@ void StorageMergeTree::alter(
         {
             primary_key_is_modified = true;
             new_primary_key_ast = param.primary_key;
+            new_sort_expr_ast = param.primary_key->clone();
         }
     }
 
@@ -247,12 +248,8 @@ void StorageMergeTree::alter(
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
     setColumns(std::move(new_columns));
 
-    if (primary_key_is_modified)
-    {
-        data.primary_key_expr_ast = new_primary_key_ast;
-    }
     /// Reinitialize primary key because primary key column types might have changed.
-    data.initPrimaryKey();
+    data.setPrimaryKey(new_primary_key_ast, new_sort_expr_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();

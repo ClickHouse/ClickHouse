@@ -579,10 +579,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->partition_by)
             partition_expr_list = extractKeyExpressionList(*args.storage_def->partition_by);
 
+        if (args.storage_def->primary_key)
+            primary_expr_list = extractKeyExpressionList(*args.storage_def->primary_key);
+
         if (args.storage_def->order_by)
         {
-            primary_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
-            sort_expr_list = primary_expr_list->clone();
+            sort_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
         }
         else
             throw Exception("You must provide an ORDER BY expression in the table definition. "
@@ -612,8 +614,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
 
-        primary_expr_list = extractKeyExpressionList(*engine_args[1]);
-        sort_expr_list = primary_expr_list->clone();
+        sort_expr_list = extractKeyExpressionList(*engine_args[1]);
 
         auto ast = typeid_cast<const ASTLiteral *>(engine_args.back().get());
         if (ast && ast->value.getType() == Field::Types::UInt64)
@@ -623,9 +624,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Index granularity must be a positive integer" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
     }
-
-    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        sort_expr_list->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
 
     if (replicated)
         return StorageReplicatedMergeTree::create(

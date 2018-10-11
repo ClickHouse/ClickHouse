@@ -632,7 +632,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (data.hasPrimaryKey())
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryKeyExpression())));
+                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getSortExpression())));
         else
             src_streams.emplace_back(std::move(input));
     }
