@@ -162,7 +162,7 @@ private:
             return execute<Type>(block, col_vec, result);
         };
 
-        if (!callOnBasicType<void, true, true, true>(col.type->getTypeId(), call))
+        if (!callOnBasicType<void, true, true, true, false>(col.type->getTypeId(), call))
             throw Exception{"Illegal column " + col.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
@@ -385,7 +385,7 @@ private:
         TypeIndex left_index = col_left.type->getTypeId();
         TypeIndex right_index = col_right.type->getTypeId();
 
-        if (!callOnBasicTypes<true, true, false>(left_index, right_index, call))
+        if (!callOnBasicTypes<true, true, false, false>(left_index, right_index, call))
             throw Exception{"Illegal column " + col_left.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
     }
