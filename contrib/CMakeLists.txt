@@ -176,4 +176,6 @@ if (USE_INTERNAL_GTEST_LIBRARY)
 endif ()
 
 
-add_subdirectory (base64-cmake)
+if (USE_BASE64)
+    add_subdirectory (base64-cmake)
+endif()

@@ -5,6 +5,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
+#include <Common/config.h>
+
+#if USE_BASE64
 #include <libbase64.h>
 
 
@@ -54,14 +57,18 @@ public:
         return 1;
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments != 1)
-            throw Exception("Function " + getName() + " needs exactly one argument of type String", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(
+                "Function " + getName() + " needs exactly one argument of type String", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
@@ -105,7 +112,7 @@ public:
 
             if constexpr (std::is_same_v<Func, Base64Encode>)
             {
-                base64_encode(source, srclen , dst_pos, &outlen, codec);
+                base64_encode(source, srclen, dst_pos, &outlen, codec);
             }
             else
             {
@@ -137,8 +144,7 @@ private:
 #else
         return BASE64_FORCE_PLAIN;
 #endif
-
     }
 };
-
 }
+#endif

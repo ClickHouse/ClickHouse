@@ -52,11 +52,9 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE ${CONSISTENT_HASHING_LIBRARY} consistent-hashing-sumbur ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} murmurhash base64)
+target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE ${CONSISTENT_HASHING_LIBRARY} consistent-hashing-sumbur ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} murmurhash ${BASE64_LIBRARY})
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
-
-target_include_directories (clickhouse_functions SYSTEM PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/base64/include)
 
 if (CONSISTENT_HASHING_INCLUDE_DIR)
     target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
@@ -83,3 +81,7 @@ endif ()
 if (USE_EMBEDDED_COMPILER)
     target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
+
+if (USE_BASE64)
+    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
+endif()

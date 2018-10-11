@@ -1,39 +1,31 @@
 SET(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/base64)
 
-macro(add_glob cur_list)
-    file(GLOB __tmp RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${ARGN})
-    list(APPEND ${cur_list} ${__tmp})
-endmacro()
+# write config.h file, to include it in application
+file(READ config-header.tpl header)
+file(WRITE config.h ${header})
+file(APPEND config.h "#define HAVE_SSE41                 ${HAVE_SSE41}\n")
+file(APPEND config.h "#define HAVE_SSE42                 ${HAVE_SSE42}\n")
 
-macro(add_headers_and_sources prefix common_path)
-    add_glob(${prefix}_headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ${common_path}/*.h)
-    add_glob(${prefix}_sources ${common_path}/*.cpp ${common_path}/*.h ${common_path}/codec.c)
-endmacro()
+set(HAVE_FAST_UNALIGNED_ACCESS 0)
+if (${HAVE_SSE41} OR ${HAVE_SSE42})
+    set(HAVE_FAST_UNALIGNED_ACCESS 1)
+endif ()
 
+file(APPEND config.h "#define HAVE_FAST_UNALIGNED_ACCESS " ${HAVE_FAST_UNALIGNED_ACCESS} "\n")
 
-MACRO(SUBDIRLIST result curdir)
-    FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
-    SET(dirlist "")
-    FOREACH(child ${children})
-        IF(IS_DIRECTORY ${curdir}/${child})
-            LIST(APPEND dirlist ${child})
-        ENDIF()
-    ENDFOREACH()
-    SET(${result} ${dirlist})
-ENDMACRO()
+add_library(base64 ${LINK_MODE}
+        ${LIBRARY_DIR}/lib/lib.c
+        ${LIBRARY_DIR}/lib/codec_choose.c
+        ${LIBRARY_DIR}/lib/arch/avx/codec.c
+        ${LIBRARY_DIR}/lib/arch/avx2/codec.c
+        ${LIBRARY_DIR}/lib/arch/generic/codec.c
+        ${LIBRARY_DIR}/lib/arch/neon32/codec.c
+        ${LIBRARY_DIR}/lib/arch/neon64/codec.c
+        ${LIBRARY_DIR}/lib/arch/sse41/codec.c
+        ${LIBRARY_DIR}/lib/arch/sse42/codec.c
+        ${LIBRARY_DIR}/lib/arch/ssse3/codec.c
 
-add_headers_and_sources(base64 ${LIBRARY_DIR}/include/)
-add_headers_and_sources(base64 ${LIBRARY_DIR}/lib/)
+        ${LIBRARY_DIR}/lib/codecs.h
+        config.h)
 
-SUBDIRLIST(SUBDIRS ${LIBRARY_DIR}/lib/arch/)
-FOREACH(subdir ${SUBDIRS})
-    add_headers_and_sources(base64 ${LIBRARY_DIR}/lib/arch/${subdir})
-ENDFOREACH()
-
-list(APPEND base64_sources ../base64/lib/lib.c ../base64/lib/codec_choose.c)
-
-add_library (base64 ${LINK_MODE} ${base64_sources} config.h)
-
-# todo fix
-target_compile_definitions(base64 PUBLIC SSE41_CFLAGS=-msse4.1 SSE42_CFLAGS=-msse4.2)
 target_include_directories(base64 PRIVATE ${LIBRARY_DIR}/include .)
