@@ -417,6 +417,22 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
     res.subqueries_for_sets = query_analyzer->getSubqueriesForSets();
 
+    /// Check that PREWHERE doesn't contain unusual actions. Unusual actions are that can change number of rows.
+    if (res.prewhere_info)
+    {
+        auto check_actions = [](const ExpressionActionsPtr & actions)
+        {
+            if (actions)
+                for (const auto & action : actions->getActions())
+                    if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                        throw Exception("PREWHERE cannot contain ARRAY JOIN or JOIN action", ErrorCodes::ILLEGAL_PREWHERE);
+        };
+
+        check_actions(res.prewhere_info->prewhere_actions);
+        check_actions(res.prewhere_info->alias_actions);
+        check_actions(res.prewhere_info->remove_columns_actions);
+    }
+
     return res;
 }
 
