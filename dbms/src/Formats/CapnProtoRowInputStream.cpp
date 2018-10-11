@@ -144,7 +144,12 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
         {
             // The field list here flattens Nested elements into multiple arrays
             // In order to map Nested types in Cap'nProto back, they need to be collected
-            actions.back().columns.push_back(field.pos);
+            // Since the field names are sorted, the order of field positions must be preserved
+            // For example, if the fields are { b @0 :Text, a @1 :Text }, the `a` would come first
+            // even though it's position is second.
+            auto & columns = actions.back().columns;
+            auto it = std::upper_bound(columns.cbegin(), columns.cend(), field.pos);
+            columns.insert(it, field.pos);
         }
         else
         {

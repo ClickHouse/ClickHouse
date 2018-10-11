@@ -2,8 +2,10 @@ add_library (clickhouse-odbc-bridge-lib ${LINK_MODE}
     PingHandler.cpp
     MainHandler.cpp
     ColumnInfoHandler.cpp
+    IdentifierQuoteHandler.cpp
     HandlerFactory.cpp
     ODBCBridge.cpp
+    getIdentifierQuote.cpp
     validateODBCConnectionString.cpp
 )
 
