@@ -37,7 +37,7 @@ When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table
 
 ### Deprecated Method for Creating a Table
 
-!!!attention
+!!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql

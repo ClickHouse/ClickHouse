@@ -77,7 +77,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 ### Устаревший способ создания таблицы
 
-!!!attention
+!!! attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```

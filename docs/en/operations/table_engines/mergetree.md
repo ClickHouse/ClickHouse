@@ -78,7 +78,7 @@ We also set an expression for sampling as a hash by the user ID. This allows you
 
 ### Deprecated Method for Creating a Table
 
-!!!attention
+!!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```

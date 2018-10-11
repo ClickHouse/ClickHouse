@@ -4,7 +4,9 @@
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds to data parts merge algorithm the logic of rows collapsing.
 
-`CollapsingMergeTree` deletes rows collapsing certain pairs of them into one row. The engine may significantly reduce the volume of storage and efficiency of `SELECT` query as a consequence.
+`CollapsingMergeTree` deletes (collapses) pairs of rows by specific rules. The engine may significantly reduce the volume of storage and efficiency of `SELECT` query as a consequence.
+
+See [Collapsing](#collapsingmergetree-algorithm) section of document about `CollapsingMergeTree` input data and algorithm.
 
 ## Creating a Table
 
@@ -25,17 +27,17 @@ For a description of request parameters, see [request description](../../query_l
 
 **CollapsingMergeTree Parameters**
 
-- `sign` — column with a sign of event.
+- `sign` — Name of the column with the type of row: `1` — "state" row, `-1` — "cancel" row.
 
-    Type — `Int8`. Possible values are 1 and -1.
+    Column data type — `Int8`.
 
 **Query clauses**
 
-When creating a `CollapsingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
+When creating a `CollapsingMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
 
 ### Deprecated Method for Creating a Table
 
-!!!attention
+!!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql
@@ -49,45 +51,167 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 
-- `sign` — column with a sign of event.
+- `sign` — Name of the column with the type of row: `1` — "state" row, `-1` — "cancel" row.
 
-    Type — `Int8`. Possible values are 1 and -1.
+    Column Data Type — `Int8`.
+
+<a name="collapsingmergetree-algorithm"></a>
 
 ## Collapsing
 
 ### Data
 
-`CollapsingMergeTree` works effectively with the data represented in the form of change log. Change logs are used for incrementally calculating statistics on the data that is constantly changing. Examples are the log of session changes, or logs of changes to user histories. Each row of such a log describes some object and contains additional `sign` field that indicates the values in this row are intended for increment or for decrement. If object is deleted then `sign = -1`, if object is created, then `sign = 1`, if object is changed `sign` can be `1` or `-1` depending on the kind of change.
+Consider the situation where you need to save continually changing data for some object. It sounds logical to have one row for an object and update it at any change, but update operation is expensive and slow for DBMS because it requires rewriting of the data in the storage. If you need to write data quickly, update not acceptable, but you can write the changes of an object sequentially as follows.
+
+Use the particular column `Sign` when writing row. If `Sign = 1` it means that the row is a state of an object, let's call it "state" row. If `Sign = -1` it means the cancellation of the state of an object with the same attributes, let's call it "cancel" row.
+
+For example, we want to calculate how much pages users checked at some site and how long they were there. At some moment of time we write the following row with the state of user activity:
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+At some moment later we register the change of user activity and write it with the following two rows.
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+The first row cancels the previous state of the object (user). It should copy all of the fields of the canceled state excepting `Sign`.
+
+The second row contains the current state.
+
+As we need only the last state of user activity, the rows
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │         5 │      146 │   -1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+can be deleted collapsing the invalid (old) state of an object. `CollapsingMergeTree` does this while merging of the data parts.
+
+Why we need 2 rows for each change read in the "Algorithm" paragraph.
+
+**Peculiar properties of such approach**
+
+1. The program that writes the data should remember the state of an object to be able to cancel it. "Cancel" string should be the copy of "state" string with the opposite `Sign`. It increases the initial size of storage but allows to write the data quickly.
+2. Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher efficiency.
+3. `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
 
 ### Algorithm
 
-When ClickHouse merges data parts, each group of consecutive rows with identical primary key is reduced to not more than two rows, one with `sign = 1` ("increment" row) and another with `sign = -1` ("decrement" row). In other words, entries are collapsed for each resulting data part.
+When ClickHouse merges data parts, each group of consecutive rows with the same primary key is reduced to not more than two rows, one with `Sign = 1` ("state" row) and another with `Sign = -1` ("cancel" row). In other words, entries collapse.
 
-ClickHouse saves:
+For each resulting data part ClickHouse saves:
 
-  1. The first "decrement" and the last "increment" rows, if the number of "increment" and "decrement" rows matches.
-  1. The last "increment" row, if there is one more "increment" row than "decrement" rows.
-  1. The first "decrement" row, if there is one more "decrement" row than "increment" rows.
-  1. None of rows, in all other cases.
+  1. The first "cancel" and the last "state" rows, if the number of "state" and "cancel" rows matches.
+  1. The last "state" row, if there is one more "state" row than "cancel" rows.
+  1. The first "cancel" row, if there is one more "cancel" row than "state" rows.
+  1. None of the rows, in all other cases.
 
-      ClickHouse treats this situation as a logical error and record it in the server log, the merge continues. This error can occur if the same data were accidentally inserted more than once.
-
-!!! Я так и не понял, что в точности происходит при коллапсировании. Что происходит с данными в строке, которые не в первичном ключе и не sign? Какого они должны быть типа или что вообще должно происходить, чтобы при схлопывании рассчитывалась инкрементальная статистика?
+      The merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted accidentally more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
-Changes are gradually collapsed so that in the end only the last value of almost every object is left.
+Changes gradually collapsed so that in the end only the last state of almost every object left.
 
-Merging algorithm doesn't guarantee than all of the rows with the same primary key will be in one resulting data part. This means that additional aggregation is required if there is a need to get completely "collapsed" data from `CollapsingMergeTree` table.
+The `Sign` is required because the merging algorithm doesn't guarantee that all of the rows with the same primary key will be in the same resulting data part and even on the same physical server.  ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely "collapsed" data from `CollapsingMergeTree` table.
 
-Ways to complete aggregation:
+To finalize collapsing write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
-1. Write a query with `GROUP BY` clause and aggregate functions that accounts for the sign. For example, to calculate quantity, use `sum(sign)` instead of `count()`. To calculate the sum of something, use `sum(sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(sign) > 0`. Not all amounts can be calculated this way. For example, the aggregate functions `min` and `max` can't be rewritten.
-2. If you must extract data without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is significantly less efficient.
+The aggregates `count`, `sum` and `avg` could be calculated this way. The aggregate `uniq` could be calculated if an object has at list one state not collapsed. The aggregates `min` and `max` could not be calculated because `CollapsingMergeTree` does not save values history of the collapsed states.
 
-## Use in Yandex.Metrica
+If you need to extract data without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is significantly less efficient.
 
-Yandex.Metrica has normal logs (such as hit logs) and change logs. Change logs are used for incrementally calculating statistics on data that is constantly changing. Examples are the log of session changes, or logs of changes to user histories. Sessions are constantly changing in Yandex.Metrica. For example, the number of hits per session increases. We refer to changes in any object as a pair (?old values, ?new values). Old values may be missing if the object was created. New values may be missing if the object was deleted. If the object was changed, but existed previously and was not deleted, both values are present. In the change log, one or two entries are made for each change. Each entry contains all the attributes that the object has, plus a special attribute for differentiating between the old and new values. When objects change, only the new entries are added to the change log, and the existing ones are not touched.
+## Example of use
 
-The change log makes it possible to incrementally calculate almost any statistics. To do this, we need to consider "new" rows with a plus sign, and "old" rows with a minus sign. In other words, incremental calculation is possible for all statistics whose algebraic structure contains an operation for taking the inverse of an element. This is true of most statistics. We can also calculate "idempotent" statistics, such as the number of unique visitors, since the unique visitors are not deleted when making changes to sessions.
+Example data:
 
-This is the main concept that allows Yandex.Metrica to work in real time.
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+Creation of the table:
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+```
+
+Insertion of the data:
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1)
+```
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 6, 185, 1)
+```
+
+We use two `INSERT` queries to create two different data parts. If we insert the data with one query ClickHouse creates one data part and will not perform any merge ever.
+
+Getting the data
+
+```
+SELECT * FROM UAct
+```
+
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+What do we see and where is collapsing?
+With two `INSERT` queries, we created 2 data parts. The `SELECT` query was performed in 2 threads, and we got a random order of rows.
+Collapsing not occurred because there was no merge of the data parts yet. ClickHouse merges data part in an unknown moment of time which we can not predict.
+
+Thus we need aggregation:
+
+```sql
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration
+FROM UAct
+GROUP BY UserID
+HAVING sum(Sign) > 0
+```
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+```
+
+If we do not need aggregation and want to force collapsing, we can use `FINAL` modifier for `FROM` clause.
+
+```sql
+SELECT * FROM UAct FINAL
+```
+```
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+This way of selecting the data is very inefficient. Don't use it for big tables.
