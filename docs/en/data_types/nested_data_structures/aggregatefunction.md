@@ -46,7 +46,7 @@ In the results of `SELECT` query the values of  `AggregateFunction` type have im
 
 ### Data Selection
 
-When selecting data from `AggregatingMergeTree`  table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge`suffix.
+When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge`suffix.
 
 An aggregate function with `-Merge` suffix takes a set of states, combines them, and returns the result of complete data aggregation.
 
