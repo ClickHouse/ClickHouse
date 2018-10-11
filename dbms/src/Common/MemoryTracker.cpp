@@ -43,7 +43,8 @@ MemoryTracker::~MemoryTracker()
       *  then memory usage of 'next' memory trackers will be underestimated,
       *  because amount will be decreased twice (first - here, second - when real 'free' happens).
       */
-    reset();
+    if (auto value = amount.load(std::memory_order_relaxed))
+        free(value);
 }
 
 
@@ -169,9 +170,8 @@ void MemoryTracker::resetCounters()
 
 void MemoryTracker::reset()
 {
-    if (!parent.load(std::memory_order_relaxed))
-        if (auto value = amount.load(std::memory_order_relaxed))
-            free(value);
+    if (metric != CurrentMetrics::end())
+        CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
 
     resetCounters();
 }
