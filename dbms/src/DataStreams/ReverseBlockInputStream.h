@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// The order of the rows in the block is reversed.
+/// The order of rows in each block is reversed.
 class ReverseBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -29,8 +29,8 @@ protected:
 
         PaddedPODArray<size_t> perm;
 
-        for (int i = res.rows() - 1; i >= 0; --i)
-            perm.push_back(static_cast<size_t>(i));
+        for (ssize_t i = res.rows() - 1; i >= 0; --i)
+            perm.push_back(i);
 
         for (auto it = res.begin(); it != res.end(); ++it)
             it->column = it->column->permute(perm, 0);
