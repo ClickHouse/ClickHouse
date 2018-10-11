@@ -240,7 +240,10 @@ private:
             size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
             if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
+            {
+                shutdown = true;
                 break;
+            }
         }
 
         pool.wait();
