@@ -554,7 +554,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     if (select.final())
     {
         /// Add columns needed to calculate the sorting expression and the sign.
-        std::vector<String> add_columns = data.getSortExpression()->getRequiredColumns();
+        std::vector<String> add_columns = data.getSortingKeyExpression()->getRequiredColumns();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
         if (!data.merging_params.sign_column.empty())
@@ -782,10 +782,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
             prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
-        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getSortExpression()));
+        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getSortingKeyExpression()));
     }
 
-    Names sort_columns = data.getSortColumns();
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

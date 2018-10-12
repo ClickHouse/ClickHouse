@@ -284,7 +284,7 @@ public:
     /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
-    /// primary_expr_ast - expression used for sorting;
+    /// primary_key_ast - expression used for sorting;
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
     ///     Otherwise, partition_expr_ast is used for partitioning.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
@@ -293,8 +293,8 @@ public:
                   const String & full_path_,
                   const ColumnsDescription & columns_,
                   Context & context_,
-                  const ASTPtr & primary_expr_ast_,
-                  const ASTPtr & sort_expr_ast_,
+                  const ASTPtr & primary_key_ast_,
+                  const ASTPtr & sorting_key_ast_,
                   const String & date_column_name,
                   const ASTPtr & partition_expr_ast_,
                   const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
@@ -488,10 +488,11 @@ public:
 
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
     ExpressionActionsPtr getPrimaryKeyExpression() const { return primary_key_expr; }
-    bool hasSortExpression() const { return !sort_columns.empty(); }
-    ExpressionActionsPtr getSortExpression() const { return sort_expr; } /// may return nullptr
     Names getPrimaryKeyColumns() const { return primary_key_columns; }
-    Names getSortColumns() const { return sort_columns; }
+
+    bool hasSortingKey() const { return !sorting_key_columns.empty(); }
+    ExpressionActionsPtr getSortingKeyExpression() const { return sorting_key_expr; }
+    Names getSortingKeyColumns() const { return sorting_key_columns; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
@@ -549,10 +550,11 @@ public:
 
     const MergeTreeSettings settings;
 
-    ASTPtr primary_key_expr_ast;
-    ASTPtr sort_expr_ast;
+    ASTPtr primary_key_ast;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
+
+    ASTPtr sorting_key_ast;
 
     ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;
@@ -580,11 +582,12 @@ private:
     bool require_part_metadata;
 
     ExpressionActionsPtr primary_key_expr;
-    ExpressionActionsPtr sort_expr;
-    /// Names of columns for primary key. Is the prefix of sort_columns.
+    /// Names of columns for primary key.
     Names primary_key_columns;
+
+    ExpressionActionsPtr sorting_key_expr;
     /// Names of columns for primary key + secondary sorting columns.
-    Names sort_columns;
+    Names sorting_key_columns;
 
     String database_name;
     String table_name;
@@ -687,7 +690,7 @@ private:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setPrimaryKey(ASTPtr new_primary_key_expr_ast, const ASTPtr & new_sort_expr_ast);
+    void setPrimaryKey(ASTPtr new_primary_key_ast, const ASTPtr & new_sorting_key_ast);
 
     void initPartitionKey();
 

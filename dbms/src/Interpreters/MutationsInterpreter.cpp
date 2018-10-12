@@ -102,9 +102,9 @@ static NameSet getKeyColumns(const StoragePtr & storage)
         for (const String & col : merge_tree_data->partition_expr->getRequiredColumns())
             key_columns.insert(col);
 
-    auto primary_expr = merge_tree_data->getSortExpression();
-    if (primary_expr)
-        for (const String & col : primary_expr->getRequiredColumns())
+    auto sorting_key_expr = merge_tree_data->getSortingKeyExpression();
+    if (sorting_key_expr)
+        for (const String & col : sorting_key_expr->getRequiredColumns())
             key_columns.insert(col);
     /// We don't process sampling_expression separately because it must be among the primary key columns.
 
