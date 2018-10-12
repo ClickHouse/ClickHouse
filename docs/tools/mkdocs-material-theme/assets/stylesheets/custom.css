@@ -130,12 +130,12 @@ h1, h2, h3, .md-logo {
 }
 
 #md-extra-nav {
-	background: #efefef;
-	padding-top: 0.5rem;
+    background: #efefef;
+    padding: 0.5rem 0;
 }
 
 .grey {
-	color: #666;
+    color: #666;
 }
 
 .md-alt-lang:hover {
