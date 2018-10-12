@@ -93,7 +93,7 @@ Block ODBCBlockInputStream::readImpl()
             if (!value.isEmpty())
                 insertValue(*columns[idx], description.types[idx], value);
             else
-                insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }
 
         ++iterator;

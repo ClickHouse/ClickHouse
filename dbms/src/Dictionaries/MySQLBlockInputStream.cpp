@@ -84,7 +84,7 @@ Block MySQLBlockInputStream::readImpl()
             if (!value.isNull())
                 insertValue(*columns[idx], description.types[idx], value);
             else
-                insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }
 
         ++num_rows;

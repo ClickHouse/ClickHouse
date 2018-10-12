@@ -179,11 +179,11 @@ Block MongoDBBlockInputStream::readImpl()
 
             for (const auto idx : ext::range(0, size))
             {
-                const auto & name = description.names[idx];
+                const auto & name = description.sample_block.getByPosition(idx).name;
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                    insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
                 else
                     insertValue(*columns[idx], description.types[idx], *value, name);
             }

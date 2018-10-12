@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/typeid_cast.h>
 
 
@@ -20,15 +21,16 @@ void ExternalResultDescription::init(const Block & sample_block_)
 {
     sample_block = sample_block_;
 
-    const auto num_columns = sample_block.columns();
-    types.reserve(num_columns);
-    names.reserve(num_columns);
-    sample_columns.reserve(num_columns);
+    types.reserve(sample_block.columns());
 
-    for (const auto idx : ext::range(0, num_columns))
+    for (auto & elem : sample_block)
     {
-        const auto & column = sample_block.safeGetByPosition(idx);
-        const auto type = column.type.get();
+        /// If default value for column was not provided, use default from data type.
+        if (elem.column->empty())
+            elem.column = elem.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+
+        DataTypePtr type_not_nullable = removeNullable(elem.type);
+        const IDataType * type = type_not_nullable.get();
 
         if (typeid_cast<const DataTypeUInt8 *>(type))
             types.push_back(ValueType::UInt8);
@@ -60,17 +62,6 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.push_back(ValueType::UUID);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
-
-        names.emplace_back(column.name);
-        sample_columns.emplace_back(column.column);
-
-        /// If default value for column was not provided, use default from data type.
-        if (sample_columns.back()->empty())
-        {
-            MutableColumnPtr mutable_column = (*std::move(sample_columns.back())).mutate();
-            column.type->insertDefaultInto(*mutable_column);
-            sample_columns.back() = std::move(mutable_column);
-        }
     }
 }
 
