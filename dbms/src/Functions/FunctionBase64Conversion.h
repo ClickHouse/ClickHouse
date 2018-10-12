@@ -1,3 +1,5 @@
+#include <Common/config.h>
+#if USE_BASE64
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -5,9 +7,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
-#include <Common/config.h>
-
-#if USE_BASE64
 #include <libbase64.h>
 
 
@@ -64,12 +63,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments != 1)
-            throw Exception(
-                "Function " + getName() + " needs exactly one argument of type String", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
         if (!WhichDataType(arguments[0].type).isString())
             throw Exception(
                 "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() + ". Must be String.",
