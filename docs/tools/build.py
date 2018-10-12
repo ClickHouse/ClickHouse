@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -150,6 +151,12 @@ def build_single_page_version(lang, args, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
+
+                single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
+                single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                logging.debug(' '.join(create_pdf_command))
+                subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
 
 def build_redirects(args):
