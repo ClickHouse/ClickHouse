@@ -25,14 +25,11 @@ struct ExternalResultDescription
         String,
         Date,
         DateTime,
-        UUID
+        UUID,
     };
 
-    /// For Nullable source types, these types correspond to their nested types.
-    std::vector<ValueType> types;
-
-    /// May contain Nullable types.
     Block sample_block;
+    std::vector<std::pair<ValueType, bool /* is_nullable */>> types;
 
     void init(const Block & sample_block_);
 };
