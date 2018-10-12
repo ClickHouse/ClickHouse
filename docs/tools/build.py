@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -61,10 +62,8 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
-                'opposite_lang': 'ru' if lang == 'en' else 'en',
                 'now': datetime.datetime.now() # TODO better way to avoid caching
             }
-
         }
 
         site_names = {
@@ -134,8 +133,7 @@ def build_single_page_version(lang, args, cfg):
                     'docs_dir': docs_temp_lang,
                     'site_dir': site_temp,
                     'extra': {
-                        'single_page': True,
-                        'opposite_lang': 'en' if lang == 'ru' else 'ru'
+                        'single_page': True
                     },
                     'nav': [
                         {cfg.data.get('site_name'): 'single.md'}
@@ -153,6 +151,12 @@ def build_single_page_version(lang, args, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
+
+                single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
+                single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                logging.debug(' '.join(create_pdf_command))
+                subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
 
 def build_redirects(args):
