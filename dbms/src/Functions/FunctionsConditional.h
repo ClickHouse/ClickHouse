@@ -231,6 +231,11 @@ public:
 
 private:
     template <typename T0, typename T1>
+    static constexpr bool allow_arrays =
+        !IsDecimalNumber<T0> && !IsDecimalNumber<T1> &&
+        !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
+
+    template <typename T0, typename T1>
     static UInt32 decimalScale(Block & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])
     {
         if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
@@ -314,7 +319,7 @@ private:
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
-        else if constexpr (!IsDecimalNumber<T0> && !IsDecimalNumber<T1>)
+        else if constexpr (allow_arrays<T0, T1>)
         {
             using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -370,7 +375,7 @@ private:
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
-        else if constexpr (!IsDecimalNumber<T0> && !IsDecimalNumber<T1>)
+        else if constexpr (allow_arrays<T0, T1>)
         {
             using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
@@ -978,6 +983,7 @@ public:
         bool executed_with_nums = callOnBasicTypes<true, true, true, true>(left_id, right_id, call);
 
         if (!( executed_with_nums
+            || executeTyped<UInt128, UInt128>(cond_col, block, arguments, result, input_rows_count)
             || executeString(cond_col, block, arguments, result)
             || executeGenericArray(cond_col, block, arguments, result)
             || executeTuple(block, arguments, result, input_rows_count)))
