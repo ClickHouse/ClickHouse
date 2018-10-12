@@ -94,7 +94,8 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     {
         schema_name = params.get("schema");
         LOG_TRACE(log, "Will fetch info for table '" << schema_name + "." + table_name << "'");
-    } else
+    }
+    else
         LOG_TRACE(log, "Will fetch info for table '" << table_name << "'");
     LOG_TRACE(log, "Got connection str '" << connection_string << "'");
 
