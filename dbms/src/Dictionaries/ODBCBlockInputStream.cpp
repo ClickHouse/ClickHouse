@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -91,7 +92,16 @@ Block ODBCBlockInputStream::readImpl()
             const Poco::Dynamic::Var & value = row[idx];
 
             if (!value.isEmpty())
-                insertValue(*columns[idx], description.types[idx], value);
+            {
+                if (description.types[idx].second)
+                {
+                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    column_nullable.getNullMapData().emplace_back(0);
+                }
+                else
+                    insertValue(*columns[idx], description.types[idx].first, value);
+            }
             else
                 insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }

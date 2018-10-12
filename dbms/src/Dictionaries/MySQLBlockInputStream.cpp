@@ -4,6 +4,7 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
@@ -82,7 +83,16 @@ Block MySQLBlockInputStream::readImpl()
         {
             const auto value = row[idx];
             if (!value.isNull())
-                insertValue(*columns[idx], description.types[idx], value);
+            {
+                if (description.types[idx].second)
+                {
+                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    column_nullable.getNullMapData().emplace_back(0);
+                }
+                else
+                    insertValue(*columns[idx], description.types[idx].first, value);
+            }
             else
                 insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }
