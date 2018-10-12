@@ -741,7 +741,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             }
             else
             {
-                std::shared_ptr<LLVMContext> context = context = std::make_shared<LLVMContext>();
+                std::shared_ptr<LLVMContext> context = std::make_shared<LLVMContext>();
                 Stopwatch watch;
                 fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
                 size_t used_memory = context->compileAllFunctionsToNativeCode();
