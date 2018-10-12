@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <type_traits>
+
+#include <Core/Types.h>
+#include <Common/UInt128.h>
 
 
 namespace DB
@@ -146,6 +148,7 @@ template <typename A> struct ResultOfBitNot
   * UInt<x>,  Int<y>    ->   Int<max(x*2, y)>
   * Float<x>, [U]Int<y> -> Float<max(x, y*2)>
   * Decimal<x>, Decimal<y> -> Decimal<max(x,y)>
+  * UUID, UUID          -> UUID
   * UInt64 ,  Int<x>    -> Error
   * Float<x>, [U]Int64  -> Error
   */
@@ -168,7 +171,9 @@ struct ResultOfIf
                 ? max(sizeof(A), sizeof(B)) * 2
                 : max(sizeof(A), sizeof(B))>::Type;
 
-    using Type = std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>, ConstructedType,
+    using ConstructedWithUUID = std::conditional_t<std::is_same_v<A, UInt128> && std::is_same_v<B, UInt128>, A, ConstructedType>;
+
+    using Type = std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>, ConstructedWithUUID,
         std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>, std::conditional_t<(sizeof(A) > sizeof(B)), A, B>, Error>>;
 };
 
