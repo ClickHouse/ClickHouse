@@ -197,8 +197,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & path_, const String & database_name_, const String & name_,
     const ColumnsDescription & columns_,
     Context & context_,
-    const ASTPtr & primary_key_expr_ast_,
-    const ASTPtr & sort_expr_ast_,
+    const ASTPtr & primary_key_ast_,
+    const ASTPtr & sorting_key_ast_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
@@ -212,7 +212,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     replica_name(context.getMacros()->expand(replica_name_, database_name, table_name)),
     data(database_name, table_name,
         full_path, columns_,
-        context_, primary_key_expr_ast_, sort_expr_ast_, date_column_name, partition_expr_ast_,
+        context_, primary_key_ast_, sorting_key_ast_, date_column_name, partition_expr_ast_,
         sampling_expression_, merging_params_,
         settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -353,7 +353,7 @@ namespace
                 << "index granularity: " << data.index_granularity << "\n"
                 << "mode: " << static_cast<int>(data.merging_params.mode) << "\n"
                 << "sign column: " << data.merging_params.sign_column << "\n"
-                << "primary key: " << formattedAST(data.primary_key_expr_ast) << "\n";
+                << "primary key: " << formattedAST(data.primary_key_ast) << "\n";
 
             if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
             {
@@ -433,7 +433,7 @@ namespace
 
             in >> "\nprimary key: ";
             String read_primary_key;
-            String local_primary_key = formattedAST(data.primary_key_expr_ast);
+            String local_primary_key = formattedAST(data.primary_key_ast);
             in >> read_primary_key;
 
             /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
@@ -1610,7 +1610,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_key_expr_ast, false);
+        auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_key_ast, false);
         if (!transaction)
             continue;
 

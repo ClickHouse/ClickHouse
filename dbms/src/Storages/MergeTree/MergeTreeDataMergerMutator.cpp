@@ -335,12 +335,12 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & all_columns,
-    const ExpressionActionsPtr & sort_key_expressions,
+    const ExpressionActionsPtr & sorting_key_expr,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
 {
-    Names sort_key_columns_vec = sort_key_expressions->getRequiredColumns();
+    Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
 
     /// Force sign column for Collapsing mode
@@ -549,7 +549,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        all_columns, data.getSortExpression(),
+        all_columns, data.getSortingKeyExpression(),
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
@@ -632,12 +632,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (data.hasPrimaryKey())
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getSortExpression())));
+                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getSortingKeyExpression())));
         else
             src_streams.emplace_back(std::move(input));
     }
 
-    Names sort_columns = data.getSortColumns();
+    Names sort_columns = data.getSortingKeyColumns();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);

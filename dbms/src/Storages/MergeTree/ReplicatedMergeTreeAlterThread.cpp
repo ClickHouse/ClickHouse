@@ -95,7 +95,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     storage.setColumns(std::move(columns_in_zk));
 
                     /// Reinitialize primary key because primary key column types might have changed.
-                    storage.data.setPrimaryKey(storage.data.primary_key_expr_ast, storage.data.sort_expr_ast);
+                    storage.data.setPrimaryKey(storage.data.primary_key_ast, storage.data.sorting_key_ast);
 
                     LOG_INFO(log, "Applied changes to table.");
                 }
@@ -131,7 +131,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                     /// node /flags/force_alter.
                     auto transaction = storage.data.alterDataPart(
-                        part, columns_for_parts, storage.data.primary_key_expr_ast, false);
+                        part, columns_for_parts, storage.data.primary_key_ast, false);
 
                     if (!transaction)
                         continue;

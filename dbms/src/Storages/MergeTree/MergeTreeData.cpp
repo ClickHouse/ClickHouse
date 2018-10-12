@@ -86,8 +86,8 @@ MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
     const String & full_path_, const ColumnsDescription & columns_,
     Context & context_,
-    const ASTPtr & primary_key_expr_ast_,
-    const ASTPtr & sort_expr_ast_,
+    const ASTPtr & primary_key_ast_,
+    const ASTPtr & sorting_key_ast_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_,
@@ -114,7 +114,7 @@ MergeTreeData::MergeTreeData(
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    setPrimaryKey(primary_key_expr_ast_, sort_expr_ast_);
+    setPrimaryKey(primary_key_ast_, sorting_key_ast_);
 
     if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
         && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
@@ -209,41 +209,41 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_expr_ast, const ASTPtr & new_sort_expr_ast)
+void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_ast, const ASTPtr & new_sorting_key_ast)
 {
-    if (!new_sort_expr_ast)
+    if (!new_sorting_key_ast)
         throw Exception("Sorting key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-    if (!new_primary_key_expr_ast)
-        new_primary_key_expr_ast = new_sort_expr_ast->clone();
+    if (!new_primary_key_ast)
+        new_primary_key_ast = new_sorting_key_ast->clone();
 
-    if (new_sort_expr_ast.get() != sort_expr_ast.get()
+    if (new_sorting_key_ast.get() != sorting_key_ast.get()
         && merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
-        new_sort_expr_ast->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
+        new_sorting_key_ast->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
     }
 
-    size_t primary_key_size = new_primary_key_expr_ast->children.size();
-    size_t sort_key_size = new_sort_expr_ast->children.size();
-    if (primary_key_size > sort_key_size)
+    size_t primary_key_size = new_primary_key_ast->children.size();
+    size_t sorting_key_size = new_sorting_key_ast->children.size();
+    if (primary_key_size > sorting_key_size)
         throw Exception("Primary key must be a prefix of the sorting key, but its length: "
-            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sort_key_size),
+            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
             ErrorCodes::BAD_ARGUMENTS);
 
     Names new_primary_key_columns;
-    Names new_sort_key_columns;
+    Names new_sorting_key_columns;
 
-    for (size_t i = 0; i < sort_key_size; ++i)
+    for (size_t i = 0; i < sorting_key_size; ++i)
     {
-        String sort_key_column = new_sort_expr_ast->children[i]->getColumnName();
-        new_sort_key_columns.push_back(sort_key_column);
+        String sorting_key_column = new_sorting_key_ast->children[i]->getColumnName();
+        new_sorting_key_columns.push_back(sorting_key_column);
 
         if (i < primary_key_size)
         {
-            String pk_column = new_primary_key_expr_ast->children[i]->getColumnName();
-            if (pk_column != sort_key_column)
+            String pk_column = new_primary_key_ast->children[i]->getColumnName();
+            if (pk_column != sorting_key_column)
                 throw Exception("Primary key must be a prefix of the sorting key, but in position "
-                    + toString(i) + " its column is " + pk_column + ", not " + sort_key_column,
+                    + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
                     ErrorCodes::BAD_ARGUMENTS);
 
             new_primary_key_columns.push_back(pk_column);
@@ -252,31 +252,31 @@ void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_expr_ast, const ASTPtr 
 
     auto all_columns = getColumns().getAllPhysical();
 
-    auto new_sort_expr = ExpressionAnalyzer(new_sort_expr_ast, context, nullptr, all_columns)
+    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_ast, context, nullptr, all_columns)
         .getActions(false);
-    auto new_sort_expr_sample =
-        ExpressionAnalyzer(new_sort_expr_ast, context, nullptr, all_columns)
+    auto new_sorting_key_sample =
+        ExpressionAnalyzer(new_sorting_key_ast, context, nullptr, all_columns)
         .getActions(true)->getSampleBlock();
 
-    checkKeyExpression(*new_sort_expr, new_sort_expr_sample, "Sorting");
+    checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
 
-    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_ast, context, nullptr, all_columns)
+    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_ast, context, nullptr, all_columns)
         .getActions(false);
 
     Block new_primary_key_sample;
     DataTypes new_primary_key_data_types;
     for (size_t i = 0; i < primary_key_size; ++i)
     {
-        const auto & elem = new_sort_expr_sample.getByPosition(i);
+        const auto & elem = new_sorting_key_sample.getByPosition(i);
         new_primary_key_sample.insert(elem);
         new_primary_key_data_types.push_back(elem.type);
     }
 
-    sort_expr_ast = new_sort_expr_ast;
-    sort_columns = std::move(new_sort_key_columns);
-    sort_expr = std::move(new_sort_expr);
+    sorting_key_ast = new_sorting_key_ast;
+    sorting_key_columns = std::move(new_sorting_key_columns);
+    sorting_key_expr = std::move(new_sorting_key_expr);
 
-    primary_key_expr_ast = new_primary_key_expr_ast;
+    primary_key_ast = new_primary_key_ast;
     primary_key_columns = std::move(new_primary_key_columns);
     primary_key_expr = std::move(new_primary_key_expr);
     primary_key_sample = std::move(new_primary_key_sample);
@@ -908,18 +908,18 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
             columns_alter_forbidden.insert(col);
     }
 
-    if (sort_expr)
+    if (sorting_key_expr)
     {
-        for (const ExpressionAction & action : sort_expr->getActions())
+        for (const ExpressionAction & action : sorting_key_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const String & col : sort_expr->getRequiredColumns())
+        for (const String & col : sorting_key_expr->getRequiredColumns())
             columns_alter_metadata_only.insert(col);
 
         /// We don't process sampling_expression separately because it must be among the primary key columns
-        /// and we don't process primary_key_expr separately because it is a prefix of sort_expr.
+        /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
     }
 
     if (!merging_params.sign_column.empty())
@@ -1168,7 +1168,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
     /// TODO: Check the order of secondary sorting key columns.
-    if (new_primary_key.get() != primary_key_expr_ast.get())
+    if (new_primary_key.get() != primary_key_ast.get())
     {
         ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, new_columns).getActions(true);
         Block new_primary_key_sample = new_primary_expr->getSampleBlock();
@@ -2421,7 +2421,7 @@ MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(sort_expr_ast) != query_to_string(src_data->sort_expr_ast))
+    if (query_to_string(sorting_key_ast) != query_to_string(src_data->sorting_key_ast))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
     if (query_to_string(partition_expr_ast) != query_to_string(src_data->partition_expr_ast))

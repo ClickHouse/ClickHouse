@@ -96,7 +96,7 @@ public:
 
     ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
 
-    ASTPtr getPrimaryExpression() const override { return data.primary_key_expr_ast; }
+    ASTPtr getPrimaryExpression() const override { return data.primary_key_ast; }
 
 private:
     String path;
@@ -157,7 +157,7 @@ protected:
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *
-      * primary_expr_ast      - expression for sorting;
+      * primary_key_ast      - expression for sorting;
       * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
           otherwise, partition_expr_ast is used as the partitioning expression;
       */
@@ -168,8 +168,8 @@ protected:
         const ColumnsDescription & columns_,
         bool attach,
         Context & context_,
-        const ASTPtr & primary_key_expr_ast_,
-        const ASTPtr & sort_expr_ast_,
+        const ASTPtr & primary_key_ast_,
+        const ASTPtr & sorting_key_ast_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.

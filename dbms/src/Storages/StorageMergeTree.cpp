@@ -46,8 +46,8 @@ StorageMergeTree::StorageMergeTree(
     const ColumnsDescription & columns_,
     bool attach,
     Context & context_,
-    const ASTPtr & primary_key_expr_ast_,
-    const ASTPtr & sort_expr_ast_,
+    const ASTPtr & primary_key_ast_,
+    const ASTPtr & sorting_key_ast_,
     const String & date_column_name,
     const ASTPtr & partition_expr_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
@@ -58,7 +58,7 @@ StorageMergeTree::StorageMergeTree(
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
-         context_, primary_key_expr_ast_, sort_expr_ast_, date_column_name, partition_expr_ast_,
+         context_, primary_key_ast_, sorting_key_ast_, date_column_name, partition_expr_ast_,
          sampling_expression_, merging_params_,
          settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()),
@@ -202,8 +202,8 @@ void StorageMergeTree::alter(
 
     bool primary_key_is_modified = false;
 
-    ASTPtr new_primary_key_ast = data.primary_key_expr_ast;
-    ASTPtr new_sort_expr_ast = data.sort_expr_ast;
+    ASTPtr new_primary_key_ast = data.primary_key_ast;
+    ASTPtr new_sorting_key_ast = data.sorting_key_ast;
 
     for (const AlterCommand & param : params)
     {
@@ -211,7 +211,7 @@ void StorageMergeTree::alter(
         {
             primary_key_is_modified = true;
             new_primary_key_ast = param.primary_key;
-            new_sort_expr_ast = param.primary_key->clone();
+            new_sorting_key_ast = param.primary_key->clone();
         }
     }
 
@@ -249,7 +249,7 @@ void StorageMergeTree::alter(
     setColumns(std::move(new_columns));
 
     /// Reinitialize primary key because primary key column types might have changed.
-    data.setPrimaryKey(new_primary_key_ast, new_sort_expr_ast);
+    data.setPrimaryKey(new_primary_key_ast, new_sorting_key_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -713,7 +713,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_key_expr_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_key_ast, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
