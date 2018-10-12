@@ -28,10 +28,11 @@ struct ExternalResultDescription
         UUID
     };
 
-    Block sample_block;
+    /// For Nullable source types, these types correspond to their nested types.
     std::vector<ValueType> types;
-    std::vector<std::string> names;
-    Columns sample_columns;
+
+    /// May contain Nullable types.
+    Block sample_block;
 
     void init(const Block & sample_block_);
 };
