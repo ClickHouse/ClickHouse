@@ -2,7 +2,7 @@
 
 Basically ClickHouse uses "documentation as code" approach, so you can edit Markdown files in this folder from GitHub web interface or fork ClickHouse repository, edit, commit, push and open pull request.
 
-At the moment documentation is bilingual in English and Russian, so it's better to try keeping languages in sync if you can, but it's not strictly required as there are people watching over this. If you add new article, you should also add it to `toc_{en,ru}.yaml` file with pages index.
+At the moment documentation is bilingual in English and Russian, so it's better to try keeping languages in sync if you can, but it's not strictly required as there are people watching over this. If you add new article, you should also add it to `toc_{en,ru,zh,fa}.yaml` files with pages index.
 
 Master branch is then asynchronously published to ClickHouse official website:
 
@@ -30,6 +30,14 @@ ClickHouse can be directly used by all sorts of either analysts and engineers, s
 * Debatable topics like politics, religion, racial and so on are strictly prohibited in either documentation, examples, comments and code.
 * People tend to get temporary stuck with some specific words or phrases, usually auxiliary, for a shord period of time. So they get repeated over and over in small part of content, which looks weird when reading. It is easy to fix this by reading your text again before publishing, also you can use this opportunity to fix mistypes and lost punctuation.
 * Try to avoid naming the reader in text, it is not strictly prohibited though.
+
+# How to start translation to new language
+
+1. Create new docs subfolder named with [ISO-639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes)
+2. Add Markdown files with some translation, mirroring the folder structure of other languages
+3. Commit and open pull request with new content
+
+Some additional configuration has to be done to actually make new language live on official website, but it's not automated/documented yet, so we'll do it on our own after pull request with content is merged.
 
 # Quick cheatsheet on used Markdown dialect
 
