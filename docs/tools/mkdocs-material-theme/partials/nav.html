@@ -29,6 +29,13 @@
         {% endif %}
       {% endif %}
     </li>
+    <li class="md-nav__item md-nav__item--active">
+      {% if config.theme.language == 'ru' %}
+          <a href="{{ base_url }}/single/clickhouse_{{ config.theme.language }}.pdf" class="md-nav__link md-nav__link--active">PDF версия</a>
+      {% else %}
+          <a href="{{ base_url }}/single/clickhouse_{{ config.theme.language }}.pdf" class="md-nav__link md-nav__link--active">PDF version</a>
+      {% endif %}
+    </li>
     {% if config.repo_url %}
     <li class="md-nav__item md-nav__item--active">
       <a href="{{ config.repo_url }}" rel="external nofollow" target="_blank" class="md-nav__link">
