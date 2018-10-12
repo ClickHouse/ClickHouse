@@ -99,7 +99,7 @@ RangeHashedDictionary::RangeHashedDictionary(const RangeHashedDictionary & other
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 void RangeHashedDictionary::get##TYPE(\
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<RangeStorageType> & dates,\
-    PaddedPODArray<TYPE> & out) const\
+    ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE);\
     getItems<TYPE>(attribute, ids, dates, out);\
@@ -115,6 +115,9 @@ DECLARE_MULTIPLE_GETTER(Int32)
 DECLARE_MULTIPLE_GETTER(Int64)
 DECLARE_MULTIPLE_GETTER(Float32)
 DECLARE_MULTIPLE_GETTER(Float64)
+DECLARE_MULTIPLE_GETTER(Decimal32)
+DECLARE_MULTIPLE_GETTER(Decimal64)
+DECLARE_MULTIPLE_GETTER(Decimal128)
 #undef DECLARE_MULTIPLE_GETTER
 
 void RangeHashedDictionary::getString(
@@ -239,6 +242,11 @@ void RangeHashedDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::Int64: addAttributeSize<Int64>(attribute); break;
             case AttributeUnderlyingType::Float32: addAttributeSize<Float32>(attribute); break;
             case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
+
+            case AttributeUnderlyingType::Decimal32: addAttributeSize<Decimal32>(attribute); break;
+            case AttributeUnderlyingType::Decimal64: addAttributeSize<Decimal64>(attribute); break;
+            case AttributeUnderlyingType::Decimal128: addAttributeSize<Decimal128>(attribute); break;
+
             case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
@@ -274,6 +282,11 @@ RangeHashedDictionary::Attribute RangeHashedDictionary::createAttributeWithType(
         case AttributeUnderlyingType::Int64: createAttributeImpl<Int64>(attr, null_value); break;
         case AttributeUnderlyingType::Float32: createAttributeImpl<Float32>(attr, null_value); break;
         case AttributeUnderlyingType::Float64: createAttributeImpl<Float64>(attr, null_value); break;
+
+        case AttributeUnderlyingType::Decimal32: createAttributeImpl<Decimal32>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal64: createAttributeImpl<Decimal64>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal128: createAttributeImpl<Decimal128>(attr, null_value); break;
+
         case AttributeUnderlyingType::String:
         {
             std::get<String>(attr.null_values) = null_value.get<String>();
@@ -309,6 +322,9 @@ void RangeHashedDictionary::getItems(
     DISPATCH(Int64)
     DISPATCH(Float32)
     DISPATCH(Float64)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
 #undef DISPATCH
     else
         throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
@@ -381,6 +397,17 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
         case AttributeUnderlyingType::Int64: setAttributeValueImpl<Int64>(attribute, id, range, value.get<Int64>()); break;
         case AttributeUnderlyingType::Float32: setAttributeValueImpl<Float32>(attribute, id, range, value.get<Float64>()); break;
         case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, range, value.get<Float64>()); break;
+
+        case AttributeUnderlyingType::Decimal32:
+            setAttributeValueImpl<Decimal32>(attribute, id, range, value.get<Decimal32>());
+            break;
+        case AttributeUnderlyingType::Decimal64:
+            setAttributeValueImpl<Decimal64>(attribute, id, range, value.get<Decimal64>());
+            break;
+        case AttributeUnderlyingType::Decimal128:
+            setAttributeValueImpl<Decimal128>(attribute, id, range, value.get<Decimal128>());
+            break;
+
         case AttributeUnderlyingType::String:
         {
             auto & map = *std::get<Ptr<StringRef>>(attribute.maps);
@@ -449,6 +476,10 @@ void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids,
         case AttributeUnderlyingType::Float32: getIdsAndDates<Float32>(attribute, ids, start_dates, end_dates); break;
         case AttributeUnderlyingType::Float64: getIdsAndDates<Float64>(attribute, ids, start_dates, end_dates); break;
         case AttributeUnderlyingType::String: getIdsAndDates<StringRef>(attribute, ids, start_dates, end_dates); break;
+
+        case AttributeUnderlyingType::Decimal32: getIdsAndDates<Decimal32>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Decimal64: getIdsAndDates<Decimal64>(attribute, ids, start_dates, end_dates); break;
+        case AttributeUnderlyingType::Decimal128: getIdsAndDates<Decimal128>(attribute, ids, start_dates, end_dates); break;
     }
 }
 
@@ -512,7 +543,7 @@ struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
 
 BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
-    using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+    using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
     RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
     callable.dict = this;

@@ -105,6 +105,7 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual bool isDefaultAt(size_t n) const { return get64(n) == 0; }
     virtual bool isNullAt(size_t /*n*/) const { return false; }
 
     /** If column is numeric, return value of n-th element, casted to bool.

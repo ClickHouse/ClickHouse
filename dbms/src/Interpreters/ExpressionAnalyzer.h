@@ -4,7 +4,6 @@
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/evaluateQualified.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Parsers/StringRange.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -187,6 +186,8 @@ public:
 
     bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
+    bool hasGlobalSubqueries() { return has_global_subqueries; }
+
 private:
     ASTPtr query;
     ASTSelectQuery * select_query;
@@ -217,6 +218,7 @@ private:
 
     /// Do I need to prepare for execution global subqueries when analyzing the query.
     bool do_global;
+    bool has_global_subqueries = false;
 
     SubqueriesForSets subqueries_for_sets;
 
@@ -420,7 +422,6 @@ private:
       *  only one ("main") table is supported. Ambiguity is not detected or resolved.
       */
     void translateQualifiedNames();
-    void translateQualifiedNamesImpl(ASTPtr & node, const std::vector<DatabaseAndTableWithAlias> & tables);
 
     /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.

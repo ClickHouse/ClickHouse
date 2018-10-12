@@ -74,7 +74,7 @@ struct Settings
     M(SettingFloat, totals_auto_threshold, 0.5, "The threshold for totals_mode = 'auto'.") \
     \
     M(SettingBool, compile, false, "Whether query compilation is enabled.") \
-    M(SettingBool, compile_expressions, true, "Compile some scalar functions and operators to native code.") \
+    M(SettingBool, compile_expressions, false, "Compile some scalar functions and operators to native code.") \
     M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
     M(SettingUInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.") \
     M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.") \
@@ -282,7 +282,6 @@ struct Settings
     M(SettingUInt64, low_cardinality_max_dictionary_size, 8192, "Maximum size (in rows) of shared global dictionary for LowCardinality type.") \
     M(SettingBool, low_cardinality_use_single_dictionary_for_part, false, "LowCardinality type serialization setting. If is true, than will use additional keys when global dictionary overflows. Otherwise, will create several shared dictionaries.") \
     M(SettingBool, allow_experimental_low_cardinality_type, false, "Allows to create table with LowCardinality types.") \
-    M(SettingBool, allow_experimental_decimal_type, false, "Enables Decimal data type.") \
     M(SettingBool, decimal_check_overflow, true, "Check overflow of decimal arithmetic/comparison operations") \
     \
     M(SettingBool, prefer_localhost_replica, 1, "1 - always send query to local replica, if it exists. 0 - choose replica to send query between local and remote ones according to load_balancing") \
@@ -292,6 +291,7 @@ struct Settings
     M(SettingBool, calculate_text_stack_trace, 1, "Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when huge amount of wrong queries are executed. In normal cases you should not disable this option.") \
     M(SettingBool, allow_ddl, true, "If it is set to true, then a user is allowed to executed DDL queries.") \
     M(SettingBool, parallel_view_processing, false, "Enables pushing to attached views concurrently instead of sequentially.") \
+    M(SettingBool, enable_debug_queries, false, "Enables debug queries such as AST.") \
 
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
