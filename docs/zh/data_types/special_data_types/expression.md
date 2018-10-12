@@ -1,4 +1,4 @@
 # Expression
 
-Used for representing lambda expressions in high-order functions.
+用于在高阶函数中表示lambda表达式。
 

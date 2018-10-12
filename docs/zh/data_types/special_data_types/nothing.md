@@ -2,11 +2,11 @@
 
 # Nothing
 
-The only purpose of this data type is to represent cases where value is not expected. So you can't create a `Nothing` type value.
+此数据类型的唯一目的是表示不期望值的情况。 所以你不能创建一个`Nothing`类型的值。
 
-For example, literal [NULL](../../query_language/syntax.md#null-literal) has type of `Nullable(Nothing)`. See more about [Nullable](../../data_types/nullable.md#data_type-nullable).
+例如，文本 [NULL](../../query_language/syntax.md#null-literal) 的类型为 `Nullable(Nothing)`。详情请见 [Nullable](../../data_types/nullable.md#data_type-nullable)。
 
-The `Nothing` type can also used to denote empty arrays:
+`Nothing` 类型也可以用来表示空数组：
 
 ```bash
 :) SELECT toTypeName(array())

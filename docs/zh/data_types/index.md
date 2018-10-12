@@ -1,8 +1,8 @@
 <a name="data_types"></a>
 
-# Data Types
+# 数据类型
 
-ClickHouse can store various types of data in table cells.
+ClickHouse可以在表格中存储各种类型的数据。
 
-This section describes the supported data types and special considerations when using and/or implementing them, if any.
+本节描述了支持的数据类型，以及使用或者实现它们时（如果有的话）的特殊注意事项。
 

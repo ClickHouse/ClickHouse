@@ -1,4 +1,4 @@
 # Special Data Types
 
-Special data type values can't be saved to a table or output in results, but are used as the intermediate result of running a query.
+特殊数据类型值无法保存到表或结果输出，但可用作运行查询的中间结果。
 

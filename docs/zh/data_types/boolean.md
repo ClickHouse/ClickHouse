@@ -1,4 +1,4 @@
 # Boolean Values
 
-There isn't a separate type for boolean values. They use the UInt8 type, restricted to the values 0 or 1.
+布尔值没有单独的类型。它们使用UInt8类型，值限制为0或1。
 

@@ -1,4 +1,4 @@
 # Set
 
-Used for the right half of an IN expression.
+用于IN表达式的右半部分。
 

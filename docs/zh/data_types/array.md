@@ -2,25 +2,25 @@
 
 # Array(T)
 
-Array of `T`-type items.
+由`T`类型元素组成的数组。
 
-`T` can be anything, including an array. Use multi-dimensional arrays with caution. ClickHouse has limited support for multi-dimensional arrays. For example, they can't be stored in `MergeTree` tables.
+`T`可以是任意元素，包含数组。谨慎使用多维数组。ClickHouse对多维数组的支持有限。例如，它们不能存储在`MergeTree`表中。
 
-## Creating an array
+## 创建数组
 
-You can use a function to create an array:
+您可以使用一个函数创建数组：
 
 ```
 array(T)
 ```
 
-You can also use square brackets.
+您也可以使用方括号：
 
 ```
 []
 ```
 
-Example of creating an array:
+创建数组示例：
 
 ```
 :) SELECT array(1, 2) AS x, toTypeName(x)
@@ -48,13 +48,13 @@ SELECT
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-## Working with data types
+## 使用数据类型
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or  [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md#data_type-nullable).
+当动态创建数组时，ClickHouse自动将参数类型定义为可以存储所有列出的参数的最窄的数据类型。如果存在任何 [NULL](../query_language/syntax.md#null-literal) 或者  [Nullable](nullable.md#data_type-nullable) 类型参数，那么数组元素的类型是 [Nullable](nullable.md#data_type-nullable)。
 
-If ClickHouse couldn't determine the data type, it will generate an exception. For instance, this will happen when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
+如果ClickHouse无法确定数据类型，它将产生异常。当尝试同时创建一个包含字符串和数字的数组时会发生这种情况 (`SELECT array(1, 'a')`)。
 
-Examples of automatic data type detection:
+自动数据类型检测示例：
 
 ```
 :) SELECT array(1, 2, NULL) AS x, toTypeName(x)
@@ -70,7 +70,7 @@ SELECT
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-If you try to create an array of incompatible data types, ClickHouse throws an exception:
+如果您尝试创建不兼容的数据类型数组，ClickHouse将引发异常：
 
 ```
 :) SELECT array(1, 'a')
