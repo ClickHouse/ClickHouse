@@ -47,9 +47,9 @@ public:
       */
     virtual Ptr convertToFullColumnIfConst() const { return {}; }
 
-    /// If column isn't ColumnWithDictionary, return itself.
-    /// If column is ColumnWithDictionary, transforms is to full column.
-    virtual Ptr convertToFullColumnIfWithDictionary() const { return getPtr(); }
+    /// If column isn't ColumnLowCardinality, return itself.
+    /// If column is ColumnLowCardinality, transforms is to full column.
+    virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
@@ -105,6 +105,7 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual bool isDefaultAt(size_t n) const { return get64(n) == 0; }
     virtual bool isNullAt(size_t /*n*/) const { return false; }
 
     /** If column is numeric, return value of n-th element, casted to bool.
@@ -333,7 +334,7 @@ public:
     /// Can be inside ColumnNullable.
     virtual bool canBeInsideNullable() const { return false; }
 
-    virtual bool withDictionary() const { return false; }
+    virtual bool lowCardinality() const { return false; }
 
 
     virtual ~IColumn() {}

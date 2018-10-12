@@ -41,8 +41,12 @@ private:
     using DictionaryGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &,
                              const PaddedPODArray<Int64> &, PaddedPODArray<Type> &) const;
 
-    template <typename AttributeType>
-    ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
+    template <typename Type>
+    using DictionaryDecimalGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &,
+                             const PaddedPODArray<Int64> &, DecimalPaddedPODArray<Type> &) const;
+
+    template <typename AttributeType, typename Getter>
+    ColumnPtr getColumnFromAttribute(Getter getter,
                                      const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<Int64> & dates,
                                      const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const;
     ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<Int64> & dates,
@@ -101,14 +105,23 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getBlock(
 }
 
 template <typename DictionaryType, typename RangeType, typename Key>
-template <typename AttributeType>
+template <typename AttributeType, typename Getter>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getColumnFromAttribute(
-    DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key> & ids_to_fill,
+    Getter getter, const PaddedPODArray<Key> & ids_to_fill,
     const PaddedPODArray<Int64> & dates, const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const
 {
-    auto column_vector = ColumnVector<AttributeType>::create(ids_to_fill.size());
-    (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
-    return column_vector;
+    if constexpr (IsDecimalNumber<AttributeType>)
+    {
+        auto column = ColumnDecimal<AttributeType>::create(ids_to_fill.size(), 0); /// NOTE: There's wrong scale here, but it's unused.
+        (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column->getData());
+        return column;
+    }
+    else
+    {
+        auto column_vector = ColumnVector<AttributeType>::create(ids_to_fill.size());
+        (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
+        return column_vector;
+    }
 }
 
 template <typename DictionaryType, typename RangeType, typename Key>
@@ -224,11 +237,20 @@ Block RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::fillBlock
             case AttributeUnderlyingType::Float64:
                 GET_COLUMN_FORM_ATTRIBUTE(Float64);
                 break;
+            case AttributeUnderlyingType::Decimal32:
+                GET_COLUMN_FORM_ATTRIBUTE(Decimal32);
+                break;
+            case AttributeUnderlyingType::Decimal64:
+                GET_COLUMN_FORM_ATTRIBUTE(Decimal64);
+                break;
+            case AttributeUnderlyingType::Decimal128:
+                GET_COLUMN_FORM_ATTRIBUTE(Decimal128);
+                break;
             case AttributeUnderlyingType::String:
                 column = getColumnFromAttributeString(ids_to_fill, date_key, attribute, *dictionary);
                 break;
             }
-
+#undef GET_COLUMN_FORM_ATTRIBUTE
             columns.emplace_back(column, attribute.type, attribute.name);
         }
     }

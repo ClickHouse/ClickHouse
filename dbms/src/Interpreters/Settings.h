@@ -282,7 +282,6 @@ struct Settings
     M(SettingUInt64, low_cardinality_max_dictionary_size, 8192, "Maximum size (in rows) of shared global dictionary for LowCardinality type.") \
     M(SettingBool, low_cardinality_use_single_dictionary_for_part, false, "LowCardinality type serialization setting. If is true, than will use additional keys when global dictionary overflows. Otherwise, will create several shared dictionaries.") \
     M(SettingBool, allow_experimental_low_cardinality_type, false, "Allows to create table with LowCardinality types.") \
-    M(SettingBool, allow_experimental_decimal_type, false, "Enables Decimal data type.") \
     M(SettingBool, decimal_check_overflow, true, "Check overflow of decimal arithmetic/comparison operations") \
     \
     M(SettingBool, prefer_localhost_replica, 1, "1 - always send query to local replica, if it exists. 0 - choose replica to send query between local and remote ones according to load_balancing") \
@@ -291,6 +290,8 @@ struct Settings
     M(SettingUInt64, http_max_multipart_form_data_size, 1024 * 1024 * 1024, "Limit on size of multipart/form-data content. This setting cannot be parsed from URL parameters and should be set in user profile. Note that content is parsed and external tables are created in memory before start of query execution. And this is the only limit that has effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).") \
     M(SettingBool, calculate_text_stack_trace, 1, "Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when huge amount of wrong queries are executed. In normal cases you should not disable this option.") \
     M(SettingBool, allow_ddl, true, "If it is set to true, then a user is allowed to executed DDL queries.") \
+    M(SettingBool, parallel_view_processing, false, "Enables pushing to attached views concurrently instead of sequentially.") \
+    M(SettingBool, enable_debug_queries, false, "Enables debug queries such as AST.") \
 
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
