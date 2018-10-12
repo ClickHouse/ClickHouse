@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -61,15 +62,20 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
-                'opposite_lang': 'ru' if lang == 'en' else 'en',
                 'now': datetime.datetime.now() # TODO better way to avoid caching
             }
+        }
 
+        site_names = {
+            'en': 'ClickHouse Documentation',
+            'ru': 'Документация ClickHouse',
+            'zh': 'ClickHouse文档',
+            'fa': 'مستندات ClickHouse'
         }
 
         cfg = config.load_config(
             config_file=config_path,
-            site_name='ClickHouse Documentation' if lang == 'en' or lang == 'fa' else 'Документация ClickHouse',
+            site_name=site_names.get(lang, site_names['en']),
             site_url='https://clickhouse.yandex/docs/%s/' % lang,
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=os.path.join(args.output_dir, lang),
@@ -127,8 +133,7 @@ def build_single_page_version(lang, args, cfg):
                     'docs_dir': docs_temp_lang,
                     'site_dir': site_temp,
                     'extra': {
-                        'single_page': True,
-                        'opposite_lang': 'en' if lang == 'ru' else 'ru'
+                        'single_page': True
                     },
                     'nav': [
                         {cfg.data.get('site_name'): 'single.md'}
@@ -146,6 +151,12 @@ def build_single_page_version(lang, args, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
+
+                single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
+                single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                logging.debug(' '.join(create_pdf_command))
+                subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
 
 def build_redirects(args):
@@ -171,7 +182,7 @@ def build(args):
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,ru,fa')
+    arg_parser.add_argument('--lang', default='en,ru,zh,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--output-dir', default='build')

@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -23,7 +24,7 @@ enum
     NESTED_FIELD = size_t(-2)
 };
 
-} // unnamed namespace
+}
 
 
 JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
@@ -35,7 +36,7 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const String& colname = columnName(i);
+        const String & colname = columnName(i);
         name_map[colname] = i;        /// NOTE You could place names more cache-locally.
         if (format_settings.import_nested_json)
         {
@@ -47,39 +48,60 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
             }
         }
     }
+
+    prev_positions.assign(num_columns, name_map.end());
 }
 
-const String& JSONEachRowRowInputStream::columnName(size_t i) const
+const String & JSONEachRowRowInputStream::columnName(size_t i) const
 {
-    return header.safeGetByPosition(i).name;
+    return header.getByPosition(i).name;
 }
 
-size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
+inline size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, size_t key_index)
 {
-    /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
+    /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    const auto it = name_map.find(name);
-    return name_map.end() == it ? UNKNOWN_FIELD : it->second;
+    if (prev_positions.size() > key_index
+        && prev_positions[key_index] != name_map.end()
+        && name == prev_positions[key_index]->first)
+    {
+        return prev_positions[key_index]->second;
+    }
+    else
+    {
+        const auto it = name_map.find(name);
+
+        if (name_map.end() != it)
+        {
+            if (key_index < prev_positions.size())
+                prev_positions[key_index] = it;
+
+            return it->second;
+        }
+        else
+            return UNKNOWN_FIELD;
+    }
 }
 
 /** Read the field name and convert it to column name
   *  (taking into account the current nested name prefix)
+  * Resulting StringRef is valid only before next read from buf.
   */
 StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 {
     // This is just an optimization: try to avoid copying the name into current_column_name
+
     if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
     {
-        const char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
         if (next_pos != buf.buffer().end() && *next_pos != '\\')
         {
             /// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
             assertChar('"', buf);
             StringRef res(buf.position(), next_pos - buf.position());
-            buf.position() += next_pos - buf.position();
-            assertChar('"', buf);
+            buf.position() = next_pos + 1;
             return res;
         }
     }
@@ -90,7 +112,7 @@ StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 }
 
 
-static void skipColonDelimeter(ReadBuffer & istr)
+static inline void skipColonDelimeter(ReadBuffer & istr)
 {
     skipWhitespaceIfAny(istr);
     assertChar(':', istr);
@@ -123,7 +145,7 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
     read_columns[index] = true;
 }
 
-bool JSONEachRowRowInputStream::advanceToNextKey(size_t key_index)
+inline bool JSONEachRowRowInputStream::advanceToNextKey(size_t key_index)
 {
     skipWhitespaceIfAny(istr);
 
@@ -150,16 +172,31 @@ void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(istr);
+        const size_t column_index = columnIndex(name_ref, key_index);
 
-        skipColonDelimeter(istr);
+        if (unlikely(ssize_t(column_index) < 0))
+        {
+            /// name_ref may point directly to the input buffer
+            /// and input buffer may be filled with new data on next read
+            /// If we want to use name_ref after another reads from buffer, we must copy it to temporary string.
 
-        const size_t column_index = columnIndex(name_ref);
-        if (column_index == UNKNOWN_FIELD)
-            skipUnknownField(name_ref);
-        else if (column_index == NESTED_FIELD)
-            readNestedData(name_ref.toString(), columns);
+            current_column_name.assign(name_ref.data, name_ref.size);
+            name_ref = StringRef(current_column_name);
+
+            skipColonDelimeter(istr);
+
+            if (column_index == UNKNOWN_FIELD)
+                skipUnknownField(name_ref);
+            else if (column_index == NESTED_FIELD)
+                readNestedData(name_ref.toString(), columns);
+            else
+                throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
+        }
         else
+        {
+            skipColonDelimeter(istr);
             readField(column_index, columns);
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -63,11 +64,19 @@ private:
     template <typename Type>
     using DictionaryGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &, PaddedPODArray<Type> &) const;
 
+    template <typename Type>
+    using DictionaryDecimalGetter =
+        void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &, DecimalPaddedPODArray<Type> &) const;
+
     using DictionaryStringGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &, ColumnString *) const;
 
     // for complex complex key dictionaries
     template <typename Type>
     using GetterByKey = void (DictionaryType::*)(const std::string &, const Columns &, const DataTypes &, PaddedPODArray<Type> & out) const;
+
+    template <typename Type>
+    using DecimalGetterByKey =
+        void (DictionaryType::*)(const std::string &, const Columns &, const DataTypes &, DecimalPaddedPODArray<Type> & out) const;
 
     using StringGetterByKey = void (DictionaryType::*)(const std::string &, const Columns &, const DataTypes &, ColumnString * out) const;
 
@@ -75,6 +84,11 @@ private:
     // for single key dictionaries
     template <typename Type, typename Container>
     void callGetter(DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
+                    const Columns & keys, const DataTypes & data_types,
+                    Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+
+    template <typename Type, typename Container>
+    void callGetter(DictionaryDecimalGetter<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
@@ -89,12 +103,17 @@ private:
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
+    template <typename Type, typename Container>
+    void callGetter(DecimalGetterByKey<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
+                    const Columns & keys, const DataTypes & data_types,
+                    Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+
     template <typename Container>
     void callGetter(StringGetterByKey getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
-    template <template <typename> class Getter, typename StringGetter>
+    template <template <typename> class Getter, template <typename> class DecimalGetter, typename StringGetter>
     Block fillBlock(const PaddedPODArray<Key> & ids_to_fill, const Columns & keys,
                     const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
@@ -147,7 +166,8 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)),
       column_names(column_names), ids(std::move(ids)),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
-      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<DictionaryGetter, DictionaryStringGetter>),
+      fill_block_function(
+          &DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<DictionaryGetter, DictionaryDecimalGetter, DictionaryStringGetter>),
       key_type(DictionaryKeyType::Id)
 {
 }
@@ -159,7 +179,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)), column_names(column_names),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
-      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
+      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, DecimalGetterByKey, StringGetterByKey>),
       key_type(DictionaryKeyType::ComplexKey)
 {
     const DictionaryStructure & dictionaty_structure = dictionary->getStructure();
@@ -175,7 +195,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     : DictionaryBlockInputStreamBase(data_columns.front()->size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)), column_names(column_names),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
-      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
+      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, DecimalGetterByKey, StringGetterByKey>),
       data_columns(data_columns),
       get_key_columns_function(get_key_columns_function), get_view_columns_function(get_view_columns_function),
       key_type(DictionaryKeyType::Callback)
@@ -244,6 +264,16 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 }
 
 template <typename DictionaryType, typename Key>
+template <typename Type, typename Container>
+void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
+    DictionaryDecimalGetter<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
+    const Columns & /*keys*/, const DataTypes & /*data_types*/,
+    Container & container, const DictionaryAttribute & attribute, const DictionaryType & dict) const
+{
+    (dict.*getter)(attribute.name, ids_to_fill, container);
+}
+
+template <typename DictionaryType, typename Key>
 template <typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     DictionaryStringGetter getter, const PaddedPODArray<Key> & ids_to_fill,
@@ -264,6 +294,16 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 }
 
 template <typename DictionaryType, typename Key>
+template <typename Type, typename Container>
+void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
+    DecimalGetterByKey<Type> getter, const PaddedPODArray<Key> & /*ids_to_fill*/,
+    const Columns & keys, const DataTypes & data_types,
+    Container & container, const DictionaryAttribute & attribute, const DictionaryType & dict) const
+{
+    (dict.*getter)(attribute.name, keys, data_types, container);
+}
+
+template <typename DictionaryType, typename Key>
 template <typename Container>
 void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     StringGetterByKey getter, const PaddedPODArray<Key> & /*ids_to_fill*/,
@@ -275,7 +315,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
 
 
 template <typename DictionaryType, typename Key>
-template <template <typename> class Getter, typename StringGetter>
+template <template <typename> class Getter, template <typename> class DecimalGetter, typename StringGetter>
 Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     const PaddedPODArray<Key> & ids_to_fill, const Columns & keys, const DataTypes & types, ColumnsWithTypeAndName && view) const
 {
@@ -343,6 +383,24 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::Float64:
                 GET_COLUMN_FORM_ATTRIBUTE(Float64);
                 break;
+            case AttributeUnderlyingType::Decimal32:
+            {
+                column = getColumnFromAttribute<Decimal32, DecimalGetter<Decimal32>>(
+                    &DictionaryType::getDecimal32, ids_to_fill, keys, data_types, attribute, *dictionary);
+                break;
+            }
+            case AttributeUnderlyingType::Decimal64:
+            {
+                column = getColumnFromAttribute<Decimal64, DecimalGetter<Decimal64>>(
+                    &DictionaryType::getDecimal64, ids_to_fill, keys, data_types, attribute, *dictionary);
+                break;
+            }
+            case AttributeUnderlyingType::Decimal128:
+            {
+                column = getColumnFromAttribute<Decimal128, DecimalGetter<Decimal128>>(
+                    &DictionaryType::getDecimal128, ids_to_fill, keys, data_types, attribute, *dictionary);
+                break;
+            }
             case AttributeUnderlyingType::String:
             {
                 column = getColumnFromStringAttribute<StringGetter>(
@@ -350,7 +408,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
                 break;
             }
             }
-
+#undef GET_COLUMN_FORM_ATTRIBUTE
             block_columns.emplace_back(column, attribute.type, attribute.name);
         }
     }
@@ -365,12 +423,24 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribut
     const Columns & keys, const DataTypes & data_types,
     const DictionaryAttribute & attribute, const DictionaryType & dict) const
 {
-    auto size = ids_to_fill.size();
-    if (!keys.empty())
-        size = keys.front()->size();
-    auto column_vector = ColumnVector<AttributeType>::create(size);
-    callGetter(getter, ids_to_fill, keys, data_types, column_vector->getData(), attribute, dict);
-    return column_vector;
+    if constexpr (IsDecimalNumber<AttributeType>)
+    {
+        auto size = ids_to_fill.size();
+        if (!keys.empty())
+            size = keys.front()->size();
+        auto column = ColumnDecimal<AttributeType>::create(size, 0); /// NOTE: There's wrong scale here, but it's unused.
+        callGetter(getter, ids_to_fill, keys, data_types, column->getData(), attribute, dict);
+        return column;
+    }
+    else
+    {
+        auto size = ids_to_fill.size();
+        if (!keys.empty())
+            size = keys.front()->size();
+        auto column_vector = ColumnVector<AttributeType>::create(size);
+        callGetter(getter, ids_to_fill, keys, data_types, column_vector->getData(), attribute, dict);
+        return column_vector;
+    }
 }
 
 
