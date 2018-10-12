@@ -61,10 +61,8 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
-                'opposite_lang': 'ru' if lang == 'en' else 'en',
                 'now': datetime.datetime.now() # TODO better way to avoid caching
             }
-
         }
 
         site_names = {
@@ -134,8 +132,7 @@ def build_single_page_version(lang, args, cfg):
                     'docs_dir': docs_temp_lang,
                     'site_dir': site_temp,
                     'extra': {
-                        'single_page': True,
-                        'opposite_lang': 'en' if lang == 'ru' else 'ru'
+                        'single_page': True
                     },
                     'nav': [
                         {cfg.data.get('site_name'): 'single.md'}

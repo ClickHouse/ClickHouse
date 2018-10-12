@@ -137,3 +137,27 @@ h1, h2, h3, .md-logo {
 .grey {
 	color: #666;
 }
+
+.md-alt-lang:hover {
+    text-decoration: none;
+}
+
+.md-alt-lang>svg {
+    width: 36px;
+    height: 24px;
+    margin: 1.3rem 0;
+    filter: brightness(96%) grayscale(90%);
+}
+
+.md-alt-lang:hover>svg {
+    filter: brightness(96%) grayscale(5%);
+}
+
+.md-current-lang>svg {
+    filter: brightness(96%) grayscale(0%) !important;
+}
+@media only screen and (min-width: 60em) {
+    #md-sidebar-flags {
+        display: none;
+    }
+}
