@@ -145,6 +145,7 @@ template <typename A> struct ResultOfBitNot
   * Float<x>, Float<y>  -> Float<max(x, y)>
   * UInt<x>,  Int<y>    ->   Int<max(x*2, y)>
   * Float<x>, [U]Int<y> -> Float<max(x, y*2)>
+  * Decimal<x>, Decimal<y> -> Decimal<max(x,y)>
   * UInt64 ,  Int<x>    -> Error
   * Float<x>, [U]Int64  -> Error
   */
@@ -161,11 +162,14 @@ struct ResultOfIf
     static constexpr size_t max_size_of_integer = max(std::is_integral_v<A> ? sizeof(A) : 0, std::is_integral_v<B> ? sizeof(B) : 0);
     static constexpr size_t max_size_of_float = max(std::is_floating_point_v<A> ? sizeof(A) : 0, std::is_floating_point_v<B> ? sizeof(B) : 0);
 
-    using Type = typename Construct<has_signed, has_float,
+    using ConstructedType = typename Construct<has_signed, has_float,
         ((has_float && has_integer && max_size_of_integer >= max_size_of_float)
             || (has_signed && has_unsigned && max_size_of_unsigned_integer >= max_size_of_signed_integer))
                 ? max(sizeof(A), sizeof(B)) * 2
                 : max(sizeof(A), sizeof(B))>::Type;
+
+    using Type = std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>, ConstructedType,
+        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>, std::conditional_t<(sizeof(A) > sizeof(B)), A, B>, Error>>;
 };
 
 /** Before applying operator `%` and bitwise operations, operands are casted to whole numbers. */

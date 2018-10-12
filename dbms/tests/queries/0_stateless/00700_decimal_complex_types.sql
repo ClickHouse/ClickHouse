@@ -149,4 +149,28 @@ SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SEL
 SELECT toTypeName(x) FROM (SELECT toDecimal32('12345', 0) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
 SELECT toTypeName(x) FROM (SELECT toDecimal64('12345', 0) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
 
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal32('32.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
+
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal32('32.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
+
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
+
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+
 DROP TABLE IF EXISTS test.decimal;

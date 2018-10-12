@@ -37,6 +37,7 @@
 #include <Interpreters/ProjectionManipulation.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -86,8 +87,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int UNKNOWN_IDENTIFIER;
     extern const int CYCLIC_ALIASES;
-    extern const int INCORRECT_RESULT_OF_SCALAR_SUBQUERY;
-    extern const int TOO_MANY_ROWS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int ALIAS_REQUIRED;
@@ -149,16 +148,6 @@ const std::unordered_set<String> possibly_injective_function_names
 
 namespace
 {
-
-bool functionIsInOperator(const String & name)
-{
-    return name == "in" || name == "notIn";
-}
-
-bool functionIsInOrGlobalInOperator(const String & name)
-{
-    return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
-}
 
 void removeDuplicateColumns(NamesAndTypesList & columns)
 {
@@ -574,14 +563,20 @@ void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
     {
         /// For GLOBAL IN.
         if (do_global && (func->name == "globalIn" || func->name == "globalNotIn"))
+        {
             addExternalStorage(func->arguments->children.at(1));
+            has_global_subqueries = true;
+        }
     }
     else if (ASTTablesInSelectQueryElement * table_elem = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
         /// For GLOBAL JOIN.
         if (do_global && table_elem->table_join
             && static_cast<const ASTTableJoin &>(*table_elem->table_join).locality == ASTTableJoin::Locality::Global)
+        {
             addExternalStorage(table_elem->table_expression);
+            has_global_subqueries = true;
+        }
     }
 }
 
@@ -854,7 +849,7 @@ void ExpressionAnalyzer::normalizeTree()
     if (all_columns_name.empty())
         throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    TableNamesAndColumnsName table_names_and_columns_name;
+    TableNamesAndColumnNames table_names_and_column_names;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
         std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
@@ -875,11 +870,11 @@ void ExpressionAnalyzer::normalizeTree()
 
             first = false;
 
-            table_names_and_columns_name.emplace_back(std::pair(table_name, names_and_types.getNames()));
+            table_names_and_column_names.emplace_back(std::pair(table_name, names_and_types.getNames()));
         }
     }
 
-    QueryNormalizer(query, aliases, settings, all_columns_name, table_names_and_columns_name).perform();
+    QueryNormalizer(query, aliases, settings, all_columns_name, table_names_and_column_names).perform();
 }
 
 
@@ -898,8 +893,13 @@ void ExpressionAnalyzer::addAliasColumns()
 
 void ExpressionAnalyzer::executeScalarSubqueries()
 {
+    LogAST log;
+
     if (!select_query)
-        executeScalarSubqueriesImpl(query);
+    {
+        ExecuteScalarSubqueriesVisitor execute_scalar_subqueries_visitor(context, subquery_depth, log.stream());
+        execute_scalar_subqueries_visitor.visit(query);
+    }
     else
     {
         for (auto & child : query->children)
@@ -908,138 +908,9 @@ void ExpressionAnalyzer::executeScalarSubqueries()
             if (!typeid_cast<const ASTTableExpression *>(child.get())
                 && !typeid_cast<const ASTSelectQuery *>(child.get()))
             {
-                executeScalarSubqueriesImpl(child);
+                ExecuteScalarSubqueriesVisitor execute_scalar_subqueries_visitor(context, subquery_depth, log.stream());
+                execute_scalar_subqueries_visitor.visit(child);
             }
-        }
-    }
-}
-
-
-static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String & type_name)
-{
-    auto func = std::make_shared<ASTFunction>();
-    ASTPtr res = func;
-    func->alias = ast->alias;
-    func->prefer_alias_to_column_name = ast->prefer_alias_to_column_name;
-    ast->alias.clear();
-    func->name = "CAST";
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    func->arguments = exp_list;
-    func->children.push_back(func->arguments);
-    exp_list->children.emplace_back(ast.release());
-    exp_list->children.emplace_back(std::make_shared<ASTLiteral>(type_name));
-    return res;
-}
-
-
-void ExpressionAnalyzer::executeScalarSubqueriesImpl(ASTPtr & ast)
-{
-    /** Replace subqueries that return exactly one row
-      * ("scalar" subqueries) to the corresponding constants.
-      *
-      * If the subquery returns more than one column, it is replaced by a tuple of constants.
-      *
-      * Features
-      *
-      * A replacement occurs during query analysis, and not during the main runtime.
-      * This means that the progress indicator will not work during the execution of these requests,
-      *  and also such queries can not be aborted.
-      *
-      * But the query result can be used for the index in the table.
-      *
-      * Scalar subqueries are executed on the request-initializer server.
-      * The request is sent to remote servers with already substituted constants.
-      */
-
-    if (ASTSubquery * subquery = typeid_cast<ASTSubquery *>(ast.get()))
-    {
-        Context subquery_context = context;
-        Settings subquery_settings = context.getSettings();
-        subquery_settings.max_result_rows = 1;
-        subquery_settings.extremes = 0;
-        subquery_context.setSettings(subquery_settings);
-
-        ASTPtr subquery_select = subquery->children.at(0);
-        BlockIO res = InterpreterSelectWithUnionQuery(subquery_select, subquery_context, {}, QueryProcessingStage::Complete, subquery_depth + 1).execute();
-
-        Block block;
-        try
-        {
-            block = res.in->read();
-
-            if (!block)
-            {
-                /// Interpret subquery with empty result as Null literal
-                auto ast_new = std::make_unique<ASTLiteral>(Null());
-                ast_new->setAlias(ast->tryGetAlias());
-                ast = std::move(ast_new);
-                return;
-            }
-
-            if (block.rows() != 1 || res.in->read())
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() == ErrorCodes::TOO_MANY_ROWS)
-                throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
-            else
-                throw;
-        }
-
-        size_t columns = block.columns();
-        if (columns == 1)
-        {
-            auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
-            lit->alias = subquery->alias;
-            lit->prefer_alias_to_column_name = subquery->prefer_alias_to_column_name;
-            ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
-        }
-        else
-        {
-            auto tuple = std::make_shared<ASTFunction>();
-            tuple->alias = subquery->alias;
-            ast = tuple;
-            tuple->name = "tuple";
-            auto exp_list = std::make_shared<ASTExpressionList>();
-            tuple->arguments = exp_list;
-            tuple->children.push_back(tuple->arguments);
-
-            exp_list->children.resize(columns);
-            for (size_t i = 0; i < columns; ++i)
-            {
-                exp_list->children[i] = addTypeConversion(
-                    std::make_unique<ASTLiteral>((*block.safeGetByPosition(i).column)[0]),
-                    block.safeGetByPosition(i).type->getName());
-            }
-        }
-    }
-    else
-    {
-        /** Don't descend into subqueries in FROM section.
-          */
-        if (!typeid_cast<ASTTableExpression *>(ast.get()))
-        {
-            /** Don't descend into subqueries in arguments of IN operator.
-              * But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
-              */
-            ASTFunction * func = typeid_cast<ASTFunction *>(ast.get());
-
-            if (func && functionIsInOrGlobalInOperator(func->name))
-            {
-                for (auto & child : ast->children)
-                {
-                    if (child != func->arguments)
-                        executeScalarSubqueriesImpl(child);
-                    else
-                        for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
-                            if (i != 1 || !typeid_cast<ASTSubquery *>(func->arguments->children[i].get()))
-                                executeScalarSubqueriesImpl(func->arguments->children[i]);
-                }
-            }
-            else
-                for (auto & child : ast->children)
-                    executeScalarSubqueriesImpl(child);
         }
     }
 }
