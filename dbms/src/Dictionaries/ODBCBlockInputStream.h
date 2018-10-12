@@ -24,7 +24,7 @@ public:
 
     String getName() const override { return "ODBC"; }
 
-    Block getHeader() const override { return description.sample_block; }
+    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 private:
     Block readImpl() override;
