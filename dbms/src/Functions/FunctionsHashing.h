@@ -565,7 +565,7 @@ public:
             vec_to.assign(rows, static_cast<UInt64>(0xe28dbde7fe22e41c));
         }
 
-        /// The function supports arbitary number of arguments of arbitary types.
+        /// The function supports arbitrary number of arguments of arbitrary types.
 
         bool is_first_argument = true;
         for (size_t i = 0; i < arguments.size(); ++i)
