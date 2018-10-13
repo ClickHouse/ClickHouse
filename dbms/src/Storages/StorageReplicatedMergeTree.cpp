@@ -3827,7 +3827,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
     }
-    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()))
+    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()); drop->kind == ASTDropQuery::Kind::Truncate)
     {
         drop->database = leader_address.database;
         drop->table    = leader_address.table;
