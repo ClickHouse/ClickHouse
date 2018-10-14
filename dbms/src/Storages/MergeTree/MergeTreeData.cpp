@@ -909,6 +909,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 
     for (const AlterCommand & command : commands)
     {
+        if (command.type == AlterCommand::COMMENT_COLUMN)
+        {
+            continue;
+        }
+
         if (columns_alter_forbidden.count(command.column_name))
             throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 

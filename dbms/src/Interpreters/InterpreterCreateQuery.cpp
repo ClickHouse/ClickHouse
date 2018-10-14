@@ -166,13 +166,15 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
 
 using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
+using ParsedColumns = std::tuple<NamesAndTypesList, ColumnDefaults, ColumnComments>;
 
 /// AST to the list of columns with types. Columns of Nested type are expanded into a list of real columns.
-static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
+static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
 {
     /// list of table columns in correct order
     NamesAndTypesList columns{};
     ColumnDefaults defaults{};
+    ColumnComments comments{};
 
     /// Columns requiring type-deduction or default_expression type-check
     std::vector<std::pair<NameAndTypePair *, ASTColumnDeclaration *>> defaulted_columns{};
@@ -215,6 +217,11 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
             }
             else
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+        }
+
+        if (col_decl.comment_expression)
+        {
+            comments.emplace(col_decl.name, ColumnComment{col_decl.comment_expression});
         }
     }
 
@@ -261,7 +268,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
     }
 
-    return {Nested::flatten(columns), defaults};
+    return {Nested::flatten(columns), defaults, comments};
 }
 
 
@@ -329,11 +336,17 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
 
-        const auto it = columns.defaults.find(column.name);
-        if (it != std::end(columns.defaults))
+        const auto defaults_it = columns.defaults.find(column.name);
+        if (defaults_it != std::end(columns.defaults))
         {
-            column_declaration->default_specifier = toString(it->second.kind);
-            column_declaration->default_expression = it->second.expression->clone();
+            column_declaration->default_specifier = toString(defaults_it->second.kind);
+            column_declaration->default_expression = defaults_it->second.expression->clone();
+        }
+
+        const auto comments_it = columns.comments.find(column.name);
+        if (comments_it != std::end(columns.comments))
+        {
+            column_declaration->comment_expression = comments_it->second.expression->clone();
         }
 
         columns_list->children.push_back(column_declaration_ptr);
@@ -347,11 +360,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 {
     ColumnsDescription res;
 
-    auto && columns_and_defaults = parseColumns(columns, context);
+    auto && parsed_columns = parseColumns(columns, context);
+    auto columns_and_defaults = std::make_pair(std::move(std::get<0>(parsed_columns)), std::move(std::get<1>(parsed_columns)));
     res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
     res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
     res.ordinary = std::move(columns_and_defaults.first);
     res.defaults = std::move(columns_and_defaults.second);
+    res.comments = std::move(std::get<2>(parsed_columns));
 
     if (res.ordinary.size() + res.materialized.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};

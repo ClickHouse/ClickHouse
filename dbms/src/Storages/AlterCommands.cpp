@@ -90,6 +90,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.primary_key = command_ast->primary_key;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
+    {
+        AlterCommand command;
+        command.type = COMMENT_COLUMN;
+        const auto & ast_identifier = typeid_cast<ASTIdentifier&>(*command_ast->column);
+        command.column_name = ast_identifier.name;
+        command.comment_expression = command_ast->comment;
+        return command;
+    }
     else
         return {};
 }
@@ -237,6 +246,11 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         /// This have no relation to changing the list of columns.
         /// TODO Check that all columns exist, that only columns with constant defaults are added.
     }
+    else if (type == COMMENT_COLUMN)
+    {
+
+        columns_description.comments[column_name].expression = comment_expression;
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
@@ -352,6 +366,15 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             if (!found)
                 throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
                     ErrorCodes::ILLEGAL_COLUMN);
+        }
+        else if (command.type == AlterCommand::COMMENT_COLUMN)
+        {
+            const auto column_it = std::find_if(std::begin(all_columns), std::end(all_columns),
+                                                std::bind(namesEqual, std::cref(command.column_name), std::placeholders::_1));
+            if (column_it == std::end(all_columns))
+            {
+                throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
+            }
         }
     }
 

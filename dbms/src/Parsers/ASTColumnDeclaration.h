@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/** Name, type, default-specifier, default-expression.
+/** Name, type, default-specifier, default-expression, comment-expression.
  *  The type is optional if default-expression is specified.
  */
 class ASTColumnDeclaration : public IAST
@@ -38,13 +38,12 @@ public:
 
         if (comment_expression) {
             res->comment_expression = comment_expression->clone();
-            res->children.push_back(res->comment_expression); // TODO: понять, зачем это нужно.
+            res->children.push_back(res->comment_expression);
         }
 
         return res;
     }
 
-protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         frame.need_parens = false;
@@ -63,8 +62,8 @@ protected:
             default_expression->formatImpl(settings, state, frame);
         }
 
-        // TODO: понять, почему не отрицание
         if (comment_expression) {
+            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
             comment_expression->formatImpl(settings, state, frame);
         }
     }
