@@ -1,1 +1,153 @@
-../../en/query_language/create.md
+## CREATE DATABASE
+
+创建 'db_name' 数据库.
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name
+```
+
+一个数据库是表的一个目录. 如果包含'IF NOT EXISTS', 如果数据库已经存在，则查询不返回错误.
+
+<a name="query_language-queries-create_table"></a>
+
+## CREATE TABLE
+
+'CREATE TABLE' 语句有几种形式.
+
+```sql
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = engine
+```
+
+如果'db'没有设置, 在数据库'db'中或者当前数据库中, 创建一个表名为'name'的表, 在括号和'engine' 引擎中指定结构. 表的结构是一个列描述的列表. 如果引擎支持索引, 则他们将是表引擎的参数.
+
+表结构是一个列描述的列表. 如果引擎支持索引, 他们以表引擎的参数表示.
+
+在最简单的情况, 一个列描述是'命名类型'. 例如: RegionID UInt32. 对于默认值, 表达式也能够被定义.
+
+```sql
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
+```
+
+创建一个表, 其结构与另一个表相同. 你能够为此表指定一个不同的引擎. 如果引擎没有被指定, 相同的引擎将被用于'db2.name2'表上.
+
+```sql
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
+```
+
+创建一个表，其结构类似于 SELECT 查询后的结果, 带有'engine' 引擎, 从 SELECT查询数据填充它.
+
+在所有情况下,如果'IF NOT EXISTS'被指定, 如果表已经存在, 查询并不返回一个错误. 在这种情况下, 查询并不做任何事情.
+
+### Default Values
+
+列描述能够为默认值指定一个表达式, 其中一个方法是:DEFAULT expr, MATERIALIZED expr, ALIAS expr. 
+例如: URLDomain String DEFAULT domain(URL).
+
+如果默认值的一个表达式没有定义, 如果字段是数字类型, 默认值是将设置为0, 如果是字符类型, 则设置为空字符串, 日期类型则设置为 0000-00-00 或者 0000-00-00 00:00:00(时间戳). NULLs 则不支持.
+
+如果默认表达式被定义, 字段类型是可选的. 如果没有明确的定义类型, 则将使用默认表达式. 例如: EventDate DEFAULT toDate(EventTime) – 'Date' 类型将用于 'EventDate' 字段.
+
+如果数据类型和默认表达式被明确定义, 此表达式将使用函数被转换为特定的类型. 例如: Hits UInt32 DEFAULT 0 与 Hits UInt32 DEFAULT toUInt32(0)是等价的.
+
+默认表达是可能被定义为一个任意的表达式，如表的常量和字段. 当创建和更改表结构时, 它将检查表达式是否包含循环. 对于 INSERT操作来说, 它将检查表达式是否可解析 – 所有的字段通过传参后进行计算.
+
+`DEFAULT expr`
+
+正常的默认值. 如果 INSERT 查询并没有指定对应的字段, 它将通过计算对应的表达式来填充.
+
+`MATERIALIZED expr`
+
+物化表达式. 此类型字段并没有指定插入操作, 因为它经常执行计算任务. 对一个插入操作, 无字段列表, 那么这些字段将不考虑. 另外, 当在一个SELECT查询语句中使用星号时, 此字段并不被替换. 这将保证INSERT INTO SELECT * FROM 的不可变性.
+
+`ALIAS expr`
+
+同义词. 此字段不存储在表中. 
+此列的值不插入到表中, 当在一个SELECT查询语句中使用星号时,此字段并不被替换. 
+它能够用在 SELECTs中，如果别名在查询解析时被扩展.
+
+当使用更新查询添加一个新的字段, 这些列的旧值不被写入. 相反, 新字段没有值，当读取旧值时, 表达式将被计算. 然而，如果运行表达式需要不同的字段, 这些字段将被读取 , 但是仅读取相关的数据块.
+
+如果你添加一个新的字段到表中, 然后改变它的默认表达式, 对于使用的旧值将更改(对于此数据, 值不保存在磁盘上). 当运行背景线程时, 缺少合并数据块的字段数据写入到合并数据块中.
+
+在嵌套数据结构中设置默认值是不允许的.
+
+
+
+### Temporary Tables
+
+在任何情况下, 如果 TEMPORARY 被指定, 一个临时表将被创建. 临时表有如下的特性:
+
+- 当会话结束后, 临时表将删除,或者连接丢失.
+- 一个临时表使用内存表引擎创建. 其他的表引擎不支持临时表.
+- 数据库不能为一个临时表指定. 它将创建在数据库之外.
+- 如果一个临时表与另外的表有相同的名称 ，一个查询指定了表名并没有指定数据库, 将使用临时表.
+- 对于分布式查询处理, 查询中的临时表将被传递给远程服务器.
+
+在大多数情况下, 临时表并不能手工创建, 但当查询外部数据或使用分布式全局(GLOBAL)IN时，可以创建临时表. 
+
+Distributed DDL queries (ON CLUSTER clause)
+----------------------------------------------
+
+'CREATE', 'DROP', 'ALTER', 和 'RENAME' 查询支持在集群上分布式执行. 例如, 如下的查询在集群中的每个机器节点上创建了 all_hits Distributed 表:
+
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+```
+
+为了正确执行这些语句,每个节点必须有相同的集群设置(为了简化同步配置,可以使用 zookeeper 来替换). 这些节点也可以连接到ZooKeeper 服务器.
+查询语句会在每个节点上执行, 而'ALTER'查询目前暂不支持在同步表(replicated table)上执行.
+
+
+
+## CREATE VIEW
+
+```sql
+CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+```
+
+Creates a view. There are two types of views: normal and MATERIALIZED.
+
+When creating a materialized view, you must specify ENGINE – the table engine for storing data.
+
+A materialized view works as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
+
+Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
+
+As an example, assume you've created a view:
+
+```sql
+CREATE VIEW view AS SELECT ...
+```
+
+and written a query:
+
+```sql
+SELECT a, b, c FROM view
+```
+
+This query is fully equivalent to using the subquery:
+
+```sql
+SELECT a, b, c FROM (SELECT ...)
+```
+
+Materialized views store data transformed by the corresponding SELECT query.
+
+When creating a materialized view, you must specify ENGINE – the table engine for storing data.
+
+A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
+
+If you specify POPULATE, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We don't recommend using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
+
+A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`... Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an ENGINE that independently performs data aggregation, such as `SummingMergeTree`.
+
+The execution of `ALTER` queries on materialized views has not been fully developed, so they might be inconvenient. If the materialized view uses the construction ``TO [db.]name``, you can ``DETACH`` the view, run ``ALTER`` for the target table, and then ``ATTACH`` the previously detached (``DETACH``) view.
+
+Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
+
+There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
