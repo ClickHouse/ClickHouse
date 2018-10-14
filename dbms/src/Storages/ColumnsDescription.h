@@ -2,6 +2,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Storages/ColumnComment.h>
 #include <Storages/ColumnDefault.h>
 #include <Core/Block.h>
 
@@ -15,6 +16,7 @@ struct ColumnsDescription
     NamesAndTypesList materialized;
     NamesAndTypesList aliases;
     ColumnDefaults defaults;
+    ColumnComments comments;
 
     ColumnsDescription() = default;
 
@@ -22,11 +24,13 @@ struct ColumnsDescription
         NamesAndTypesList ordinary_,
         NamesAndTypesList materialized_,
         NamesAndTypesList aliases_,
-        ColumnDefaults defaults_)
+        ColumnDefaults defaults_,
+        ColumnComments comments_ = {})
         : ordinary(std::move(ordinary_))
         , materialized(std::move(materialized_))
         , aliases(std::move(aliases_))
         , defaults(std::move(defaults_))
+        , comments(std::move(comments_))
     {}
 
     explicit ColumnsDescription(NamesAndTypesList ordinary_) : ordinary(std::move(ordinary_)) {}
@@ -36,7 +40,8 @@ struct ColumnsDescription
         return ordinary == other.ordinary
             && materialized == other.materialized
             && aliases == other.aliases
-            && defaults == other.defaults;
+            && defaults == other.defaults
+            && comments == other.comments;
     }
 
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }

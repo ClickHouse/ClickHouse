@@ -13,6 +13,7 @@ namespace DB
   *     [CLEAR COLUMN col_to_clear [IN PARTITION partition],]
   *     [MODIFY COLUMN col_to_modify type, ...]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
+  *     [COMMENT COLUMN col_name string]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE PARTITION]

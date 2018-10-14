@@ -113,6 +113,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
     ParserTernaryOperatorExpression expr_parser;
+    ParserStringLiteral string_literal_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -120,14 +121,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
+      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
       */
     ASTPtr type;
     const auto fallback_pos = pos;
     if (!s_default.check(pos, expected) &&
         !s_materialized.check(pos, expected) &&
-        !s_alias.check(pos, expected) &&
-        !s_comment.check(pos, expected))
+        !s_alias.check(pos, expected))
     {
         type_parser.parse(pos, type, expected);
     }
@@ -151,15 +151,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (!type)
         return false; /// reject sole column name without type
 
-    String comment_specifier;
     ASTPtr comment_expression;
-    pos_before_specifier = pos;
     if (s_comment.ignore(pos, expected))
     {
-        comment_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_specifier->end});
-        if (!expr_parser.parse(pos, comment_expression, expected)) {
-            return false;
-        }
+        string_literal_parser.parse(pos, comment_expression, expected);
     }
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();

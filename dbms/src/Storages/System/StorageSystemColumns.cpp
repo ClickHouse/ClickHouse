@@ -37,6 +37,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
+        { "comment",                    std::make_shared<DataTypeString>() },
     }));
 }
 
@@ -81,6 +82,7 @@ protected:
 
             NamesAndTypesList columns;
             ColumnDefaults column_defaults;
+            ColumnComments column_comments;
             MergeTreeData::ColumnSizeByName column_sizes;
 
             {
@@ -106,6 +108,7 @@ protected:
 
                 columns = storage->getColumns().getAll();
                 column_defaults = storage->getColumns().defaults;
+                column_comments = storage->getColumns().comments;
 
                 /** Info about sizes of columns for tables of MergeTree family.
                 * NOTE: It is possible to add getter for this info to IStorage interface.
@@ -171,6 +174,21 @@ protected:
                             res_columns[res_index++]->insert(static_cast<UInt64>(it->second.data_uncompressed));
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(static_cast<UInt64>(it->second.marks));
+                    }
+                }
+
+                {
+                    const auto it = column_comments.find(column.name);
+                    if (it == std::end(column_comments))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        const auto & literal = typeid_cast<ASTLiteral*>(it->second.expression.get());
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(literal->value.get<String>());
                     }
                 }
 
