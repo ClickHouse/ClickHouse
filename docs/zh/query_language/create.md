@@ -110,44 +110,47 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
-Creates a view. There are two types of views: normal and MATERIALIZED.
+创建一个视图. 有两种类型的视图: 正常视图和物化(MATERIALIZED)视图.
 
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
+当创建一个物化视图时, 你必须指定表引擎 – 此表引擎用于存储数据
 
-A materialized view works as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
+一个物化视图工作流程如下所示: 当插入数据到SELECT 查询指定的表中时, 插入数据部分通过SELECT查询部分来转换, 结果插入到视图中.
 
-Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
+正常视图不保存任何数据, 但是可以从任意表中读取数据. 换句话说，正常视图可以看作是查询结果的一个结果缓存. 当从一个视图中读取数据时, 此查询可以看做是 FROM语句的子查询.
 
-As an example, assume you've created a view:
+例如, 假设你已经创建了一个视图:
 
 ```sql
 CREATE VIEW view AS SELECT ...
 ```
 
-and written a query:
+写了一个查询语句:
 
 ```sql
 SELECT a, b, c FROM view
 ```
-
-This query is fully equivalent to using the subquery:
+此查询完全等价于子查询:
 
 ```sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-Materialized views store data transformed by the corresponding SELECT query.
+物化视图保存由SELECT语句查询转换的数据.
 
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
+当创建一个物化视图时，你必须指定一个引擎 – 存储数据的目标引擎.
 
-A materialized view is arranged as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
+一个物化视图使用流程如下:  当插入数据到 SELECT 指定的表时, 插入数据部分通过SELECT 来转换, 同时结果被插入到视图中.
 
-If you specify POPULATE, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We don't recommend using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
 
-A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`... Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won't be further aggregated. The exception is when using an ENGINE that independently performs data aggregation, such as `SummingMergeTree`.
+如果你指定了 POPULATE, 当创建时, 现有的表数据被插入到了视图中, 类似于  CREATE TABLE ... AS SELECT ... . 否则, 在创建视图之后，查询仅包含表中插入的数据. 我们不建议使用 POPULATE, 在视图创建过程中，插入到表中的数据不插入到其中.
 
-The execution of `ALTER` queries on materialized views has not been fully developed, so they might be inconvenient. If the materialized view uses the construction ``TO [db.]name``, you can ``DETACH`` the view, run ``ALTER`` for the target table, and then ``ATTACH`` the previously detached (``DETACH``) view.
+一个'SELECT'查询可以包含 'DISTINCT', 'GROUP BY', 'ORDER BY', 'LIMIT'... 对应的转换在每个数据块上独立执行. 例如, 如果 GROUP BY 被设置, 数据将在插入过程中进行聚合, 但仅是在一个插入数据包中.数据不再进一步聚合. 当使用一个引擎时, 如SummingMergeTree，它将独立执行数据聚合.
 
-Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
+视图看起来和正常表相同. 例如, 你可以使用 SHOW TABLES来列出视图表的相关信息.
 
-There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
+物化视图的'ALTER'查询执行还没有完全开发出来, 因此使用上可能不方便. 如果物化视图使用 ``TO [db.]name``, 你能够 ``DETACH`` 视图, 在目标表运行 ``ALTER``, 然后 ``ATTACH`` 之前的 ``DETACH``视图.
+
+视图看起来和正常表相同. 例如, 你可以使用 `SHOW TABLES` 来列出视图表的相关信息.
+
+因此并没有一个单独的SQL语句来删除视图. 为了删除一个视图, 可以使用  `DROP TABLE`.
+
