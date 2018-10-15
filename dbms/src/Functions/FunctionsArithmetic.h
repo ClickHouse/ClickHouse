@@ -1055,7 +1055,11 @@ public:
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
         Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastImpl<T0, T1>> || std::is_same_v<Op, GreatestImpl<T0, T1>>),
-            LeftDataType>>;
+            LeftDataType>,
+        /// Date % Int32 -> int32
+        Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
+            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>>>>;
+
 };
 
 
