@@ -21,6 +21,7 @@ struct AlterCommand
         DROP_COLUMN,
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
+        MODIFY_ORDER_BY,
     };
 
     Type type;
@@ -41,6 +42,9 @@ struct AlterCommand
 
     /// For MODIFY_PRIMARY_KEY
     ASTPtr primary_key;
+
+    /// For MODIFY_ORDER_BY
+    ASTPtr sorting_key;
 
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
