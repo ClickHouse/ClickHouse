@@ -9,12 +9,12 @@ CREATE TABLE test.quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickho
 SET insert_quorum=2;
 SET select_sequential_consistency=1;
 
-INSERT INTO test.quorum1 VALUES (1, toDate('2018-11-15'));
-INSERT INTO test.quorum1 VALUES (2, toDate('2018-11-15'));
-INSERT INTO test.quorum1 VALUES (1, toDate('2018-12-16'));
+INSERT INTO test.quorum1 VALUES (1, '2018-11-15');
+INSERT INTO test.quorum1 VALUES (2, '2018-11-15');
+INSERT INTO test.quorum1 VALUES (3, '2018-12-16');
 
-SELECT count(*) FROM test.quorum1;
-SELECT count(*) FROM test.quorum2;
+SELECT x FROM test.quorum1 ORDER BY x;
+SELECT x FROM test.quorum2 ORDER BY x;
 
 DROP TABLE IF EXISTS test.quorum1;
 DROP TABLE IF EXISTS test.quorum2;
