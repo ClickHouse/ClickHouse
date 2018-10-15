@@ -111,7 +111,7 @@ Example of settings:
 ```xml
 <odbc>
     <db>DatabaseName</db>
-    <table>TableName</table>
+    <table>ShemaName.TableName</table>
     <connection_string>DSN=some_parameters</connection_string>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </odbc>
@@ -120,10 +120,11 @@ Example of settings:
 Setting fields:
 
 - `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table.
+- `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
 
 ### Known vulnerability of the ODBC dictionary functionality
 

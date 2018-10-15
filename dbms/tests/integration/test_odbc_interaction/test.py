@@ -3,12 +3,14 @@ import pytest
 
 import os
 import pymysql.cursors
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, image='alesapin/ubuntu_with_odbc:14.04', main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml'])
+node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, image='alesapin/ubuntu_with_odbc:14.04', main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml', 'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'])
 
 create_table_sql_template =   """
     CREATE TABLE `clickhouse`.`{}` (
@@ -31,6 +33,17 @@ def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_sql_template.format(table_name))
 
+def get_postgres_conn():
+    conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
+    conn = psycopg2.connect(conn_string)
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    return conn
+
+def create_postgres_db(conn, name):
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "CREATE SCHEMA {}".format(name))
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -41,9 +54,13 @@ def started_cluster():
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t2(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t3(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t4(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
-        conn = get_mysql_conn()
+        mysql_conn = get_mysql_conn()
         ## create mysql db and table
-        create_mysql_db(conn, 'clickhouse')
+        create_mysql_db(mysql_conn, 'clickhouse')
+
+        postgres_conn = get_postgres_conn()
+
+        create_postgres_db(postgres_conn, 'clickhouse')
 
         yield cluster
 
@@ -141,3 +158,13 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     time.sleep(5)
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))") == "12\n"
+
+def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+    cursor.execute("drop table if exists clickhouse.test_table")
+    cursor.execute("create table if not exists clickhouse.test_table (column1 int primary key, column2 varchar(40) not null)")
+    cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
+    time.sleep(5)
+    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
+    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))") == "world\n"
