@@ -13,7 +13,7 @@ SET insert_quorum_timeout=0;
 
 SYSTEM STOP FETCHES test.quorum1;
 
-INSERT INTO test.quorum2 VALUES (1, '15-11-2018'); -- { serverError 319 } --
+INSERT INTO test.quorum2 VALUES (1, toDate('2018-11-15')); -- { serverError 319 } --
 
 SELECT count(*) FROM test.quorum1;
 SELECT count(*) FROM test.quorum2;

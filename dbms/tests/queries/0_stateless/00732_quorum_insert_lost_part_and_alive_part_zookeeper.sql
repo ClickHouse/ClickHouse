@@ -9,15 +9,15 @@ CREATE TABLE test.quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickho
 SET insert_quorum=2;
 SET select_sequential_consistency=1;
 
-INSERT INTO test.quorum2 VALUES (1, '15-10-2018');
-INSERT INTO test.quorum2 VALUES (2, '15-10-2018');
-INSERT INTO test.quorum2 VALUES (2, '15-11-2018');
+INSERT INTO test.quorum1 VALUES (1, toDate('2018-11-15'));
+INSERT INTO test.quorum1 VALUES (2, toDate('2018-11-15'));
+INSERT INTO test.quorum1 VALUES (1, toDate('2018-12-16'));
 
-SET insert_quorum_timeout=100;
+SET insert_quorum_timeout=0;
 
 SYSTEM STOP FETCHES test.quorum1;
 
-INSERT INTO test.quorum2 VALUES (1, '15-12-2018'); -- { serverError 319 } --
+INSERT INTO test.quorum2 VALUES (2, toDate('2018-12-16')); -- { serverError 319 } --
 
 SELECT count(*) FROM test.quorum1;
 SELECT count(*) FROM test.quorum2;
@@ -28,7 +28,7 @@ SELECT count(*) FROM test.quorum2;
 
 SET select_sequential_consistency=1;
 
-SET insert_quorum_timeout=100;
+SET insert_quorum_timeout=6000;
 
 SYSTEM START FETCHES test.quorum1;
 SYSTEM SYNC REPLICA test.quorum1;
