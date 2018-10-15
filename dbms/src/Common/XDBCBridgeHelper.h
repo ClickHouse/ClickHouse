@@ -254,7 +254,8 @@ struct ODBCBridgeMixin
 
     static void startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
-        Poco::Path path{config.getString("application.dir", "")};
+        /// Path to executable folder
+        Poco::Path path{config.getString("application.dir", "/usr/bin")};
 
         path.setFileName(
 #if CLICKHOUSE_SPLIT_BINARY
@@ -263,9 +264,6 @@ struct ODBCBridgeMixin
             "clickhouse"
 #endif
         );
-
-        if (!Poco::File(path).exists())
-            throw Exception("clickhouse binary (" + path.toString() + ") is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
 
         std::stringstream command;
 

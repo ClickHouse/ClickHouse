@@ -111,7 +111,7 @@
 ```xml
 <odbc>
     <db>DatabaseName</db>
-    <table>TableName</table>
+    <table>ShemaName.TableName</table>
     <connection_string>DSN=some_parameters</connection_string>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </odbc>
@@ -119,10 +119,12 @@
 
 Поля настройки:
 
--   `db` - имя базы данных. Не указывать, если имя базы задано в параметрах `<connection_string>`.
--   `table` - имя таблицы.
+-   `db` - имя базы данных. Не указывать, если имя базы задано в параметрах. `<connection_string>`.
+-   `table` - имя таблицы и схемы, если она есть.
 -   `connection_string` - строка соединения.
 -   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+
+ClickHouse получает от ODBC-драйвера информацию о квотировании и квотирует настройки в запросах к драйверу, поэтому имя таблицы нужно указывать в соответствии с регистром имени таблицы в базе данных.
 
 ### Выявленная уязвимость в функционировании ODBC словарей
 
