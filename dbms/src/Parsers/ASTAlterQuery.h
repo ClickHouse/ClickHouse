@@ -25,6 +25,7 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
+        MODIFY_ORDER_BY,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
@@ -54,6 +55,10 @@ public:
     /** For MODIFY PRIMARY KEY
      */
     ASTPtr primary_key;
+
+    /** For MODIFY ORDER BY
+     */
+    ASTPtr sorting_key;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.

@@ -90,6 +90,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.primary_key = command_ast->primary_key;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_ORDER_BY;
+        command.sorting_key = command_ast->sorting_key;
+        return command;
+    }
     else
         return {};
 }
@@ -232,7 +239,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
             /// both old and new columns have default expression, update it
             columns_description.defaults[column_name].expression = default_expression;
     }
-    else if (type == MODIFY_PRIMARY_KEY)
+    else if (type == MODIFY_PRIMARY_KEY || type == MODIFY_ORDER_BY)
     {
         /// This have no relation to changing the list of columns.
         /// TODO Check that all columns exist, that only columns with constant defaults are added.
