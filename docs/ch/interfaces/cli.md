@@ -1,1 +1,0 @@
-../../en/interfaces/cli.md

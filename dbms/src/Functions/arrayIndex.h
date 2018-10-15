@@ -397,7 +397,7 @@ struct ArrayIndexStringImpl
     }
 };
 
-/// Catch-all implementation for arrays of arbitary type.
+/// Catch-all implementation for arrays of arbitrary type.
 /// To compare with constant value, create non-constant column with single element,
 /// and pass is_value_has_single_element_to_compare = true.
 template <typename IndexConv, bool is_value_has_single_element_to_compare>
@@ -555,7 +555,7 @@ public:
     }
 };
 
-/// Catch-all implementation for arrays of arbitary type
+/// Catch-all implementation for arrays of arbitrary type
 /// when the 2nd function argument is a NULL value.
 template <typename IndexConv>
 struct ArrayIndexGenericNullImpl
