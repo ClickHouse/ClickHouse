@@ -69,7 +69,7 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -d ${CLICKHOUSE_CONFDIR} ]; then
-        su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_CONFDIR}" || chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}
+        rm -v ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
     fi
 
     if [ ! -d ${CLICKHOUSE_DATADIR} ]; then
