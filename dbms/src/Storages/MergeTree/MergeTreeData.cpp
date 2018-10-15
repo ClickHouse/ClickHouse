@@ -211,11 +211,11 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_ast, const ASTPtr & new_sorting_key_ast)
 {
+    if (!new_primary_key_ast)
+        throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
     if (!new_sorting_key_ast)
         throw Exception("Sorting key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
-    if (!new_primary_key_ast)
-        new_primary_key_ast = new_sorting_key_ast->clone();
 
     if (new_sorting_key_ast.get() != sorting_key_ast.get()
         && merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)

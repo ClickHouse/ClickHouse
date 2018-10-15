@@ -570,7 +570,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String date_column_name;
     ASTPtr partition_expr_list;
     ASTPtr primary_expr_list;
-    ASTPtr sort_expr_list;
+    ASTPtr sorting_expr_list;
     ASTPtr sampling_expression;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
@@ -579,17 +579,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->partition_by)
             partition_expr_list = extractKeyExpressionList(*args.storage_def->partition_by);
 
-        if (args.storage_def->primary_key)
-            primary_expr_list = extractKeyExpressionList(*args.storage_def->primary_key);
-
         if (args.storage_def->order_by)
         {
-            sort_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
+            sorting_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
         }
         else
             throw Exception("You must provide an ORDER BY expression in the table definition. "
                 "If you don't want this table to be sorted, use ORDER BY tuple()",
                 ErrorCodes::BAD_ARGUMENTS);
+
+        if (args.storage_def->primary_key)
+            primary_expr_list = extractKeyExpressionList(*args.storage_def->primary_key);
+        else
+            primary_expr_list = sorting_expr_list->clone();
 
         if (args.storage_def->sample_by)
             sampling_expression = args.storage_def->sample_by->ptr();
@@ -614,7 +616,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
 
-        sort_expr_list = extractKeyExpressionList(*engine_args[1]);
+        sorting_expr_list = extractKeyExpressionList(*engine_args[1]);
+        primary_expr_list = sorting_expr_list->clone();
 
         auto ast = typeid_cast<const ASTLiteral *>(engine_args.back().get());
         if (ast && ast->value.getType() == Field::Types::UInt64)
@@ -629,13 +632,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns,
-            args.context, primary_expr_list, sort_expr_list, date_column_name, partition_expr_list,
+            args.context, primary_expr_list, sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.data_path, args.database_name, args.table_name, args.columns, args.attach,
-            args.context, primary_expr_list, sort_expr_list, date_column_name, partition_expr_list,
+            args.context, primary_expr_list, sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }

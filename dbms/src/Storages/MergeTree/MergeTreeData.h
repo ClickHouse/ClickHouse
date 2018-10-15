@@ -284,7 +284,11 @@ public:
     /// Attach the table corresponding to the directory in full_path (must end with /), with the given columns.
     /// Correctness of names and paths is not checked.
     ///
-    /// primary_key_ast - expression used for sorting;
+    /// sorting_key_ast - expression used for sorting data in parts;
+    /// primary_key_ast - values of this expression for one row in every `index_granularity` rows
+    ///     are written in the primary.idx to speed up range queries.
+    ///     Primary key must be a prefix of the sorting key;
+    ///
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
     ///     Otherwise, partition_expr_ast is used for partitioning.
     /// require_part_metadata - should checksums.txt and columns.txt exist in the part directory.
