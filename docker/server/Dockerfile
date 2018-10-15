@@ -39,4 +39,4 @@ ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
 
-CMD ["/usr/bin/clickhouse-server", "--config=${CLICKHOUSE_CONFIG}"]
+CMD /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}
