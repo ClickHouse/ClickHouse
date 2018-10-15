@@ -231,6 +231,20 @@
                   base: "{{ base_url }}"
               }
           });
+          var beforePrint = function() {
+            var details = document.getElementsByTagName("details");
+            for (var i = 0; i < details.length; ++i) {
+                details[i].open = 1;
+            }
+          };
+          if (window.matchMedia) {
+              window.matchMedia('print').addListener(function(q) {
+                  if (q.matches) {
+                      beforePrint();
+                  }
+              });
+          }
+          window.onbeforeprint = beforePrint;
       });
     </script>
     <!-- Yandex.Metrika counter -->
