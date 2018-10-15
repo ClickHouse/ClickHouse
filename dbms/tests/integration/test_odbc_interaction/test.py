@@ -48,24 +48,31 @@ def create_postgres_db(conn, name):
 def started_cluster():
     try:
         cluster.start()
-        sqlite_db =  node1.odbc_drivers["SQLite3"]["Database"]
+        sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
 
+        print "sqlite data received"
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t1(x INTEGER PRIMARY KEY ASC, y, z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t2(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t3(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t4(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
+        print "sqlite tables created"
         mysql_conn = get_mysql_conn()
+        print "mysql connection received"
         ## create mysql db and table
         create_mysql_db(mysql_conn, 'clickhouse')
+        print "mysql database created"
 
         postgres_conn = get_postgres_conn()
+        print "postgres connection received"
 
         create_postgres_db(postgres_conn, 'clickhouse')
+        print "postgres db created"
 
         yield cluster
 
     except Exception as ex:
         print(ex)
+        raise ex
     finally:
         cluster.shutdown()
 
