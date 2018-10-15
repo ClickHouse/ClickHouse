@@ -561,8 +561,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         {
             if (!loaded_config.configuration->has("path"))
             {
-                LOG_WARNING(log, "no dir for preprocessed_dir ");
-                std::cerr << StackTrace().toString() <<"\n";
+                LOG_WARNING(log, "Unknown base path for preprocessed_configs");
                 return;
             }
             preprocessed_dir = loaded_config.configuration->getString("path");
@@ -571,7 +570,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         auto new_path = loaded_config.config_path;
         if (new_path.substr(0, main_config_path.size()) == main_config_path)
             new_path.replace(0, main_config_path.size(), "");
-        std::replace( new_path.begin(), new_path.end(), '/', '_');
+        std::replace(new_path.begin(), new_path.end(), '/', '_');
         preprocessed_path = preprocessed_dir + new_path;
         auto path = Poco::Path(preprocessed_path).makeParent();
         if (!path.toString().empty())
