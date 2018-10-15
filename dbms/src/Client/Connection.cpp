@@ -231,6 +231,14 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     revision = server_revision;
 }
 
+UInt64 Connection::getServerRevision()
+{
+    if (!connected)
+        connect();
+
+    return server_revision;
+}
+
 const String & Connection::getServerTimezone()
 {
     if (!connected)
@@ -349,7 +357,7 @@ void Connection::sendQuery(
     {
         ClientInfo client_info_to_send;
 
-        if (!client_info)
+        if (!client_info || client_info->empty())
         {
             /// No client info passed - means this query initiated by me.
             client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;

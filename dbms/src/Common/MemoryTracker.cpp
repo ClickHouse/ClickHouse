@@ -16,6 +16,9 @@ namespace DB
 }
 
 
+static constexpr size_t log_peak_memory_usage_every = 1ULL << 30;
+
+
 MemoryTracker::~MemoryTracker()
 {
     if (static_cast<int>(level) < static_cast<int>(VariableContext::Process) && peak)
@@ -52,6 +55,13 @@ void MemoryTracker::logPeakMemoryUsage() const
         << ": " << formatReadableSizeWithBinarySuffix(peak) << ".");
 }
 
+static void logMemoryUsage(Int64 amount)
+{
+    LOG_DEBUG(&Logger::get("MemoryTracker"),
+        "Current memory usage: " << formatReadableSizeWithBinarySuffix(amount) << ".");
+}
+
+
 
 void MemoryTracker::alloc(Int64 size)
 {
@@ -64,7 +74,7 @@ void MemoryTracker::alloc(Int64 size)
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
 
-    if (!parent.load(std::memory_order_relaxed))
+    if (metric != CurrentMetrics::end())
         CurrentMetrics::add(metric, size);
 
     Int64 current_limit = limit.load(std::memory_order_relaxed);
@@ -101,8 +111,14 @@ void MemoryTracker::alloc(Int64 size)
         throw DB::Exception(message.str(), DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED);
     }
 
-    if (will_be > peak.load(std::memory_order_relaxed))        /// Races doesn't matter. Could rewrite with CAS, but not worth.
+    auto peak_old = peak.load(std::memory_order_relaxed);
+    if (will_be > peak_old)        /// Races doesn't matter. Could rewrite with CAS, but not worth.
+    {
         peak.store(will_be, std::memory_order_relaxed);
+
+        if (level == VariableContext::Process && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
+            logMemoryUsage(will_be);
+    }
 
     if (auto loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->alloc(size);
@@ -138,7 +154,8 @@ void MemoryTracker::free(Int64 size)
 
     if (auto loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
-    else
+
+    if (metric != CurrentMetrics::end())
         CurrentMetrics::sub(metric, size);
 }
 
@@ -153,7 +170,7 @@ void MemoryTracker::resetCounters()
 
 void MemoryTracker::reset()
 {
-    if (!parent.load(std::memory_order_relaxed))
+    if (metric != CurrentMetrics::end())
         CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
 
     resetCounters();

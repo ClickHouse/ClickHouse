@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string>
-#include <Interpreters/ExpressionAnalyzer.h>
 
 namespace DB
 {

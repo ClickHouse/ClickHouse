@@ -47,7 +47,7 @@ using FunctionLength = FunctionStringOrArrayToT<LengthImpl, NameLength, UInt64>;
 
 void registerFunctionLength(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionLength>();
+    factory.registerFunction<FunctionLength>(FunctionFactory::CaseInsensitive);
 }
 
 }

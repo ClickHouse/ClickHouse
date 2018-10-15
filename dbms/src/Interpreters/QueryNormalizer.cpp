@@ -8,6 +8,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <iostream>
 
 namespace DB
 {
@@ -19,19 +21,11 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-bool functionIsInOrGlobalInOperator(const String & name)
-{
-    return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
-}
-
-}
-
-QueryNormalizer::QueryNormalizer(
-    ASTPtr & query, const QueryNormalizer::Aliases & aliases, const Settings & settings, const Names & all_columns_name)
-    : query(query), aliases(aliases), settings(settings), all_columns_name(all_columns_name)
+QueryNormalizer::QueryNormalizer(ASTPtr & query, const QueryNormalizer::Aliases & aliases,
+                                 const Settings & settings, const Names & all_column_names,
+                                 const TableNamesAndColumnNames & table_names_and_column_names)
+    : query(query), aliases(aliases), settings(settings), all_column_names(all_column_names),
+      table_names_and_column_names(table_names_and_column_names)
 {
 }
 
@@ -85,7 +79,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
                 if (!aliases.count(right->name))
-                    right->kind = ASTIdentifier::Table;
+                    right->setSpecial();
 
         /// Special cases for count function.
         String func_name_lowercase = Poco::toLower(func_node->name);
@@ -108,7 +102,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     }
     else if ((identifier_node = typeid_cast<ASTIdentifier *>(ast.get())))
     {
-        if (identifier_node->kind == ASTIdentifier::Column)
+        if (identifier_node->general())
         {
             /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
             auto it_alias = aliases.find(identifier_node->name);
@@ -122,7 +116,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                 {
                     /// Avoid infinite recursion here
                     auto replace_to_identifier = typeid_cast<ASTIdentifier *>(it_alias->second.get());
-                    bool is_cycle = replace_to_identifier && replace_to_identifier->kind == ASTIdentifier::Column
+                    bool is_cycle = replace_to_identifier && replace_to_identifier->general()
                         && replace_to_identifier->name == identifier_node->name;
 
                     if (!is_cycle)
@@ -143,16 +137,40 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     }
     else if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
-        /// Replace * with a list of columns.
+        /// Replace *, alias.*, database.table.* with a list of columns.
         ASTs & asts = expr_list->children;
-        for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
+        for (ssize_t expr_idx = asts.size() - 1; expr_idx >= 0; --expr_idx)
         {
-            if (typeid_cast<ASTAsterisk *>(asts[i].get()) && !all_columns_name.empty())
+            if (typeid_cast<const ASTAsterisk *>(asts[expr_idx].get()) && !all_column_names.empty())
             {
-                asts.erase(asts.begin() + i);
+                asts.erase(asts.begin() + expr_idx);
 
-                for (size_t idx = 0; idx < all_columns_name.size(); idx++)
-                    asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(all_columns_name[idx]));
+                for (size_t column_idx = 0; column_idx < all_column_names.size(); ++column_idx)
+                    asts.insert(asts.begin() + column_idx + expr_idx, std::make_shared<ASTIdentifier>(all_column_names[column_idx]));
+            }
+            else if (typeid_cast<const ASTQualifiedAsterisk *>(asts[expr_idx].get()) && !table_names_and_column_names.empty())
+            {
+                const ASTQualifiedAsterisk * qualified_asterisk = static_cast<const ASTQualifiedAsterisk *>(asts[expr_idx].get());
+                const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
+                size_t num_components = identifier->children.size();
+
+                for (const auto & [table_name, table_all_column_names] : table_names_and_column_names)
+                {
+                    if ((num_components == 2                    /// database.table.*
+                            && !table_name.database.empty()     /// This is normal (not a temporary) table.
+                            && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
+                            && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
+                        || (num_components == 0                                                         /// t.*
+                            && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
+                                || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
+                    {
+                        asts.erase(asts.begin() + expr_idx);
+                        for (size_t column_idx = 0; column_idx < table_all_column_names.size(); ++column_idx)
+                            asts.insert(asts.begin() + column_idx + expr_idx, std::make_shared<ASTIdentifier>(table_all_column_names[column_idx]));
+
+                        break;
+                    }
+                }
             }
         }
     }
@@ -164,9 +182,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
             if (database_and_table_name)
             {
                 if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(database_and_table_name.get()))
-                {
-                    right->kind = ASTIdentifier::Table;
-                }
+                    right->setSpecial();
             }
         }
     }

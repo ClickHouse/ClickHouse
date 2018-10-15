@@ -12,11 +12,18 @@ elseif ()
 endif()
 
 if (ENABLE_JEMALLOC)
+
+    if (USE_INTERNAL_JEMALLOC_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/jemalloc/src/jemalloc.c")
+       message (WARNING "submodule contrib/jemalloc is missing. to fix try run: \n git submodule update --init --recursive")
+       set (USE_INTERNAL_JEMALLOC_LIBRARY 0)
+       set (MISSING_INTERNAL_JEMALLOC_LIBRARY 1)
+    endif ()
+
     if (NOT USE_INTERNAL_JEMALLOC_LIBRARY)
         find_package (JeMalloc)
     endif ()
 
-    if (NOT JEMALLOC_LIBRARIES)
+    if (NOT JEMALLOC_LIBRARIES AND NOT MISSING_INTERNAL_JEMALLOC_LIBRARY)
         set (JEMALLOC_LIBRARIES "jemalloc")
         set (USE_INTERNAL_JEMALLOC_LIBRARY 1)
     endif ()

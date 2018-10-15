@@ -250,6 +250,9 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                 case AttributeUnderlyingType::Int16:
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
+                case AttributeUnderlyingType::Decimal32:
+                case AttributeUnderlyingType::Decimal64:
+                case AttributeUnderlyingType::Decimal128:
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
 

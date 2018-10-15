@@ -155,13 +155,14 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-if (NOT ARCH_ARM)
+if (NOT ARCH_ARM AND CPUID_LIBRARY)
     set (LINK_LIBRARIES_ONLY_ON_X86_64 ${CPUID_LIBRARY})
 endif()
 
 target_link_libraries (clickhouse_common_io
     common
     string_utils
+    widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}

@@ -1,13 +1,29 @@
 FROM ubuntu:18.04
 
-RUN apt-get update -y && \
-    env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-        cmake ninja-build ccache pkg-config gcc g++ \
-        liblld-6.0-dev libclang-6.0-dev \
-        libssl-dev libicu-dev libreadline-dev libmysqlclient-dev unixodbc-dev \
-        bash expect python python-lxml python-termcolor python-requests curl perl sudo tzdata
+RUN apt-get update -y \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get install --yes --no-install-recommends \
+            bash \
+            ccache \
+            cmake \
+            curl \
+            expect \
+            g++ \
+            gcc \
+            libclang-6.0-dev \
+            libicu-dev \
+            liblld-6.0-dev \
+            libreadline-dev \
+            ninja-build \
+            perl \
+            pkg-config \
+            python \
+            python-lxml \
+            python-requests \
+            python-termcolor \
+            sudo \
+            tzdata
 
-ADD build.sh /
-RUN chmod +x /build.sh
+COPY build.sh /
 
-CMD ["/build.sh"]
+CMD ["/bin/bash", "/build.sh"]

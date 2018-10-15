@@ -1,17 +1,34 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Parsers/IAST.h>
-#include "Settings.h"
+#include <Interpreters/Settings.h>
+#include <Interpreters/evaluateQualified.h>
 
 namespace DB
 {
+
+inline bool functionIsInOperator(const String & name)
+{
+    return name == "in" || name == "notIn";
+}
+
+inline bool functionIsInOrGlobalInOperator(const String & name)
+{
+    return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn";
+}
+
+
+using TableNameAndColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
+using TableNamesAndColumnNames = std::vector<TableNameAndColumnNames>;
 
 class QueryNormalizer
 {
 public:
     using Aliases = std::unordered_map<String, ASTPtr>;
 
-    QueryNormalizer(ASTPtr & query, const Aliases & aliases, const Settings & settings, const Names & all_columns_name);
+    QueryNormalizer(ASTPtr & query, const Aliases & aliases, const Settings & settings, const Names & all_columns_name,
+                    const TableNamesAndColumnNames & table_names_and_column_names);
 
     void perform();
 
@@ -22,9 +39,10 @@ private:
     ASTPtr & query;
     const Aliases & aliases;
     const Settings & settings;
-    const Names & all_columns_name;
+    const Names & all_column_names;
+    const TableNamesAndColumnNames & table_names_and_column_names;
 
-    void performImpl(ASTPtr &ast, MapOfASTs &finished_asts, SetOfASTs &current_asts, std::string current_alias, size_t level);
+    void performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
 };
 
 }

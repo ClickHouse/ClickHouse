@@ -177,7 +177,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction() {}
+        Transaction(MergeTreeData & data_) : data(data_) {}
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -201,14 +201,10 @@ public:
     private:
         friend class MergeTreeData;
 
-        MergeTreeData * data = nullptr;
+        MergeTreeData & data;
         DataParts precommitted_parts;
 
-        void clear()
-        {
-            data = nullptr;
-            precommitted_parts.clear();
-        }
+        void clear() { precommitted_parts.clear(); }
     };
 
     /// An object that stores the names of temporary files created in the part directory during ALTER of its
@@ -438,6 +434,9 @@ public:
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
+    /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
+    void tryRemovePartImmediately(DataPartPtr && part);
+
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
     DataPartsVector grabOldParts();
@@ -451,7 +450,7 @@ public:
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
 
-    /// Deleate all directories which names begin with "tmp"
+    /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 

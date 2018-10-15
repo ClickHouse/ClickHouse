@@ -31,6 +31,7 @@ nav:
   - 'Введение': 'data_types/index.md'
   - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
   - 'Float32, Float64': 'data_types/float.md'
+  - 'Decimal': 'data_types/decimal.md'
   - 'Булевы значения': 'data_types/boolean.md'
   - 'String': 'data_types/string.md'
   - 'FixedString(N)': 'data_types/fixedstring.md'

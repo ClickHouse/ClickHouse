@@ -204,7 +204,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
-        case Type::FLUSH_SYSTEM_TABLES:
+        case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
                     [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
@@ -225,7 +225,7 @@ BlockIO InterpreterSystemQuery::execute()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
     auto database = system_context.getDatabase(database_name);
-    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
+    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
 
     /// Detach actions

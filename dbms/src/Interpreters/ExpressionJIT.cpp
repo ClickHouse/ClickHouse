@@ -322,8 +322,13 @@ class LLVMPreparedFunction : public PreparedFunctionImpl
 
 public:
     LLVMPreparedFunction(std::string name_, std::shared_ptr<LLVMContext> context)
-        : name(std::move(name_)), context(context), function(context->symbols.at(name))
-    {}
+        : name(std::move(name_)), context(context)
+    {
+        auto it = context->symbols.find(name);
+        if (context->symbols.end() == it)
+            throw Exception("Cannot find symbol " + name + " in LLVMContext", ErrorCodes::LOGICAL_ERROR);
+        function = it->second;
+    }
 
     String getName() const override { return name; }
 
@@ -492,7 +497,7 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shar
     for (const auto & action : actions)
     {
         const auto & names = action.argument_names;
-        const auto & types = action.function->getArgumentTypes();
+        const auto & types = action.function_base->getArgumentTypes();
         std::vector<CompilableExpression> args;
         for (size_t i = 0; i < names.size(); ++i)
         {
@@ -504,13 +509,22 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shar
             }
             args.push_back(inserted.first->second);
         }
-        subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
-        originals.push_back(action.function);
+        subexpressions[action.result_name] = subexpression(*action.function_base, std::move(args));
+        originals.push_back(action.function_base);
     }
     compileFunctionToLLVMByteCode(context, *this);
 }
 
-PreparedFunctionPtr LLVMFunction::prepare(const Block &) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
+llvm::Value * LLVMFunction::compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const
+{
+    auto it = subexpressions.find(name);
+    if (subexpressions.end() == it)
+        throw Exception("Cannot find subexpression " + name + " in LLVMFunction", ErrorCodes::LOGICAL_ERROR);
+    return it->second(builder, values);
+}
+
+
+PreparedFunctionPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
 
 bool LLVMFunction::isDeterministic() const
 {
@@ -658,7 +672,7 @@ std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(cons
             case ExpressionAction::APPLY_FUNCTION:
             {
                 dependents[i] = current_dependents[actions[i].result_name];
-                const bool compilable = isCompilable(*actions[i].function);
+                const bool compilable = isCompilable(*actions[i].function_base);
                 for (const auto & name : actions[i].argument_names)
                 {
                     if (compilable)
@@ -691,12 +705,10 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     static LLVMTargetInitializer initializer;
 
     auto dependents = getActionsDependents(actions, output_columns);
-    /// Initialize context as late as possible and only if needed
-    std::shared_ptr<LLVMContext> context;
     std::vector<ExpressionActions::Actions> fused(actions.size());
     for (size_t i = 0; i < actions.size(); ++i)
     {
-        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function))
+        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function_base))
             continue;
 
         fused[i].push_back(actions[i]);
@@ -708,7 +720,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
 
             auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
             {
-                std::lock_guard<std::mutex> lock(mutex);
+                std::lock_guard lock(mutex);
                 if (counter[hash_key]++ < min_count_to_compile)
                     continue;
             }
@@ -716,30 +728,28 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
-                /// Lock here, to be sure, that all functions will be compiled
-                std::lock_guard<std::mutex> lock(mutex);
-                /// Don't use getOrSet here, because sometimes we need to initialize context
-                fn = compilation_cache->get(hash_key);
-                if (!fn)
+                std::tie(fn, std::ignore) = compilation_cache->getOrSet(hash_key, [&inlined_func=std::as_const(fused[i]), &sample_block] ()
                 {
-                    if (!context)
-                        context = std::make_shared<LLVMContext>();
                     Stopwatch watch;
-                    fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
+                    std::shared_ptr<LLVMContext> context = std::make_shared<LLVMContext>();
+                    auto result_fn = std::make_shared<LLVMFunction>(inlined_func, context, sample_block);
+                    size_t used_memory = context->compileAllFunctionsToNativeCode();
+                    ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, used_memory);
                     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
-                    compilation_cache->set(hash_key, fn);
-                }
+                    return result_fn;
+                });
             }
             else
             {
-                if (!context)
-                    context = std::make_shared<LLVMContext>();
+                std::shared_ptr<LLVMContext> context = std::make_shared<LLVMContext>();
                 Stopwatch watch;
                 fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
+                size_t used_memory = context->compileAllFunctionsToNativeCode();
+                ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, used_memory);
                 ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
             }
 
-            actions[i].function = fn;
+            actions[i].function_base = fn;
             actions[i].argument_names = fn->getArgumentNames();
             actions[i].is_function_compiled = true;
 
@@ -751,12 +761,10 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    if (context)
+    for (size_t i = 0; i < actions.size(); ++i)
     {
-        /// Lock here, because other threads can get uncompilted functions from cache
-        std::lock_guard<std::mutex> lock(mutex);
-        size_t used_memory = context->compileAllFunctionsToNativeCode();
-        ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, used_memory);
+        if (actions[i].type == ExpressionAction::APPLY_FUNCTION && actions[i].is_function_compiled)
+            actions[i].function = actions[i].function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
     }
 }
 

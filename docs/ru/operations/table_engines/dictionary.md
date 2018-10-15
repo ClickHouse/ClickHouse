@@ -2,7 +2,7 @@
 
 # Dictionary
 
-Движок `Dictionary` отображает данные словаря как таблицу ClickHouse.
+Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md#dicts-external_dicts) как таблицу ClickHouse.
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 

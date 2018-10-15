@@ -55,7 +55,9 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int THERE_IS_NO_DEFAULT_VALUE;
 }
 
 
@@ -72,8 +74,16 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     String database_name = create.database;
 
-    if (create.if_not_exists && context.isDatabaseExist(database_name))
-        return {};
+    auto guard = context.getDDLGuard(database_name, "");
+
+    /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
+    if (context.isDatabaseExist(database_name))
+    {
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+    }
 
     String database_engine_name;
     if (!create.storage)
@@ -215,6 +225,10 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
         const auto block = actions->getSampleBlock();
 
+        for (auto action : actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+
         for (auto & column : defaulted_columns)
         {
             const auto name_and_type_ptr = column.first;
@@ -355,26 +369,19 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
 {
     const auto & settings = context.getSettingsRef();
     bool allow_low_cardinality = settings.allow_experimental_low_cardinality_type != 0;
-    bool allow_decimal = settings.allow_experimental_decimal_type;
 
-    if (allow_low_cardinality && allow_decimal)
+    if (allow_low_cardinality)
         return;
 
     auto check_types = [&](const NamesAndTypesList & list)
     {
         for (const auto & column : list)
         {
-            if (!allow_low_cardinality && column.type && column.type->withDictionary())
+            if (!allow_low_cardinality && column.type && column.type->lowCardinality())
             {
                 String message = "Cannot create table with column '" + column.name + "' which type is '"
                                  + column.type->getName() + "' because LowCardinality type is not allowed. "
                                  + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-            if (!allow_decimal && column.type && isDecimal(column.type))
-            {
-                String message = "Cannot create table with column '" + column.name + "' which type is '" + column.type->getName()
-                                 + "'. Set setting allow_experimental_decimal_type = 1 in order to allow it.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }
@@ -544,15 +551,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
 
-            /** If the table already exists, and the request specifies IF NOT EXISTS,
-              *  then we allow concurrent CREATE queries (which do nothing).
-              * Otherwise, concurrent queries for creating a table, if the table does not exist,
-              *  can throw an exception, even if IF NOT EXISTS is specified.
+            /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
+              * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
               */
-            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
-                "Table " + database_name + "." + table_name + " is creating or attaching right now");
+            guard = context.getDDLGuard(database_name, table_name);
 
-            if (!guard)
+            /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
+            if (database->isTableExist(context, table_name))
             {
                 if (create.if_not_exists)
                     return {};

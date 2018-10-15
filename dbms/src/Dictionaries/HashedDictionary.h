@@ -4,6 +4,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/HashTable/HashMap.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <atomic>
@@ -64,8 +65,11 @@ public:
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
 #define DECLARE(TYPE)\
-    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const;
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -77,6 +81,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
@@ -84,7 +91,7 @@ public:
 #define DECLARE(TYPE)\
     void get##TYPE(\
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
-        PaddedPODArray<TYPE> & out) const;
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -96,6 +103,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(
@@ -104,7 +114,7 @@ public:
 
 #define DECLARE(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const;
+        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -116,6 +126,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(
@@ -141,12 +154,14 @@ private:
             UInt8, UInt16, UInt32, UInt64,
             UInt128,
             Int8, Int16, Int32, Int64,
+            Decimal32, Decimal64, Decimal128,
             Float32, Float64,
             String> null_values;
         std::tuple<
             CollectionPtrType<UInt8>, CollectionPtrType<UInt16>, CollectionPtrType<UInt32>, CollectionPtrType<UInt64>,
             CollectionPtrType<UInt128>,
             CollectionPtrType<Int8>, CollectionPtrType<Int16>, CollectionPtrType<Int32>, CollectionPtrType<Int64>,
+            CollectionPtrType<Decimal32>, CollectionPtrType<Decimal64>, CollectionPtrType<Decimal128>,
             CollectionPtrType<Float32>, CollectionPtrType<Float64>,
             CollectionPtrType<StringRef>> maps;
         std::unique_ptr<Arena> string_arena;

@@ -25,6 +25,9 @@ using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
+class IPreparedFunction;
+using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
+
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -86,8 +89,12 @@ public:
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
+    /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
-    FunctionBasePtr function;
+    /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
+    FunctionBasePtr function_base;
+    /// Prepared function which is used in function execution.
+    PreparedFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
 
@@ -135,7 +142,7 @@ public:
 private:
     friend class ExpressionActions;
 
-    void prepare(Block & sample_block);
+    void prepare(Block & sample_block, const Settings & settings);
     size_t getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void executeOnTotals(Block & block) const;

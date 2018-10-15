@@ -279,12 +279,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## keep_alive_timeout
 
-Время в миллисекундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
+Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
 
 **Пример**
 
 ```xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 <a name="server_settings-listen_host"></a>
