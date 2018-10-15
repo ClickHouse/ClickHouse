@@ -157,7 +157,11 @@ protected:
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *
-      * primary_key_ast      - expression for sorting;
+      * sorting_key_ast - expression used for sorting data in parts;
+      * primary_key_ast - values of this expression for one row in every `index_granularity` rows
+      *     are written in the primary.idx to speed up range queries.
+      *     Primary key must be a prefix of the sorting key;
+      *
       * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
           otherwise, partition_expr_ast is used as the partitioning expression;
       */
