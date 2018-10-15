@@ -997,6 +997,10 @@ template <> constexpr bool IsIntegral<DataTypeInt16> = true;
 template <> constexpr bool IsIntegral<DataTypeInt32> = true;
 template <> constexpr bool IsIntegral<DataTypeInt64> = true;
 
+template <typename DataType> constexpr bool IsNonIntegral = false;
+template <> constexpr bool IsNonIntegral<DataTypeFloat32> = true;
+template <> constexpr bool IsNonIntegral<DataTypeFloat64> = true;
+
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
@@ -1058,7 +1062,8 @@ public:
             LeftDataType>,
         /// Date % Int32 -> int32
         Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
-            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>>>>;
+            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
+            Case<IsDateOrDateTime<LeftDataType> && IsNonIntegral<RightDataType>, DataTypeInt32>>>>;
 
 };
 
