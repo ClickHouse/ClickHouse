@@ -88,7 +88,7 @@ struct MergeTreeDataPartChecksums
 
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
-/// MinimalisticDataPartChecksums and MergeTreeDataPartChecksums hasve the same serialization format
+/// MinimalisticDataPartChecksums and MergeTreeDataPartChecksums have the same serialization format
 ///  for versions less than MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS.
 struct MinimalisticDataPartChecksums
 {

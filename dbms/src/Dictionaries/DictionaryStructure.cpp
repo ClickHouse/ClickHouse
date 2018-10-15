@@ -104,6 +104,17 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
     if (it != std::end(dictionary))
         return it->second;
 
+    if (type.find("Decimal") == 0)
+    {
+        size_t start = strlen("Decimal");
+        if (type.find("32", start) == start)
+            return AttributeUnderlyingType::Decimal32;
+        if (type.find("64", start) == start)
+            return AttributeUnderlyingType::Decimal64;
+        if (type.find("128", start) == start)
+            return AttributeUnderlyingType::Decimal128;
+    }
+
     throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
 }
 
@@ -123,6 +134,9 @@ std::string toString(const AttributeUnderlyingType type)
         case AttributeUnderlyingType::Int64: return "Int64";
         case AttributeUnderlyingType::Float32: return "Float32";
         case AttributeUnderlyingType::Float64: return "Float64";
+        case AttributeUnderlyingType::Decimal32: return "Decimal32";
+        case AttributeUnderlyingType::Decimal64: return "Decimal64";
+        case AttributeUnderlyingType::Decimal128: return "Decimal128";
         case AttributeUnderlyingType::String: return "String";
     }
 
@@ -316,10 +330,15 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             const auto null_value_string = config.getString(prefix + "null_value");
             try
             {
-                ReadBufferFromString null_value_buffer{null_value_string};
-                auto column_with_null_value = type->createColumn();
-                type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
-                null_value = (*column_with_null_value)[0];
+                if (null_value_string.empty())
+                    null_value = type->getDefault();
+                else
+                {
+                    ReadBufferFromString null_value_buffer{null_value_string};
+                    auto column_with_null_value = type->createColumn();
+                    type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    null_value = (*column_with_null_value)[0];
+                }
             }
             catch (Exception & e)
             {

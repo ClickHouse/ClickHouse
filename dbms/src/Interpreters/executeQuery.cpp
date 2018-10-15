@@ -142,7 +142,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end);
+    ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
     size_t query_size;
 

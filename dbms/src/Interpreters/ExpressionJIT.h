@@ -30,7 +30,7 @@ public:
 
     bool isCompilable() const override { return true; }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return subexpressions.at(name)(builder, values); }
+    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override;
 
     String getName() const override { return name; }
 
