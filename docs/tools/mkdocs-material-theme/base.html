@@ -63,7 +63,7 @@
       <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     {% endblock %}
     {% for path in extra_css %}
-      <link rel="stylesheet" href="{{ path }}">
+      <link rel="stylesheet" href="{{ path }}?{{ config.theme.extra.now }}">
     {% endfor %}
     {% block extrahead %}{% endblock %}
   </head>

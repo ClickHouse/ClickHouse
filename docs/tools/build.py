@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from mkdocs import config
 from mkdocs import exceptions
@@ -62,7 +63,7 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
-                'now': datetime.datetime.now() # TODO better way to avoid caching
+                'now': int(time.mktime(datetime.datetime.now().timetuple())) # TODO better way to avoid caching
             }
         }
 
