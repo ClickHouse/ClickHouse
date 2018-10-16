@@ -12,7 +12,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
     /// Special case for very large arrays. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     if (value.getType() == Field::Types::Array
-        && value.get<const Array &>().size() > 100)        /// 100 - just arbitary value.
+        && value.get<const Array &>().size() > 100)        /// 100 - just arbitrary value.
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);

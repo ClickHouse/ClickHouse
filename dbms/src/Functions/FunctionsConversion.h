@@ -340,7 +340,7 @@ struct ConvertImplGenericToString
         ColumnString::Chars_t & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
-        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
+        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitrary.
         offsets_to.resize(size);
 
         WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
