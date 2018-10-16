@@ -23,8 +23,9 @@ public:
         CompressionSettings compression_settings_,
         size_t aio_threshold_);
 
+    using WrittenOffsetColumns = std::set<std::string>;
+
 protected:
-    using OffsetColumns = std::set<std::string>;
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::vector<SerializationState>;
 
@@ -67,10 +68,10 @@ protected:
     void addStreams(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
 
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, OffsetColumns & offset_columns, bool skip_offsets);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
     /// Write data of one column.
-    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
+    void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenOffsetColumns & offset_columns,
                    bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
 
     MergeTreeData & storage;
@@ -150,13 +151,15 @@ private:
 };
 
 
-/// Writes only those columns that are in `block`
+/// Writes only those columns that are in `header`
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
     /// skip_offsets: used when ALTERing columns if we know that array offsets are not altered.
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
+        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
+        CompressionSettings compression_settings, bool skip_offsets_,
+        WrittenOffsetColumns & already_written_offset_columns);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -171,6 +174,9 @@ private:
     bool initialized = false;
     bool sync;
     bool skip_offsets;
+
+    /// To correctly write Nested elements column-by-column.
+    WrittenOffsetColumns & already_written_offset_columns;
 };
 
 }
