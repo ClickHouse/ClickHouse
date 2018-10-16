@@ -40,9 +40,8 @@ def get_postgres_conn():
     return conn
 
 def create_postgres_db(conn, name):
-    with conn.cursor() as cursor:
-        cursor.execute(
-            "CREATE SCHEMA {}".format(name))
+    cursor = conn.cursor()
+    cursor.execute("CREATE SCHEMA {}".format(name))
 
 @pytest.fixture(scope="module")
 def started_cluster():
