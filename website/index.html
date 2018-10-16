@@ -490,16 +490,6 @@ clickhouse-client
         if (hostParts.length > 2 && hostParts[0] != 'test') {
             window.location.host = hostParts[0] + '.' + hostParts[1];
         }
-
-/*        var available_distributives = ['xenial', 'trusty', 'precise'];
-        available_distributives.forEach(function (name) {
-            $('#ubuntu_' + name).on('click', function () {
-                $('#distributive').html(name);
-                available_distributives.forEach(function (distr) {
-                    $('#ubuntu_' + distr).attr('class', (name == distr) ? 'distributive_selected' : 'distributive_not_selected');
-                });
-            });
-        });*/
     });
 </script>
 
