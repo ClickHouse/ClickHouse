@@ -1,7 +1,3 @@
-#if __SSE2__
-#include <emmintrin.h>
-#endif
-
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -122,33 +118,11 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-void ColumnDecimal<T>::insertData(const char * pos, size_t /*length*/)
+void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
 {
-    data.push_back(T());
-
-    const void * src = pos;
-    void * dst = &data.back();
-
-#if __SSE2__
-    /// prevent aligned SSE load/store.
-    if constexpr (sizeof(T) == 4)
-    {
-        __m128 value = _mm_load_ss(static_cast<const float *>(src));
-        _mm_store_ss(static_cast<float *>(dst), value);
-    }
-    else if constexpr (sizeof(T) == 8)
-    {
-        __m128d value = _mm_load_sd(static_cast<const double *>(src));
-        _mm_store_sd(static_cast<double *>(dst), value);
-    }
-    else if constexpr (sizeof(T) == 16)
-    {
-        __m128i value = _mm_loadu_si128(static_cast<const __m128i *>(src));
-        _mm_storeu_si128(static_cast<__m128i *>(dst), value);
-    }
-#else
-    memcpy(dst, src, sizeof(T));
-#endif
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
 template <typename T>
