@@ -37,6 +37,7 @@ def get_postgres_conn():
     conn_string = "host='localhost' user='postgres' password='mysecretpassword'"
     conn = psycopg2.connect(conn_string)
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    conn.autocommit = True
     return conn
 
 def create_postgres_db(conn, name):
@@ -66,6 +67,9 @@ def started_cluster():
 
         create_postgres_db(postgres_conn, 'clickhouse')
         print "postgres db created"
+
+        cursor = postgres_conn.cursor()
+        cursor.execute("create table if not exists clickhouse.test_table (column1 int primary key, column2 varchar(40) not null)")
 
         yield cluster
 
@@ -168,8 +172,6 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
 def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     conn = get_postgres_conn()
     cursor = conn.cursor()
-    cursor.execute("drop table if exists clickhouse.test_table")
-    cursor.execute("create table if not exists clickhouse.test_table (column1 int primary key, column2 varchar(40) not null)")
     cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
     time.sleep(5)
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
