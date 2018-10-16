@@ -51,7 +51,7 @@ two	2
 SELECT * FROM file_engine_table
 ```
 
-```text
+```
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │

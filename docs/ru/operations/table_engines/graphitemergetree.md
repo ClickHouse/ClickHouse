@@ -27,7 +27,7 @@ Graphite хранит в ClickHouse полные данные, а получат
 
 Шаблон правил rollup:
 
-```text
+```
 pattern
     regexp
     function

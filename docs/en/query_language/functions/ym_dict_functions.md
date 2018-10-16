@@ -20,7 +20,7 @@ All the dictionaries are re-loaded in runtime (once every certain number of seco
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Example:
 
-```text
+```
 regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
 regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
 regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
@@ -40,7 +40,7 @@ FROM system.numbers
 LIMIT 15
 ```
 
-```text
+```
 ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
 │                                                      │
 │ Moscow and Moscow region                             │
@@ -70,7 +70,7 @@ FROM system.numbers
 LIMIT 15
 ```
 
-```text
+```
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
 │                                                          │
 │ Central federal district                                 │

@@ -86,7 +86,7 @@ Allows executing JOIN with an array or nested data structure. The intent is simi
 
 `ARRAY JOIN` is essentially `INNER JOIN` with an array. Example:
 
-```text
+```
 :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
 CREATE TABLE arrays_test
@@ -139,7 +139,7 @@ ARRAY JOIN arr
 
 An alias can be specified for an array in the ARRAY JOIN clause. In this case, an array item can be accessed by this alias, but the array itself by the original name. Example:
 
-```text
+```
 :) SELECT s, arr, a FROM arrays_test ARRAY JOIN arr AS a
 
 SELECT s, arr, a
@@ -159,7 +159,7 @@ ARRAY JOIN arr AS a
 
 Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product). Example:
 
-```text
+```
 :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
 SELECT s, arr, a, num, mapped
@@ -195,7 +195,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
 
 ARRAY JOIN also works with nested data structures. Example:
 
-```text
+```
 :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
 CREATE TABLE nested_test
@@ -250,7 +250,7 @@ ARRAY JOIN nest
 
 When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
 SELECT s, `nest.x`, `nest.y`
@@ -270,7 +270,7 @@ ARRAY JOIN `nest.x`, `nest.y`
 
 This variation also makes sense:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x
 
 SELECT s, `nest.x`, `nest.y`
@@ -290,7 +290,7 @@ ARRAY JOIN `nest.x`
 
 An alias may be used for a nested data structure, in order to select either the JOIN result or the source array. Example:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
@@ -310,7 +310,7 @@ ARRAY JOIN nest AS n
 
 Example of using the arrayEnumerate function:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -395,7 +395,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │
@@ -787,7 +787,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text
+```
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │

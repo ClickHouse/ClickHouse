@@ -32,7 +32,7 @@ Then this nested table is interpreted as a mapping of key `=>` (values...), and 
 
 Examples:
 
-```text
+```
 [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
 [(1, 100)] + [(1, 150)] -> [(1, 250)]
 [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]

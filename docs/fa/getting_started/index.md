@@ -26,7 +26,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 </div>
 
-```text
+```
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
@@ -58,7 +58,7 @@ ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. 
 
 </div>
 
-```text
+```
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
@@ -69,7 +69,7 @@ Server: dbms/programs/clickhouse-server
 
 </div>
 
-```text
+```
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```

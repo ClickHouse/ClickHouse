@@ -24,7 +24,7 @@ For testing and development, the system can be installed on a single server or o
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
-```text
+```
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
@@ -51,14 +51,14 @@ To compile, follow the instructions: build.md
 You can compile packages and install them.
 You can also use programs without installing packages.
 
-```text
+```
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
 For the server, create a catalog with data, such as:
 
-```text
+```
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```

@@ -82,7 +82,7 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-```text
+```
 ┌──h─┬──────c─┬─bar────────────────┐
 │  0 │ 292907 │ █████████▋         │
 │  1 │ 180563 │ ██████             │
@@ -151,7 +151,7 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-```text
+```
 ┌─title─────┬──────c─┐
 │ Yandex    │ 498635 │
 │ Google    │ 229872 │
@@ -180,7 +180,7 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─s──────────────┬───────c─┐
 │                │ 2906259 │
 │ www.yandex     │  867767 │
@@ -205,7 +205,7 @@ SELECT
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-```text
+```
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
 │           1024 │ 1.00 KiB   │
@@ -255,7 +255,7 @@ FROM
 )
 ```
 
-```text
+```
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
 │    1107 │ 2016-11-24 00:00:05 │     1 │

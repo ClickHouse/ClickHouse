@@ -18,7 +18,7 @@ Example: The number of SELECT queries currently running; the amount of memory in
 Contains information about clusters available in the config file and the servers in them.
 Columns:
 
-```text
+```
 cluster String      — The cluster name.
 shard_num UInt32 — The shard number in the cluster, starting from 1.
 shard_weight UInt32 — The relative weight of the shard when writing data.
@@ -34,7 +34,7 @@ user String — The name of the user for connecting to the server.
 Contains information about the columns in all tables.
 You can use this table to get information similar to `DESCRIBE TABLE`, but for multiple tables at once.
 
-```text
+```
 database String — The name of the database the table is in.
 table String – Table name.
 name String — Column name.
@@ -183,7 +183,7 @@ Formats:
 This system table is used for implementing the `SHOW PROCESSLIST` query.
 Columns:
 
-```text
+```
 user String              – Name of the user who made the request. For distributed query processing, this is the user who helped the requestor server send the query to this server, not the user who made the distributed request on the requestor server.
 
 address String           - The IP address the request was made from. The same for distributed processing.
@@ -217,7 +217,7 @@ WHERE table = 'visits'
 FORMAT Vertical
 ```
 
-```text
+```
 Row 1:
 ──────
 database:           merge
@@ -243,7 +243,7 @@ active_replicas:    2
 
 Columns:
 
-```text
+```
 database:          Database name
 table:              Table name
 engine:            Table engine name
@@ -335,7 +335,7 @@ I.e. used for executing the query you are using to read from the system.settings
 
 Columns:
 
-```text
+```
 name String  — Setting name.
 value String  — Setting value.
 changed UInt8 — Whether the setting was explicitly defined in the config or explicitly changed.
@@ -349,7 +349,7 @@ FROM system.settings
 WHERE changed
 ```
 
-```text
+```
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
 │ use_uncompressed_cache │ 0           │       1 │
@@ -400,7 +400,7 @@ WHERE path = '/clickhouse/tables/01-08/visits/replicas'
 FORMAT Vertical
 ```
 
-```text
+```
 Row 1:
 ──────
 name:           example01-08-1.yandex.ru

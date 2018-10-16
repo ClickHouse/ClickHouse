@@ -24,7 +24,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─k──────────────┬─────c─┐
 │ 83.149.9.xxx   │ 26238 │
 │ 217.118.81.xxx │ 26074 │
@@ -50,7 +50,7 @@ IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. Exampl
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
-```text
+```
 ┌─addr─────────┐
 │ 2a02:6b8::11 │
 └──────────────┘
@@ -67,7 +67,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
 │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
 │ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
@@ -93,7 +93,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
 │ ::ffff:94.26.111.111       │ 747440 │
 │ ::ffff:37.143.222.4        │ 529483 │

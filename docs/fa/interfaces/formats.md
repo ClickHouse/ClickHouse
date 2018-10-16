@@ -51,7 +51,7 @@ Dates با فرمت YYY-MM-DD نوشته می شوند و به همین حالت
 
 </div>
 
-```text
+```
 Hello\nworld
 
 Hello\
@@ -78,7 +78,7 @@ world
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```text
+```
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -123,7 +123,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 </div>
 
-```text
+```
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
 SearchPhrase=yandex     count()=1655
@@ -354,7 +354,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │

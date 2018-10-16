@@ -78,7 +78,7 @@ Two parameters are also added in the beginning of the parameters list – the pa
 
 Example:
 
-```text
+```
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 ```
 

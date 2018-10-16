@@ -28,7 +28,7 @@ LIMIT 7
 FORMAT TabSeparated
 ```
 
-```text
+```
 2014-03-17      03/17/2014
 2014-03-18      03/18/2014
 2014-03-19      03/19/2014
@@ -44,7 +44,7 @@ Example 2. Copying a string ten times:
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
-```text
+```
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -58,7 +58,7 @@ This does the same thing, but replaces all the occurrences. Example:
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
-```text
+```
 ┌─res────────────────────────┐
 │ HHeelllloo,,  WWoorrlldd!! │
 └────────────────────────────┘
@@ -71,7 +71,7 @@ Example:
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
-```text
+```
 ┌─res─────────────────┐
 │ here: Hello, World! │
 └─────────────────────┘

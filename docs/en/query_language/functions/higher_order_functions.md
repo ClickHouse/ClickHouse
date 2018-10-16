@@ -26,7 +26,7 @@ Examples:
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```text
+```
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
@@ -41,7 +41,7 @@ SELECT
     AS res
 ```
 
-```text
+```
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -81,7 +81,7 @@ Example:
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```text
+```
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -99,7 +99,7 @@ Example:
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```text
+```
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘

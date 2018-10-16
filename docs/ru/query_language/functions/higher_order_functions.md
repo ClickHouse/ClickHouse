@@ -26,7 +26,7 @@
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```text
+```
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
@@ -41,7 +41,7 @@ SELECT
     AS res
 ```
 
-```text
+```
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -75,7 +75,7 @@ SELECT
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```text
+```
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -94,7 +94,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```text
+```
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘

@@ -29,7 +29,7 @@ Generates an exception when the input parameter values fall outside of the range
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
-```text
+```
 ┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
 │                                                14132374.194975413 │
 └───────────────────────────────────────────────────────────────────┘
@@ -62,7 +62,7 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
 ```
 
-```text
+```
 ┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
 │                                                                   1 │
 └─────────────────────────────────────────────────────────────────────┘

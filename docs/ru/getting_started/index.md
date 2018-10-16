@@ -24,7 +24,7 @@ ClickHouse также работает на FreeBSD и Mac OS X; может бы
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
 
-```text
+```
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
@@ -51,14 +51,14 @@ ClickHouse содержит настройки ограничения досту
 Вы можете собрать пакеты и установить их.
 Также вы можете использовать программы без установки пакетов.
 
-```text
+```
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
 Для сервера создаёте директории с данными, например:
 
-```text
+```
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```

@@ -48,7 +48,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```text
+```
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -80,7 +80,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 Строки выводятся с экранированием спец-символов с помощью обратного слеша. При выводе, используются следующие escape-последовательности: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. При парсинге, также поддерживаются последовательности `\a`, `\v`, а также `\xHH` (hex escape-последовательности) и любые последовательности вида `\c`, где `c` - любой символ - такие последовательности преобразуется в `c`. Таким образом, при чтении поддерживаются форматы, где перевод строки может быть записан как `\n` и как `\` и перевод строки. Например, строка `Hello world`, где между словами вместо пробела стоит перевод строки, может быть считана в любом из следующих вариантов:
 
-```text
+```
 Hello\nworld
 
 Hello\
@@ -128,7 +128,7 @@ world
 
 Похож на TabSeparated, но выводит значения в формате name=value. Имена экранируются так же, как строки в формате TabSeparated и, дополнительно, экранируется также символ =.
 
-```text
+```
 SearchPhrase=   count()=8267016
 SearchPhrase=интерьер ванной комнаты    count()=2166
 SearchPhrase=яндекс     count()=1655
@@ -380,7 +380,7 @@ SELECT * FROM t_null
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
