@@ -57,3 +57,5 @@ Example of settings:
 </dictionary>
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

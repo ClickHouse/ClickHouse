@@ -16,3 +16,5 @@ Uses a linear congruential generator.
 Returns a pseudo-random UInt64 number, evenly distributed among all UInt64-type numbers.
 Uses a linear congruential generator.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/random_functions/) <!--hide-->

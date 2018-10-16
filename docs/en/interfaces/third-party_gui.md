@@ -45,3 +45,5 @@ Key features:
 - Query development with syntax highlight.
 - Table preview.
 - Autocompletion.
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_gui/) <!--hide-->

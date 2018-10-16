@@ -25,3 +25,5 @@ MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
 
 Движок `MySQL` не поддерживает тип данных [Nullable](../../data_types/nullable.md#data_type-nullable), поэтому при чтении данных из таблиц MySQL `NULL` преобразуются в значения по умолчанию для заданного типа столбца, обычно это 0 или пустая строка.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/mysql/) <!--hide-->

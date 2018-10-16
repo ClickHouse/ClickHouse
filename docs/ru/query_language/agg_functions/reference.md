@@ -37,7 +37,7 @@ anyHeavy(column)
 
 Возьмем набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
@@ -109,7 +109,7 @@ SELECT argMin(user, salary) FROM salary
 
 Пример:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -130,7 +130,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```text
+```
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -352,7 +352,7 @@ topK(N)(column)
 
 Возьмем набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
@@ -377,3 +377,5 @@ FROM ontime
 ## corr(x, y)
 
 Вычисляет коэффициент корреляции Пирсона: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->

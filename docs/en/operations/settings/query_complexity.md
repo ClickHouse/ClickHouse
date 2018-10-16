@@ -193,3 +193,5 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 ## transfer_overflow_mode
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->

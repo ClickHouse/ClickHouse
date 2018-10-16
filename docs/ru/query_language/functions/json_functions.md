@@ -29,7 +29,7 @@
 
 Примеры:
 
-```text
+```
 visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
@@ -39,7 +39,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 
 Примеры:
 
-```text
+```
 visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
 visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''
@@ -47,3 +47,5 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
 На данный момент, не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/json_functions/) <!--hide-->

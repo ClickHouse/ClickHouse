@@ -116,3 +116,4 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
     <password>password</password>
 </config>
 ```
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/cli/) <!--hide-->

@@ -7,7 +7,7 @@
 
 Изменение структуры таблицы.
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 ```
 
@@ -16,7 +16,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 
 Существуют следующие действия:
 
-```sql
+``` sql
 ADD COLUMN name [type] [default_expr] [AFTER name_after]
 ```
 
@@ -26,14 +26,14 @@ ADD COLUMN name [type] [default_expr] [AFTER name_after]
 
 Такая схема позволяет добиться мгновенной работы запроса ALTER и отсутствия необходимости увеличивать объём старых данных.
 
-```sql
+``` sql
 DROP COLUMN name
 ```
 
 Удаляет столбец с именем name.
 Удаляет данные из файловой системы. Так как это представляет собой удаление целых файлов, запрос выполняется почти мгновенно.
 
-```sql
+``` sql
 MODIFY COLUMN name [type] [default_expr]
 ```
 
@@ -84,7 +84,7 @@ MODIFY COLUMN name [type] [default_expr]
 
 Чтобы посмотреть набор кусков и партиций таблицы, можно воспользоваться системной таблицей `system.parts`:
 
-```sql
+``` sql
 SELECT * FROM system.parts WHERE active
 ```
 
@@ -122,7 +122,7 @@ drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
 
 Директория `detached` содержит куски, не используемые сервером - отцепленные от таблицы с помощью запроса `ALTER ... DETACH`. Также в эту директорию переносятся куски, признанные повреждёнными, вместо их удаления. Вы можете в любое время добавлять, удалять, модифицировать данные в директории detached - сервер не будет об этом знать, пока вы не сделаете запрос `ALTER TABLE ... ATTACH`.
 
-```sql
+``` sql
 ALTER TABLE [db.]table DETACH PARTITION 'name'
 ```
 
@@ -133,13 +133,13 @@ ALTER TABLE [db.]table DETACH PARTITION 'name'
 
 Запрос реплицируется - данные будут перенесены в директорию detached и забыты на всех репликах. Запрос может быть отправлен только на реплику-лидер. Вы можете узнать, является ли реплика лидером, сделав SELECT в системную таблицу system.replicas. Или, проще, вы можете выполнить запрос на всех репликах, и на всех кроме одной, он кинет исключение.
 
-```sql
+``` sql
 ALTER TABLE [db.]table DROP PARTITION 'name'
 ```
 
 Аналогично операции `DETACH`. Удалить данные из таблицы. Куски с данными будут помечены как неактивные и будут полностью удалены примерно через 10 минут. Запрос реплицируется - данные будут удалены на всех репликах.
 
-```sql
+``` sql
 ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 ```
 
@@ -151,7 +151,7 @@ ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 
 То есть, вы можете разместить данные в директории detached на одной реплике и, с помощью запроса ALTER ... ATTACH добавить их в таблицу на всех репликах.
 
-```sql
+``` sql
 ALTER TABLE [db.]table FREEZE PARTITION 'name'
 ```
 
@@ -195,7 +195,7 @@ ALTER TABLE [db.]table FREEZE PARTITION 'name'
 Бэкапы защищают от человеческих ошибок (случайно удалили данные, удалили не те данные или не на том кластере, испортили данные).
 Для баз данных большого объёма, бывает затруднительно копировать бэкапы на удалённые серверы. В этих случаях, для защиты от человеческой ошибки, можно держать бэкап на том же сервере (он будет лежать в `/var/lib/clickhouse/shadow/`).
 
-```sql
+``` sql
 ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 ```
 
@@ -231,13 +231,13 @@ ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 
 На данный момент доступны команды:
 
-```sql
+``` sql
 ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
 Выражение `filter_expr` должно иметь тип UInt8. Запрос удаляет строки таблицы, для которых это выражение принимает ненулевое значение.
 
-```sql
+``` sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 
@@ -270,3 +270,5 @@ ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 **parts_to_do** - Количество кусков таблицы, которые ещё предстоит изменить.
 
 **is_done** - Завершена ли мутация. Замечание: даже если `parts_to_do = 0`, для реплицированной таблицы возможна ситуация, когда мутация ещё не завершена из-за долго выполняющейся вставки, которая добавляет данные, которые нужно будет мутировать.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/alter/) <!--hide-->

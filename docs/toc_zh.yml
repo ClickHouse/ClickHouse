@@ -1,11 +1,11 @@
 nav:
 
 - '介绍':
-  - 'Overview': 'index.md'
-  - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
-  - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
-  - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
+  - '概貌': 'index.md'
+  - 'ClickHouse的独特功能': 'introduction/distinctive_features.md'
+  - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
+  - '性能': 'introduction/performance.md'
+  - 'Yandex.Metrica使用案例': 'introduction/ya_metrika_task.md'
 
 - '起步':
   - '部署运行': 'getting_started/index.md'
@@ -28,7 +28,7 @@ nav:
   - '输入输出格式': 'interfaces/formats.md'
 
 - '数据类型':
-  - 'Introduction': 'data_types/index.md'
+  - '介绍': 'data_types/index.md'
   - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
   - 'Float32, Float64': 'data_types/float.md'
   - 'Decimal': 'data_types/decimal.md'
@@ -51,7 +51,7 @@ nav:
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
 
-- 'SQL 语法':
+- 'SQL语法':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
@@ -100,6 +100,7 @@ nav:
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'jdbc': 'query_language/table_functions/jdbc.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External dictionaries':
@@ -166,9 +167,9 @@ nav:
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
 - '常见问题':
-  - 'General questions': 'faq/general.md'
+  - '一般的问题': 'faq/general.md'
 
-- '开发':
+- '开发者指南':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'
@@ -177,6 +178,6 @@ nav:
   - 'How to run ClickHouse tests': 'development/tests.md'
 
 - '新功能特性':
-  - 'Roadmap': 'roadmap.md'
-  - 'Changelog': 'changelog.md'
-  - 'Security changelog': 'security_changelog.md'
+  - '路线图': 'roadmap.md'
+  - '更新日志': 'changelog.md'
+  - '安全更改日志': 'security_changelog.md'

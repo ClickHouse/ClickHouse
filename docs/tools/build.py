@@ -11,6 +11,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+
+import markdown.extensions
+import markdown.util
 
 from mkdocs import config
 from mkdocs import exceptions
@@ -35,11 +39,17 @@ def autoremoved_file(path):
     finally:
         os.unlink(path)
 
+class ClickHouseMarkdown(markdown.extensions.Extension):
+    class ClickHousePreprocessor(markdown.util.Processor):
+        def run(self, lines):
+            for line in lines:
+                if '<!--hide-->' not in line:
+                    yield line
 
-def select_css_lang(lang):
-    if lang == 'zh':
-        return ['assets/stylesheets/custom_zh.css']
-    return ['assets/stylesheets/custom.css']
+    def extendMarkdown(self, md):
+        md.preprocessors.register(self.ClickHousePreprocessor(), 'clickhouse_preprocessor', 31)
+
+markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
@@ -67,7 +77,7 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
-                'now': datetime.datetime.now() # TODO better way to avoid caching
+                'now': int(time.mktime(datetime.datetime.now().timetuple())) # TODO better way to avoid caching
             }
         }
 
@@ -91,8 +101,9 @@ def build_for_lang(lang, args):
             repo_name='yandex/ClickHouse',
             repo_url='https://github.com/yandex/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
-            extra_css=select_css_lang(lang),
+            extra_css=['assets/stylesheets/custom.css'],
             markdown_extensions=[
+                'clickhouse',
                 'admonition',
                 'attr_list',
                 'codehilite',
