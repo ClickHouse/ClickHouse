@@ -56,3 +56,5 @@ ClickHouse периодически обновляет словари. Инте�
     ...
 </dictionary>
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

@@ -14,7 +14,7 @@ This is the main concept that allows Yandex.Metrica to work in real time.
 
 CollapsingMergeTree accepts an additional parameter - the name of an Int8-type column that contains the row's "sign". Example:
 
-```sql
+``` sql
 CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign)
 ```
 
@@ -36,3 +36,5 @@ There are several ways to get completely "collapsed" data from a `CollapsingMerg
 1. Write a query with GROUP BY and aggregate functions that accounts for the sign. For example, to calculate quantity, write 'sum(Sign)' instead of 'count()'. To calculate the sum of something, write 'sum(Sign * x)' instead of 'sum(x)', and so on, and also add 'HAVING sum(Sign) `>` 0'. Not all amounts can be calculated this way. For example, the aggregate functions 'min' and 'max' can't be rewritten.
 2. If you must extract data without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the FINAL modifier for the FROM clause. This approach is significantly less efficient.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

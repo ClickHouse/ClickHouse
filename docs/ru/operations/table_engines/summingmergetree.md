@@ -4,13 +4,13 @@
 
 Отличается от `MergeTree` тем, что суммирует данные при слиянии.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)
 ```
 
 Столбцы для суммирования заданы неявно. При слиянии, для всех строчек с одинаковым значением первичного ключа (в примере - OrderID, EventDate, BannerID, ...), производится суммирование значений в числовых столбцах, не входящих в первичный ключ.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, Clicks, Cost, ...))
 ```
 
@@ -32,7 +32,7 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, C
 
 Примеры:
 
-```text
+```
 [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
 [(1, 100)] + [(1, 150)] -> [(1, 250)]
 [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
@@ -44,3 +44,5 @@ SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, C
 Для вложенных структур данных не нужно указывать её столбцы в качестве списка столбцов для суммирования.
 
 Этот движок таблиц разработан по просьбе БК, и является мало полезным. Помните, что при хранении лишь предагрегированных данных, вы теряете часть преимуществ системы.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/summingmergetree/) <!--hide-->

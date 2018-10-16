@@ -27,6 +27,9 @@ enum class AttributeUnderlyingType
     Int64,
     Float32,
     Float64,
+    Decimal32,
+    Decimal64,
+    Decimal128,
     String
 };
 

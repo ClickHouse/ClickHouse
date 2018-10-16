@@ -5,3 +5,5 @@
 * [CREATE](create.md#create-database)
 * [ALTER](alter.md#query_language_queries_alter)
 * [Прочие виды запросов](misc.md#miscellaneous-queries)
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/) <!--hide-->

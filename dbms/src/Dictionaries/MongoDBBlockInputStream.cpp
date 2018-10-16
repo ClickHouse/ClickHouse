@@ -14,6 +14,7 @@
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -179,13 +180,22 @@ Block MongoDBBlockInputStream::readImpl()
 
             for (const auto idx : ext::range(0, size))
             {
-                const auto & name = description.names[idx];
+                const auto & name = description.sample_block.getByPosition(idx).name;
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                    insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
                 else
-                    insertValue(*columns[idx], description.types[idx], *value, name);
+                {
+                    if (description.types[idx].second)
+                    {
+                        ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                        insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name);
+                        column_nullable.getNullMapData().emplace_back(0);
+                    }
+                    else
+                        insertValue(*columns[idx], description.types[idx].first, *value, name);
+                }
             }
         }
 

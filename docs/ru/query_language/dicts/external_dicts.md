@@ -44,7 +44,9 @@ ClickHouse:
 
 - [Настройка внешнего словаря](external_dicts_dict.md#dicts-external_dicts_dict)
 - [Хранение словарей в памяти](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout)
-- [Обновление словарей](external_dicts_dict_lifetime#dicts-external_dicts_dict_lifetime)
+- [Обновление словарей](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime)
 - [Источники внешних словарей](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources)
 - [Ключ и поля словаря](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure)
 - [Функции для работы с внешними словарями](../functions/ext_dict_functions.md#ext_dict_functions)
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

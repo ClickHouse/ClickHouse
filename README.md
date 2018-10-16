@@ -11,5 +11,4 @@ ClickHouse is an open-source column-oriented database management system that all
 
 ## Upcoming Meetups
 
-* [Paris on October 2](http://bit.ly/clickhouse-paris-2-october-2018)
 * [Beijing on October 28](http://www.clickhouse.com.cn/topic/5ba0e3f99d28dfde2ddc62a1)

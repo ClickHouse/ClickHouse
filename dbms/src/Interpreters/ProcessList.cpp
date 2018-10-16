@@ -14,6 +14,11 @@
 #include <chrono>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
+
 
 namespace DB
 {
@@ -71,6 +76,13 @@ static bool isUnlimitedQuery(const IAST * ast)
     }
 
     return false;
+}
+
+
+ProcessList::ProcessList(size_t max_size_)
+    : max_size(max_size_)
+{
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 }
 
 
@@ -207,7 +219,7 @@ ProcessListEntry::~ProcessListEntry()
     /// Destroy all streams to avoid long lock of ProcessList
     it->releaseQueryStreams();
 
-    std::lock_guard<std::mutex> lock(parent.mutex);
+    std::lock_guard lock(parent.mutex);
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;

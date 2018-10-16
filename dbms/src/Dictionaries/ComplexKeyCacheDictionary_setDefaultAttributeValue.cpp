@@ -18,6 +18,17 @@ void ComplexKeyCacheDictionary::setDefaultAttributeValue(Attribute & attribute, 
         case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
         case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
         case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
+
+        case AttributeUnderlyingType::Decimal32:
+            std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = std::get<Decimal32>(attribute.null_values);
+            break;
+        case AttributeUnderlyingType::Decimal64:
+            std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = std::get<Decimal64>(attribute.null_values);
+            break;
+        case AttributeUnderlyingType::Decimal128:
+            std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = std::get<Decimal128>(attribute.null_values);
+            break;
+
         case AttributeUnderlyingType::String:
         {
             const auto & null_value_ref = std::get<String>(attribute.null_values);

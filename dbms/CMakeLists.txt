@@ -162,6 +162,7 @@ endif()
 target_link_libraries (clickhouse_common_io
     common
     string_utils
+    widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}

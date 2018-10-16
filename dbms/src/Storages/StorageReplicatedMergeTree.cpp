@@ -15,6 +15,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -207,8 +208,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     : context(context_),
     database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
-    zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
-    replica_name(context.getMacros()->expand(replica_name_)),
+    zookeeper_path(context.getMacros()->expand(zookeeper_path_, database_name, table_name)),
+    replica_name(context.getMacros()->expand(replica_name_, database_name, table_name)),
     data(database_name, table_name,
         full_path, columns_,
         context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
@@ -3825,6 +3826,11 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     {
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
+    }
+    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()); drop->kind == ASTDropQuery::Kind::Truncate)
+    {
+        drop->database = leader_address.database;
+        drop->table    = leader_address.table;
     }
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);

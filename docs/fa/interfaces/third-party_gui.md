@@ -36,3 +36,4 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - و بسیاری از ویژگی های دیگر برای شما.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party_gui/) <!--hide-->
