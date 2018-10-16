@@ -13,7 +13,7 @@
 
 - При вычислениях с числами с плавающей запятой возможна ошибка округления.
 
-```sql
+``` sql
 SELECT 1 - 0.9
 ```
 ```
@@ -32,7 +32,7 @@ SELECT 1 - 0.9
 
 - `Inf` - бесконечность.
 
-```sql
+``` sql
 SELECT 0.5 / 0
 ```
 
@@ -44,7 +44,7 @@ SELECT 0.5 / 0
 
 - `-Inf` - отрицательная бесконечность;
 
-```sql
+``` sql
 SELECT -0.5 / 0
 ```
 
@@ -66,3 +66,5 @@ SELECT 0 / 0
 ```
 
   Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY](../query_language/select.md#query_language-queries-order_by).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/float/) <!--hide-->

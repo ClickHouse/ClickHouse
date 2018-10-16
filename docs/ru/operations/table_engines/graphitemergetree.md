@@ -27,7 +27,7 @@ Graphite хранит в ClickHouse полные данные, а получат
 
 Шаблон правил rollup:
 
-```text
+```
 pattern
     regexp
     function
@@ -83,3 +83,5 @@ default
     </default>
 </graphite_rollup>
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/graphitemergetree/) <!--hide-->

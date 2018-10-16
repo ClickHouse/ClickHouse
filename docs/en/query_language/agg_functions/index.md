@@ -61,3 +61,5 @@ FROM t_null_big
 
 `groupArray` does not include `NULL` in the resulting array.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/) <!--hide-->
