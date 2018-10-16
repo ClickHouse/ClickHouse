@@ -71,9 +71,9 @@
   {% if palette.primary or palette.accent %}
     {% set primary = palette.primary | replace(" ", "-") | lower %}
     {% set accent  = palette.accent  | replace(" ", "-") | lower %}
-    <body dir="{{ direction }}" data-md-color-primary="{{ primary }}" data-md-color-accent="{{ accent }}">
+    <body dir="{{ direction }}" data-md-color-primary="{{ primary }}" data-md-color-accent="{{ accent }}" class="md-lang-{{ config.theme.language }}">
   {% else %}
-    <body dir="{{ direction }}">
+    <body dir="{{ direction }}" class="md-lang-{{ config.theme.language }}">
   {% endif %}
     <svg class="md-svg">
       <defs>
