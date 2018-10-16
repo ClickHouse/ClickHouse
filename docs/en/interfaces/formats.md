@@ -32,31 +32,131 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✔ |
 
-<a name="format_capnproto"></a>
+<a name="tabseparated"></a>
 
-## CapnProto
+## TabSeparated
 
-Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, but not like JSON or MessagePack.
+In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
 
-Cap'n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
+This format is also available under the name `TSV`.
 
-```sql
-SELECT SearchPhrase, count() AS c FROM test.hits
-       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+The `TabSeparated` format is convenient for processing data using custom programs and scripts. It is used by default in the HTTP interface, and in the command-line client's batch mode. This format also allows transferring data between different DBMSs. For example, you can get a dump from MySQL and upload it to ClickHouse, or vice versa.
+
+The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
+
+``` sql
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-Where `schema.capnp` looks like this:
+```
+2014-03-17      1406958
+2014-03-18      1383658
+2014-03-19      1405797
+2014-03-20      1353623
+2014-03-21      1245779
+2014-03-22      1031592
+2014-03-23      1046491
+
+0000-00-00      8873898
+
+2014-03-17      1031592
+2014-03-23      1406958
+```
+
+### Data formatting
+
+Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
+
+Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are 'inf', '+inf', '-inf', and 'nan'. An entry of floating-point numbers may begin or end with a decimal point.
+During formatting, accuracy may be lost on floating-point numbers.
+During parsing, it is not strictly required to read the nearest machine-representable number.
+
+Dates are written in YYYY-MM-DD format and parsed in the same format, but with any characters as separators.
+Dates with times are written in the format YYYY-MM-DD hh:mm:ss and parsed in the same format, but with any characters as separators.
+This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
+During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
+
+As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
+
+Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH`  (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n`  or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
 
 ```
-struct Message {
-  SearchPhrase @0 :Text;
-  c @1 :Uint64;
-}
+Hello\nworld
+
+Hello\
+world
 ```
 
-Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) in the server configuration.
+The second variant is supported because MySQL uses it when writing tab-separated dumps.
 
-Deserialization is effective and usually doesn't increase the system load.
+The minimum set of characters that you need to escape when passing data in TabSeparated format: tab, line feed (LF) and backslash.
+
+Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
+
+Arrays are written as a list of comma-separated values in square brackets. Number items in the array are fomratted as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
+
+[NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
+
+<a name="tabseparatedraw"></a>
+
+## TabSeparatedRaw
+
+Differs from `TabSeparated` format in that the rows are written without escaping.
+This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+
+This format is also available under the name `TSVRaw`.
+<a name="tabseparatedwithnames"></a>
+
+## TabSeparatedWithNames
+
+Differs from the `TabSeparated` format in that the column names are written in the first row.
+During parsing, the first row is completely ignored. You can't use column names to determine their position or to check their correctness.
+(Support for parsing the header row may be added in the future.)
+
+This format is also available under the name `TSVWithNames`.
+<a name="tabseparatedwithnamesandtypes"></a>
+
+## TabSeparatedWithNamesAndTypes
+
+Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
+During parsing, the first and second rows are completely ignored.
+
+This format is also available under the name `TSVWithNamesAndTypes`.
+<a name="tskv"></a>
+
+## TSKV
+
+Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
+
+```
+SearchPhrase=   count()=8267016
+SearchPhrase=bathroom interior design    count()=2166
+SearchPhrase=yandex     count()=1655
+SearchPhrase=2014 spring fashion    count()=1549
+SearchPhrase=freeform photos       count()=1480
+SearchPhrase=angelina jolie    count()=1245
+SearchPhrase=omsk       count()=1112
+SearchPhrase=photos of dog breeds    count()=1091
+SearchPhrase=curtain designs        count()=1064
+SearchPhrase=baku       count()=1000
+```
+
+[NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
+
+``` sql
+SELECT * FROM t_null FORMAT TSKV
+```
+
+```
+x=1	y=\N
+```
+
+When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. It is used in some departments of Yandex.
+
+Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
+
+Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
+
 <a name="csv"></a>
 
 ## CSV
@@ -86,7 +186,7 @@ Also prints the header row, similar to `TabSeparatedWithNames`.
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -263,7 +363,7 @@ Each result block is output as a separate table. This is necessary so that block
 
 [NULL](../query_language/syntax.md#null-literal) is output as `ᴺᵁᴸᴸ`.
 
-```sql
+``` sql
 SELECT * FROM t_null
 ```
 
@@ -278,11 +378,11 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -359,131 +459,6 @@ Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.
 
 For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md#data_type-nullable) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
-<a name="tabseparated"></a>
-
-## TabSeparated
-
-In TabSeparated format, data is written by row. Each row contains values separated by tabs. Each value is follow by a tab, except the last value in the row, which is followed by a line feed. Strictly Unix line feeds are assumed everywhere. The last row also must contain a line feed at the end. Values are written in text format, without enclosing quotation marks, and with special characters escaped.
-
-This format is also available under the name `TSV`.
-
-The `TabSeparated` format is convenient for processing data using custom programs and scripts. It is used by default in the HTTP interface, and in the command-line client's batch mode. This format also allows transferring data between different DBMSs. For example, you can get a dump from MySQL and upload it to ClickHouse, or vice versa.
-
-The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
-
-```sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
-```
-
-```text
-2014-03-17      1406958
-2014-03-18      1383658
-2014-03-19      1405797
-2014-03-20      1353623
-2014-03-21      1245779
-2014-03-22      1031592
-2014-03-23      1046491
-
-0000-00-00      8873898
-
-2014-03-17      1031592
-2014-03-23      1406958
-```
-
-## Data formatting
-
-Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
-
-Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are 'inf', '+inf', '-inf', and 'nan'. An entry of floating-point numbers may begin or end with a decimal point.
-During formatting, accuracy may be lost on floating-point numbers.
-During parsing, it is not strictly required to read the nearest machine-representable number.
-
-Dates are written in YYYY-MM-DD format and parsed in the same format, but with any characters as separators.
-Dates with times are written in the format YYYY-MM-DD hh:mm:ss and parsed in the same format, but with any characters as separators.
-This all occurs in the system time zone at the time the client or server starts (depending on which one formats data). For dates with times, daylight saving time is not specified. So if a dump has times during daylight saving time, the dump does not unequivocally match the data, and parsing will select one of the two times.
-During a read operation, incorrect dates and dates with times can be parsed with natural overflow or as null dates and times, without an error message.
-
-As an exception, parsing dates with times is also supported in Unix timestamp format, if it consists of exactly 10 decimal digits. The result is not time zone-dependent. The formats YYYY-MM-DD hh:mm:ss and NNNNNNNNNN are differentiated automatically.
-
-Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH`  (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n`  or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
-
-```text
-Hello\nworld
-
-Hello\
-world
-```
-
-The second variant is supported because MySQL uses it when writing tab-separated dumps.
-
-The minimum set of characters that you need to escape when passing data in TabSeparated format: tab, line feed (LF) and backslash.
-
-Only a small set of symbols are escaped. You can easily stumble onto a string value that your terminal will ruin in output.
-
-Arrays are written as a list of comma-separated values in square brackets. Number items in the array are fomratted as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
-
-[NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
-
-<a name="tabseparatedraw"></a>
-
-## TabSeparatedRaw
-
-Differs from `TabSeparated` format in that the rows are written without escaping.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-This format is also available under the name `TSVRaw`.
-<a name="tabseparatedwithnames"></a>
-
-## TabSeparatedWithNames
-
-Differs from the `TabSeparated` format in that the column names are written in the first row.
-During parsing, the first row is completely ignored. You can't use column names to determine their position or to check their correctness.
-(Support for parsing the header row may be added in the future.)
-
-This format is also available under the name `TSVWithNames`.
-<a name="tabseparatedwithnamesandtypes"></a>
-
-## TabSeparatedWithNamesAndTypes
-
-Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
-During parsing, the first and second rows are completely ignored.
-
-This format is also available under the name `TSVWithNamesAndTypes`.
-<a name="tskv"></a>
-
-## TSKV
-
-Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
-
-```text
-SearchPhrase=   count()=8267016
-SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
-SearchPhrase=2014 spring fashion    count()=1549
-SearchPhrase=freeform photos       count()=1480
-SearchPhrase=angelina jolie    count()=1245
-SearchPhrase=omsk       count()=1112
-SearchPhrase=photos of dog breeds    count()=1091
-SearchPhrase=curtain designs        count()=1064
-SearchPhrase=baku       count()=1000
-```
-
-[NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
-
-```sql
-SELECT * FROM t_null FORMAT TSKV
-```
-
-```
-x=1	y=\N
-```
-
-When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. It is used in some departments of Yandex.
-
-Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
-
-Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
-
 ## Values
 
 Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md#null-literal) is represented as `NULL`.
@@ -502,7 +477,7 @@ Prints each value on a separate line with the column name specified. This format
 
 Example:
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 
@@ -620,3 +595,31 @@ Just as for JSON, invalid UTF-8 sequences are changed to the replacement charact
 In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
+
+<a name="format_capnproto"></a>
+
+## CapnProto
+
+Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, but not like JSON or MessagePack.
+
+Cap'n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
+
+``` sql
+SELECT SearchPhrase, count() AS c FROM test.hits
+       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+```
+
+Where `schema.capnp` looks like this:
+
+```
+struct Message {
+  SearchPhrase @0 :Text;
+  c @1 :Uint64;
+}
+```
+
+Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) in the server configuration.
+
+Deserialization is effective and usually doesn't increase the system load.
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->

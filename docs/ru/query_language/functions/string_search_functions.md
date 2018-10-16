@@ -44,3 +44,5 @@
 
 ## notLike(haystack, pattern), оператор haystack NOT LIKE pattern
 То же, что like, но с отрицанием.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_search_functions/) <!--hide-->

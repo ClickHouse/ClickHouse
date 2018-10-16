@@ -6,3 +6,5 @@
 * [ALTER](alter.md#query_language_queries_alter)
 * [Other types of queries](misc.md#miscellanous-queries)
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/) <!--hide-->

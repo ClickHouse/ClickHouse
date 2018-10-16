@@ -4,13 +4,13 @@
 
 This engine differs from `MergeTree` in that it totals data while merging.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)
 ```
 
 The columns to total are implicit. When merging, all rows with the same primary key value (in the example, OrderId, EventDate, BannerID, ...) have their values totaled in numeric columns that are not part of the primary key.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, Clicks, Cost, ...))
 ```
 
@@ -32,7 +32,7 @@ Then this nested table is interpreted as a mapping of key `=>` (values...), and 
 
 Examples:
 
-```text
+```
 [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
 [(1, 100)] + [(1, 150)] -> [(1, 250)]
 [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
@@ -45,3 +45,5 @@ For nested data structures, you don't need to specify the columns as a list of c
 
 This table engine is not particularly useful. Remember that when saving just pre-aggregated data, you lose some of the system's advantages.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

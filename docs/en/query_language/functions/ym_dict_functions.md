@@ -20,7 +20,7 @@ All the dictionaries are re-loaded in runtime (once every certain number of seco
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 Example:
 
-```text
+```
 regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
 regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
 regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
@@ -34,13 +34,13 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. If this regio
 
 Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
-```sql
+``` sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
 
-```text
+```
 ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
 │                                                      │
 │ Moscow and Moscow region                             │
@@ -64,13 +64,13 @@ LIMIT 15
 
 Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
-```sql
+``` sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
 ```
 
-```text
+```
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
 │                                                          │
 │ Central federal district                                 │
@@ -123,3 +123,5 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. A string with
 
 `ua` and `uk` both mean Ukrainian.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->

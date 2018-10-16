@@ -95,3 +95,5 @@ cd ..
 To create an executable, run `ninja clickhouse`.
 This will create the `dbms/programs/clickhouse` executable, which can be used with `client` or `server` arguments.
 
+
+[Original article](https://clickhouse.yandex/docs/en/development/build/) <!--hide-->
