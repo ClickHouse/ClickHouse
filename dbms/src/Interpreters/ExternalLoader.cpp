@@ -1,4 +1,5 @@
-#include <Interpreters/ExternalLoader.h>
+#include "ExternalLoader.h"
+#include <Core/Defines.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
