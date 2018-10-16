@@ -88,7 +88,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path", "/var/lib/clickhouse/")) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -120,12 +120,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
             main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
-        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", "/var/lib/clickhouse/"));
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    std::string path = getCanonicalPath(config().getString("path", "/var/lib/clickhouse/"));
+    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
     global_context->setPath(path);

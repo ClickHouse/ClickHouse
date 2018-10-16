@@ -262,7 +262,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_repository->getLastModificationTime(config_path);
         if (force_reload || last_modified > config_last_modified)
         {
-            auto loaded_config = config_repository->load(config_path, config_main.getString("path", "/var/lib/clickhouse/"));
+            auto loaded_config = config_repository->load(config_path, config_main.getString("path", DBMS_DEFAULT_PATH));
 
             loadable_objects_defined_in_config[config_path].clear();
 
