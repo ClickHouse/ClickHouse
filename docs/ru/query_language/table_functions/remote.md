@@ -6,7 +6,7 @@
 
 Сигнатуры:
 
-```sql
+``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
 ```

@@ -4,13 +4,13 @@
 
 Отличается от `MergeTree` тем, что суммирует данные при слиянии.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)
 ```
 
 Столбцы для суммирования заданы неявно. При слиянии, для всех строчек с одинаковым значением первичного ключа (в примере - OrderID, EventDate, BannerID, ...), производится суммирование значений в числовых столбцах, не входящих в первичный ключ.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, Clicks, Cost, ...))
 ```
 

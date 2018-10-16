@@ -44,7 +44,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 
 Формат `TabSeparated` поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения. Основной результат, тотальные значения и экстремальные значения, отделяются друг от друга пустой строкой. Пример:
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
@@ -143,7 +143,7 @@ SearchPhrase=баку       count()=1000
 
 [NULL](../query_language/syntax.md#null-literal) форматируется в виде `\N`.
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT TSKV
 ```
 ```
@@ -185,7 +185,7 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 Выводит данные в формате JSON. Кроме таблицы с данными, также выводятся имена и типы столбцов, и некоторая дополнительная информация - общее количество выведенных строк, а также количество строк, которое могло бы быть выведено, если бы не было LIMIT-а. Пример:
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -362,7 +362,7 @@ ClickHouse поддерживает [NULL](../query_language/syntax.md#null-lite
 
 [NULL](../query_language/syntax.md#null-literal) выводится как `ᴺᵁᴸᴸ`.
 
-```sql
+``` sql
 SELECT * FROM t_null
 ```
 ```
@@ -376,7 +376,7 @@ SELECT * FROM t_null
 
 Формат Pretty поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения, в отдельных табличках. Пример (показан для формата PrettyCompact):
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
@@ -475,7 +475,7 @@ Array представлены как длина в формате varint (unsig
 
 Пример:
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 ```
@@ -599,7 +599,7 @@ Cap'n Proto - формат бинарных сообщений, похож на 
 
 Сообщения Cap'n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется для каждого запроса.
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits
        GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
 ```

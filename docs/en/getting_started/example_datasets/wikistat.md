@@ -4,7 +4,7 @@ See: <http://dumps.wikimedia.org/other/pagecounts-raw/>
 
 Creating a table:
 
-```sql
+``` sql
 CREATE TABLE wikistat
 (
     date Date,

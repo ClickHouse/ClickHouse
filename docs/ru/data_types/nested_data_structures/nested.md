@@ -4,7 +4,7 @@
 
 Пример:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -35,7 +35,7 @@ CREATE TABLE test.visits
 
 Пример:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -63,7 +63,7 @@ LIMIT 10
 
 Единственное место, где в запросе SELECT можно указать имя целой вложенной структуры данных, а не отдельных столбцов - секция ARRAY JOIN. Подробнее см. раздел "Секция ARRAY JOIN". Пример:
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime

@@ -34,7 +34,7 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. If this regio
 
 Converts a region to an area (type 5 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
-```sql
+``` sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
@@ -64,7 +64,7 @@ LIMIT 15
 
 Converts a region to a federal district (type 4 in the geobase). In every other way, this function is the same as 'regionToCity'.
 
-```sql
+``` sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15

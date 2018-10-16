@@ -35,7 +35,7 @@ anyHeavy(column)
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select any frequently occurring value in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
@@ -101,7 +101,7 @@ Returns a tuple of two arrays: keys in sorted order, and values ​​summed for
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -325,7 +325,7 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```

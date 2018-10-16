@@ -4,13 +4,13 @@
 
 This engine differs from `MergeTree` in that it totals data while merging.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)
 ```
 
 The columns to total are implicit. When merging, all rows with the same primary key value (in the example, OrderId, EventDate, BannerID, ...) have their values totaled in numeric columns that are not part of the primary key.
 
-```sql
+``` sql
 SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, Clicks, Cost, ...))
 ```
 

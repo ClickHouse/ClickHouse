@@ -22,7 +22,7 @@
 
 Примеры:
 
-```sql
+``` sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
@@ -32,7 +32,7 @@ SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 └───────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -71,7 +71,7 @@ SELECT
 
 Пример:
 
-```sql
+``` sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
@@ -90,7 +90,7 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Пример:
 
-```sql
+``` sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 

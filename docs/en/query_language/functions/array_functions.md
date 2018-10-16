@@ -59,7 +59,7 @@ arrayConcat(arrays)
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
@@ -132,7 +132,7 @@ Returns the array \[1, 2, 3, ..., length (arr) \]
 
 This function is normally used with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
 
-```sql
+``` sql
 SELECT
     count() AS Reaches,
     countIf(num = 1) AS Hits
@@ -152,7 +152,7 @@ LIMIT 10
 
 In this example, Reaches is the number of conversions (the strings received after applying ARRAY JOIN), and Hits is the number of pageviews (strings before ARRAY JOIN). In this particular case, you can get the same result in an easier way:
 
-```sql
+``` sql
 SELECT
     sum(length(GoalsReached)) AS Reaches,
     count() AS Hits
@@ -176,7 +176,7 @@ For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1,  1,  2,  1\].
 This function is useful when using ARRAY JOIN and aggregation of array elements.
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
@@ -210,7 +210,7 @@ In this example, each goal ID has a calculation of the number of conversions (ea
 
 The arrayEnumerateUniq function can take multiple arrays of the same size as arguments. In this case, uniqueness is considered for tuples of elements in the same positions in all the arrays.
 
-```sql
+``` sql
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 ```
 
@@ -236,7 +236,7 @@ arrayPopBack(array)
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
 
@@ -260,7 +260,7 @@ arrayPopFront(array)
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
 
@@ -285,7 +285,7 @@ arrayPushBack(array, single_value)
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPushBack(['a'], 'b') AS res
 ```
 
@@ -310,7 +310,7 @@ arrayPushFront(array, single_value)
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
 
@@ -374,7 +374,7 @@ arraySlice(array, offset[, length])
 
 **Example**
 
-```sql
+``` sql
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 ```
 

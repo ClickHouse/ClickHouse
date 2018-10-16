@@ -48,7 +48,7 @@ If 'x' is non-negative, then erf(x / σ√2)<g> is the probability that a random
 
 Example (three sigma rule):
 
-```sql
+``` sql
 SELECT erf(3 / sqrt(2))
 ```
 

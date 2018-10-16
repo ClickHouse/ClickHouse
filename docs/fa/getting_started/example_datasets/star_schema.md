@@ -33,7 +33,7 @@ make
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE lineorder (
         LO_ORDERKEY             UInt32,
         LO_LINENUMBER           UInt8,

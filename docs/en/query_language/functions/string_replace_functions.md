@@ -19,7 +19,7 @@ Also keep in mind that a string literal requires an extra escape.
 
 Example 1. Converting the date to American format:
 
-```sql
+``` sql
 SELECT DISTINCT
     EventDate,
     replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
@@ -40,7 +40,7 @@ FORMAT TabSeparated
 
 Example 2. Copying a string ten times:
 
-```sql
+``` sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
@@ -54,7 +54,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 
 This does the same thing, but replaces all the occurrences. Example:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
@@ -67,7 +67,7 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 As an exception, if a regular expression worked on an empty substring, the replacement is not made more than once.
 Example:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 

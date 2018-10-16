@@ -22,7 +22,7 @@ Returns an array containing only the elements in 'arr1' for which 'func' returns
 
 Examples:
 
-```sql
+``` sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
@@ -32,7 +32,7 @@ SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 └───────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -77,7 +77,7 @@ Returns an array of partial sums of elements in the source array (a running sum)
 
 Example:
 
-```sql
+``` sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
@@ -95,7 +95,7 @@ The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform)
 
 Example:
 
-```sql
+``` sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 

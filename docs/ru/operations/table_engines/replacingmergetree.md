@@ -6,7 +6,7 @@
 
 Столбец с версией должен иметь тип из семейства `UInt`, или `Date`, или `DateTime`.
 
-```sql
+``` sql
 ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)
 ```
 

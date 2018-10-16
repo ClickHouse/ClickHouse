@@ -39,7 +39,7 @@ As an example, consider a dictionary of `products` with the following configurat
 
 Query the dictionary data:
 
-```sql
+``` sql
 select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
 
 SELECT
@@ -73,7 +73,7 @@ CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 
 Usage example:
 
-```sql
+``` sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);
 
 CREATE TABLE products
@@ -92,7 +92,7 @@ Ok.
 
 Take a look at what's in the table.
 
-```sql
+``` sql
 select * from products limit 1;
 
 SELECT *

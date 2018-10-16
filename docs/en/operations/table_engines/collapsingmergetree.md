@@ -14,7 +14,7 @@ This is the main concept that allows Yandex.Metrica to work in real time.
 
 CollapsingMergeTree accepts an additional parameter - the name of an Int8-type column that contains the row's "sign". Example:
 
-```sql
+``` sql
 CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign)
 ```
 

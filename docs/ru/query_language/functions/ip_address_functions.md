@@ -11,7 +11,7 @@
 
 Пример:
 
-```sql
+``` sql
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
@@ -42,7 +42,7 @@ LIMIT 10
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
 IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. Примеры:
 
-```sql
+``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
@@ -52,7 +52,7 @@ SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -78,7 +78,7 @@ LIMIT 10
 └─────────────────────────────────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c

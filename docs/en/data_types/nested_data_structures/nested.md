@@ -4,7 +4,7 @@ A nested data structure is like a nested table. The parameters of a nested data 
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -35,7 +35,7 @@ In most cases, when working with a nested data structure, its individual columns
 
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -63,7 +63,7 @@ It is easiest to think of a nested data structure as a set of multiple column ar
 
 The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime

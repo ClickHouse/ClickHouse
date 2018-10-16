@@ -8,7 +8,7 @@
 
 Примеры:
 
-```sql
+``` sql
 CREATE TABLE t
 (
     column1 AggregateFunction(uniq, UInt64),
@@ -34,7 +34,7 @@ CREATE TABLE t
 То есть, агрегатная функция с суффиксом Merge берёт множество состояний, объединяет их, и возвращает готовый результат.
 Для примера, эти два запроса возвращают один и тот же результат:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM table
 
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
@@ -52,7 +52,7 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 Создаём материализованное представление типа `AggregatingMergeTree`, следящее за таблицей `test.visits`:
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 AS SELECT
@@ -66,13 +66,13 @@ GROUP BY CounterID, StartDate;
 
 Вставляем данные в таблицу `test.visits`. Данные будут также вставлены в представление, где они будут агрегированы:
 
-```sql
+``` sql
 INSERT INTO test.visits ...
 ```
 
 Делаем `SELECT` из представления, используя `GROUP BY`, чтобы доагрегировать данные:
 
-```sql
+``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,

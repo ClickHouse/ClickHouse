@@ -10,7 +10,7 @@ After executing an ATTACH query, the server will know about the existence of the
 
 If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
 
-```sql
+``` sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -20,14 +20,14 @@ This query is used when starting the server. The server stores table metadata as
 
 This query has two types: `DROP DATABASE`  and `DROP TABLE`.
 
-```sql
+``` sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Deletes all tables inside the 'db' database, then deletes the 'db' database itself.
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
-```sql
+``` sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -38,7 +38,7 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 
 Deletes information about the 'name' table from the server. The server stops knowing about the table's existence.
 
-```sql
+``` sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -51,7 +51,7 @@ There is no `DETACH DATABASE` query.
 
 Renames one or more tables.
 
-```sql
+``` sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
@@ -59,7 +59,7 @@ All tables are renamed under global locking. Renaming tables is a light operatio
 
 ## SHOW DATABASES
 
-```sql
+``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -70,7 +70,7 @@ See also the section "Formats".
 
 ## SHOW TABLES
 
-```sql
+``` sql
 SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -85,7 +85,7 @@ See also the section "LIKE operator".
 
 ## SHOW PROCESSLIST
 
-```sql
+``` sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -117,7 +117,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 ## SHOW CREATE TABLE
 
-```sql
+``` sql
 SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -125,7 +125,7 @@ Returns a single `String`-type 'statement' column, which contains a single value
 
 ## DESCRIBE TABLE
 
-```sql
+``` sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -135,7 +135,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 
 ## EXISTS
 
-```sql
+``` sql
 EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -143,7 +143,7 @@ Returns a single `UInt8`-type column, which contains the single value `0` if the
 
 ## USE
 
-```sql
+``` sql
 USE db
 ```
 
@@ -153,7 +153,7 @@ This query can't be made when using the HTTP protocol, since there is no concept
 
 ## SET
 
-```sql
+``` sql
 SET param = value
 ```
 
@@ -166,7 +166,7 @@ To make settings that persist after a server restart, you can only use the serve
 
 ## OPTIMIZE
 
-```sql
+``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
@@ -180,7 +180,7 @@ If you specify `FINAL`, optimization will be performed even when all the data is
 
 ## KILL QUERY
 
-```sql
+``` sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
@@ -192,7 +192,7 @@ The queries to terminate are selected from the system.processes table using the 
 
 Examples:
 
-```sql
+``` sql
 -- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 

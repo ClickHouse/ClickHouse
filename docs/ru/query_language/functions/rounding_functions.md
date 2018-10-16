@@ -31,7 +31,7 @@ N может быть отрицательным.
 
 **Пример**
 
-```sql
+``` sql
 SELECT
     number / 2 AS x,
     round(x)

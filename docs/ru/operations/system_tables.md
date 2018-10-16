@@ -185,7 +185,7 @@ query_id String          - идентификатор запроса, если �
 
 Пример:
 
-```sql
+``` sql
 SELECT *
 FROM system.replicas
 WHERE table = 'visits'
@@ -271,7 +271,7 @@ active_replicas:    число реплик этой таблицы, имеющ�
 
 Например, так можно проверить, что всё хорошо:
 
-```sql
+``` sql
 SELECT
     database,
     table,
@@ -317,7 +317,7 @@ changed UInt8 - была ли настройка явно задана в кон
 
 Пример:
 
-```sql
+``` sql
 SELECT *
 FROM system.settings
 WHERE changed
@@ -368,7 +368,7 @@ WHERE changed
 
 Пример:
 
-```sql
+``` sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'

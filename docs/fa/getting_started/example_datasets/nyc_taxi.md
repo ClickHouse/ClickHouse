@@ -52,7 +52,7 @@ Export گیری داده ها از PostgreSQL:
 
 </div>
 
-```sql
+``` sql
 COPY
 (
     SELECT trips.id,
@@ -130,7 +130,7 @@ snapshot از داده ها با سرعت 50 مگابایت در ثانیه ان
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE trips
 (
 trip_id                 UInt32,
@@ -305,7 +305,7 @@ WHERE (table = 'trips_mergetree') AND active
 
 Q1:
 
-```sql
+``` sql
 SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type
 ```
 
@@ -313,7 +313,7 @@ SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type
 
 Q2:
 
-```sql
+``` sql
 SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count
 ```
 
@@ -321,7 +321,7 @@ SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenge
 
 Q3:
 
-```sql
+``` sql
 SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year
 ```
 
@@ -329,7 +329,7 @@ SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetr
 
 Q4:
 
-```sql
+``` sql
 SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
 FROM trips_mergetree
 GROUP BY passenger_count, year, distance
@@ -364,7 +364,7 @@ CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand())
 ```
 
@@ -374,7 +374,7 @@ query زیر دادها را توزیع مجدد می کند:
 
 </div>
 
-```sql
+``` sql
 INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree
 ```
 

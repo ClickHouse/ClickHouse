@@ -29,7 +29,7 @@ cd ..
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE rankings_tiny
 (
     pageURL String,
@@ -112,7 +112,7 @@ query های گرفتن data sample
 
 </div>
 
-```sql
+``` sql
 SELECT pageURL, pageRank FROM rankings_1node WHERE pageRank > 1000
 
 SELECT substring(sourceIP, 1, 8), sum(adRevenue) FROM uservisits_1node GROUP BY substring(sourceIP, 1, 8)

@@ -6,7 +6,7 @@ The last optional parameter for the table engine is the version column. When mer
 
 The version column must have a type from the `UInt` family, `Date`, or `DateTime`.
 
-```sql
+``` sql
 ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)
 ```
 

@@ -8,7 +8,7 @@ There is an `AggregateFunction` data type. It is a parametric data type. As para
 
 Examples:
 
-```sql
+``` sql
 CREATE TABLE t
 (
     column1 AggregateFunction(uniq, UInt64),
@@ -33,7 +33,7 @@ Example: `uniqMerge(UserIDState)`, where `UserIDState` has the `AggregateFunctio
 In other words, an aggregate function with the 'Merge' suffix takes a set of states, combines them, and returns the result.
 As an example, these two queries return the same result:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM table
 
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
@@ -51,7 +51,7 @@ Example:
 
 Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table:
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 AS SELECT
@@ -65,13 +65,13 @@ GROUP BY CounterID, StartDate;
 
 Insert data in the `test.visits` table. Data will also be inserted in the view, where it will be aggregated:
 
-```sql
+``` sql
 INSERT INTO test.visits ...
 ```
 
 Perform `SELECT` from the view using `GROUP BY` in order to complete data aggregation:
 
-```sql
+``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,

@@ -17,7 +17,7 @@ Type های float در ClickHouse مشابه C می باشد:
 
 </div>
 
-```sql
+``` sql
 SELECT 1 - 0.9
 ```
 ```
@@ -40,7 +40,7 @@ SELECT 1 - 0.9
 
 </div>
 
-```sql
+``` sql
 SELECT 0.5 / 0
 ```
 
@@ -56,7 +56,7 @@ SELECT 0.5 / 0
 
 </div>
 
-```sql
+``` sql
 SELECT -0.5 / 0
 ```
 

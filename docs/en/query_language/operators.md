@@ -87,7 +87,7 @@ The conditional operator calculates the values of b and c, then checks whether c
 
 ## Conditional Expression
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
