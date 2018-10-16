@@ -48,7 +48,7 @@ Some additional configuration has to be done to actually make new language live 
 * Inline piece of code is <code>&#96;in backticks&#96;</code>.
 * Multiline code block are <code>&#96;&#96;&#96;in triple backtick quotes &#96;&#96;&#96;</code>.
 * Brightly highlighted block of text starts with  `!!! info "Header"`, on next line 4 spaces and content. Instead of `info` can be `warning`.
-* Hide block to be opened by click: `<details> <summary>Header</summary> hidden content</details>`.
+* Hide block to be opened by click: `<details markdown="1"> <summary>Header</summary> hidden content</details>`.
 * Colored text: `<span style="color: red;">text</span>`.
 * Additional anchor to be linked to: `<a name="my_anchor"></a>`, for headers fully in English they are created automatically like `"FoO Bar" -> "foo-bar"`.
 * Table:

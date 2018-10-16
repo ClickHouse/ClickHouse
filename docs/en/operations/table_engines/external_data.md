@@ -60,3 +60,5 @@ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count(
 
 For distributed query processing, the temporary tables are sent to all the remote servers.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/external_data/) <!--hide-->
