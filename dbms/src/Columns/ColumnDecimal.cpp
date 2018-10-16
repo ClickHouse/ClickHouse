@@ -118,6 +118,14 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
+void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
+{
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
+}
+
+template <typename T>
 void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnDecimal & src_vec = static_cast<const ColumnDecimal &>(src);
