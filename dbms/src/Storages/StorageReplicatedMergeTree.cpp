@@ -15,6 +15,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Parsers/formatAST.h>
+#include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -3825,6 +3826,11 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     {
         optimize->database = leader_address.database;
         optimize->table = leader_address.table;
+    }
+    else if (auto * drop = typeid_cast<ASTDropQuery *>(new_query.get()); drop->kind == ASTDropQuery::Kind::Truncate)
+    {
+        drop->database = leader_address.database;
+        drop->table    = leader_address.table;
     }
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
