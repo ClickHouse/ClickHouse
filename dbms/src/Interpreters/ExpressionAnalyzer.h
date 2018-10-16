@@ -248,7 +248,6 @@ private:
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
-    size_t external_table_id = 1;
 
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
@@ -294,10 +293,6 @@ private:
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
-    void initGlobalSubqueries(ASTPtr & ast);
-
-    /// Finds in the query the usage of external tables (as table identifiers). Fills in external_tables.
-    void findExternalTables(ASTPtr & ast);
 
     /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
       * create a temporary table of type Memory and store it in the external_tables dictionary.
@@ -305,7 +300,6 @@ private:
     void addExternalStorage(ASTPtr & subquery_or_table_name);
 
     void getArrayJoinedColumns();
-    void getArrayJoinedColumnsImpl(const ASTPtr & ast);
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
@@ -327,15 +321,6 @@ private:
     void analyzeAggregation();
     void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
     void assertNoAggregates(const ASTPtr & ast, const char * description);
-
-    /** Get a set of necessary columns to read from the table.
-      * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.
-      * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
-      * Put in required_joined_columns the set of columns available from JOIN and needed.
-      */
-    void getRequiredSourceColumnsImpl(const ASTPtr & ast,
-        const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
-        const NameSet & available_joined_columns, NameSet & required_joined_columns);
 
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
