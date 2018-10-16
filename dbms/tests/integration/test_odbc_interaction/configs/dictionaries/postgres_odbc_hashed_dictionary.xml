@@ -9,8 +9,8 @@
             </odbc>
         </source>
         <lifetime>
-            <min>1</min>
-            <max>1</max>
+            <min>5</min>
+            <max>5</max>
         </lifetime>
         <layout>
             <hashed />
