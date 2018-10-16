@@ -7,6 +7,7 @@
     - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse)
     - [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     - [clickhouse-client](https://github.com/yurial/clickhouse-client)
+    - [aiochclient](https://github.com/maximdanilchenko/aiochclient)
 - PHP
     - [phpClickHouse](https://github.com/smi2/phpClickHouse)
     - [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
