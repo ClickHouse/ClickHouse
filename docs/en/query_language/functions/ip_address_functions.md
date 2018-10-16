@@ -14,7 +14,7 @@ Similar to IPv4NumToString, but using xxx instead of the last octet.
 
 Example:
 
-```sql
+``` sql
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
@@ -46,7 +46,7 @@ Since using 'xxx' is highly unusual, this may be changed in the future. We recom
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
 IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. Examples:
 
-```sql
+``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
@@ -56,7 +56,7 @@ SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -82,7 +82,7 @@ LIMIT 10
 └─────────────────────────────────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c

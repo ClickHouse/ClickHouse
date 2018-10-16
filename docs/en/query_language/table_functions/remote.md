@@ -6,7 +6,7 @@ Allows you to access remote servers without creating a `Distributed` table.
 
 Signatures:
 
-```sql
+``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
 ```

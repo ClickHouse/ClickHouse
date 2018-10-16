@@ -83,7 +83,7 @@ The band is drawn with accuracy to one eighth of a symbol.
 
 Example:
 
-```sql
+``` sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -153,7 +153,7 @@ If the 'x' value is equal to one of the elements in the 'array_from' array, it r
 
 Example:
 
-```sql
+``` sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -182,7 +182,7 @@ Types:
 
 Example:
 
-```sql
+``` sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -212,7 +212,7 @@ Accepts the size (number of bytes). Returns a rounded size with a suffix (KiB, M
 
 Example:
 
-```sql
+``` sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
@@ -257,7 +257,7 @@ If you make a subquery with ORDER BY and call the function from outside the subq
 
 Example:
 
-```sql
+``` sql
 SELECT
     EventID,
     EventTime,

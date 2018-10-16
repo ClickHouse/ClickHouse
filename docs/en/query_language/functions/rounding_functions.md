@@ -31,7 +31,7 @@ The rounded number of the same type as the input number `x`
 
 **Example:**
 
-```sql
+``` sql
 SELECT
     number / 2 AS x,
     round(x)

@@ -37,7 +37,7 @@ Conversion between numeric types uses the same rules as assignments between diff
 
 Additionally, the toString function of the DateTime argument can take a second String argument containing the name of the time zone. Example: `Asia/Yekaterinburg` In this case, the time is formatted according to the specified time zone.
 
-```sql
+``` sql
 SELECT
     now() AS now_local,
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
@@ -62,7 +62,7 @@ Accepts a String or FixedString argument. Returns the String with the content tr
 
 Example:
 
-```sql
+``` sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
@@ -72,7 +72,7 @@ SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 └───────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
@@ -102,7 +102,7 @@ Converts 'x' to the 't' data type. The syntax CAST(x AS t) is also supported.
 
 Example:
 
-```sql
+``` sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,

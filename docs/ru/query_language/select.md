@@ -2,7 +2,7 @@
 
 `SELECT` осуществляет выборку данных.
 
-```sql
+``` sql
 SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
@@ -59,7 +59,7 @@ SELECT [DISTINCT] expr_list
 
 Пример:
 
-```sql
+``` sql
 SELECT
     Title,
     count() * 10 AS PageViews
@@ -343,7 +343,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 
 Обычный JOIN, не имеет отношения к ARRAY JOIN, который описан выше.
 
-```sql
+``` sql
 [GLOBAL] ANY|ALL INNER|LEFT [OUTER] JOIN (subquery)|table USING columns_list
 ```
 
@@ -380,7 +380,7 @@ JOIN-ы бывают нескольких видов:
 
 Пример:
 
-```sql
+``` sql
 SELECT
     CounterID,
     hits,
@@ -500,7 +500,7 @@ WHERE isNull(y)
 
 Пример:
 
-```sql
+``` sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -514,7 +514,7 @@ FROM hits
 
 Пример:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
@@ -610,7 +610,7 @@ GROUP BY вычисляет для каждого встретившегося �
 
 Пример:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,
@@ -731,7 +731,7 @@ n и m должны быть неотрицательными целыми чи�
 
 Произвольное количество запросов может быть объединено с помощью `UNION ALL`. Пример:
 
-```sql
+``` sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -779,7 +779,7 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Примеры:
 
-```sql
+``` sql
 SELECT UserID IN (123, 456) FROM ...
 SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 ```
@@ -798,7 +798,7 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 В подзапросе может быть указано более одного столбца для фильтрации кортежей.
 Пример:
 
-```sql
+``` sql
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -807,7 +807,7 @@ SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 Оператор IN и подзапрос могут встречаться в любой части запроса, в том числе в агрегатных и лямбда функциях.
 Пример:
 
-```sql
+``` sql
 SELECT
     EventDate,
     avg(UserID IN
@@ -893,13 +893,13 @@ FROM t_null
 
 Например, запрос
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table
 ```
 
 будет отправлен на все удалённые серверы в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table
 ```
 
@@ -907,7 +907,7 @@ SELECT uniq(UserID) FROM local_table
 
 Теперь рассмотрим запрос с IN-ом:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -915,7 +915,7 @@ SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID I
 
 Этот запрос будет отправлен на все удалённые серверы в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -925,19 +925,19 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SEL
 
 Чтобы исправить работу запроса, когда данные размазаны по серверам кластера произвольным образом, можно было бы указать **distributed_table** внутри подзапроса. Запрос будет выглядеть так:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 Этот запрос будет отправлен на все удалённые серверы в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 На каждом удалённом сервере начнёт выполняться подзапрос. Так как в подзапросе используется распределённая таблица, то подзапрос будет, на каждом удалённом сервере, снова отправлен на каждый удалённый сервер, в виде
 
-```sql
+``` sql
 SELECT UserID FROM local_table WHERE CounterID = 34
 ```
 
@@ -945,19 +945,19 @@ SELECT UserID FROM local_table WHERE CounterID = 34
 
 В таких случаях всегда следует использовать GLOBAL IN вместо IN. Рассмотрим его работу для запроса
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 На сервере-инициаторе запроса будет выполнен подзапрос
 
-```sql
+``` sql
 SELECT UserID FROM distributed_table WHERE CounterID = 34
 ```
 
 , и результат будет сложен во временную таблицу в оперативке. Затем запрос будет отправлен на каждый удалённый сервер в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 

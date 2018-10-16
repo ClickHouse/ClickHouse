@@ -14,7 +14,7 @@
 
 CollapsingMergeTree принимает дополнительный параметр - имя столбца типа Int8, содержащего "знак" строки. Пример:
 
-```sql
+``` sql
 CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign)
 ```
 

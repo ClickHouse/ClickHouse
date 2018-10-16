@@ -43,7 +43,7 @@ Kafka SETTINGS
 
 Примеры:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -85,7 +85,7 @@ Kafka SETTINGS
 
 Пример:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,

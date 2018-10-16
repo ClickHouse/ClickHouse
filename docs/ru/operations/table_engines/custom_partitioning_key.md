@@ -11,7 +11,7 @@ ENGINE [=] Name(...) [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTI
 ```
 
 Для MergeTree таблиц выражение партиционирования указывается после `PARTITION BY`, первичный ключ после `ORDER BY`, ключ сэмплирования после `SAMPLE BY`, а в `SETTINGS` можно указать `index_granularity` (не обязательно, значение по умолчанию 8192), а также другие настройки из [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h). Остальные параметры движка по-прежнему указываются в скобках после его названия. Пример:
-```sql
+``` sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
     PARTITION BY (toMonday(StartDate), EventType)
     ORDER BY (CounterID, StartDate, intHash32(UserID))
@@ -25,7 +25,7 @@ ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Si
 После создания такой таблицы слияние кусков будет работать только для кусков с одинаковым значением выражения партиционирования. Замечание: это означает, что нежелательно делать слишком гранулированное партиционирование (более порядка тысячи партиций), иначе производительность SELECT будет неудовлетворительной.
 
 Чтобы указать партицию в командах ALTER PARTITION, нужно указать значение выражения партиционирования (или кортежа). Поддерживаются константы и константные выражения. Пример:
-```sql
+``` sql
 ALTER TABLE table DROP PARTITION (toMonday(today()), 1)
 ```
 удалит партицию за текущую неделю с типом события 1. То же самое для запроса OPTIMIZE. Чтобы указать единственную партицию непартиционированной таблицы, укажите `PARTITION tuple()`.

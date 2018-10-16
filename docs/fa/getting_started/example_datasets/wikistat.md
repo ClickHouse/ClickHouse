@@ -8,7 +8,7 @@
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE wikistat
 (
     date Date,

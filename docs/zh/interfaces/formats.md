@@ -40,7 +40,7 @@ Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thrifti
 
 Cap'n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits
        GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
 ```
@@ -87,7 +87,7 @@ CSV 格式是和 TabSeparated 一样的方式输出总数和极值。
 
 以 JSON 格式输出数据。除了数据表之外，它还输出列名称和类型以及一些附加信息：输出行的总数以及在没有 LIMIT 时可以输出的行数。 例：
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -264,7 +264,7 @@ ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格
 
 [NULL](../query_language/syntax.md#null-literal) 输出为 `ᴺᵁᴸᴸ`。
 
-```sql
+``` sql
 SELECT * FROM t_null
 ```
 
@@ -279,7 +279,7 @@ SELECT * FROM t_null
 
 Pretty格式支持输出总值（当使用 WITH TOTALS 时）和极值（当 `extremes` 设置为1时）。 在这些情况下，总数值和极值在主数据之后以单独的表格形式输出。 示例（以 PrettyCompact 格式显示）：
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
@@ -371,7 +371,7 @@ TabSeparated 格式非常方便用于自定义程序或脚本处理数据。HTTP
 
 TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极值（当 'extremes' 设置是1）。这种情况下，总值和极值输出在主数据的后面。主要的数据，总值，极值会以一个空行隔开，例如：
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
@@ -470,7 +470,7 @@ SearchPhrase=baku       count()=1000
 
 [NULL](../query_language/syntax.md#null-literal) 输出为 `\N`。
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT TSKV
 ```
 
@@ -502,7 +502,7 @@ x=1	y=\N
 
 示例:
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 

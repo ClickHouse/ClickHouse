@@ -159,7 +159,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 В этом случае в запросах:
 
-```sql
+``` sql
 SELECT count() FROM table WHERE EventDate = toDate(now()) AND CounterID = 34
 SELECT count() FROM table WHERE EventDate = toDate(now()) AND (CounterID = 34 OR CounterID = 42)
 SELECT count() FROM table WHERE ((EventDate >= toDate('2014-01-01') AND EventDate <= toDate('2014-01-31')) OR EventDate = toDate('2014-05-01')) AND CounterID IN (101500, 731962, 160656) AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
@@ -171,7 +171,7 @@ ClickHouse будет использовать индекс по первичн�
 
 В примере ниже индекс не может использоваться.
 
-```sql
+``` sql
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 

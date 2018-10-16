@@ -1,7 +1,7 @@
 ## CREATE DATABASE
 Создание базы данных db_name
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name
 ```
 
@@ -14,7 +14,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 ## CREATE TABLE
 Запрос `CREATE TABLE` может иметь несколько форм.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -29,13 +29,13 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 Описание столбца, это `name type`, в простейшем случае. Пример: `RegionID UInt32`.
 Также могут быть указаны выражения для значений по умолчанию - смотрите ниже.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 ```
 
@@ -97,7 +97,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 Запросы `CREATE`, `DROP`, `ALTER`, `RENAME` поддерживают возможность распределенного выполнения на кластере.
 Например, следующий запрос создает `Distributed`-таблицу `all_hits` на каждом хосте кластера `cluster`:
 
-```sql
+``` sql
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 ## CREATE VIEW
 
-```sql
+``` sql
 CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
@@ -121,19 +121,19 @@ CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = eng
 
 Для примера, пусть вы создали представление:
 
-```sql
+``` sql
 CREATE VIEW view AS SELECT ...
 ```
 
 и написали запрос:
 
-```sql
+``` sql
 SELECT a, b, c FROM view
 ```
 
 Этот запрос полностью эквивалентен использованию подзапроса:
 
-```sql
+``` sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 

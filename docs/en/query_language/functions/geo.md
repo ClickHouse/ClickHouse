@@ -25,7 +25,7 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
@@ -58,7 +58,7 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
 ```
 
@@ -89,7 +89,7 @@ If the point is on the polygon boundary, the function may return either 0 or 1.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 

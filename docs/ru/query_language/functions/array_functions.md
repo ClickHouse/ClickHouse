@@ -53,7 +53,7 @@ arrayConcat(arrays)
 
 **Пример**
 
-```sql
+``` sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 ```
@@ -123,7 +123,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 Эта функция обычно используется совместно с ARRAY JOIN. Она позволяет, после применения ARRAY JOIN, посчитать что-либо только один раз для каждого массива. Пример:
 
-```sql
+``` sql
 SELECT
     count() AS Reaches,
     countIf(num = 1) AS Hits
@@ -143,7 +143,7 @@ LIMIT 10
 
 В этом примере, Reaches - число достижений целей (строк, получившихся после применения ARRAY JOIN), а Hits - число хитов (строк, которые были до ARRAY JOIN). В данном случае, тот же результат можно получить проще:
 
-```sql
+``` sql
 SELECT
     sum(length(GoalsReached)) AS Reaches,
     count() AS Hits
@@ -166,7 +166,7 @@ WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 Эта функция полезна при использовании ARRAY JOIN и агрегации по элементам массива.
 Пример:
 
-```sql
+``` sql
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
@@ -200,7 +200,7 @@ LIMIT 10
 
 Функция arrayEnumerateUniq может принимать несколько аргументов - массивов одинаковых размеров. В этом случае, уникальность считается для кортежей элементов на одинаковых позициях всех массивов.
 
-```sql
+``` sql
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 ```
 
@@ -226,7 +226,7 @@ arrayPopBack(array)
 
 **Пример**
 
-```sql
+``` sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
 ```
@@ -249,7 +249,7 @@ arrayPopFront(array)
 
 **Пример**
 
-```sql
+``` sql
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
 ```
@@ -273,7 +273,7 @@ arrayPushBack(array, single_value)
 
 **Пример**
 
-```sql
+``` sql
 SELECT arrayPushBack(['a'], 'b') AS res
 ```
 ```
@@ -297,7 +297,7 @@ arrayPushFront(array, single_value)
 
 **Пример**
 
-```sql
+``` sql
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
 ```
@@ -359,7 +359,7 @@ arraySlice(array, offset[, length])
 
 **Пример**
 
-```sql
+``` sql
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 ```
 ```

@@ -87,7 +87,7 @@
 
 ## Условное выражение
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]

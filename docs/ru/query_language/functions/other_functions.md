@@ -72,7 +72,7 @@ SELECT visibleWidth(NULL)
 
 Пример:
 
-```sql
+``` sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -141,7 +141,7 @@ ORDER BY h ASC
 
 Пример:
 
-```sql
+``` sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -170,7 +170,7 @@ ORDER BY c DESC
 
 Пример:
 
-```sql
+``` sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -199,7 +199,7 @@ LIMIT 10
 
 Пример:
 
-```sql
+``` sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
@@ -238,7 +238,7 @@ SELECT
 
 Пример:
 
-```sql
+``` sql
 SELECT
     EventID,
     EventTime,

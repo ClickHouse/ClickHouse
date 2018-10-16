@@ -17,7 +17,7 @@ Note the ARRAY JOIN syntax in the SELECT query, which provides broader possibili
 
 Example:
 
-```sql
+``` sql
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 

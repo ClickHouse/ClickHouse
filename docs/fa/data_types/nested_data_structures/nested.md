@@ -8,7 +8,7 @@
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -43,7 +43,7 @@ CREATE TABLE test.visits
 
 </div>
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -75,7 +75,7 @@ LIMIT 10
 
 </div>
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime

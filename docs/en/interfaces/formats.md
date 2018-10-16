@@ -44,7 +44,7 @@ The `TabSeparated` format is convenient for processing data using custom program
 
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when 'extremes' is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
@@ -143,7 +143,7 @@ SearchPhrase=baku       count()=1000
 
 [NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT TSKV
 ```
 
@@ -186,7 +186,7 @@ Also prints the header row, similar to `TabSeparatedWithNames`.
 
 Outputs data in JSON format. Besides data tables, it also outputs column names and types, along with some additional information: the total number of output rows, and the number of rows that could have been output if there weren't a LIMIT. Example:
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -363,7 +363,7 @@ Each result block is output as a separate table. This is necessary so that block
 
 [NULL](../query_language/syntax.md#null-literal) is output as `ᴺᵁᴸᴸ`.
 
-```sql
+``` sql
 SELECT * FROM t_null
 ```
 
@@ -378,7 +378,7 @@ This format is only appropriate for outputting a query result, but not for parsi
 
 The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
@@ -477,7 +477,7 @@ Prints each value on a separate line with the column name specified. This format
 
 Example:
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 
@@ -604,7 +604,7 @@ Cap'n Proto is a binary message format similar to Protocol Buffers and Thrift, b
 
 Cap'n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits
        GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
 ```

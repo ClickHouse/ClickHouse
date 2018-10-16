@@ -210,7 +210,7 @@ This table can be used for monitoring. The table contains a row for every Replic
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.replicas
 WHERE table = 'visits'
@@ -296,7 +296,7 @@ If you don't request the last 4 columns (log_max_index, log_pointer, total_repli
 
 For example, you can check that everything is working correctly like this:
 
-```sql
+``` sql
 SELECT
     database,
     table,
@@ -343,7 +343,7 @@ changed UInt8 — Whether the setting was explicitly defined in the config or ex
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.settings
 WHERE changed
@@ -393,7 +393,7 @@ Columns:
 
 Example:
 
-```sql
+``` sql
 SELECT *
 FROM system.zookeeper
 WHERE path = '/clickhouse/tables/01-08/visits/replicas'

@@ -4,7 +4,7 @@ For all arithmetic functions, the result type is calculated as the smallest numb
 
 Example:
 
-```sql
+``` sql
 SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
 ```
 

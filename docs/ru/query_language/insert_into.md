@@ -6,7 +6,7 @@
 
 Базовый формат запроса:
 
-```sql
+``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -19,13 +19,13 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 В INSERT можно передавать данные любого [формата](../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
-```sql
+``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
 ```
 
 Например, следующий формат запроса идентичен базовому варианту INSERT ... VALUES:
 
-```sql
+``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
 ```
 
@@ -33,7 +33,7 @@ ClickHouse отсекает все пробелы и один перенос с�
 
 Пример:
 
-```sql
+``` sql
 INSERT INTO t FORMAT TabSeparated
 11  Hello, world!
 22  Qwerty
@@ -43,7 +43,7 @@ INSERT INTO t FORMAT TabSeparated
 
 ### Вставка результатов `SELECT`
 
-```sql
+``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 ```
 

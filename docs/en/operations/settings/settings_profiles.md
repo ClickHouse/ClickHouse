@@ -9,7 +9,7 @@ Example:
 
 Install the `web` profile.
 
-```sql
+``` sql
 SET profile = 'web'
 ```
 

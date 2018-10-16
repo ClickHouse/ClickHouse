@@ -26,7 +26,7 @@ done
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE `ontime` (
   `Year` UInt16,
   `Quarter` UInt8,
@@ -157,7 +157,7 @@ Q0.
 
 </div>
 
-```sql
+``` sql
 select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
 ```
 
@@ -167,7 +167,7 @@ Q1. تعداد پروازهای به تفکیک روز از تاریخ 2000 تا
 
 </div>
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC;
 ```
 
@@ -177,7 +177,7 @@ Q2. تعداد پروازهای بیش از 10 دقیقه تاخیر خورده�
 
 </div>
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC
 ```
 
@@ -187,7 +187,7 @@ Q3. تعداد تاخیرها براساس airport از سال 2000 تا 2008
 
 </div>
 
-```sql
+``` sql
 SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
 ```
 
@@ -197,7 +197,7 @@ Q4. تعداد تاخیرها براساس carrier در سال 78
 
 </div>
 
-```sql
+``` sql
 SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
@@ -207,7 +207,7 @@ Q5. درصد تاخیر ها براساس carrier در سال 2007
 
 </div>
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*1000/c2 as c3
 FROM
 (
@@ -237,7 +237,7 @@ ORDER BY c3 DESC;
 
 </div>
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
 ```
 
@@ -247,7 +247,7 @@ Q6. مانند query قبلی اما برای طیف وسیعی از سال ها
 
 </div>
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*1000/c2 as c3
 FROM
 (
@@ -277,7 +277,7 @@ ORDER BY c3 DESC;
 
 </div>
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 ```
 
@@ -287,7 +287,7 @@ Q7. درصد تاخیر بیش از 10 دقیقه پروازها به تفکیک
 
 </div>
 
-```sql
+``` sql
 SELECT Year, c1/c2
 FROM
 (
@@ -315,7 +315,7 @@ ORDER BY Year
 
 </div>
 
-```sql
+``` sql
 SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
 ```
 
@@ -325,7 +325,7 @@ Q8. مقصدهای پرطرفدار براساس تعداد اتصال های م
 
 </div>
 
-```sql
+``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
 ```
 
@@ -335,7 +335,7 @@ Q9.
 
 </div>
 
-```sql
+``` sql
 select Year, count(*) as c1 from ontime group by Year;
 ```
 
@@ -345,7 +345,7 @@ Q10.
 
 </div>
 
-```sql
+``` sql
 select
    min(Year), max(Year), Carrier, count(*) as cnt,
    sum(ArrDelayMinutes>30) as flights_delayed,
@@ -367,7 +367,7 @@ query های بیشتر:
 
 </div>
 
-```sql
+``` sql
 SELECT avg(cnt) FROM (SELECT Year,Month,count(*) AS cnt FROM ontime WHERE DepDel15=1 GROUP BY Year,Month)
 
 select avg(c1) from (select Year,Month,count(*) as c1 from ontime group by Year,Month)

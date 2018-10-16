@@ -35,7 +35,7 @@ regionToCountry(RegionID, 'ua') - использует словарь для к�
 ### regionToArea(id\[, geobase\])
 Переводит регион в область (тип в геобазе - 5). В остальном, аналогично функции regionToCity.
 
-```sql
+``` sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
@@ -64,7 +64,7 @@ LIMIT 15
 ### regionToDistrict(id\[, geobase\])
 Переводит регион в федеральный округ (тип в геобазе - 4). В остальном, аналогично функции regionToCity.
 
-```sql
+``` sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15

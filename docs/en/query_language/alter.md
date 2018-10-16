@@ -8,7 +8,7 @@ The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`a
 
 Changing the table structure.
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 ```
 
@@ -17,7 +17,7 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
-```sql
+``` sql
 ADD COLUMN name [type] [default_expr] [AFTER name_after]
 ```
 
@@ -27,14 +27,14 @@ Adding a column just changes the table structure, without performing any actions
 
 This approach allows us to complete the ALTER query instantly, without increasing the volume of old data.
 
-```sql
+``` sql
 DROP COLUMN name
 ```
 
 Deletes the column with the name 'name'.
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
-```sql
+``` sql
 MODIFY COLUMN name [type] [default_expr]
 ```
 
@@ -86,7 +86,7 @@ A "part" in the table is part of the data from a single partition, sorted by the
 
 You can use the `system.parts` table to view the set of table parts and partitions:
 
-```sql
+``` sql
 SELECT * FROM system.parts WHERE active
 ```
 
@@ -123,7 +123,7 @@ For replicated tables, the set of parts can't be changed in any case.
 
 The `detached` directory contains parts that are not used by the server - detached from the table using the `ALTER ... DETACH` query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the 'detached' directory at any time – the server won't know about this until you make the `ALTER TABLE ... ATTACH` query.
 
-```sql
+``` sql
 ALTER TABLE [db.]table DETACH PARTITION 'name'
 ```
 
@@ -134,13 +134,13 @@ After the query is executed, you can do whatever you want with the data in the '
 
 The query is replicated – data will be moved to the 'detached' directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the 'system.replicas' system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
 
-```sql
+``` sql
 ALTER TABLE [db.]table DROP PARTITION 'name'
 ```
 
 The same as the `DETACH` operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated – data will be deleted on all replicas.
 
-```sql
+``` sql
 ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 ```
 
@@ -152,7 +152,7 @@ The query is replicated. Each replica checks whether there is data in the 'detac
 
 So you can put data in the 'detached' directory on one replica, and use the ALTER ... ATTACH query to add it to the table on all replicas.
 
-```sql
+``` sql
 ALTER TABLE [db.]table FREEZE PARTITION 'name'
 ```
 
@@ -196,7 +196,7 @@ For protection from device failures, you must use replication. For more informat
 Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data).
 For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in `/var/lib/clickhouse/shadow/`).
 
-```sql
+``` sql
 ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 ```
 
@@ -232,13 +232,13 @@ Existing tables are ready for mutations as-is (no conversion necessary), but aft
 
 Currently available commands:
 
-```sql
+``` sql
 ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
 The `filter_expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
 
-```sql
+``` sql
 ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
 ```
 

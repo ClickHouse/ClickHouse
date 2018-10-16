@@ -18,7 +18,7 @@ done
 
 Creating a table:
 
-```sql
+``` sql
 CREATE TABLE `ontime` (
   `Year` UInt16,
   `Quarter` UInt8,
@@ -142,37 +142,37 @@ Queries:
 
 Q0.
 
-```sql
+``` sql
 select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
 ```
 
 Q1. The number of flights per day from the year 2000 to 2008
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC;
 ```
 
 Q2. The number of flights delayed by more than 10 minutes, grouped by the day of the week, for 2000-2008
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC
 ```
 
 Q3. The number of delays by airport for 2000-2008
 
-```sql
+``` sql
 SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
 ```
 
 Q4. The number of delays by carrier for 2007
 
-```sql
+``` sql
 SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 Q5. The percentage of delays by carrier for 2007
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*1000/c2 as c3
 FROM
 (
@@ -198,13 +198,13 @@ ORDER BY c3 DESC;
 
 Better version of the same query:
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
 ```
 
 Q6. The previous request for a broader range of years, 2000-2008
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*1000/c2 as c3
 FROM
 (
@@ -230,13 +230,13 @@ ORDER BY c3 DESC;
 
 Better version of the same query:
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay > 10) * 1000 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
 ```
 
 Q7. Percentage of flights delayed for more than 10 minutes, by year
 
-```sql
+``` sql
 SELECT Year, c1/c2
 FROM
 (
@@ -260,25 +260,25 @@ ORDER BY Year
 
 Better version of the same query:
 
-```sql
+``` sql
 SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
 ```
 
 Q8. The most popular destinations by the number of directly connected cities for various year ranges
 
-```sql
+``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
 ```
 
 Q9.
 
-```sql
+``` sql
 select Year, count(*) as c1 from ontime group by Year;
 ```
 
 Q10.
 
-```sql
+``` sql
 select
    min(Year), max(Year), Carrier, count(*) as cnt,
    sum(ArrDelayMinutes>30) as flights_delayed,
@@ -296,7 +296,7 @@ LIMIT 1000;
 
 Bonus:
 
-```sql
+``` sql
 SELECT avg(cnt) FROM (SELECT Year,Month,count(*) AS cnt FROM ontime WHERE DepDel15=1 GROUP BY Year,Month)
 
 select avg(c1) from (select Year,Month,count(*) as c1 from ontime group by Year,Month)

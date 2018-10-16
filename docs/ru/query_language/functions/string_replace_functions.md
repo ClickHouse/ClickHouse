@@ -17,7 +17,7 @@
 
 Пример 1. Переведём дату в американский формат:
 
-```sql
+``` sql
 SELECT DISTINCT
     EventDate,
     replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
@@ -38,7 +38,7 @@ FORMAT TabSeparated
 
 Пример 2. Размножить строку десять раз:
 
-```sql
+``` sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
@@ -51,7 +51,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 ## replaceRegexpAll(haystack, pattern, replacement)
 То же самое, но делается замена всех вхождений. Пример:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
@@ -64,7 +64,7 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 В качестве исключения, если регулярное выражение сработало на пустой подстроке, то замена делается не более одного раза.
 Пример:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 

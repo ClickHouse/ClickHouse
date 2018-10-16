@@ -40,7 +40,7 @@ YYYY-MM-DD hh:mm:ss
 
 Дополнительно, функция toString от аргумента типа DateTime может принимать второй аргумент String - имя тайм-зоны. Пример: `Asia/Yekaterinburg` В этом случае, форматирование времени производится согласно указанной тайм-зоне.
 
-```sql
+``` sql
 SELECT
     now() AS now_local,
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
@@ -63,7 +63,7 @@ SELECT
 
 Пример:
 
-```sql
+``` sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
@@ -73,7 +73,7 @@ SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 └───────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
@@ -101,7 +101,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 Пример:
 
-```sql
+``` sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,

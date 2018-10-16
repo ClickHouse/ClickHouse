@@ -25,7 +25,7 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **Пример**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
@@ -59,7 +59,7 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **Пример**
 
-```sql
+``` sql
 SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
 ```
 
@@ -91,7 +91,7 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Пример**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 ```
