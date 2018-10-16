@@ -57,6 +57,7 @@ public:
         unsigned num_streams) override;
 
     String getDataPath() const override;
+    StoragePtr tryGetTargetTable() const;
 
 private:
     String select_database_name;
@@ -70,7 +71,6 @@ private:
     bool has_inner_table = false;
 
     StoragePtr getTargetTable() const;
-    StoragePtr tryGetTargetTable() const;
 
     void checkStatementCanBeForwarded() const;
 
