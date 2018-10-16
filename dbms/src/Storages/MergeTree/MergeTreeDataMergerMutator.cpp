@@ -22,8 +22,6 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
@@ -750,7 +748,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merge_entry->progress.store(column_sizes.keyColumnsProgress(sum_input_rows_exact, sum_input_rows_exact), std::memory_order_relaxed);
 
         BlockInputStreams column_part_streams(parts.size());
-        NameSet offset_columns_written;
 
         auto it_name_and_type = gathering_columns.cbegin();
 
@@ -767,22 +764,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0);
+        IMergedBlockOutputStream::WrittenOffsetColumns written_offset_columns;
 
         for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
             column_num < gathering_column_names_size;
             ++column_num, ++it_name_and_type)
         {
             const String & column_name = it_name_and_type->name;
-            const DataTypePtr & column_type = it_name_and_type->type;
-            const String offset_column_name = Nested::extractTableName(column_name);
-            Names column_name_{column_name};
+            Names column_names{column_name};
             Float64 progress_before = merge_entry->progress.load(std::memory_order_relaxed);
-            bool offset_written = offset_columns_written.count(offset_column_name);
 
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->marks_count)},
+                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_names, MarkRanges{MarkRange(0, parts[part_num]->marks_count)},
                     false, nullptr, true, min_bytes_when_use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
                 column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
@@ -793,7 +788,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
-            MergedColumnOnlyOutputStream column_to(data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_settings, offset_written);
+            MergedColumnOnlyOutputStream column_to(
+                data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_settings, false, written_offset_columns);
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -810,9 +806,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 throw Exception("Written " + toString(column_elems_written) + " elements of column " + column_name +
                                 ", but " + toString(rows_written) + " rows of PK columns", ErrorCodes::LOGICAL_ERROR);
             }
-
-            if (typeid_cast<const DataTypeArray *>(column_type.get()))
-                offset_columns_written.emplace(offset_column_name);
 
             /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
 
@@ -971,7 +964,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             createHardLink(dir_it.path().toString(), destination.toString());
         }
 
-        MergedColumnOnlyOutputStream out(data, in_header, new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false);
+        IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+        MergedColumnOnlyOutputStream out(
+            data, in_header, new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false, unused_written_offsets);
 
         in->readPrefix();
         out.writePrefix();
