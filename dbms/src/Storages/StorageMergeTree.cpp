@@ -201,8 +201,9 @@ void StorageMergeTree::alter(
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
     bool primary_key_is_modified = false;
-
     ASTPtr new_primary_key_ast = data.primary_key_ast;
+
+    bool sorting_key_is_modified = false;
     ASTPtr new_sorting_key_ast = data.sorting_key_ast;
 
     for (const AlterCommand & param : params)
@@ -211,7 +212,11 @@ void StorageMergeTree::alter(
         {
             primary_key_is_modified = true;
             new_primary_key_ast = param.primary_key;
-            new_sorting_key_ast = param.primary_key->clone();
+        }
+        else if (param.type == AlterCommand::MODIFY_ORDER_BY)
+        {
+            sorting_key_is_modified = true;
+            new_sorting_key_ast = param.sorting_key;
         }
     }
 
@@ -229,19 +234,53 @@ void StorageMergeTree::alter(
     auto table_hard_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
     IDatabase::ASTModifier storage_modifier;
-    if (primary_key_is_modified)
+    if (primary_key_is_modified || sorting_key_is_modified)
     {
-        storage_modifier = [&new_primary_key_ast] (IAST & ast)
+        storage_modifier = [&] (IAST & ast)
         {
-            auto tuple = std::make_shared<ASTFunction>();
-            tuple->name = "tuple";
-            tuple->arguments = new_primary_key_ast;
-            tuple->children.push_back(tuple->arguments);
-
-            /// Primary key is in the second place in table engine description and can be represented as a tuple.
-            /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
             auto & storage_ast = typeid_cast<ASTStorage &>(ast);
-            typeid_cast<ASTExpressionList &>(*storage_ast.engine->arguments).children.at(1) = tuple;
+
+            if (primary_key_is_modified)
+            {
+                auto tuple = std::make_shared<ASTFunction>();
+                tuple->name = "tuple";
+                tuple->arguments = new_primary_key_ast;
+                tuple->children.push_back(tuple->arguments);
+
+                if (storage_ast.order_by)
+                {
+                    if (storage_ast.primary_key)
+                        storage_ast.set(storage_ast.primary_key, tuple);
+                    else
+                    {
+                        storage_ast.set(storage_ast.order_by, tuple);
+                        new_sorting_key_ast = new_primary_key_ast->clone();
+                    }
+                }
+                else
+                {
+                    /// Primary key is in the second place in table engine description and can be represented as a tuple.
+                    /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
+                    storage_ast.engine->arguments->children.at(1) = tuple;
+                }
+            }
+
+            if (sorting_key_is_modified)
+            {
+                /// TODO: helper for tuple creation
+                auto tuple = std::make_shared<ASTFunction>();
+                tuple->name = "tuple";
+                tuple->arguments = new_sorting_key_ast;
+                tuple->children.push_back(tuple->arguments);
+
+                if (!storage_ast.order_by)
+                    throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
+
+                if (!storage_ast.primary_key)
+                    storage_ast.set(storage_ast.primary_key, storage_ast.order_by->clone());
+
+                storage_ast.set(storage_ast.order_by, tuple);
+            }
         };
     }
 
