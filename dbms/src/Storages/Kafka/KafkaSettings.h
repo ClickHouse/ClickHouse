@@ -26,7 +26,8 @@ struct KafkaSettings
     M(SettingString, kafka_format, "", "Message format for Kafka engine.") \
     M(SettingChar, kafka_row_delimiter, '\0', "The character to be considered as a delimiter in Kafka message.") \
     M(SettingString, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine") \
-    M(SettingUInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.")
+    M(SettingUInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.") \
+    M(SettingUInt64, kafka_max_block_size, 0, "The maximum block size per table for Kafka engine.")
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
