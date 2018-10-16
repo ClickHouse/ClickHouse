@@ -156,6 +156,8 @@ class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
     /// skip_offsets: used when ALTERing columns if we know that array offsets are not altered.
+    /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
+    ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionSettings compression_settings, bool skip_offsets_,
