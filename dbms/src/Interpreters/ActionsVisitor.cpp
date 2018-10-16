@@ -220,7 +220,31 @@ const Block & ScopeStack::getSampleBlock() const
 }
 
 
-void ActionsVisitor::visit(const ASTPtr & ast, ScopeStack & actions_stack, ProjectionManipulatorPtr projection_manipulator)
+ActionsVisitor::ActionsVisitor(
+        const Context & context_, SizeLimits set_size_limit_, bool is_conditional_tree, size_t subquery_depth_,
+        const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
+        PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
+        bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_)
+:   context(context_),
+    set_size_limit(set_size_limit_),
+    subquery_depth(subquery_depth_),
+    source_columns(source_columns_),
+    prepared_sets(prepared_sets_),
+    subqueries_for_sets(subqueries_for_sets_),
+    no_subqueries(no_subqueries_),
+    only_consts(only_consts_),
+    no_storage_or_local(no_storage_or_local_),
+    visit_depth(0),
+    ostr(ostr_),
+    actions_stack(actions, context)
+{
+    if (is_conditional_tree)
+        projection_manipulator = std::make_shared<ConditionalTree>(actions_stack, context);
+    else
+        projection_manipulator = std::make_shared<DefaultProjectionManipulator>(actions_stack);
+}
+
+void ActionsVisitor::visit(const ASTPtr & ast)
 {
     DumpASTNode dump(*ast, ostr, visit_depth, "getActions");
 
@@ -267,7 +291,7 @@ void ActionsVisitor::visit(const ASTPtr & ast, ScopeStack & actions_stack, Proje
                 throw Exception("arrayJoin requires exactly 1 argument", ErrorCodes::TYPE_MISMATCH);
 
             ASTPtr arg = node->arguments->children.at(0);
-            visit(arg, actions_stack, projection_manipulator);
+            visit(arg);
             if (!only_consts)
             {
                 String result_name = projection_manipulator->getColumnName(getColumnName());
@@ -283,7 +307,7 @@ void ActionsVisitor::visit(const ASTPtr & ast, ScopeStack & actions_stack, Proje
         if (functionIsInOrGlobalInOperator(node->name))
         {
             /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
-            visit(node->arguments->children.at(0), actions_stack, projection_manipulator);
+            visit(node->arguments->children.at(0));
 
             if (!no_subqueries)
             {
@@ -387,7 +411,7 @@ void ActionsVisitor::visit(const ASTPtr & ast, ScopeStack & actions_stack, Proje
             {
                 /// If the argument is not a lambda expression, call it recursively and find out its type.
                 projection_action->preArgumentAction();
-                visit(child, actions_stack, projection_manipulator);
+                visit(child);
                 std::string name = projection_manipulator->getColumnName(child_column_name);
                 projection_action->postArgumentAction(child_column_name);
                 if (actions_stack.getSampleBlock().has(name))
@@ -442,7 +466,7 @@ void ActionsVisitor::visit(const ASTPtr & ast, ScopeStack & actions_stack, Proje
 
                     projection_action->preArgumentAction();
                     actions_stack.pushLevel(lambda_arguments);
-                    visit(lambda->arguments->children.at(1), actions_stack, projection_manipulator);
+                    visit(lambda->arguments->children.at(1));
                     ExpressionActionsPtr lambda_actions = actions_stack.popLevel();
 
                     String result_name = projection_manipulator->getColumnName(lambda->arguments->children.at(1)->getColumnName());
@@ -515,7 +539,7 @@ void ActionsVisitor::visit(const ASTPtr & ast, ScopeStack & actions_stack, Proje
             /// Do not go to FROM, JOIN, UNION.
             if (!typeid_cast<const ASTTableExpression *>(child.get())
                 && !typeid_cast<const ASTSelectQuery *>(child.get()))
-                visit(child, actions_stack, projection_manipulator);
+                visit(child);
         }
     }
 }
