@@ -96,3 +96,5 @@ For a DESCRIBE query, the columns in a nested data structure are listed separate
 
 The ALTER query is very limited for elements in a nested data structure.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

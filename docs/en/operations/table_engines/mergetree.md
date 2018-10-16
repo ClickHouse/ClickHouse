@@ -182,3 +182,5 @@ For concurrent table access, we use multi-versioning. In other words, when a tab
 
 Reading from a table is automatically parallelized.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mergetree/) <!--hide-->

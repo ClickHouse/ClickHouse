@@ -78,3 +78,5 @@ SELECT erf(3 / sqrt(2))
 
 ## pow(x, y)
 Принимает два числовых аргумента x и y. Возвращает число типа Float64, близкое к x в степени y.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/math_functions/) <!--hide-->

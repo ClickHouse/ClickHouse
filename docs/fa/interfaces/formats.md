@@ -583,3 +583,5 @@ struct Message {
 عملیات Deserialization موثر است و معمولا لود سیستم را افزایش نمی دهد.
 
 </div>
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/formats/) <!--hide-->

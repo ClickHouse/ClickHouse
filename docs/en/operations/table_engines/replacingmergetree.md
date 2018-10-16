@@ -16,3 +16,5 @@ Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data  in the b
 
 *This engine is not used in Yandex.Metrica, but it has been applied in other Yandex projects.*
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

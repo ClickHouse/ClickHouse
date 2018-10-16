@@ -964,3 +964,5 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - In subqueries (since columns that aren't needed for the external query are excluded from subqueries).
 
 In all other cases, we don't recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/select/) <!--hide-->

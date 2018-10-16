@@ -119,3 +119,5 @@ GROUP BY sourceIP
 ORDER BY totalRevenue DESC
 LIMIT 1
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

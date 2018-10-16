@@ -212,3 +212,5 @@ The response contains the `kill_status` column, which can take the following val
 3. The other values ​​explain why the query can't be stopped.
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/misc/) <!--hide-->

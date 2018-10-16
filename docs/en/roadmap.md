@@ -18,3 +18,5 @@
     - Predicate pushdown through join
 
 - Resource pools for more precise distribution of cluster capacity between users
+
+[Original article](https://clickhouse.yandex/docs/en/roadmap/) <!--hide-->

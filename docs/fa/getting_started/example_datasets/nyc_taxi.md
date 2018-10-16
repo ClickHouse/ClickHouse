@@ -409,3 +409,4 @@ Q4: 0.072 ثانیه.
 |   140 | 0.028 | 0.043 | 0.051 | 0.072 |
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/nyc_taxi/) <!--hide-->

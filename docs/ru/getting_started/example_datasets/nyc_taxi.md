@@ -366,3 +366,5 @@ Q4: 0.072 sec.
 |       1 | 0.490 | 1.224 | 2.104 | 3.593 |
 |       3 | 0.212 | 0.438 | 0.733 | 1.241 |
 |     140 | 0.028 | 0.043 | 0.051 | 0.072 |
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/nyc_taxi/) <!--hide-->

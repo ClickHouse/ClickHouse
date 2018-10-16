@@ -145,3 +145,5 @@ LIMIT 20
 توجه کنید که برای کارایی CPU، query language باید SQL یا MDX باشد، یا حداقل یک بردارد (J, K) باشد. query برای بهینه سازی باید فقط دارای حلقه های implicit باشد.
 
 </div>
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/) <!--hide-->

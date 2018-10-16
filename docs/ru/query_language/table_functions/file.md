@@ -45,3 +45,5 @@ LIMIT 2
 │       3 │       2 │       1 │
 └─────────┴─────────┴─────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/file/) <!--hide-->

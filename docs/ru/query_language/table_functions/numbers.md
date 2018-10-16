@@ -17,3 +17,5 @@ SELECT * FROM system.numbers LIMIT 10;
 -- генерация последовательности всех дат от 2010-01-01 до 2010-12-31
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/numbers/) <!--hide-->

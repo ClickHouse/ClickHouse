@@ -103,3 +103,5 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ### arrayReverseSort(\[func,\] arr1, ...)
 
 Возвращает отсортированный в нисходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).  
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/higher_order_functions/) <!--hide-->

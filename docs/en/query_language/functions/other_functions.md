@@ -559,3 +559,5 @@ SELECT replicate(1, ['a', 'b', 'c'])
 └───────────────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->

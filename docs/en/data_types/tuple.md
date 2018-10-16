@@ -52,3 +52,5 @@ SELECT
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/tuple/) <!--hide-->

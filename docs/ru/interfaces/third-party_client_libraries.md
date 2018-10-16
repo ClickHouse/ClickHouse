@@ -46,3 +46,5 @@
     - [AORM](https://github.com/TanVD/AORM)
 - Nim
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party_client_libraries/) <!--hide-->

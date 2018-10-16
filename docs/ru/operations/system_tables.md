@@ -410,3 +410,5 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/system_tables/) <!--hide-->

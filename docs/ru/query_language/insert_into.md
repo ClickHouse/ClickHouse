@@ -65,3 +65,5 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 
 -   Данные поступают в режиме реального времени.
 -   Вы загружаете данные, которые как правило отсортированы по времени.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/insert_into/) <!--hide-->

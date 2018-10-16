@@ -111,3 +111,4 @@ LIMIT 10
 دستور ALTER برای عناصر داخل nested بسیار محدود است.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/nested_data_structures/nested/) <!--hide-->

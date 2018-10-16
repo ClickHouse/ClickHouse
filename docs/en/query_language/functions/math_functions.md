@@ -97,3 +97,5 @@ The arc tangent.
 ## pow(x, y)
 
 Takes two numeric arguments x and y. Returns a Float64 number close to x to the power of y.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/math_functions/) <!--hide-->

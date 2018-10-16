@@ -52,3 +52,5 @@ A Buffer table is used when too many INSERTs are received from a large number of
 
 Note that it doesn't make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second, while inserting larger blocks of data can produce over a million rows per second (see the section "Performance").
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/buffer/) <!--hide-->

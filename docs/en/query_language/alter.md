@@ -272,3 +272,5 @@ The table contains information about mutations of MergeTree tables and their pro
 
 **is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/alter/) <!--hide-->

@@ -48,3 +48,5 @@ ClickHouse:
 - [Источники внешних словарей](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources)
 - [Ключ и поля словаря](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure)
 - [Функции для работы с внешними словарями](../functions/ext_dict_functions.md#ext_dict_functions)
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

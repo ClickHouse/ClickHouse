@@ -77,3 +77,5 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 └─────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_replace_functions/) <!--hide-->

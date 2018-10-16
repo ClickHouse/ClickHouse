@@ -621,3 +621,5 @@ test: string with \'quotes\' and \t with some special \n characters
 在字符串值中，字符 `<` 和 `＆` 被转义为 `<` 和 `＆`。
 
 数组输出为 `<array> <elem> Hello </ elem> <elem> World </ elem> ... </ array>`，元组输出为 `<tuple> <elem> Hello </ elem> <elem> World </ ELEM> ... </tuple>` 。
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/formats/) <!--hide-->

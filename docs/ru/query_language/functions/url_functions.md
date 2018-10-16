@@ -97,3 +97,5 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 
 ### cutURLParameter(URL, name)
 Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/url_functions/) <!--hide-->

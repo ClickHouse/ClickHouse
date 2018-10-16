@@ -350,3 +350,5 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

@@ -87,3 +87,5 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 DROP TABLE criteo_log;
 ```
 
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/criteo/) <!--hide-->

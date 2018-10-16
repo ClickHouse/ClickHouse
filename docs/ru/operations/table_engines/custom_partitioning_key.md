@@ -41,3 +41,5 @@ ALTER TABLE table DROP PARTITION (toMonday(today()), 1)
 ID партиции - это её строковый идентификатор (по возможности человекочитаемый), используемый для имён кусков на файловой системе и в ZooKeeper. Его можно указывать в запросах ALTER вместо значения ключа партиционирования. Пример: ключ партиционирования `toYYYYMM(EventDate)`, в ALTER можно указывать либо `PARTITION 201710`, либо `PARTITION ID '201710'`.
 
 Больше примеров в тестах [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) и [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/custom_partitioning_key/) <!--hide-->

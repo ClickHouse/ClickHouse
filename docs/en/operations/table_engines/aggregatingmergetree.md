@@ -85,3 +85,5 @@ You can create a materialized view like this and assign a normal view to it that
 
 Note that in most cases, using `AggregatingMergeTree` is not justified, since queries can be run efficiently enough on non-aggregated data.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

@@ -180,3 +180,5 @@ After this, you can launch the server, create a `MergeTree` table, move the data
 ## Recovery When Metadata in The ZooKeeper Cluster is Lost or Damaged
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replication/) <!--hide-->
