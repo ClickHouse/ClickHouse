@@ -64,11 +64,11 @@
 }
 
 body {
-    font: 300 14pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
+    font: 400 14pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
 }
 
 body.md-lang-zh {
-    font: 300 14pt/200% 'Yandex Sans Text Web', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    font: 400 14pt/200% 'Yandex Sans Text Web', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
 a:link, a:visited {
