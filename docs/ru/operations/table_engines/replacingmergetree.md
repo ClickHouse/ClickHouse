@@ -6,7 +6,7 @@
 
 Столбец с версией должен иметь тип из семейства `UInt`, или `Date`, или `DateTime`.
 
-```sql
+``` sql
 ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)
 ```
 
@@ -15,3 +15,5 @@ ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)
 Таким образом, `ReplacingMergeTree` подходит для фоновой чистки дублирующихся данных в целях экономии места, но не даёт гарантий отсутствия дубликатов.
 
 *Движок не используется в Яндекс.Метрике, но нашёл своё применение в других отделах Яндекса.*
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->

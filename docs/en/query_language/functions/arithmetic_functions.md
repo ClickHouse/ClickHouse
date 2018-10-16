@@ -4,11 +4,11 @@ For all arithmetic functions, the result type is calculated as the smallest numb
 
 Example:
 
-```sql
+``` sql
 SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0 + 0 + 0)
 ```
 
-```text
+```
 ┌─toTypeName(0)─┬─toTypeName(plus(0, 0))─┬─toTypeName(plus(plus(0, 0), 0))─┬─toTypeName(plus(plus(plus(0, 0), 0), 0))─┐
 │ UInt8         │ UInt16                 │ UInt32                          │ UInt64                                   │
 └───────────────┴────────────────────────┴─────────────────────────────────┴──────────────────────────────────────────┘
@@ -73,3 +73,5 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/arithmetic_functions/) <!--hide-->

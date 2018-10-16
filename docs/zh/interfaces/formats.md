@@ -32,31 +32,130 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✔ |
 
-<a name="format_capnproto"></a>
+<a name="tabseparated"></a>
 
-## CapnProto
+## TabSeparated
 
-Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
+在 TabSeparated 格式中，数据按行写入。每行包含由制表符分隔的值。除了行中的最后一个值（后面紧跟换行符）之外，每个值都跟随一个制表符。 在任何地方都可以使用严格的 Unix 命令行。最后一行还必须在最后包含换行符。值以文本格式编写，不包含引号，并且要转义特殊字符。
 
-Cap'n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
+这种格式也可以用 `TSV` 来表示。
 
-```sql
-SELECT SearchPhrase, count() AS c FROM test.hits
-       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+TabSeparated 格式非常方便用于自定义程序或脚本处理数据。HTTP 客户端接口默认会用这种格式，命令行客户端批量模式下也会用这种格式。这种格式允许在不同数据库之间传输数据。例如，从 MYSQL 中导出数据然后导入到 ClickHouse 中，反之亦然。
+
+TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极值（当 'extremes' 设置是1）。这种情况下，总值和极值输出在主数据的后面。主要的数据，总值，极值会以一个空行隔开，例如：
+
+``` sql
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-其中 `schema.capnp` 描述如下：
+```
+2014-03-17      1406958
+2014-03-18      1383658
+2014-03-19      1405797
+2014-03-20      1353623
+2014-03-21      1245779
+2014-03-22      1031592
+2014-03-23      1046491
+
+0000-00-00      8873898
+
+2014-03-17      1031592
+2014-03-23      1406958
+```
+
+### 数据解析方式
+
+整数以十进制形式写入。数字在开头可以包含额外的 `+` 字符（解析时忽略，格式化时不记录）。非负数不能包含负号。 读取时，允许将空字符串解析为零，或者（对于带符号的类型）将仅包含负号的字符串解析为零。 不符合相应数据类型的数字可能会被解析为不同的数字，而不会显示错误消息。
+
+浮点数以十进制形式写入。点号用作小数点分隔符。支持指数等符号，如'inf'，'+ inf'，'-inf'和'nan'。 浮点数的输入可以以小数点开始或结束。
+格式化的时候，浮点数的精确度可能会丢失。
+解析的时候，没有严格需要去读取与机器可以表示的最接近的数值。
+
+日期会以 YYYY-MM-DD 格式写入和解析，但会以任何字符作为分隔符。
+带时间的日期会以 YYYY-MM-DD hh:mm:ss 格式写入和解析，但会以任何字符作为分隔符。
+这一切都发生在客户端或服务器启动时的系统时区（取决于哪一种格式的数据）。对于具有时间的日期，夏时制时间未指定。 因此，如果转储在夏令时中有时间，则转储不会明确地匹配数据，解析将选择两者之一。
+在读取操作期间，不正确的日期和具有时间的日期可以使用自然溢出或空日期和时间进行分析，而不会出现错误消息。
+
+有个例外情况，Unix 时间戳格式（10个十进制数字）也支持使用时间解析日期。结果不是时区相关的。格式 YYYY-MM-DD hh:mm:ss和 NNNNNNNNNN 会自动区分。
+
+字符串以反斜线转义的特殊字符输出。 以下转义序列用于输出：`\b`，`\f`，`\r`，`\n`，`\t`，`\0`，`\'`，`\\`。 解析还支持`\a`，`\v`和`\xHH`（十六进制转义字符）和任何`\c`字符，其中`c`是任何字符（这些序列被转换为`c`）。 因此，读取数据支持可以将换行符写为`\n`或`\`的格式，或者换行。例如，字符串 `Hello world` 在单词之间换行而不是空格可以解析为以下任何形式：
 
 ```
-struct Message {
-  SearchPhrase @0 :Text;
-  c @1 :Uint64;
-}
+Hello\nworld
+
+Hello\
+world
 ```
 
-格式文件存储的目录可以在服务配置中的[ format_schema_path ](../operations/server_settings/settings.md#server_settings-format_schema_path) 指定。
+第二种形式是支持的，因为 MySQL 读取 tab-separated 格式数据集的时候也会使用它。
 
-Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
+在 TabSeparated 格式中传递数据时需要转义的最小字符集为：Tab，换行符（LF）和反斜杠。
+
+只有一小组符号会被转义。你可以轻易地找到一个字符串值，但这不会正常在你的终端显示。
+
+数组写在方括号内的逗号分隔值列表中。 通常情况下，数组中的数字项目会被拼凑，但日期，带时间的日期以及字符串将使用与上面相同的转义规则用单引号引起来。
+
+[NULL](../query_language/syntax.md#null-literal) 将输出为 `\N`。
+
+<a name="tabseparatedraw"></a>
+
+## TabSeparatedRaw
+
+与 `TabSeparated` 格式不一样的是，行数据是不会被转义的。
+该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
+
+这种格式也可以使用名称 `TSVRaw` 来表示。
+<a name="tabseparatedwithnames"></a>
+
+## TabSeparatedWithNames
+
+与 `TabSeparated` 格式不一样的是，第一行会显示列的名称。
+在解析过程中，第一行完全被忽略。您不能使用列名来确定其位置或检查其正确性。
+（未来可能会加入解析头行的功能）
+
+这种格式也可以使用名称 ` TSVWithNames` 来表示。
+<a name="tabseparatedwithnamesandtypes"></a>
+
+## TabSeparatedWithNamesAndTypes
+
+与 `TabSeparated` 格式不一样的是，第一行会显示列的名称，第二行会显示列的类型。
+在解析过程中，第一行和第二行完全被忽略。
+
+这种格式也可以使用名称 ` TSVWithNamesAndTypes` 来表示。
+<a name="tskv"></a>
+
+## TSKV
+
+与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
+
+```
+SearchPhrase=   count()=8267016
+SearchPhrase=bathroom interior design    count()=2166
+SearchPhrase=yandex     count()=1655
+SearchPhrase=2014 spring fashion    count()=1549
+SearchPhrase=freeform photos       count()=1480
+SearchPhrase=angelina jolie    count()=1245
+SearchPhrase=omsk       count()=1112
+SearchPhrase=photos of dog breeds    count()=1091
+SearchPhrase=curtain designs        count()=1064
+SearchPhrase=baku       count()=1000
+```
+
+[NULL](../query_language/syntax.md#null-literal) 输出为 `\N`。
+
+``` sql
+SELECT * FROM t_null FORMAT TSKV
+```
+
+```
+x=1	y=\N
+```
+
+当有大量的小列时，这种格式是低效的，通常没有理由使用它。它被用于 Yandex 公司的一些部门。
+
+数据的输出和解析都支持这种格式。对于解析，任何顺序都支持不同列的值。可以省略某些值，用 `-` 表示， 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。作为默认值，不支持表中指定的复杂值。
+
+对于不带等号或值，可以用附加字段 `tskv` 来表示，这种在解析上是被允许的。这样的话该字段被忽略。
 <a name="csv"></a>
 
 ## CSV
@@ -87,7 +186,7 @@ CSV 格式是和 TabSeparated 一样的方式输出总数和极值。
 
 以 JSON 格式输出数据。除了数据表之外，它还输出列名称和类型以及一些附加信息：输出行的总数以及在没有 LIMIT 时可以输出的行数。 例：
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -264,7 +363,7 @@ ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格
 
 [NULL](../query_language/syntax.md#null-literal) 输出为 `ᴺᵁᴸᴸ`。
 
-```sql
+``` sql
 SELECT * FROM t_null
 ```
 
@@ -279,11 +378,11 @@ SELECT * FROM t_null
 
 Pretty格式支持输出总值（当使用 WITH TOTALS 时）和极值（当 `extremes` 设置为1时）。 在这些情况下，总数值和极值在主数据之后以单独的表格形式输出。 示例（以 PrettyCompact 格式显示）：
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -359,131 +458,6 @@ FixedString 被简单地表示为一个字节序列。
 
 对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md#data_type-nullable) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
 
-<a name="tabseparated"></a>
-
-## TabSeparated
-
-在 TabSeparated 格式中，数据按行写入。每行包含由制表符分隔的值。除了行中的最后一个值（后面紧跟换行符）之外，每个值都跟随一个制表符。 在任何地方都可以使用严格的 Unix 命令行。最后一行还必须在最后包含换行符。值以文本格式编写，不包含引号，并且要转义特殊字符。
-
-这种格式也可以用 `TSV` 来表示。
-
-TabSeparated 格式非常方便用于自定义程序或脚本处理数据。HTTP 客户端接口默认会用这种格式，命令行客户端批量模式下也会用这种格式。这种格式允许在不同数据库之间传输数据。例如，从 MYSQL 中导出数据然后导入到 ClickHouse 中，反之亦然。
-
-TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极值（当 'extremes' 设置是1）。这种情况下，总值和极值输出在主数据的后面。主要的数据，总值，极值会以一个空行隔开，例如：
-
-```sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
-```
-
-```text
-2014-03-17      1406958
-2014-03-18      1383658
-2014-03-19      1405797
-2014-03-20      1353623
-2014-03-21      1245779
-2014-03-22      1031592
-2014-03-23      1046491
-
-0000-00-00      8873898
-
-2014-03-17      1031592
-2014-03-23      1406958
-```
-
-## 数据解析方式
-
-整数以十进制形式写入。数字在开头可以包含额外的 `+` 字符（解析时忽略，格式化时不记录）。非负数不能包含负号。 读取时，允许将空字符串解析为零，或者（对于带符号的类型）将仅包含负号的字符串解析为零。 不符合相应数据类型的数字可能会被解析为不同的数字，而不会显示错误消息。
-
-浮点数以十进制形式写入。点号用作小数点分隔符。支持指数等符号，如'inf'，'+ inf'，'-inf'和'nan'。 浮点数的输入可以以小数点开始或结束。
-格式化的时候，浮点数的精确度可能会丢失。
-解析的时候，没有严格需要去读取与机器可以表示的最接近的数值。
-
-日期会以 YYYY-MM-DD 格式写入和解析，但会以任何字符作为分隔符。
-带时间的日期会以 YYYY-MM-DD hh:mm:ss 格式写入和解析，但会以任何字符作为分隔符。
-这一切都发生在客户端或服务器启动时的系统时区（取决于哪一种格式的数据）。对于具有时间的日期，夏时制时间未指定。 因此，如果转储在夏令时中有时间，则转储不会明确地匹配数据，解析将选择两者之一。
-在读取操作期间，不正确的日期和具有时间的日期可以使用自然溢出或空日期和时间进行分析，而不会出现错误消息。
-
-有个例外情况，Unix 时间戳格式（10个十进制数字）也支持使用时间解析日期。结果不是时区相关的。格式 YYYY-MM-DD hh:mm:ss和 NNNNNNNNNN 会自动区分。
-
-字符串以反斜线转义的特殊字符输出。 以下转义序列用于输出：`\b`，`\f`，`\r`，`\n`，`\t`，`\0`，`\'`，`\\`。 解析还支持`\a`，`\v`和`\xHH`（十六进制转义字符）和任何`\c`字符，其中`c`是任何字符（这些序列被转换为`c`）。 因此，读取数据支持可以将换行符写为`\n`或`\`的格式，或者换行。例如，字符串 `Hello world` 在单词之间换行而不是空格可以解析为以下任何形式：
-
-```text
-Hello\nworld
-
-Hello\
-world
-```
-
-第二种形式是支持的，因为 MySQL 读取 tab-separated 格式数据集的时候也会使用它。
-
-在 TabSeparated 格式中传递数据时需要转义的最小字符集为：Tab，换行符（LF）和反斜杠。
-
-只有一小组符号会被转义。你可以轻易地找到一个字符串值，但这不会正常在你的终端显示。
-
-数组写在方括号内的逗号分隔值列表中。 通常情况下，数组中的数字项目会被拼凑，但日期，带时间的日期以及字符串将使用与上面相同的转义规则用单引号引起来。
-
-[NULL](../query_language/syntax.md#null-literal) 将输出为 `\N`。
-
-<a name="tabseparatedraw"></a>
-
-## TabSeparatedRaw
-
-与 `TabSeparated` 格式不一样的是，行数据是不会被转义的。
-该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
-
-这种格式也可以使用名称 `TSVRaw` 来表示。
-<a name="tabseparatedwithnames"></a>
-
-## TabSeparatedWithNames
-
-与 `TabSeparated` 格式不一样的是，第一行会显示列的名称。
-在解析过程中，第一行完全被忽略。您不能使用列名来确定其位置或检查其正确性。
-（未来可能会加入解析头行的功能）
-
-这种格式也可以使用名称 ` TSVWithNames` 来表示。
-<a name="tabseparatedwithnamesandtypes"></a>
-
-## TabSeparatedWithNamesAndTypes
-
-与 `TabSeparated` 格式不一样的是，第一行会显示列的名称，第二行会显示列的类型。
-在解析过程中，第一行和第二行完全被忽略。
-
-这种格式也可以使用名称 ` TSVWithNamesAndTypes` 来表示。
-<a name="tskv"></a>
-
-## TSKV
-
-与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
-
-```text
-SearchPhrase=   count()=8267016
-SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
-SearchPhrase=2014 spring fashion    count()=1549
-SearchPhrase=freeform photos       count()=1480
-SearchPhrase=angelina jolie    count()=1245
-SearchPhrase=omsk       count()=1112
-SearchPhrase=photos of dog breeds    count()=1091
-SearchPhrase=curtain designs        count()=1064
-SearchPhrase=baku       count()=1000
-```
-
-[NULL](../query_language/syntax.md#null-literal) 输出为 `\N`。
-
-```sql
-SELECT * FROM t_null FORMAT TSKV
-```
-
-```
-x=1	y=\N
-```
-
-当有大量的小列时，这种格式是低效的，通常没有理由使用它。它被用于 Yandex 公司的一些部门。
-
-数据的输出和解析都支持这种格式。对于解析，任何顺序都支持不同列的值。可以省略某些值，用 `-` 表示， 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。作为默认值，不支持表中指定的复杂值。
-
-对于不带等号或值，可以用附加字段 `tskv` 来表示，这种在解析上是被允许的。这样的话该字段被忽略。
-
 ## Values
 
 在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../query_language/syntax.md#null-literal) 为 `NULL`。
@@ -502,7 +476,7 @@ x=1	y=\N
 
 示例:
 
-```sql
+``` sql
 SELECT * FROM t_null FORMAT Vertical
 ```
 
@@ -621,3 +595,31 @@ test: string with \'quotes\' and \t with some special \n characters
 在字符串值中，字符 `<` 和 `＆` 被转义为 `<` 和 `＆`。
 
 数组输出为 `<array> <elem> Hello </ elem> <elem> World </ elem> ... </ array>`，元组输出为 `<tuple> <elem> Hello </ elem> <elem> World </ ELEM> ... </tuple>` 。
+
+<a name="format_capnproto"></a>
+
+## CapnProto
+
+Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
+
+Cap'n Proto 消息格式是严格类型的，而不是自我描述，这意味着它们不需要外部的描述。这种格式可以实时地应用，并针对每个查询进行缓存。
+
+``` sql
+SELECT SearchPhrase, count() AS c FROM test.hits
+       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+```
+
+其中 `schema.capnp` 描述如下：
+
+```
+struct Message {
+  SearchPhrase @0 :Text;
+  c @1 :Uint64;
+}
+```
+
+格式文件存储的目录可以在服务配置中的[ format_schema_path ](../operations/server_settings/settings.md#server_settings-format_schema_path) 指定。
+
+Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/formats/) <!--hide-->

@@ -213,3 +213,5 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 ```
 
 查询请求响应状态码和 HTTP 头被发送到客户端后，若发生查询处理出错，使用缓冲区可以避免这种情况的发生。在这种情况下，响应主体的结尾会写入一条错误消息，而在客户端，只能在解析阶段检测到该错误。
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/http_interface/) <!--hide-->
