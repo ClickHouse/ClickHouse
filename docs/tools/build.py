@@ -37,6 +37,11 @@ def autoremoved_file(path):
         os.unlink(path)
 
 
+def select_css_lang(lang):
+    if lang == 'zh':
+        return ['assets/stylesheets/custom_zh.css']
+    return ['assets/stylesheets/custom.css']
+
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
 
@@ -87,7 +92,7 @@ def build_for_lang(lang, args):
             repo_name='yandex/ClickHouse',
             repo_url='https://github.com/yandex/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
-            extra_css=['assets/stylesheets/custom.css'],
+            extra_css=select_css_lang(lang),
             markdown_extensions=[
                 'admonition',
                 'attr_list',

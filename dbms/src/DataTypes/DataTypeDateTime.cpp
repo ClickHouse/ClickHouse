@@ -172,6 +172,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeDateTime(DataTypeFactory & factory)
 {
     factory.registerDataType("DateTime", create, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TIMESTAMP", "DateTime", DataTypeFactory::CaseInsensitive);
 }
 
 
