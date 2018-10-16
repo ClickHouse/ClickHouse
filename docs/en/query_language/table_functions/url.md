@@ -13,7 +13,9 @@ structure - table structure in `'UserID UInt64, Name String'` format. Determines
 
 **Example**
 
-```sql
+``` sql
 -- getting the first 3 lines of a table that contains columns of String and UInt32 type from HTTP-server which answers in CSV format.
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/url/) <!--hide-->

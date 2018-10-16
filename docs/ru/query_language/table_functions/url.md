@@ -14,7 +14,9 @@ structure - структура таблицы в форме `'UserID UInt64, Nam
 
 **Пример**
 
-```sql
+``` sql
 -- получение 3-х строк таблицы, состоящей из двух колонк типа String и UInt32 от сервера, отдающего данные в формате CSV
 SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32') LIMIT 3
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/url/) <!--hide-->

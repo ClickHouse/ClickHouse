@@ -36,3 +36,5 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->

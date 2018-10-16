@@ -31,7 +31,7 @@ File(Format)
 
 **1.** Создадим на сервере таблицу `file_engine_table`:
 
-```sql
+``` sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -47,11 +47,11 @@ two	2
 
 **3.** Запросим данные:
 
-```sql
+``` sql
 SELECT * FROM file_engine_table
 ```
 
-```text
+```
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
@@ -75,3 +75,5 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     - использование операций `ALTER` и `SELECT...SAMPLE`;
     - индексы;
     - репликация.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/file/) <!--hide-->

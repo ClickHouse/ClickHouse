@@ -23,7 +23,7 @@
 
 Это вырожденный пример. Его можно записать с помощью других агрегатных функций:
 
-```text
+```
 minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 ```
 
@@ -123,7 +123,9 @@ ORDER BY level
 
 Пример применения:
 
-```text
+```
 Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/parametric_functions/) <!--hide-->

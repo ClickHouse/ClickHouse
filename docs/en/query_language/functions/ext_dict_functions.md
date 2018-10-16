@@ -45,3 +45,5 @@ The same as the `dictGetT` functions, but the default value is taken from the fu
 
 - Check whether the dictionary has the key. Returns a UInt8 value equal to 0 if there is no key and 1 if there is a key.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

@@ -287,3 +287,5 @@ SELECT toTypeName(toNullable(10))
 │ Nullable(UInt8)            │
 └────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/functions_for_nulls/) <!--hide-->

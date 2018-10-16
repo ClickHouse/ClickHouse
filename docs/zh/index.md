@@ -78,9 +78,8 @@ ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)�
 
 例如，查询“统计每个广告平台的记录数量”需要读取“广告平台ID”这一列，它在未压缩的情况下需要1个字节进行存储。如果大部分流量不是来自广告平台，那么这一列至少可以以十倍的压缩率被压缩。当采用快速压缩算法，它的解压速度最少在十亿字节(未压缩数据)每秒。换句话说，这个查询可以在单个服务器上以每秒大约几十亿行的速度进行处理。这实际上是当前实现的速度。
 
-<details><summary>示例</summary>
-<p>
-<pre>
+<details markdown="1"><summary>示例</summary>
+```
 $ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
@@ -122,8 +121,7 @@ LIMIT 20
 20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
 
 :)
-</pre>
-</p>
+```
 </details>
 
 ### CPU
@@ -139,3 +137,5 @@ LIMIT 20
 这是不应该在一个通用数据库中实现的，因为这在运行简单查询时是没有意义的。但是也有例外，例如，MemSQL使用代码生成来减少处理SQL查询的延迟(只是为了比较，分析型数据库通常需要优化的是吞吐而不是延迟)。
 
 请注意，为了提高CPU效率，查询语言必须是声明型的(SQL或MDX)， 或者至少一个向量(J，K)。 查询应该只包含隐式循环，允许进行优化。
+
+[来源文章](https://clickhouse.yandex/docs/zh/) <!--hide-->

@@ -7,3 +7,5 @@
 3. Sparse index باعث می شود ClickHouse چندان مناسب اجرای پرسمان های point query برای دریافت یک ردیف از داده ها با استفاده از کلید آنها نباشد.
 
 </div>
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/introduction/features_considered_disadvantages/) <!--hide-->

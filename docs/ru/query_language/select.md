@@ -2,7 +2,7 @@
 
 `SELECT` осуществляет выборку данных.
 
-```sql
+``` sql
 SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
@@ -59,7 +59,7 @@ SELECT [DISTINCT] expr_list
 
 Пример:
 
-```sql
+``` sql
 SELECT
     Title,
     count() * 10 AS PageViews
@@ -90,7 +90,7 @@ ORDER BY PageViews DESC LIMIT 1000
 
 `ARRAY JOIN` - это, по сути, `INNER JOIN` с массивом. Пример:
 
-```text
+```
 :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
 CREATE TABLE arrays_test
@@ -143,7 +143,7 @@ ARRAY JOIN arr
 
 Для массива в секции ARRAY JOIN может быть указан алиас. В этом случае, элемент массива будет доступен под этим алиасом, а сам массив - под исходным именем. Пример:
 
-```text
+```
 :) SELECT s, arr, a FROM arrays_test ARRAY JOIN arr AS a
 
 SELECT s, arr, a
@@ -163,7 +163,7 @@ ARRAY JOIN arr AS a
 
 В секции ARRAY JOIN может быть указано несколько массивов одинаковых размеров через запятую. В этом случае, JOIN делается с ними одновременно (прямая сумма, а не прямое произведение). Пример:
 
-```text
+```
 :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
 SELECT s, arr, a, num, mapped
@@ -199,7 +199,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
 
 ARRAY JOIN также работает с вложенными структурами данных. Пример:
 
-```text
+```
 :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
 CREATE TABLE nested_test
@@ -254,7 +254,7 @@ ARRAY JOIN nest
 
 При указании имени вложенной структуры данных в ARRAY JOIN, смысл такой же, как ARRAY JOIN со всеми элементами-массивами, из которых она состоит. Пример:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
 SELECT s, `nest.x`, `nest.y`
@@ -274,7 +274,7 @@ ARRAY JOIN `nest.x`, `nest.y`
 
 Такой вариант тоже имеет смысл:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x
 
 SELECT s, `nest.x`, `nest.y`
@@ -294,7 +294,7 @@ ARRAY JOIN `nest.x`
 
 Алиас для вложенной структуры данных можно использовать, чтобы выбрать как результат JOIN-а, так и исходный массив. Пример:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
@@ -314,7 +314,7 @@ ARRAY JOIN nest AS n
 
 Пример использования функции arrayEnumerate:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -343,7 +343,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 
 Обычный JOIN, не имеет отношения к ARRAY JOIN, который описан выше.
 
-```sql
+``` sql
 [GLOBAL] ANY|ALL INNER|LEFT [OUTER] JOIN (subquery)|table USING columns_list
 ```
 
@@ -380,7 +380,7 @@ JOIN-ы бывают нескольких видов:
 
 Пример:
 
-```sql
+``` sql
 SELECT
     CounterID,
     hits,
@@ -404,7 +404,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │
@@ -500,7 +500,7 @@ WHERE isNull(y)
 
 Пример:
 
-```sql
+``` sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -514,7 +514,7 @@ FROM hits
 
 Пример:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
@@ -610,7 +610,7 @@ GROUP BY вычисляет для каждого встретившегося �
 
 Пример:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,
@@ -731,7 +731,7 @@ n и m должны быть неотрицательными целыми чи�
 
 Произвольное количество запросов может быть объединено с помощью `UNION ALL`. Пример:
 
-```sql
+``` sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -779,7 +779,7 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Примеры:
 
-```sql
+``` sql
 SELECT UserID IN (123, 456) FROM ...
 SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 ```
@@ -798,7 +798,7 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 В подзапросе может быть указано более одного столбца для фильтрации кортежей.
 Пример:
 
-```sql
+``` sql
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -807,7 +807,7 @@ SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 Оператор IN и подзапрос могут встречаться в любой части запроса, в том числе в агрегатных и лямбда функциях.
 Пример:
 
-```sql
+``` sql
 SELECT
     EventDate,
     avg(UserID IN
@@ -821,7 +821,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text
+```
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │
@@ -893,13 +893,13 @@ FROM t_null
 
 Например, запрос
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table
 ```
 
 будет отправлен на все удалённые серверы в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table
 ```
 
@@ -907,7 +907,7 @@ SELECT uniq(UserID) FROM local_table
 
 Теперь рассмотрим запрос с IN-ом:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -915,7 +915,7 @@ SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID I
 
 Этот запрос будет отправлен на все удалённые серверы в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -925,19 +925,19 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SEL
 
 Чтобы исправить работу запроса, когда данные размазаны по серверам кластера произвольным образом, можно было бы указать **distributed_table** внутри подзапроса. Запрос будет выглядеть так:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 Этот запрос будет отправлен на все удалённые серверы в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 На каждом удалённом сервере начнёт выполняться подзапрос. Так как в подзапросе используется распределённая таблица, то подзапрос будет, на каждом удалённом сервере, снова отправлен на каждый удалённый сервер, в виде
 
-```sql
+``` sql
 SELECT UserID FROM local_table WHERE CounterID = 34
 ```
 
@@ -945,19 +945,19 @@ SELECT UserID FROM local_table WHERE CounterID = 34
 
 В таких случаях всегда следует использовать GLOBAL IN вместо IN. Рассмотрим его работу для запроса
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 На сервере-инициаторе запроса будет выполнен подзапрос
 
-```sql
+``` sql
 SELECT UserID FROM distributed_table WHERE CounterID = 34
 ```
 
 , и результат будет сложен во временную таблицу в оперативке. Затем запрос будет отправлен на каждый удалённый сервер в виде
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
@@ -999,3 +999,5 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 -   в подзапросах (так как из подзапросов выкидываются столбцы, не нужные для внешнего запроса).
 
 В других случаях использование звёздочки является издевательством над системой, так как вместо преимуществ столбцовой СУБД вы получаете недостатки. То есть использовать звёздочку не рекомендуется.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/select/) <!--hide-->
