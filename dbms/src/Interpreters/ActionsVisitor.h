@@ -8,12 +8,11 @@ namespace DB
 
 class Context;
 class ASTFunction;
+struct ProjectionManipulatorBase;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-struct ProjectionManipulatorBase;
-using ProjectionManipulatorPtr = std::shared_ptr<ProjectionManipulatorBase>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
@@ -87,27 +86,19 @@ struct ScopeStack
 };
 
 
-/// TODO: There sould be some description, but...
+/// Collect ExpressionAction from AST. Returns PreparedSets and SubqueriesForSets too.
+/// After AST is visited source ExpressionActions should be updated with popActionsLevel() method.
 class ActionsVisitor
 {
 public:
-    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
-                   const NamesAndTypesList & source_columns_, PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
-                   bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_ = nullptr)
-    :   context(context_),
-        set_size_limit(set_size_limit_),
-        subquery_depth(subquery_depth_),
-        source_columns(source_columns_),
-        prepared_sets(prepared_sets_),
-        subqueries_for_sets(subqueries_for_sets_),
-        no_subqueries(no_subqueries_),
-        only_consts(only_consts_),
-        no_storage_or_local(no_storage_or_local_),
-        visit_depth(0),
-        ostr(ostr_)
-    {}
+    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, bool is_conditional_tree, size_t subquery_depth_,
+                   const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
+                   PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
+                   bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_ = nullptr);
 
-    void visit(const ASTPtr & ast, ScopeStack & actions_stack, ProjectionManipulatorPtr projection_manipulator);
+    void visit(const ASTPtr & ast);
+
+    ExpressionActionsPtr popActionsLevel() { return actions_stack.popLevel(); }
 
 private:
     const Context & context;
@@ -121,6 +112,8 @@ private:
     const bool no_storage_or_local;
     mutable size_t visit_depth;
     std::ostream * ostr;
+    ScopeStack actions_stack;
+    std::shared_ptr<ProjectionManipulatorBase> projection_manipulator;
 
     void makeSet(const ASTFunction * node, const Block & sample_block);
 };
