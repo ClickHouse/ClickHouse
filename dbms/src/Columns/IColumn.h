@@ -92,7 +92,7 @@ public:
     }
 
     /** If column is numeric, return value of n-th element, casted to UInt64.
-      * For NULL values of Nullable column it is allowed to return arbitary value.
+      * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
     virtual UInt64 getUInt(size_t /*n*/) const
@@ -175,7 +175,7 @@ public:
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
     /// Update state of hash function with value of n-th element.
-    /// On subsequent calls of this method for sequence of column values of arbitary types,
+    /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 

@@ -281,7 +281,7 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             {odbc_ini_path}
         entrypoint:
-            -  /usr/bin/clickhouse
+            -  clickhouse
             -  server
             -  --config-file=/etc/clickhouse-server/config.xml
             -  --log-file=/var/log/clickhouse-server/clickhouse-server.log

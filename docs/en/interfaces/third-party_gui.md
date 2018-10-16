@@ -36,3 +36,12 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
+## DBeaver
+
+[DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
+
+Key features:
+
+- Query development with syntax highlight.
+- Table preview.
+- Autocompletion.

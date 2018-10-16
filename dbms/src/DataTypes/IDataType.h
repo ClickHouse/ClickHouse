@@ -304,7 +304,7 @@ public:
     virtual bool shouldAlignRightInPrettyFormats() const { return false; }
 
     /** Does formatted value in any text format can contain anything but valid UTF8 sequences.
-      * Example: String (because it can contain arbitary bytes).
+      * Example: String (because it can contain arbitrary bytes).
       * Counterexamples: numbers, Date, DateTime.
       * For Enum, it depends.
       */

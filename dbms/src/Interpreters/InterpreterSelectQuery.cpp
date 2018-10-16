@@ -691,10 +691,10 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
+
 void InterpreterSelectQuery::executeFetchColumns(
     QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info)
 {
-
     const Settings & settings = context.getSettingsRef();
 
     /// Actions to calculate ALIAS if required.
@@ -821,7 +821,6 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
         }
     }
-
 
     /// Limitation on the number of columns to read.
     /// It's not applied in 'only_analyze' mode, because the query could be analyzed without removal of unnecessary columns.

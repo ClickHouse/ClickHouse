@@ -1,15 +1,15 @@
 nav:
 
-- 'Introduction':
+- '介绍':
   - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
   - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
 
-- 'Getting started':
-  - 'Deploying and running': 'getting_started/index.md'
-  - 'Example datasets':
+- '起步':
+  - '部署运行': 'getting_started/index.md'
+  - '示例数据集':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi data': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -17,17 +17,17 @@ nav:
     - 'Terabyte click logs from Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Star Schema Benchmark': 'getting_started/example_datasets/star_schema.md'
 
-- 'Interfaces':
-  - 'Introduction': 'interfaces/index.md'
-  - 'Command-line client': 'interfaces/cli.md'
-  - 'HTTP interface': 'interfaces/http_interface.md'
-  - 'JDBC driver': 'interfaces/jdbc.md'
-  - 'Native interface (TCP)': 'interfaces/tcp.md'
-  - 'Libraries from third-party developers': 'interfaces/third-party_client_libraries.md'
-  - 'Visual interfaces from third-party developers': 'interfaces/third-party_gui.md'
-  - 'Input and output formats': 'interfaces/formats.md'
+- '客户端':
+  - '介绍': 'interfaces/index.md'
+  - '命令行客户端接口': 'interfaces/cli.md'
+  - 'HTTP 客户端接口': 'interfaces/http_interface.md'
+  - 'JDBC 驱动': 'interfaces/jdbc.md'
+  - '原生客户端接口 (TCP)': 'interfaces/tcp.md'
+  - '第三方开发的库': 'interfaces/third-party_client_libraries.md'
+  - '第三方开发的可视化界面': 'interfaces/third-party_gui.md'
+  - '输入输出格式': 'interfaces/formats.md'
 
-- 'Data types':
+- '数据类型':
   - 'Introduction': 'data_types/index.md'
   - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
   - 'Float32, Float64': 'data_types/float.md'
@@ -51,7 +51,7 @@ nav:
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
 
-- 'SQL reference':
+- 'SQL 语法':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
@@ -113,7 +113,7 @@ nav:
   - 'Operators': 'query_language/operators.md'
   - 'General syntax': 'query_language/syntax.md'
 
-- 'Operations':
+- '运维':
   - 'hidden': 'operations/index.md'
   - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
@@ -165,10 +165,10 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'F.A.Q.':
+- '常见问题':
   - 'General questions': 'faq/general.md'
 
-- 'Development':
+- '开发':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'
@@ -176,7 +176,7 @@ nav:
   - 'How to write  C++ code': 'development/style.md'
   - 'How to run ClickHouse tests': 'development/tests.md'
 
-- 'What''s new':
+- '新功能特性':
   - 'Roadmap': 'roadmap.md'
   - 'Changelog': 'changelog.md'
   - 'Security changelog': 'security_changelog.md'

@@ -3,7 +3,7 @@ Motivation
 
 For reproducible build, we need to control, what exactly version of boost we build,
  because different versions of boost obviously have slightly different behaviour.
-You may already have installed arbitary version of boost on your system, to build another projects.
+You may already have installed arbitrary version of boost on your system, to build another projects.
 
 We need to have all libraries with C++ interface to be located in tree and to be build together.
 This is needed to allow quickly changing build options, that could introduce changes in ABI of that libraries.
