@@ -2,7 +2,7 @@
 
 A prepared data structure for JOIN that is always located in RAM.
 
-```text
+```
 Join(ANY|ALL, LEFT|INNER, k1[, k2, ...])
 ```
 

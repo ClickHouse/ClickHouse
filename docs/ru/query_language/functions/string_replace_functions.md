@@ -26,7 +26,7 @@ LIMIT 7
 FORMAT TabSeparated
 ```
 
-```text
+```
 2014-03-17      03/17/2014
 2014-03-18      03/18/2014
 2014-03-19      03/19/2014
@@ -42,7 +42,7 @@ FORMAT TabSeparated
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
-```text
+```
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -55,7 +55,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
-```text
+```
 ┌─res────────────────────────┐
 │ HHeelllloo,,  WWoorrlldd!! │
 └────────────────────────────┘
@@ -68,7 +68,7 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
-```text
+```
 ┌─res─────────────────┐
 │ here: Hello, World! │
 └─────────────────────┘

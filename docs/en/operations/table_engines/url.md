@@ -57,7 +57,7 @@ python3 server.py
 SELECT * FROM url_engine_table
 ```
 
-```text
+```
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │

@@ -48,7 +48,7 @@ The `TabSeparated` format supports outputting total values (when using WITH TOTA
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```text
+```
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -80,7 +80,7 @@ As an exception, parsing dates with times is also supported in Unix timestamp fo
 
 Strings are output with backslash-escaped special characters. The following escape sequences are used for output: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. Parsing also supports the sequences `\a`, `\v`, and `\xHH`  (hex escape sequences) and any `\c` sequences, where `c` is any character (these sequences are converted to `c`). Thus, reading data supports formats where a line feed can be written as `\n`  or `\`, or as a line feed. For example, the string `Hello world` with a line feed between the words instead of a space can be parsed in any of the following variations:
 
-```text
+```
 Hello\nworld
 
 Hello\
@@ -128,7 +128,7 @@ This format is also available under the name `TSVWithNamesAndTypes`.
 
 Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
 
-```text
+```
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
 SearchPhrase=yandex     count()=1655
@@ -382,7 +382,7 @@ The Pretty format supports outputting total values (when using WITH TOTALS) and 
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │

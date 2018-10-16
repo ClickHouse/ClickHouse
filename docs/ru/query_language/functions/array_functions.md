@@ -135,7 +135,7 @@ WHERE CounterID = 160656
 LIMIT 10
 ```
 
-```text
+```
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -151,7 +151,7 @@ FROM test.hits
 WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 ```
 
-```text
+```
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -181,7 +181,7 @@ ORDER BY Reaches DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌──GoalID─┬─Reaches─┬─Visits─┐
 │   53225 │    3214 │   1097 │
 │ 2825062 │    3188 │   1097 │
@@ -204,7 +204,7 @@ LIMIT 10
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 ```
 
-```text
+```
 ┌─res───────────┐
 │ [1,2,1,1,2,1] │
 └───────────────┘

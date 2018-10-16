@@ -29,7 +29,7 @@
 
 Примеры:
 
-```text
+```
 visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
@@ -39,7 +39,7 @@ visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 
 Примеры:
 
-```text
+```
 visitParamExtractString('{"abc":"\\n\\u0000"}', 'abc') = '\n\0'
 visitParamExtractString('{"abc":"\\u263a"}', 'abc') = '☺'
 visitParamExtractString('{"abc":"\\u263"}', 'abc') = ''

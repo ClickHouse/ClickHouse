@@ -23,7 +23,7 @@ Example: `sequenceMatch ('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE
 
 This is a singular example. You could write it using other aggregate functions:
 
-```text
+```
 minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 ```
 
@@ -151,7 +151,7 @@ It works as fast as possible, except for cases when a large N value is used and 
 
 Usage example:
 
-```text
+```
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```

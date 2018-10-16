@@ -283,7 +283,7 @@ Pretty格式支持输出总值（当使用 WITH TOTALS 时）和极值（当 `ex
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -375,7 +375,7 @@ TabSeparated 格式支持输出数据总值（当使用 WITH TOTALS） 以及极
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-```text
+```
 2014-03-17      1406958
 2014-03-18      1383658
 2014-03-19      1405797
@@ -407,7 +407,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 字符串以反斜线转义的特殊字符输出。 以下转义序列用于输出：`\b`，`\f`，`\r`，`\n`，`\t`，`\0`，`\'`，`\\`。 解析还支持`\a`，`\v`和`\xHH`（十六进制转义字符）和任何`\c`字符，其中`c`是任何字符（这些序列被转换为`c`）。 因此，读取数据支持可以将换行符写为`\n`或`\`的格式，或者换行。例如，字符串 `Hello world` 在单词之间换行而不是空格可以解析为以下任何形式：
 
-```text
+```
 Hello\nworld
 
 Hello\
@@ -455,7 +455,7 @@ world
 
 与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
 
-```text
+```
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
 SearchPhrase=yandex     count()=1655

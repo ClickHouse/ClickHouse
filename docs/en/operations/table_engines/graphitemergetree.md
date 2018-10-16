@@ -27,7 +27,7 @@ The Graphite data table must contain the following fields at minimum:
 
 Rollup pattern:
 
-```text
+```
 pattern
     regexp
     function
