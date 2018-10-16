@@ -76,3 +76,5 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
   - `SELECT ... SAMPLE`
   - Indices
   - Replication
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->

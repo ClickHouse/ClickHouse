@@ -84,3 +84,5 @@ Example of settings:
 </graphite_rollup>
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

@@ -95,3 +95,5 @@ SELECT toDecimal32(1, 8) < 100
 ```
 DB::Exception: Can't compare.
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/decimal/) <!--hide-->

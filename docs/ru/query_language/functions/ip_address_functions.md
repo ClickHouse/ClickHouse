@@ -107,3 +107,5 @@ LIMIT 10
 ## IPv6StringToNum(s)
 Функция, обратная к IPv6NumToString. Если IPv6 адрес в неправильном формате, то возвращает строку из нулевых байт.
 HEX может быть в любом регистре.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->

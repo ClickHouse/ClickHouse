@@ -15,3 +15,5 @@ You can use INSERT to add data to the table, similar to the Set engine. For ANY,
 
 Storing data on the disk is the same as for the Set engine.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/join/) <!--hide-->

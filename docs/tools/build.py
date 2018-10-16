@@ -13,6 +13,9 @@ import sys
 import tempfile
 import time
 
+import markdown.extensions
+import markdown.util
+
 from mkdocs import config
 from mkdocs import exceptions
 from mkdocs.commands import build as mkdocs_build
@@ -35,6 +38,18 @@ def autoremoved_file(path):
             yield handle
     finally:
         os.unlink(path)
+
+class ClickHouseMarkdown(markdown.extensions.Extension):
+    class ClickHousePreprocessor(markdown.util.Processor):
+        def run(self, lines):
+            for line in lines:
+                if '<!--hide-->' not in line:
+                    yield line
+
+    def extendMarkdown(self, md):
+        md.preprocessors.register(self.ClickHousePreprocessor(), 'clickhouse_preprocessor', 31)
+
+markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
@@ -88,6 +103,7 @@ def build_for_lang(lang, args):
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
             markdown_extensions=[
+                'clickhouse',
                 'admonition',
                 'attr_list',
                 'codehilite',

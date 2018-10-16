@@ -378,3 +378,5 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 ## arrayJoin(arr)
 Особенная функция. Смотрите раздел ["Функция arrayJoin"](array_join.md#functions_arrayjoin).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_functions/) <!--hide-->

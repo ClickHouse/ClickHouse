@@ -106,3 +106,5 @@ LIMIT 1
 
 1 rows in set. Elapsed: 0.006 sec.
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/dictionary/) <!--hide-->

@@ -73,3 +73,5 @@ The `remote` table function can be useful in the following cases:
 If the user is not specified, `default` is used.
 If the password is not specified, an empty password is used.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/remote/) <!--hide-->

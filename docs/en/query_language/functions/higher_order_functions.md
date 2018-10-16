@@ -113,3 +113,5 @@ Returns an array as result of sorting the elements of `arr1` in descending order
 
 
  
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

@@ -47,3 +47,5 @@ visitParamExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
 На данный момент, не поддерживаются записанные в формате `\uXXXX\uYYYY` кодовые точки не из basic multilingual plane (они переводятся не в UTF-8, а в CESU-8).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/json_functions/) <!--hide-->

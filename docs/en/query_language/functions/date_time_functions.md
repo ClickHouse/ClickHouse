@@ -182,3 +182,5 @@ Supported modifiers for Format:
 |%y|Year, last two digits (00-99)|18|
 |%Y|Year|2018|
 |%%|a % sign|%|
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/date_time_functions/) <!--hide-->

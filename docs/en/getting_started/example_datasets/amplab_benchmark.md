@@ -119,3 +119,5 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

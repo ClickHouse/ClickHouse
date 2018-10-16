@@ -31,3 +31,5 @@
 -  [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) - Размещение словаря в памяти.
 -  [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure) - Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
 -  [lifetime](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime) - Периодичность обновления словарей.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict/) <!--hide-->

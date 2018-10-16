@@ -45,3 +45,5 @@ For nested data structures, you don't need to specify the columns as a list of c
 
 This table engine is not particularly useful. Remember that when saving just pre-aggregated data, you lose some of the system's advantages.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

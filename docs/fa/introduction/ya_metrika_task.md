@@ -46,3 +46,4 @@ Yandex.Metrica دارای یک سیستم تخصصی برای aggregate کردن
 برای حذف محدودیت های OLAPServer و حل مشکلات کار با داده های Non-Aggregate برای تمام گزارش ها، ما مدیریت دیتابیس ClicHouse را توسعه دادیم..
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/introduction/ya_metrika_task/) <!--hide-->

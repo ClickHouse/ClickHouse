@@ -255,3 +255,5 @@ script
 end script
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/tips/) <!--hide-->

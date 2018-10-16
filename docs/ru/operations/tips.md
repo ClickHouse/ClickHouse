@@ -254,3 +254,5 @@ script
         -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
 end script
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/tips/) <!--hide-->

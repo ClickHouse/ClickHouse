@@ -113,3 +113,5 @@ The Enum type can be changed without cost using ALTER, if only the set of values
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/enum/) <!--hide-->

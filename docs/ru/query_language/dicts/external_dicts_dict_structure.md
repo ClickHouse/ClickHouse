@@ -116,3 +116,5 @@ ClickHouse поддерживает следующие виды ключей:
 -   `injective` - Признак инъективности отображения `id -> attribute`. Если `true`, то можно оптимизировать `GROUP BY`. По умолчанию, `false`.
 -   `is_object_id` - Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.
 
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

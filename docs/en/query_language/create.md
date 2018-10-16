@@ -152,3 +152,5 @@ The execution of `ALTER` queries on materialized views has not been fully develo
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->

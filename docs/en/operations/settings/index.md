@@ -22,3 +22,5 @@ Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you
 
 Settings that can only be made in the server config file are not covered in this section.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/) <!--hide-->

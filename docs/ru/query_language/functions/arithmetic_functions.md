@@ -71,3 +71,5 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 ## lcm(a, b)
 Вычисляет наименьшее общее кратное чисел.
 При делении на ноль или при делении минимального отрицательного числа на минус единицу, кидается исключение.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/arithmetic_functions/) <!--hide-->

@@ -180,3 +180,5 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ## Восстановление в случае потери или повреждения метаданных на ZooKeeper кластере
 
 Если данные в ZooKeeper оказались утеряны или повреждены, то вы можете сохранить данные, переместив их в нереплицируемую таблицу, как описано в пункте выше.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/replication/) <!--hide-->

@@ -153,3 +153,5 @@ SELECT
 |%y|год, последние 2 цифры (00-99)|18|
 |%Y|год, 4 цифры|2018|
 |%%|символ %|%|
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/date_time_functions/) <!--hide-->

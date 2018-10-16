@@ -168,3 +168,4 @@ SELECT 1
 برای ادامه آزمایشات، شما میتوانید دیتاست های تستی را دریافت و امتحان کنید.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/) <!--hide-->

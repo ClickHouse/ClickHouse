@@ -47,3 +47,5 @@ We have not tested the libraries listed below.
 - Nim
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_client_libraries/) <!--hide-->

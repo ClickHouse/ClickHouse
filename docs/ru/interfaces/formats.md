@@ -617,3 +617,5 @@ struct Message {
 Файлы со схемами находятся в файле, который находится в каталоге указанном в параметре [format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) конфигурации сервера.
 
 Десериализация эффективна и обычно не повышает нагрузку на систему.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/formats/) <!--hide-->

@@ -396,3 +396,5 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 ## arrayJoin(arr)
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->

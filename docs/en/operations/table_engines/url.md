@@ -71,3 +71,5 @@ SELECT * FROM url_engine_table
     - `ALTER` and `SELECT...SAMPLE` operations.
     - Indexes.
     - Replication.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/url/) <!--hide-->

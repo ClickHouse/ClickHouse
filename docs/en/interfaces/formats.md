@@ -621,3 +621,5 @@ struct Message {
 Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) in the server configuration.
 
 Deserialization is effective and usually doesn't increase the system load.
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/formats/) <!--hide-->

@@ -31,3 +31,4 @@ Enum8('hello' = 1, 'world' = 2)
 استفاده از ALTER برای تبدیل Enum8 به Enum16 یا برعکس، ممکن است، دقیقا شبیه به Int8 به Int16.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/enum/) <!--hide-->

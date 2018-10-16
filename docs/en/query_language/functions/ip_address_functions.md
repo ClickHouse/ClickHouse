@@ -113,3 +113,5 @@ LIMIT 10
 The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
 HEX can be uppercase or lowercase.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ip_address_functions/) <!--hide-->
