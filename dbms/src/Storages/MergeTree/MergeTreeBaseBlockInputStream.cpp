@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 
 MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
-    MergeTreeData & storage,
+    const MergeTreeData & storage,
     const PrewhereInfoPtr & prewhere_info,
     UInt64 max_block_size_rows,
     UInt64 preferred_block_size_bytes,
