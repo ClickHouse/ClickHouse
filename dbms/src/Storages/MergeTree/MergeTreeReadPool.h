@@ -80,6 +80,9 @@ public:
       */
     void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
 
+    /// This method tells which mark ranges we have to read if we start from @from mark range
+    MarkRanges getRestMarks(const std::string & part_path, const MarkRange & from) const;
+
     Block getHeader() const;
 
 private:
@@ -126,6 +129,8 @@ private:
     std::vector<ThreadTask> threads_tasks;
 
     std::set<size_t> remaining_thread_tasks;
+
+    RangesInDataParts parts_ranges;
 
     mutable std::mutex mutex;
 
