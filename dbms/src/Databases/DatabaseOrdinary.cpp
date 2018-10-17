@@ -42,7 +42,6 @@ namespace ErrorCodes
 static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-static constexpr size_t TABLES_PARALLEL_LOAD_BUNCH_SIZE = 100;
 
 namespace detail
 {
@@ -163,38 +162,25 @@ void DatabaseOrdinary::loadTables(
     std::atomic<size_t> tables_processed {0};
     Poco::Event all_tables_processed;
 
-    auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
+    auto task_function = [&](const String & table)
     {
-        for (auto it = begin; it != end; ++it)
+        /// Messages, so that it's not boring to wait for the server to load for a long time.
+        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+            || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            const String & table = *it;
-
-            /// Messages, so that it's not boring to wait for the server to load for a long time.
-            if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
-                || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-            {
-                LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
-                watch.restart();
-            }
-
-            loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
-
-            if (++tables_processed == total_tables)
-                all_tables_processed.set();
+            LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
+            watch.restart();
         }
+
+        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
+
+        if (++tables_processed == total_tables)
+            all_tables_processed.set();
     };
 
-    const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
-    size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
-
-    for (size_t i = 0; i < num_bunches; ++i)
+    for (const auto & filename : file_names)
     {
-        auto begin = file_names.begin() + i * bunch_size;
-        auto end = (i + 1 == num_bunches)
-            ? file_names.end()
-            : (file_names.begin() + (i + 1) * bunch_size);
-
-        auto task = std::bind(task_function, begin, end);
+        auto task = std::bind(task_function, filename);
 
         if (thread_pool)
             thread_pool->schedule(task);
@@ -219,45 +205,29 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
     size_t total_tables = tables.size();
     Poco::Event all_tables_processed;
 
-    auto task_function = [&](Tables::iterator begin, Tables::iterator end)
+    auto task_function = [&](const StoragePtr & table)
     {
-        for (auto it = begin; it != end; ++it)
+        if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
+            || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
         {
-            if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
-                || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
-            {
-                LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
-                watch.restart();
-            }
-
-            it->second->startup();
-
-            if (++tables_processed == total_tables)
-                all_tables_processed.set();
+            LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
+            watch.restart();
         }
+
+        table->startup();
+
+        if (++tables_processed == total_tables)
+            all_tables_processed.set();
     };
 
-    const size_t bunch_size = TABLES_PARALLEL_LOAD_BUNCH_SIZE;
-    size_t num_bunches = (total_tables + bunch_size - 1) / bunch_size;
-
-    auto begin = tables.begin();
-    for (size_t i = 0; i < num_bunches; ++i)
+    for (const auto & name_storage : tables)
     {
-        auto end = begin;
-
-        if (i + 1 == num_bunches)
-            end = tables.end();
-        else
-            std::advance(end, bunch_size);
-
-        auto task = std::bind(task_function, begin, end);
+        auto task = std::bind(task_function, name_storage.second);
 
         if (thread_pool)
             thread_pool->schedule(task);
         else
             task();
-
-        begin = end;
     }
 
     if (thread_pool)
