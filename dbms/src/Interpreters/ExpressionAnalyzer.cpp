@@ -269,9 +269,9 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
-bool ExpressionAnalyzer::noStorageOrLocal() const
+bool ExpressionAnalyzer::isRemoteStorage() const
 {
-    return !storage || !storage->isRemote();
+    return storage && storage->isRemote();
 }
 
 
@@ -543,8 +543,7 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 
     if (do_global)
     {
-        bool is_remote = storage && storage->isRemote();
-        GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, is_remote,
+        GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, isRemoteStorage(),
                                                    external_tables, subqueries_for_sets, has_global_subqueries);
         subqueries_visitor.visit(query);
     }
@@ -1051,7 +1050,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
     LogAST log;
     ActionsVisitor actions_visitor(context, getSetSizeLimits(settings), is_conditional_tree, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
-                                   no_subqueries, only_consts, noStorageOrLocal(), log.stream());
+                                   no_subqueries, only_consts, !isRemoteStorage(), log.stream());
     actions_visitor.visit(ast);
     actions = actions_visitor.popActionsLevel();
 }
@@ -1065,7 +1064,7 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
     LogAST log;
     ActionsVisitor actions_visitor(context, getSetSizeLimits(settings), is_conditional_tree, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
-                                   no_subqueries, only_consts, noStorageOrLocal(), log.stream());
+                                   no_subqueries, only_consts, !isRemoteStorage(), log.stream());
 
     if (table_join.using_expression_list)
         actions_visitor.visit(table_join.using_expression_list);
