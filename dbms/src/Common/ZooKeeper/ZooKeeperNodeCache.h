@@ -32,7 +32,14 @@ public:
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
     ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
 
-    std::optional<std::string> get(const std::string & path);
+    struct GetResult
+    {
+        bool exists = false;
+        std::string contents;
+        Coordination::Stat stat;
+    };
+
+    GetResult get(const std::string & path);
 
     Poco::Event & getChangedEvent() { return context->changed_event; }
 
@@ -50,8 +57,7 @@ private:
 
     std::shared_ptr<Context> context;
 
-    std::unordered_set<std::string> nonexistent_nodes;
-    std::unordered_map<std::string, std::string> node_cache;
+    std::unordered_map<std::string, GetResult> node_cache;
 };
 
 }
