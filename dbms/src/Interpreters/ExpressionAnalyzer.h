@@ -347,7 +347,7 @@ private:
       */
     void removeUnneededColumnsFromSelectClause();
 
-    bool noStorageOrLocal() const;
+    bool isRemoteStorage() const;
 };
 
 }
