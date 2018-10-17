@@ -107,6 +107,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
                     max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
         }
     }
+    last_readed_part_path = path;
 
     return true;
 }
