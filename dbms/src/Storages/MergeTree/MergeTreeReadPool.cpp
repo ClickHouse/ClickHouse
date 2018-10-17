@@ -1,4 +1,3 @@
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
 #include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
@@ -22,8 +21,11 @@ MergeTreeReadPool::MergeTreeReadPool(
     const bool do_not_steal_tasks)
     : backoff_settings{backoff_settings}, backoff_state{threads}, data{data},
       column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks},
-      predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}
+      predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}, parts_ranges{parts}
 {
+    /// reverse from right-to-left to left-to-right
+    for (auto & part_ranges : parts_ranges)
+        std::reverse(std::begin(part_ranges.ranges), std::end(part_ranges.ranges));
     /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_info, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
@@ -120,6 +122,23 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
+MarkRanges MergeTreeReadPool::getRestMarks(const std::string & part_path, const MarkRange & from) const
+{
+    MarkRanges all_part_ranges;
+    for (const auto & part_ranges : parts_ranges)
+    {
+        if (part_ranges.data_part->getFullPath() == part_path)
+        {
+            all_part_ranges = part_ranges.ranges;
+            break;
+        }
+    }
+    auto begin = std::lower_bound(all_part_ranges.begin(), all_part_ranges.end(), from, [] (const auto & f, const auto & s) { return f.begin < s.begin; });
+    if (begin == all_part_ranges.end())
+        begin = std::prev(all_part_ranges.end());
+    begin->begin = from.begin;
+    return MarkRanges(begin, all_part_ranges.end());
+}
 
 Block MergeTreeReadPool::getHeader() const
 {
