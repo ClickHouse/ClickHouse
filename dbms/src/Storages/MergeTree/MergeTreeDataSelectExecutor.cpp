@@ -67,7 +67,7 @@ namespace ErrorCodes
 }
 
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
     : data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
