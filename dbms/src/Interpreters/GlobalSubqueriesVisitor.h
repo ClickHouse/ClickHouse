@@ -7,11 +7,10 @@ namespace DB
 class GlobalSubqueriesVisitor
 {
 public:
-    GlobalSubqueriesVisitor(const Context & context_, size_t subquery_depth_, bool do_global_, bool is_remote_,
+    GlobalSubqueriesVisitor(const Context & context_, size_t subquery_depth_, bool is_remote_,
                             Tables & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
     :   context(context_),
         subquery_depth(subquery_depth_),
-        do_global(do_global_),
         is_remote(is_remote_),
         external_table_id(1),
         external_tables(tables),
@@ -21,9 +20,6 @@ public:
 
     void visit(ASTPtr & ast) const
     {
-        if (!do_global)
-            return;
-
         /// Recursive calls. We do not go into subqueries.
         for (auto & child : ast->children)
             if (!typeid_cast<ASTSelectQuery *>(child.get()))
@@ -32,13 +28,12 @@ public:
         /// Bottom-up actions.
         if (tryVisit<ASTFunction>(ast) ||
             tryVisit<ASTTablesInSelectQueryElement>(ast))
-            ;
+        {}
     }
 
 private:
     const Context & context;
     size_t subquery_depth;
-    bool do_global;
     bool is_remote;
     mutable size_t external_table_id = 1;
     Tables & external_tables;

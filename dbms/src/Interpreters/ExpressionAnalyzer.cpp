@@ -541,10 +541,13 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
     ExternalTablesVisitor tables_visitor(context, external_tables);
     tables_visitor.visit(query);
 
-    bool is_remote = storage && storage->isRemote();
-    GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, do_global, is_remote,
-                                               external_tables, subqueries_for_sets, has_global_subqueries);
-    subqueries_visitor.visit(query);
+    if (do_global)
+    {
+        bool is_remote = storage && storage->isRemote();
+        GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, is_remote,
+                                                   external_tables, subqueries_for_sets, has_global_subqueries);
+        subqueries_visitor.visit(query);
+    }
 }
 
 
