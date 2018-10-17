@@ -67,7 +67,7 @@ private:
 public:
     MergeTreeReadPool(
         const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
-        RangesInDataParts parts, MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
+        RangesInDataParts parts, const MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
         const bool check_columns, const Names & column_names,
         const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
         const bool do_not_steal_tasks = false);
@@ -91,7 +91,7 @@ private:
         RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
     std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
-    MergeTreeData & data;
+    const MergeTreeData & data;
     Names column_names;
     Names ordered_names;
     bool do_not_steal_tasks;
