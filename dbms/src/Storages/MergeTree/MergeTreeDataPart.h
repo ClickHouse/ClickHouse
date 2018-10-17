@@ -27,7 +27,7 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
         : storage(storage_), name(name_), info(info_)
     {
     }
@@ -77,7 +77,7 @@ struct MergeTreeDataPart
 
     bool isEmpty() const { return rows_count == 0; }
 
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
 
     String name;
     MergeTreePartInfo info;
