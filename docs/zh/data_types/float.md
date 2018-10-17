@@ -67,6 +67,6 @@
   └──────────────┘
    ```
 
-可以在[ORDER BY 子句](../query_language/queries.md#query_language-queries-order_by) 查看更多关于 ` NaN` 排序的规则。
+可以在[ORDER BY 子句](../query_language/select.md#query_language-queries-order_by) 查看更多关于 ` NaN` 排序的规则。
 
 [来源文章](https://clickhouse.yandex/docs/en/data_types/float/) <!--hide-->
