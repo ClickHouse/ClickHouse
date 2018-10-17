@@ -17,7 +17,7 @@ class KeyCondition;
 class MergeTreeDataSelectExecutor
 {
 public:
-    MergeTreeDataSelectExecutor(MergeTreeData & data_);
+    MergeTreeDataSelectExecutor(const MergeTreeData & data_);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_block_number_to_read - if not zero, do not read all the parts whose right border is greater than this threshold.
@@ -40,7 +40,7 @@ public:
         Int64 max_block_number_to_read) const;
 
 private:
-    MergeTreeData & data;
+    const MergeTreeData & data;
 
     Logger * log;
 
