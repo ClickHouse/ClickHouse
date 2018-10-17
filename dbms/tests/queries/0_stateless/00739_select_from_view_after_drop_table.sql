@@ -9,5 +9,4 @@ CREATE VIEW test.v AS SELECT * FROM test.t;
 DROP TABLE test.t;
 SELECT * FROM test.v; -- {serverError 60}
 
-DROP TABLE test.t;
 DROP TABLE test.v;
