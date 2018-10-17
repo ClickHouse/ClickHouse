@@ -146,7 +146,7 @@ The result is determinate (it doesn't depend on the order of query processing).
 
 This function provides excellent accuracy even for data sets with extremely high cardinality (over 10 billion elements). It is recommended for default use.
 
-## uniqCombined(x)
+## uniqCombined(HLL_precision)(x)
 
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
 
