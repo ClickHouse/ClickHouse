@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>

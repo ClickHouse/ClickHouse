@@ -2,10 +2,10 @@
 
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
-#include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ProjectionManipulation.h>
-#include <Parsers/StringRange.h>
+#include <Interpreters/ActionsVisitor.h>
+
+#include <Core/Block.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
@@ -16,17 +16,8 @@ class Context;
 class ExpressionActions;
 struct ExpressionActionsChain;
 
-class Join;
-using JoinPtr = std::shared_ptr<Join>;
-
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
-
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-/// Will compare sets by their position in query string. It's possible because IAST::clone() doesn't chane IAST::range.
-/// It should be taken into account when we want to change AST part which contains sets.
-using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -39,58 +30,12 @@ class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 
-struct ProjectionManipulatorBase;
-using ProjectionManipulatorPtr = std::shared_ptr<ProjectionManipulatorBase>;
 
-/** Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
-  */
-struct SubqueryForSet
+inline SizeLimits getSetSizeLimits(const Settings & settings)
 {
-    /// The source is obtained using the InterpreterSelectQuery subquery.
-    BlockInputStreamPtr source;
+    return SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
+}
 
-    /// If set, build it from result.
-    SetPtr set;
-    JoinPtr join;
-    /// Apply this actions to joined block.
-    ExpressionActionsPtr joined_block_actions;
-    /// Rename column from joined block from this list.
-    NamesWithAliases joined_block_aliases;
-
-    /// If set, put the result into the table.
-    /// This is a temporary table for transferring to remote servers for distributed query processing.
-    StoragePtr table;
-};
-
-/// ID of subquery -> what to do with it.
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
-
-struct ScopeStack
-{
-    struct Level
-    {
-        ExpressionActionsPtr actions;
-        NameSet new_columns;
-    };
-
-    using Levels = std::vector<Level>;
-
-    Levels stack;
-
-    const Context & context;
-
-    ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
-
-    void pushLevel(const NamesAndTypesList & input_columns);
-
-    size_t getColumnLevel(const std::string & name);
-
-    void addAction(const ExpressionAction & action);
-
-    ExpressionActionsPtr popLevel();
-
-    const Block & getSampleBlock() const;
-};
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
@@ -303,7 +248,6 @@ private:
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
-    size_t external_table_id = 1;
 
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
@@ -341,21 +285,14 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    void makeSet(const ASTFunction * node, const Block & sample_block);
-
     /// Adds a list of ALIAS columns from the table.
     void addAliasColumns();
 
     /// Replacing scalar subqueries with constant values.
     void executeScalarSubqueries();
-    void executeScalarSubqueriesImpl(ASTPtr & ast);
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
-    void initGlobalSubqueries(ASTPtr & ast);
-
-    /// Finds in the query the usage of external tables (as table identifiers). Fills in external_tables.
-    void findExternalTables(ASTPtr & ast);
 
     /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
       * create a temporary table of type Memory and store it in the external_tables dictionary.
@@ -363,20 +300,16 @@ private:
     void addExternalStorage(ASTPtr & subquery_or_table_name);
 
     void getArrayJoinedColumns();
-    void getArrayJoinedColumnsImpl(const ASTPtr & ast);
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
     bool isThereArrayJoin(const ASTPtr & ast);
 
-    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack,
-                        ProjectionManipulatorPtr projection_manipulator);
-
     /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
-    void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
+    void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);
 
-    void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
+    void getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts = false);
 
     void getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries);
 
@@ -389,25 +322,11 @@ private:
     void getAggregates(const ASTPtr & ast, ExpressionActionsPtr & actions);
     void assertNoAggregates(const ASTPtr & ast, const char * description);
 
-    /** Get a set of necessary columns to read from the table.
-      * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.
-      * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
-      * Put in required_joined_columns the set of columns available from JOIN and needed.
-      */
-    void getRequiredSourceColumnsImpl(const ASTPtr & ast,
-        const NameSet & available_columns, NameSet & required_source_columns, NameSet & ignored_names,
-        const NameSet & available_joined_columns, NameSet & required_joined_columns);
-
     /// columns - the columns that are present before the transformations begin.
     void initChain(ExpressionActionsChain & chain, const NamesAndTypesList & columns) const;
 
     void assertSelect() const;
     void assertAggregation() const;
-
-    /** Create Set from an explicit enumeration of values in the query.
-      * If create_ordered_set = true - create a data structure suitable for using the index.
-      */
-    void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set);
 
     /**
       * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
@@ -427,6 +346,8 @@ private:
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
       */
     void removeUnneededColumnsFromSelectClause();
+
+    bool isRemoteStorage() const;
 };
 
 }
