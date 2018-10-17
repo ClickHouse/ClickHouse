@@ -149,6 +149,9 @@ void DatabaseOrdinary::loadTables(
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
 
+    if (file_names.empty())
+        return;
+
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
@@ -204,6 +207,9 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
     std::atomic<size_t> tables_processed {0};
     size_t total_tables = tables.size();
     Poco::Event all_tables_processed;
+
+    if (!total_tables)
+        return;
 
     auto task_function = [&](const StoragePtr & table)
     {
