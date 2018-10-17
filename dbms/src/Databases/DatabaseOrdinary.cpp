@@ -1,5 +1,6 @@
 #include <iomanip>
 
+#include <Poco/Event.h>
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
@@ -160,6 +161,7 @@ void DatabaseOrdinary::loadTables(
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
+    Poco::Event all_tables_processed;
 
     auto task_function = [&](FileNames::const_iterator begin, FileNames::const_iterator end)
     {
@@ -168,7 +170,7 @@ void DatabaseOrdinary::loadTables(
             const String & table = *it;
 
             /// Messages, so that it's not boring to wait for the server to load for a long time.
-            if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
+            if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
                 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
             {
                 LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
@@ -176,6 +178,9 @@ void DatabaseOrdinary::loadTables(
             }
 
             loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
+
+            if (++tables_processed == total_tables)
+                all_tables_processed.set();
         }
     };
 
@@ -198,7 +203,7 @@ void DatabaseOrdinary::loadTables(
     }
 
     if (thread_pool)
-        thread_pool->wait();
+        all_tables_processed.wait();
 
     /// After all tables was basically initialized, startup them.
     startupTables(thread_pool);
@@ -212,12 +217,13 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
     size_t total_tables = tables.size();
+    Poco::Event all_tables_processed;
 
     auto task_function = [&](Tables::iterator begin, Tables::iterator end)
     {
         for (auto it = begin; it != end; ++it)
         {
-            if ((++tables_processed) % PRINT_MESSAGE_EACH_N_TABLES == 0
+            if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
                 || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
             {
                 LOG_INFO(log, std::fixed << std::setprecision(2) << tables_processed * 100.0 / total_tables << "%");
@@ -225,6 +231,9 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
             }
 
             it->second->startup();
+
+            if (++tables_processed == total_tables)
+                all_tables_processed.set();
         }
     };
 
@@ -252,7 +261,7 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
     }
 
     if (thread_pool)
-        thread_pool->wait();
+        all_tables_processed.wait();
 }
 
 
