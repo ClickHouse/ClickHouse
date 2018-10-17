@@ -28,7 +28,7 @@ SELECT avg(a), avg(b), avg(c) FROM test.decimal WHERE a > 0;
 SELECT avg(a), avg(b), avg(c) FROM test.decimal WHERE a < 0;
 
 SELECT (uniq(a), uniq(b), uniq(c)),
-    (uniqCombined(a), uniqCombined(b), uniqCombined(c)),
+    (uniqCombined(15)(a), uniqCombined(15)(b), uniqCombined(15)(c)),
     (uniqExact(a), uniqExact(b), uniqExact(c)),
     (uniqHLL12(a), uniqHLL12(b), uniqHLL12(c))
 FROM (SELECT * FROM test.decimal ORDER BY a);

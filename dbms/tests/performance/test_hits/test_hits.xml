@@ -86,8 +86,8 @@ PageCharset тоже почти всегда непуст, но его сред�
 <query>SELECT uniq(UserID) FROM test.hits SETTINGS max_threads = 1</query>
 <query>SELECT uniq(UserID) FROM test.hits</query>
 <!-- 43. Разные алгоритмы вычисления кардинальности. -->
-<query>SELECT uniqCombined(UserID) FROM test.hits SETTINGS max_threads = 1</query>
-<query>SELECT uniqCombined(UserID) FROM test.hits</query>
+<query>SELECT uniqCombined(15)(UserID) FROM test.hits SETTINGS max_threads = 1</query>
+<query>SELECT uniqCombined(15)(UserID) FROM test.hits</query>
 <!-- 44. Разные алгоритмы вычисления кардинальности. -->
 <query>SELECT uniqExact(UserID) FROM test.hits SETTINGS max_threads = 1</query>
 <query>SELECT uniqExact(UserID) FROM test.hits</query>
