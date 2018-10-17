@@ -20,3 +20,6 @@ function drop()
 drop &
 
 wait
+
+echo "DROP TABLE IF EXISTS test.tab;
+DROP TABLE IF EXISTS test.mv;" | ${CLICKHOUSE_CLIENT} -n 
