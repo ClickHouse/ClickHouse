@@ -398,6 +398,9 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 storage = context.tryGetTable(database_and_table_name.first, database_and_table_name.second);
             }
 
+            if (!storage)
+                continue;
+
             const auto block = storage->getSampleBlock();
             for (size_t idx = 0; idx < block.columns(); idx++)
                 projection_columns.emplace_back(std::make_shared<ASTIdentifier>(block.getByPosition(idx).name));
