@@ -7,9 +7,9 @@
 ## 参数
 
 - P - 精度。范围值: [ 1 : 38 ]，决定可以有多少个十进制数字（包括分数）。
-- S - 范围。范围值: [ 0 : P ]. Determines how many decimal digits fraction can have.
+- S - 范围。范围值: [ 0 : P ]，决定小数的位数。
 
-取决于 P 参数值 Decimal 表示，以下例子都是同义的：
+对于不同的 P 参数值 Decimal 表示，以下例子都是同义的：
 - [ 1 : 9 ] 的 P - for Decimal32(S)
 - [ 10 : 18 ] 的 P - for Decimal64(S)
 - [ 19 : 38 ] 的 P - for Decimal128(S)
@@ -24,7 +24,7 @@
 
 ## 内部表示方式
 
-数据采用与自身位宽的有符号整数存储。这个数在内存中实际范围会高于上述范围，从 String 转换到十进制数的时候会做对应的检查。
+数据采用与自身位宽相同的有符号整数存储。这个数在内存中实际范围会高于上述范围，从 String 转换到十进制数的时候会做对应的检查。
 
 Decimal32/Decimal64 通常处理速度要高于Decimal128，这是因为当前通用CPU不支持128位的操作导致的。
 
@@ -42,7 +42,7 @@ Decimal32/Decimal64 通常处理速度要高于Decimal128，这是因为当前�
 - 相乘： S = S1 + S2.
 - 相除：S = S1.
 
-对于Decimal和整数之间的类似操作，结果为一样参数值的 Decimal。
+对于 Decimal 和整数之间的类似操作，结果为一样参数值的 Decimal。
 
 没有定义 Decimal 和 Float32/Float64 的操作。如果你真的需要他们，你可以某一个参数明确地转换为 toDecimal32，toDecimal64， toDecimal128 或 toFloat32， toFloat64。注意这个操作会丢失精度，并且类型转换是一个代价昂贵的操作。
 
