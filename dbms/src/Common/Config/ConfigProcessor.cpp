@@ -234,6 +234,7 @@ void ConfigProcessor::doIncludesRecursive(
         XMLDocumentPtr include_from,
         Node * node,
         zkutil::ZooKeeperNodeCache * zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         std::unordered_set<std::string> & contributing_zk_paths)
 {
     if (node->nodeType() == Node::TEXT_NODE)
@@ -352,7 +353,7 @@ void ConfigProcessor::doIncludesRecursive(
             XMLDocumentPtr zk_document;
             auto get_zk_node = [&](const std::string & name) -> const Node *
             {
-                zkutil::ZooKeeperNodeCache::GetResult result = zk_node_cache->get(name);
+                zkutil::ZooKeeperNodeCache::GetResult result = zk_node_cache->get(name, zk_changed_event);
                 if (!result.exists)
                     return nullptr;
 
@@ -383,13 +384,13 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     if (included_something)
-        doIncludesRecursive(config, include_from, node, zk_node_cache, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
     else
     {
         NodeListPtr children = node->childNodes();
         Node * child = nullptr;
         for (size_t i = 0; (child = children->item(i)); ++i)
-            doIncludesRecursive(config, include_from, child, zk_node_cache, contributing_zk_paths);
+            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
 }
 
@@ -433,7 +434,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
-    zkutil::ZooKeeperNodeCache * zk_node_cache)
+    zkutil::ZooKeeperNodeCache * zk_node_cache,
+    const zkutil::EventPtr & zk_changed_event)
 {
     XMLDocumentPtr config = dom_parser.parse(path);
 
@@ -476,7 +478,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             include_from = dom_parser.parse(include_from_path);
         }
 
-        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
     catch (Poco::Exception & e)
     {
@@ -525,6 +527,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
@@ -532,7 +535,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
