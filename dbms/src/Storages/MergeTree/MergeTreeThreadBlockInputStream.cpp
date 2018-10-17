@@ -14,7 +14,7 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
     const size_t max_block_size_rows,
     size_t preferred_block_size_bytes,
     size_t preferred_max_column_in_block_size_bytes,
-    MergeTreeData & storage,
+    const MergeTreeData & storage,
     const bool use_uncompressed_cache,
     const PrewhereInfoPtr & prewhere_info,
     const Settings & settings,
