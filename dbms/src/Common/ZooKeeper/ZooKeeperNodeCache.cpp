@@ -9,7 +9,16 @@ ZooKeeperNodeCache::ZooKeeperNodeCache(GetZooKeeper get_zookeeper_)
 {
 }
 
-ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path)
+ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, EventPtr watch_event)
+{
+    Coordination::WatchCallback watch_callback;
+    if (watch_event)
+        watch_callback = [watch_event](const Coordination::WatchResponse &) { watch_event->set(); };
+
+    return get(path, watch_callback);
+}
+
+ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
 {
     zkutil::ZooKeeperPtr zookeeper;
     std::unordered_set<std::string> invalidated_paths;
@@ -38,7 +47,7 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path)
     if (cache_it != node_cache.end())
         return cache_it->second;
 
-    auto watch_callback = [context=context](const Coordination::WatchResponse & response)
+    auto watch_callback = [=](const Coordination::WatchResponse & response)
     {
         if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
             return;
@@ -56,8 +65,8 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path)
                 changed = true;
             }
         }
-        if (changed)
-            context->changed_event.set();
+        if (changed && caller_watch_callback)
+            caller_watch_callback(response);
     };
 
     GetResult result;
