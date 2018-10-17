@@ -352,12 +352,12 @@ void ConfigProcessor::doIncludesRecursive(
             XMLDocumentPtr zk_document;
             auto get_zk_node = [&](const std::string & name) -> const Node *
             {
-                std::optional<std::string> contents = zk_node_cache->get(name);
-                if (!contents)
+                zkutil::ZooKeeperNodeCache::GetResult result = zk_node_cache->get(name);
+                if (!result.exists)
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + *contents + "</from_zk>");
+                zk_document = dom_parser.parseString("<from_zk>" + result.contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 
