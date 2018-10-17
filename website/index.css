@@ -65,7 +65,7 @@
 
 body {
     background: #fff;
-    font: 400 14pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
+    font: 300 14pt/200% 'Yandex Sans Text Web', Arial, sans-serif;
     margin: 0;
     padding: 0;
 }
@@ -215,7 +215,7 @@ a:hover, a:active {
 #announcement {
     margin: 0 0 60px 0;
     padding: 20px 0;
-    font: 400 140%/133% 'Yandex Sans Display Web',Arial,sans-serif;
+    font: 400 125%/133% 'Yandex Sans Display Web',Arial,sans-serif;
 }
 .announcement-link {
     color: #000!important;
