@@ -8,8 +8,6 @@
 #include <common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
-#include <Common/typeid_cast.h>
-
 namespace DB
 {
 
