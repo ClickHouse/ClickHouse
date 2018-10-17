@@ -36,7 +36,7 @@ MergeTreeReader::~MergeTreeReader() = default;
 MergeTreeReader::MergeTreeReader(const String & path,
     const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
     UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
-    MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+    const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
