@@ -35,7 +35,7 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
-void ExecuteScalarSubqueriesVisitor::visit(ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode &) const
+void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode &) const
 {
     Context subquery_context = context;
     Settings subquery_settings = context.getSettings();
@@ -101,12 +101,12 @@ void ExecuteScalarSubqueriesVisitor::visit(ASTSubquery * subquery, ASTPtr & ast,
 }
 
 
-void ExecuteScalarSubqueriesVisitor::visit(ASTTableExpression *, ASTPtr &, const DumpASTNode &) const
+void ExecuteScalarSubqueriesVisitor::visit(const ASTTableExpression *, ASTPtr &, const DumpASTNode &) const
 {
     /// Don't descend into subqueries in FROM section.
 }
 
-void ExecuteScalarSubqueriesVisitor::visit(ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const
+void ExecuteScalarSubqueriesVisitor::visit(const ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
