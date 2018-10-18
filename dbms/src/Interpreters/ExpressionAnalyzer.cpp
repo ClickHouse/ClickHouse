@@ -1,6 +1,8 @@
 #include <Poco/Util/Application.h>
 #include <Poco/String.h>
 
+#include <Core/Block.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -161,12 +163,10 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const Names & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
-    const SubqueriesForSets & subqueries_for_set_)
-    : query(query_), context(context_), settings(context.getSettings()),
-    subquery_depth(subquery_depth_),
-    source_columns(source_columns_), required_result_columns(required_result_columns_),
-    storage(storage_),
-    do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
+    const SubqueriesForSets & subqueries_for_sets_)
+    : ExpressionAnalyzerData(source_columns_, required_result_columns_, subqueries_for_sets_),
+    query(query_), context(context_), settings(context.getSettings()), storage(storage_),
+    subquery_depth(subquery_depth_), do_global(do_global_)
 {
     select_query = typeid_cast<ASTSelectQuery *>(query.get());
 
@@ -210,7 +210,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     InJoinSubqueriesPreprocessor(context).process(select_query);
 
     /// Optimizes logical expressions.
-    LogicalExpressionsOptimizer(select_query, settings).perform();
+    LogicalExpressionsOptimizer(select_query, settings.min_equality_disjunction_chain_length).perform();
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
@@ -868,7 +868,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 {
     BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
 
-    SetPtr set = std::make_shared<Set>(getSetSizeLimits(settings), true);
+    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
 
     set->setHeader(res.in->getHeader());
     while (Block block = res.in->read())
@@ -925,7 +925,8 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 
                     Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
                     if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
-                        makeExplicitSet(func, sample_block_with_calculated_columns, true, context, getSetSizeLimits(settings), prepared_sets);
+                        makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
+                                        settings.size_limits_for_set, prepared_sets);
                 }
             }
         }
@@ -1048,7 +1049,7 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
     bool is_conditional_tree = !isThereArrayJoin(ast) && settings.enable_conditional_computation && !only_consts;
 
     LogAST log;
-    ActionsVisitor actions_visitor(context, getSetSizeLimits(settings), is_conditional_tree, subquery_depth,
+    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, is_conditional_tree, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
     actions_visitor.visit(ast);
@@ -1062,7 +1063,7 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
     bool is_conditional_tree = !isThereArrayJoin(query) && settings.enable_conditional_computation && !only_consts;
 
     LogAST log;
-    ActionsVisitor actions_visitor(context, getSetSizeLimits(settings), is_conditional_tree, subquery_depth,
+    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, is_conditional_tree, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
 
@@ -1320,9 +1321,9 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
     if (join_params.strictness == ASTTableJoin::Strictness::Unspecified && join_params.kind != ASTTableJoin::Kind::Cross)
     {
-        if (settings.join_default_strictness.toString() == "ANY")
+        if (settings.join_default_strictness == "ANY")
             join_params.strictness = ASTTableJoin::Strictness::Any;
-        else if (settings.join_default_strictness.toString() == "ALL")
+        else if (settings.join_default_strictness == "ALL")
             join_params.strictness = ASTTableJoin::Strictness::All;
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
@@ -1364,7 +1365,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     {
         JoinPtr join = std::make_shared<Join>(
             analyzed_join.key_names_left, analyzed_join.key_names_right, analyzed_join.columns_added_by_join_from_right_keys,
-            settings.join_use_nulls, SizeLimits(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
+            settings.join_use_nulls, settings.size_limits_for_join,
             join_params.kind, join_params.strictness);
 
         /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
