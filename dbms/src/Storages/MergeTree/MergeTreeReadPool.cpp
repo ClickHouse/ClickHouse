@@ -9,6 +9,11 @@ namespace ProfileEvents
     extern const Event ReadBackoff;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
@@ -133,6 +138,10 @@ MarkRanges MergeTreeReadPool::getRestMarks(const std::string & part_path, const 
             break;
         }
     }
+    if (all_part_ranges.empty())
+        throw Exception("Trying to read marks range [" + std::to_string(from.begin) + ", " + std::to_string(from.end) + "] from part '"
+                        + part_path + "' which has no ranges in this query", ErrorCodes::LOGICAL_ERROR);
+
     auto begin = std::lower_bound(all_part_ranges.begin(), all_part_ranges.end(), from, [] (const auto & f, const auto & s) { return f.begin < s.begin; });
     if (begin == all_part_ranges.end())
         begin = std::prev(all_part_ranges.end());
