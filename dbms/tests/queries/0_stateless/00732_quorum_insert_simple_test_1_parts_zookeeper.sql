@@ -15,5 +15,9 @@ INSERT INTO test.quorum1 VALUES (2, '2018-11-15');
 SELECT x FROM test.quorum1 ORDER BY x;
 SELECT x FROM test.quorum2 ORDER BY x;
 
+OPTIMIZE TABLE test.quorum1 PARTITION '2018-11-15' FINAL;
+
+SELECT count(*) FROM system.parts WHERE active AND database = 'test' AND table='quorum1';
+
 DROP TABLE IF EXISTS test.quorum1;
 DROP TABLE IF EXISTS test.quorum2;
