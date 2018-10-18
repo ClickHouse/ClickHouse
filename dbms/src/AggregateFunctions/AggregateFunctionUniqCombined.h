@@ -67,7 +67,7 @@ namespace detail
 
 
 template <typename Key>
-struct __attribute__((__packed__)) AggregateFunctionUniqCombinedDataWithKey
+struct AggregateFunctionUniqCombinedDataWithKey
 {
     template <UInt8 K>
     using Set = CombinedCardinalityEstimator<Key,
@@ -83,15 +83,15 @@ struct __attribute__((__packed__)) AggregateFunctionUniqCombinedDataWithKey
     mutable UInt8 inited = 0;
     union
     {
-        Set<12> set_12;
-        Set<13> set_13;
-        Set<14> set_14;
-        Set<15> set_15;
-        Set<16> set_16;
-        Set<17> set_17;
-        Set<18> set_18;
-        Set<19> set_19;
-        Set<20> set_20;
+        mutable Set<12> set_12;
+        mutable Set<13> set_13;
+        mutable Set<14> set_14;
+        mutable Set<15> set_15;
+        mutable Set<16> set_16;
+        mutable Set<17> set_17;
+        mutable Set<18> set_18;
+        mutable Set<19> set_19;
+        mutable Set<20> set_20;
     };
 
     AggregateFunctionUniqCombinedDataWithKey() : set_17() {}
@@ -136,7 +136,8 @@ struct __attribute__((__packed__)) AggregateFunctionUniqCombinedDataWithKey
         if (inited)
             return;
 
-        if (precision == 17) {
+        if (precision == 17)
+        {
             inited = precision;
             return;
         }
