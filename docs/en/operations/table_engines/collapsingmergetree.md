@@ -4,14 +4,14 @@
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds to data parts merge algorithm the logic of rows collapsing.
 
-`CollapsingMergeTree` deletes (collapses) pairs of rows by specific rules. The engine may significantly reduce the volume of storage and efficiency of `SELECT` query as a consequence.
+`CollapsingMergeTree` deletes (collapses) pairs of rows by specific rules. The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
 
 See [Collapsing](#collapsingmergetree-algorithm) section of document about `CollapsingMergeTree` input data and algorithm.
 
 ## Creating a Table
 
-```
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -41,7 +41,7 @@ When creating a `CollapsingMergeTree` table, the same [clauses](mergetree.md#tab
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],

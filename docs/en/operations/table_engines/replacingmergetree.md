@@ -8,8 +8,8 @@ Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data  in the b
 
 ## Creating a Table
 
-```
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -41,7 +41,7 @@ When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
