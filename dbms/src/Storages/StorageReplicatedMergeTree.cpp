@@ -2669,7 +2669,10 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             Coordination::Stat added_parts_stat;
             String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
 
-            ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(old_added_parts, data.format_version);
+            ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(data.format_version);
+
+            if (!old_added_parts.empty())
+                parts_with_quorum.fromString(old_added_parts);
 
             auto partition_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
             parts_with_quorum.added_parts[partition_info.partition_id] = part_name;
@@ -2979,20 +2982,23 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         }
 
         String added_parts_str;
-        zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str);
-
-        if (!added_parts_str.empty())
+        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
         {
-            ReplicatedMergeTreeQuorumAddedParts part_with_quorum(added_parts_str, data.format_version);
-            auto added_parts = part_with_quorum.added_parts;
+            if (!added_parts_str.empty())
+            {
+                ReplicatedMergeTreeQuorumAddedParts part_with_quorum(data.format_version);
+                part_with_quorum.fromString(added_parts_str);
+                
+                auto added_parts = part_with_quorum.added_parts;
 
-            for (const auto & added_part : added_parts)
-                if (!data.getActiveContainingPart(added_part.second))
-                    throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
-                        " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+                for (const auto & added_part : added_parts)
+                    if (!data.getActiveContainingPart(added_part.second))
+                        throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
+                            " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
 
-            for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
-                max_added_blocks[max_block.first] = max_block.second;
+                for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
+                        max_added_blocks[max_block.first] = max_block.second;
+            }
         }
 
         return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
