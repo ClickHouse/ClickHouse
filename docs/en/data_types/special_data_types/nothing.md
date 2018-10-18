@@ -20,3 +20,5 @@ SELECT toTypeName([])
 1 rows in set. Elapsed: 0.062 sec.
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/special_data_types/nothing/) <!--hide-->

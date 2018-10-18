@@ -6,7 +6,7 @@ The last optional parameter for the table engine is the version column. When mer
 
 The version column must have a type from the `UInt` family, `Date`, or `DateTime`.
 
-```sql
+``` sql
 ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, ver)
 ```
 
@@ -16,3 +16,5 @@ Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data  in the b
 
 *This engine is not used in Yandex.Metrica, but it has been applied in other Yandex projects.*
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

@@ -97,6 +97,7 @@ nav:
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'jdbc': 'query_language/table_functions/jdbc.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External dictionaries':

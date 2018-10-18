@@ -2,7 +2,7 @@
 
 # Dictionary
 
-Движок `Dictionary` отображает данные словаря как таблицу ClickHouse.
+Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md#dicts-external_dicts) как таблицу ClickHouse.
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 
@@ -39,7 +39,7 @@
 
 Запрос данных словаря:
 
-```sql
+``` sql
 select name, type, key, attribute.names, attribute.types, bytes_allocated, element_count,source from system.dictionaries where name = 'products';                     
 
 SELECT
@@ -73,7 +73,7 @@ CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 
 Пример использования:
 
-```sql
+``` sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);
 
 CREATE TABLE products
@@ -91,7 +91,7 @@ Ok.
 
 Проверим что у нас в таблице?
 
-```sql
+``` sql
 select * from products limit 1;
 
 SELECT *
@@ -106,3 +106,5 @@ LIMIT 1
 
 1 rows in set. Elapsed: 0.006 sec.
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/dictionary/) <!--hide-->

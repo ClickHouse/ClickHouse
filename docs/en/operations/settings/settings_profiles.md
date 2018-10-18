@@ -9,7 +9,7 @@ Example:
 
 Install the `web` profile.
 
-```sql
+``` sql
 SET profile = 'web'
 ```
 
@@ -63,3 +63,5 @@ The example specifies two profiles: `default`  and `web`. The `default` profile 
 
 Settings profiles can inherit from each other. To use inheritance, indicate the `profile`  setting before the other settings that are listed in the profile.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings_profiles/) <!--hide-->

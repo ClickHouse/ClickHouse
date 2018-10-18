@@ -81,3 +81,5 @@ Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 
 0 rows in set. Elapsed: 0.246 sec.
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/array/) <!--hide-->

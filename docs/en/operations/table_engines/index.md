@@ -14,3 +14,5 @@ The table engine (type of table) determines:
 When reading, the engine is only required to output the requested columns, but in some cases the engine can partially process data when responding to the request.
 
 For most serious tasks, you should use engines from the `MergeTree` family.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/) <!--hide-->

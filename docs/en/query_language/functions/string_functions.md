@@ -74,3 +74,5 @@ If the 's' string is non-empty and does not contain the 'c' character at the end
 
 Returns the string 's' that was converted from the encoding in 'from' to the encoding in 'to'.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

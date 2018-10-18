@@ -1,4 +1,3 @@
 # Expression
 
-用于在高阶函数中表示lambda表达式。
-
+用于表示高阶函数中的Lambd表达式。

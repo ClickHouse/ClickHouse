@@ -49,7 +49,7 @@ namespace ErrorCodes
   *          but only by whole bytes. For dates and datetimes - the same as for numbers.
   *          For example, hex(257) = '0101'.
   * unhex(string) - Returns a string, hex of which is equal to `string` with regard of case and discarding one leading zero.
-  *                 If such a string does not exist, could return arbitary implementation specific value.
+  *                 If such a string does not exist, could return arbitrary implementation specific value.
   *
   * bitmaskToArray(x) - Returns an array of powers of two in the binary form of x. For example, bitmaskToArray(50) = [2, 16, 32].
   */

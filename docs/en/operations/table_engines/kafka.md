@@ -44,7 +44,7 @@ Optional parameters:
 
 Examples:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -86,7 +86,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -136,3 +136,5 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/) <!--hide-->
