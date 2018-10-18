@@ -6,6 +6,6 @@ do
     do
         n=$(( 10**p * i ))
         echo -n "$n "
-        clickhouse-client -q "select uniqHLL12(number), uniq(number), uniqCombined(17)(number) from numbers($n);"
+        clickhouse-client -q "select uniqHLL12(number), uniq(number), uniqCombined(number) from numbers($n);"
     done
 done

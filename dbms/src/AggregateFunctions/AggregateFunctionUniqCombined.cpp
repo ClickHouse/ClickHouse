@@ -22,7 +22,7 @@ namespace
 AggregateFunctionPtr createAggregateFunctionUniqCombined(
     const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    UInt8 precision = 17; /// default value - must correlate with default ctor of |AggregateFunctionUniqCombinedData|
+    UInt8 precision = detail::UNIQ_COMBINED_DEFAULT_PRECISION;
 
     if (!params.empty())
     {

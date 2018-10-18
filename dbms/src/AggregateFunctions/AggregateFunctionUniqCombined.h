@@ -19,12 +19,16 @@
 
 #include <Common/typeid_cast.h>
 
+#define DEFAULT_HLL_PRECISION 17
+
 namespace DB
 {
 namespace detail
 {
+    const UInt8 UNIQ_COMBINED_DEFAULT_PRECISION = DEFAULT_HLL_PRECISION;
+
     /** Hash function for uniqCombined.
-      */
+     */
     template <typename T>
     struct AggregateFunctionUniqCombinedTraits
     {
@@ -94,12 +98,19 @@ struct AggregateFunctionUniqCombinedDataWithKey
         mutable Set<20> set_20;
     };
 
-    AggregateFunctionUniqCombinedDataWithKey() : set_17() {}
+#define PASTE(x, y) x##y
+#define EVAL(x, y) PASTE(x, y)
+#define DEFAULT_SET EVAL(set_, DEFAULT_HLL_PRECISION)
+
+    AggregateFunctionUniqCombinedDataWithKey() : DEFAULT_SET() {}
 
     ~AggregateFunctionUniqCombinedDataWithKey()
     {
         switch (inited)
         {
+            case 0:
+                DEFAULT_SET.~CombinedCardinalityEstimator();
+                break;
             case 12:
                 set_12.~CombinedCardinalityEstimator();
                 break;
@@ -115,7 +126,6 @@ struct AggregateFunctionUniqCombinedDataWithKey
             case 16:
                 set_16.~CombinedCardinalityEstimator();
                 break;
-            case 0:
             case 17:
                 set_17.~CombinedCardinalityEstimator();
                 break;
@@ -136,7 +146,7 @@ struct AggregateFunctionUniqCombinedDataWithKey
         if (inited)
             return;
 
-        if (precision == 17)
+        if (precision == DEFAULT_HLL_PRECISION)
         {
             inited = precision;
             return;
@@ -144,7 +154,7 @@ struct AggregateFunctionUniqCombinedDataWithKey
 
         // TODO: assert "inited == precision"
 
-        set_17.~CombinedCardinalityEstimator();
+        DEFAULT_SET.~CombinedCardinalityEstimator();
 
         switch (precision)
         {
@@ -162,6 +172,9 @@ struct AggregateFunctionUniqCombinedDataWithKey
                 break;
             case 16:
                 new (&set_16) Set<16>;
+                break;
+            case 17:
+                new (&set_17) Set<17>;
                 break;
             case 18:
                 new (&set_18) Set<18>;
@@ -208,28 +221,29 @@ struct AggregateFunctionUniqCombinedDataWithKey
             break;         \
     }
 
-#define SET_RETURN_METHOD(method) \
-    switch (inited)               \
-    {                             \
-        case 12:                  \
-            return set_12.method; \
-        case 13:                  \
-            return set_13.method; \
-        case 14:                  \
-            return set_14.method; \
-        case 15:                  \
-            return set_15.method; \
-        case 16:                  \
-            return set_16.method; \
-        case 18:                  \
-            return set_18.method; \
-        case 19:                  \
-            return set_19.method; \
-        case 20:                  \
-            return set_20.method; \
-        case 17:                  \
-        default:                  \
-            return set_17.method; \
+#define SET_RETURN_METHOD(method)      \
+    switch (inited)                    \
+    {                                  \
+        case 12:                       \
+            return set_12.method;      \
+        case 13:                       \
+            return set_13.method;      \
+        case 14:                       \
+            return set_14.method;      \
+        case 15:                       \
+            return set_15.method;      \
+        case 16:                       \
+            return set_16.method;      \
+        case 17:                       \
+            return set_17.method;      \
+        case 18:                       \
+            return set_18.method;      \
+        case 19:                       \
+            return set_19.method;      \
+        case 20:                       \
+            return set_20.method;      \
+        default:                       \
+            return DEFAULT_SET.method; \
     }
 
     void insert(Key value, UInt8 precision)
@@ -293,6 +307,10 @@ struct AggregateFunctionUniqCombinedDataWithKey
 
 #undef SET_METHOD
 #undef SET_RETURN_METHOD
+#undef PASTE
+#undef EVAL
+#undef DEFAULT_SET
+#undef DEFAULT_HLL_PRECISION
 };
 
 
