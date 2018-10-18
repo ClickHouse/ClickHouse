@@ -28,10 +28,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
 
 A table for the Graphite date should have the following columns:
-- Column with the metric name (Graphite sensor). Data type: String.
-- Column with the time for measuring the metric. Data type: DateTime.
-- Column with the value of the metric. Data type: Any numeric.
-- Column with the version of the metric with the same name and time of measurement. Data type: Any numeric.
+
+- Column with the metric name (Graphite sensor). Data type: `String`.
+- Column with the time for measuring the metric. Data type: `DateTime`.
+- Column with the value of the metric. Data type: any numeric.
+- Column with the version of the metric with the same name and time of measurement. Data type: any numeric.
 
     ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
 
