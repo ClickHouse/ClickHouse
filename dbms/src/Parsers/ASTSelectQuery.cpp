@@ -205,6 +205,9 @@ static const ASTArrayJoin * getFirstArrayJoin(const ASTSelectQuery & select)
         const ASTTablesInSelectQueryElement & tables_element = static_cast<const ASTTablesInSelectQueryElement &>(*child);
         if (tables_element.array_join)
         {
+            ASTSelectQuery & new_select = const_cast<ASTSelectQuery &>(select);
+            new_select.has_array_join = true;
+
             if (!array_join)
                 array_join = static_cast<const ASTArrayJoin *>(tables_element.array_join.get());
             else
