@@ -12,7 +12,7 @@ ENGINE [=] Name(...) [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTI
 
 For MergeTree tables, the partition expression is specified after `PARTITION BY`, the primary key after `ORDER BY`, the sampling key after `SAMPLE BY`, and `SETTINGS` can specify `index_granularity` (optional; the default value is 8192), as well as other settings from [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h). The other engine parameters are specified in parentheses after the engine name, as previously. Example:
 
-```sql
+``` sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
     PARTITION BY (toMonday(StartDate), EventType)
     ORDER BY (CounterID, StartDate, intHash32(UserID))
@@ -27,7 +27,7 @@ After this table is created, merge will only work for data parts that have the s
 
 To specify a partition in ALTER PARTITION commands, specify the value of the partition expression (or a tuple). Constants and constant expressions are supported. Example:
 
-```sql
+``` sql
 ALTER TABLE table DROP PARTITION (toMonday(today()), 1)
 ```
 
@@ -45,3 +45,5 @@ The partition ID is its string identifier (human-readable, if possible) that is 
 
 For more examples, see the tests [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

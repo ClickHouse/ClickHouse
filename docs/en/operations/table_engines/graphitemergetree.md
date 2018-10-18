@@ -27,7 +27,7 @@ The Graphite data table must contain the following fields at minimum:
 
 Rollup pattern:
 
-```text
+```
 pattern
     regexp
     function
@@ -84,3 +84,5 @@ Example of settings:
 </graphite_rollup>
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

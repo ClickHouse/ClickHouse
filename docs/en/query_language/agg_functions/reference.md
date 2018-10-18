@@ -37,7 +37,7 @@ anyHeavy(column)
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select any frequently occurring value in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
@@ -107,7 +107,7 @@ Returns a tuple of two arrays: keys in sorted order, and values ​​summed for
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -128,7 +128,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```text
+```
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -333,7 +333,7 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
@@ -358,3 +358,5 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

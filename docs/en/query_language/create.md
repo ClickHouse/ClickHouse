@@ -2,7 +2,7 @@
 
 Creating db_name databases
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name
 ```
 
@@ -15,7 +15,7 @@ If `IF NOT EXISTS` is included, the query won't return an error if the database 
 
 The `CREATE TABLE` query can have several forms.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -30,13 +30,13 @@ The structure of the table is a list of column descriptions. If indexes are supp
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
 Expressions can also be defined for default values (see below).
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 ```
 
@@ -99,7 +99,7 @@ Distributed DDL queries (ON CLUSTER clause)
 The `CREATE`, `DROP`, `ALTER`, and `RENAME` queries support distributed execution on a cluster.
 For example, the following query creates the `all_hits` `Distributed` table on each host in `cluster`:
 
-```sql
+``` sql
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 
@@ -109,7 +109,7 @@ The local version of the query will eventually be implemented on each host in th
 
 ## CREATE VIEW
 
-```sql
+``` sql
 CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
@@ -123,19 +123,19 @@ Normal views don't store any data, but just perform a read from another table. I
 
 As an example, assume you've created a view:
 
-```sql
+``` sql
 CREATE VIEW view AS SELECT ...
 ```
 
 and written a query:
 
-```sql
+``` sql
 SELECT a, b, c FROM view
 ```
 
 This query is fully equivalent to using the subquery:
 
-```sql
+``` sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 
@@ -154,3 +154,5 @@ The execution of `ALTER` queries on materialized views has not been fully develo
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->

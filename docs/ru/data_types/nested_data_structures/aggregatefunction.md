@@ -61,3 +61,5 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 ## Пример использования
 
 Смотрите в описании движка [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md#table_engine-aggregatingmergetree).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

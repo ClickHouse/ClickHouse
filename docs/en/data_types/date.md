@@ -5,3 +5,5 @@ The minimum value is output as 0000-00-00.
 
 The date is stored without the time zone.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/date/) <!--hide-->

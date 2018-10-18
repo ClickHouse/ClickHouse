@@ -119,7 +119,7 @@ then this nested table is interpreted as a mapping of `key => (values...)`, and 
 
 Examples:
 
-```text
+```
 [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
 [(1, 100)] + [(1, 150)] -> [(1, 250)]
 [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
@@ -129,3 +129,5 @@ Examples:
 When requesting data, use the [sumMap(key, value)](../../query_language/agg_functions/reference.md#agg_function-summary) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

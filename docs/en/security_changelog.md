@@ -19,3 +19,5 @@ Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Tea
 Incorrect configuration in deb package could lead to unauthorized use of the database.
 
 Credits: the UK's National Cyber Security Centre (NCSC)
+
+[Original article](https://clickhouse.yandex/docs/en/security_changelog/) <!--hide-->

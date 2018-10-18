@@ -1,6 +1,3 @@
-#include <cmath>
-#include <ext/bit_cast.h>
-
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -53,7 +50,7 @@ UInt64 ColumnDecimal<T>::get64(size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
         throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
-    return ext::bit_cast<UInt64>(data[n]);
+    return static_cast<typename T::NativeType>(data[n]);
 }
 
 template <typename T>
@@ -118,6 +115,14 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
     }
 
     return std::move(res);
+}
+
+template <typename T>
+void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
+{
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
 template <typename T>

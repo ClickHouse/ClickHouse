@@ -12,8 +12,8 @@ It is appropriate to use  `AggregatingMergeTree` if it reduces the number of row
 
 ## Creating a Table
 
-```
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+``` sql
+CREATE TABLE t
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -58,7 +58,7 @@ In the results of `SELECT` query the values of  `AggregateFunction` type have im
 
 `AggregatingMergeTree` materialized view that watches the `test.visits` table:
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
@@ -72,7 +72,7 @@ GROUP BY CounterID, StartDate;
 
 Inserting of data into the `test.visits` table.
 
-```sql
+``` sql
 INSERT INTO test.visits ...
 ```
 
@@ -80,7 +80,7 @@ The data are inserted in both the table and view `test.basic` that will perform 
 
 To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the view `test.basic`:
 
-```sql
+``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
@@ -89,3 +89,5 @@ FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/aggregatingmergetree/) <!--hide-->

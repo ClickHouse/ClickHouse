@@ -47,3 +47,9 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
+``` sql
+-- getting the first 10 lines of a table that contains 3 columns of UInt32 type from a CSV file
+SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10
+```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/file/) <!--hide-->

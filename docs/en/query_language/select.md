@@ -2,7 +2,7 @@
 
 `SELECT` performs data retrieval.
 
-```sql
+``` sql
 SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
@@ -55,7 +55,7 @@ In the second case, the query will be executed on a sample of no more than 'n' r
 
 Example:
 
-```sql
+``` sql
 SELECT
     Title,
     count() * 10 AS PageViews
@@ -86,7 +86,7 @@ Allows executing JOIN with an array or nested data structure. The intent is simi
 
 `ARRAY JOIN` is essentially `INNER JOIN` with an array. Example:
 
-```text
+```
 :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
 CREATE TABLE arrays_test
@@ -139,7 +139,7 @@ ARRAY JOIN arr
 
 An alias can be specified for an array in the ARRAY JOIN clause. In this case, an array item can be accessed by this alias, but the array itself by the original name. Example:
 
-```text
+```
 :) SELECT s, arr, a FROM arrays_test ARRAY JOIN arr AS a
 
 SELECT s, arr, a
@@ -159,7 +159,7 @@ ARRAY JOIN arr AS a
 
 Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product). Example:
 
-```text
+```
 :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
 SELECT s, arr, a, num, mapped
@@ -195,7 +195,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
 
 ARRAY JOIN also works with nested data structures. Example:
 
-```text
+```
 :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
 CREATE TABLE nested_test
@@ -250,7 +250,7 @@ ARRAY JOIN nest
 
 When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
 SELECT s, `nest.x`, `nest.y`
@@ -270,7 +270,7 @@ ARRAY JOIN `nest.x`, `nest.y`
 
 This variation also makes sense:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x
 
 SELECT s, `nest.x`, `nest.y`
@@ -290,7 +290,7 @@ ARRAY JOIN `nest.x`
 
 An alias may be used for a nested data structure, in order to select either the JOIN result or the source array. Example:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
@@ -310,7 +310,7 @@ ARRAY JOIN nest AS n
 
 Example of using the arrayEnumerate function:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -336,7 +336,7 @@ The corresponding conversion can be performed before the WHERE/PREWHERE clause (
 
 The normal JOIN, which is not related to ARRAY JOIN described above.
 
-```sql
+``` sql
 [GLOBAL] ANY|ALL INNER|LEFT [OUTER] JOIN (subquery)|table USING columns_list
 ```
 
@@ -371,7 +371,7 @@ When running a JOIN, there is no optimization of the order of execution in relat
 
 Example:
 
-```sql
+``` sql
 SELECT
     CounterID,
     hits,
@@ -395,7 +395,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │
@@ -469,7 +469,7 @@ If a query contains only table columns inside aggregate functions, the GROUP BY 
 
 Example:
 
-```sql
+``` sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -483,7 +483,7 @@ As opposed to MySQL (and conforming to standard SQL), you can't get some value o
 
 Example:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
@@ -579,7 +579,7 @@ LIMIT N BY COLUMNS selects the top N rows for each group of COLUMNS. LIMIT N BY 
 
 Example:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,
@@ -698,7 +698,7 @@ If there isn't an ORDER BY clause that explicitly sorts results, the result may 
 
 You can use UNION ALL to combine any number of queries. Example:
 
-```sql
+``` sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -746,7 +746,7 @@ The left side of the operator is either a single column or a tuple.
 
 Examples:
 
-```sql
+``` sql
 SELECT UserID IN (123, 456) FROM ...
 SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 ```
@@ -764,7 +764,7 @@ If the right side of the operator is a table name that has the Set engine (a pre
 The subquery may specify more than one column for filtering tuples.
 Example:
 
-```sql
+``` sql
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -773,7 +773,7 @@ The columns to the left and right of the IN operator should have the same type.
 The IN operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-```sql
+``` sql
 SELECT
     EventDate,
     avg(UserID IN
@@ -787,7 +787,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text
+```
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │
@@ -858,13 +858,13 @@ For a query to the **distributed_table**, the query will be sent to all the remo
 
 For example, the query
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table
 ```
 
 will be sent to all remote servers as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table
 ```
 
@@ -872,7 +872,7 @@ and run on each of them in parallel, until it reaches the stage where intermedia
 
 Now let's examine a query with IN:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -880,7 +880,7 @@ SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID I
 
 This query will be sent to all remote servers as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -890,19 +890,19 @@ This will work correctly and optimally if you are prepared for this case and hav
 
 To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 This query will be sent to all remote servers as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The subquery will begin running on each remote server. Since the subquery uses a distributed table, the subquery that is on each remote server will be resent to every remote server as
 
-```sql
+``` sql
 SELECT UserID FROM local_table WHERE CounterID = 34
 ```
 
@@ -910,19 +910,19 @@ For example, if you have a cluster of 100 servers, executing the entire query wi
 
 In such cases, you should always use GLOBAL IN instead of IN. Let's look at how it works for the query
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The requestor server will run the subquery
 
-```sql
+``` sql
 SELECT UserID FROM distributed_table WHERE CounterID = 34
 ```
 
 and the result will be put in a temporary table in RAM. Then the request will be sent to each remote server as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
@@ -964,3 +964,5 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - In subqueries (since columns that aren't needed for the external query are excluded from subqueries).
 
 In all other cases, we don't recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/select/) <!--hide-->

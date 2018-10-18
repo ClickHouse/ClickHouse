@@ -29,3 +29,5 @@
 ## lessOrEquals, оператор `<=`
 
 ## greaterOrEquals, оператор `>=`
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/comparison_functions/) <!--hide-->

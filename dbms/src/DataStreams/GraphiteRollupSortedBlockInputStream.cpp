@@ -132,7 +132,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
         is_first = false;
 
-        time_t next_row_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
+        time_t next_row_time = next_cursor->all_columns[time_column_num]->getUInt(next_cursor->pos);
         /// Is new key before rounding.
         bool is_new_key = new_path || next_row_time != current_time;
 

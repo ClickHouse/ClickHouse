@@ -11,3 +11,5 @@ ClickHouse supports:
 - [Built-in dictionaries](internal_dicts.md#internal_dicts) with a specific [set of functions](../functions/ym_dict_functions.md#ym_dict_functions).
 - [Plug-in (external) dictionaries](external_dicts.md#dicts-external_dicts) with a [set of functions](../functions/ext_dict_functions.md#ext_dict_functions).
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/) <!--hide-->

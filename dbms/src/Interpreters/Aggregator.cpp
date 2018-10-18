@@ -1132,6 +1132,9 @@ void Aggregator::convertToBlockImpl(
     if (data.empty())
         return;
 
+    if (key_columns.size() != params.keys_size)
+        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+
     if (final)
         convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns);
     else
@@ -1151,7 +1154,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 {
     for (const auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
+        method.insertKeyIntoColumns(value, key_columns, key_sizes);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->insertResultInto(
@@ -1169,10 +1172,9 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
     MutableColumns & key_columns,
     AggregateColumnsData & aggregate_columns) const
 {
-
     for (auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
+        method.insertKeyIntoColumns(value, key_columns, key_sizes);
 
         /// reserved, so push_back does not throw exceptions
         for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2085,7 +2087,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
-      * If there is at least one block with a bucket number greater than zero, then there was a two-level aggregation.
+      * If there is at least one block with a bucket number greater or equal than zero, then there was a two-level aggregation.
       */
     auto max_bucket = bucket_to_blocks.rbegin()->first;
     size_t has_two_level = max_bucket >= 0;
