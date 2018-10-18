@@ -21,11 +21,9 @@ struct ReplicatedMergeTreeQuorumAddedParts
 
     MergeTreeDataFormatVersion format_version;
 
-    ReplicatedMergeTreeQuorumAddedParts(const std::string & added_parts_str, MergeTreeDataFormatVersion format_version_)
+    ReplicatedMergeTreeQuorumAddedParts(const MergeTreeDataFormatVersion format_version_)
     : format_version(format_version_)
-    {
-        fromString(added_parts_str);
-    }
+    {}
 
     /// Write new parts in buffer with added parts.
     void write(WriteBuffer & out)
@@ -43,8 +41,8 @@ struct ReplicatedMergeTreeQuorumAddedParts
 
         for (const auto & part : added_parts)
         {
-            auto partition_info = MergeTreePartInfo::fromPartName(part.second, format_version);
-            max_added_blocks[part.first] = partition_info.max_block;
+            auto part_info = MergeTreePartInfo::fromPartName(part.second, format_version);
+            max_added_blocks[part.first] = part_info.max_block;
         }
 
         return max_added_blocks;
@@ -71,12 +69,12 @@ struct ReplicatedMergeTreeQuorumAddedParts
     {
         PartitionIdToPartName parts_in_quorum;
 
-        std::string partition_name;
+        std::string part_name;
 
-        readText(partition_name, in);
+        readText(part_name, in);
 
-        auto partition_info = MergeTreePartInfo::fromPartName(partition_name, format_version);
-        parts_in_quorum[partition_info.partition_id] = partition_name;
+        auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+        parts_in_quorum[part_info.partition_id] = part_name;
 
         return parts_in_quorum;
     }
@@ -109,8 +107,6 @@ struct ReplicatedMergeTreeQuorumAddedParts
 
     void fromString(const std::string & str)
     {
-        if (str.empty())
-            return;
         ReadBufferFromString in(str);
         read(in);
     }
