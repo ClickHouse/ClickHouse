@@ -719,3 +719,5 @@ ClickHouse использует ZooKeeper для хранения метадан
 ```xml
 <zookeeper incl="zookeeper-servers" optional="true" />
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->

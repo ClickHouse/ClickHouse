@@ -53,3 +53,5 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 Все параметры, кроме `ver` имеют то же значение, что в и `MergeTree`.
 
 - `ver` — столбец с версией. Необязательный параметр. Описание смотрите выше по тексту.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->

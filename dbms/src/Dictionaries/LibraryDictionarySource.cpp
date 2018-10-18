@@ -94,9 +94,16 @@ namespace
             {
                 const auto & field = columns_received->data[col_n].data[row_n];
                 if (!field.data)
-                    continue;
-                const auto & size = field.size;
-                columns[row_n]->insertData(static_cast<const char *>(field.data), size);
+                {
+                    /// sample_block contains null_value (from config) inside corresponding column
+                    const auto & col = sample_block.getByPosition(row_n);
+                    columns[row_n]->insertFrom(*(col.column), 0);
+                }
+                else
+                {
+                    const auto & size = field.size;
+                    columns[row_n]->insertData(static_cast<const char *>(field.data), size);
+                }
             }
         }
 

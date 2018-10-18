@@ -43,7 +43,7 @@ Kafka SETTINGS
 
 Примеры:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -85,7 +85,7 @@ Kafka SETTINGS
 
 Пример:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -136,3 +136,5 @@ Kafka SETTINGS
 ```
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчёркивания (`_`) вместо точек в конфигурации ClickHouse, например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/kafka/) <!--hide-->

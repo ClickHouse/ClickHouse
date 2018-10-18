@@ -52,3 +52,5 @@ For other regular expressions, the code is the same as for the 'match' function.
 
 The same thing as 'like', but negative.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

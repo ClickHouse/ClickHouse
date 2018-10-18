@@ -51,4 +51,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
+
 - `ver` - column with the version. Optional parameter. For a description, see the text above.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

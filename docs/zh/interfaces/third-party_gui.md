@@ -28,7 +28,6 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 快速查看列占用的空间。
 - 服务配置。
 
-The following features are planned for development:
 以下功能正在计划开发：
 - 数据库管理
 - 用户管理
@@ -37,3 +36,5 @@ The following features are planned for development:
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->

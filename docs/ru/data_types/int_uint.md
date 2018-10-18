@@ -19,3 +19,5 @@
 - UInt16 - [ 0 : 65535 ]
 - UInt32 - [ 0 : 4294967295 ]
 - UInt64 - [ 0 : 18446744073709551615 ]
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/int_uint/) <!--hide-->

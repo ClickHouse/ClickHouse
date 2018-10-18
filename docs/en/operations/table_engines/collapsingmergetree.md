@@ -215,3 +215,5 @@ SELECT * FROM UAct FINAL
 ```
 
 This way of selecting the data is very inefficient. Don't use it for big tables.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

@@ -60,7 +60,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 Создаём материализованное представление типа `AggregatingMergeTree`, следящее за таблицей `test.visits`:
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
@@ -74,7 +74,7 @@ GROUP BY CounterID, StartDate;
 
 Вставляем данные в таблицу `test.visits`:
 
-```sql
+``` sql
 INSERT INTO test.visits ...
 ```
 
@@ -82,7 +82,7 @@ INSERT INTO test.visits ...
 
 Чтобы получить агрегированные данные, выполним запрос вида `SELECT ... GROUP BY ...` из представления `test.basic`:
 
-```sql
+``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,
@@ -91,3 +91,5 @@ FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/aggregatingmergetree/) <!--hide-->

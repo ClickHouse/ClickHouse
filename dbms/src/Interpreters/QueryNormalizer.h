@@ -1,11 +1,23 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/evaluateQualified.h>
 
 namespace DB
 {
+
+inline bool functionIsInOperator(const String & name)
+{
+    return name == "in" || name == "notIn";
+}
+
+inline bool functionIsInOrGlobalInOperator(const String & name)
+{
+    return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn";
+}
+
 
 using TableNameAndColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
 using TableNamesAndColumnNames = std::vector<TableNameAndColumnNames>;

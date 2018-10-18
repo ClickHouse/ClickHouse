@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=18.14.6
+ARG version=18.14.9
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -39,4 +39,4 @@ ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
 
-CMD ["/usr/bin/clickhouse-server", "--config=${CLICKHOUSE_CONFIG}"]
+CMD /usr/bin/clickhouse-server --config=${CLICKHOUSE_CONFIG}

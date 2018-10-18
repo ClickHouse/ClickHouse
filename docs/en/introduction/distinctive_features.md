@@ -60,3 +60,5 @@ ClickHouse provides various ways to trade accuracy for performance:
 Uses asynchronous multimaster replication. After being written to any available replica, data is distributed to all the remaining replicas in the background. The system maintains identical data on different replicas. Recovery after most failures is performed automatically, and in complex cases — semi-automatically.
 
 For more information, see the section [Data replication](../operations/table_engines/replication.md#table_engines-replication).
+
+[Original article](https://clickhouse.yandex/docs/en/introduction/distinctive_features/) <!--hide-->

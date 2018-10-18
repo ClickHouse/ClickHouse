@@ -1,15 +1,15 @@
 nav:
 
-- 'Introduction':
-  - 'Overview': 'index.md'
-  - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
-  - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
-  - 'Performance': 'introduction/performance.md'
-  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
+- '介绍':
+  - '概貌': 'index.md'
+  - 'ClickHouse的独特功能': 'introduction/distinctive_features.md'
+  - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
+  - '性能': 'introduction/performance.md'
+  - 'Yandex.Metrica使用案例': 'introduction/ya_metrika_task.md'
 
-- 'Getting started':
-  - 'Deploying and running': 'getting_started/index.md'
-  - 'Example datasets':
+- '起步':
+  - '部署运行': 'getting_started/index.md'
+  - '示例数据集':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi data': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -17,18 +17,18 @@ nav:
     - 'Terabyte click logs from Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Star Schema Benchmark': 'getting_started/example_datasets/star_schema.md'
 
-- 'Interfaces':
-  - 'Introduction': 'interfaces/index.md'
-  - 'Command-line client': 'interfaces/cli.md'
-  - 'HTTP interface': 'interfaces/http_interface.md'
-  - 'JDBC driver': 'interfaces/jdbc.md'
-  - 'Native interface (TCP)': 'interfaces/tcp.md'
-  - 'Libraries from third-party developers': 'interfaces/third-party_client_libraries.md'
-  - 'Visual interfaces from third-party developers': 'interfaces/third-party_gui.md'
-  - 'Input and output formats': 'interfaces/formats.md'
+- '客户端':
+  - '介绍': 'interfaces/index.md'
+  - '命令行客户端接口': 'interfaces/cli.md'
+  - 'HTTP 客户端接口': 'interfaces/http_interface.md'
+  - 'JDBC 驱动': 'interfaces/jdbc.md'
+  - '原生客户端接口 (TCP)': 'interfaces/tcp.md'
+  - '第三方开发的库': 'interfaces/third-party_client_libraries.md'
+  - '第三方开发的可视化界面': 'interfaces/third-party_gui.md'
+  - '输入输出格式': 'interfaces/formats.md'
 
-- 'Data types':
-  - 'Introduction': 'data_types/index.md'
+- '数据类型':
+  - '介绍': 'data_types/index.md'
   - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
   - 'Float32, Float64': 'data_types/float.md'
   - 'Decimal': 'data_types/decimal.md'
@@ -51,7 +51,7 @@ nav:
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
 
-- 'SQL reference':
+- 'SQL语法':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
@@ -100,6 +100,7 @@ nav:
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'jdbc': 'query_language/table_functions/jdbc.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External dictionaries':
@@ -113,7 +114,7 @@ nav:
   - 'Operators': 'query_language/operators.md'
   - 'General syntax': 'query_language/syntax.md'
 
-- 'Operations':
+- '运维':
   - 'hidden': 'operations/index.md'
   - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
@@ -165,10 +166,10 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'F.A.Q.':
-  - 'General questions': 'faq/general.md'
+- '常见问题':
+  - '一般的问题': 'faq/general.md'
 
-- 'Development':
+- '开发者指南':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'
@@ -176,7 +177,7 @@ nav:
   - 'How to write  C++ code': 'development/style.md'
   - 'How to run ClickHouse tests': 'development/tests.md'
 
-- 'What''s new':
-  - 'Roadmap': 'roadmap.md'
-  - 'Changelog': 'changelog.md'
-  - 'Security changelog': 'security_changelog.md'
+- '新功能特性':
+  - '路线图': 'roadmap.md'
+  - '更新日志': 'changelog.md'
+  - '安全更改日志': 'security_changelog.md'

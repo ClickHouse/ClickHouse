@@ -2,7 +2,7 @@
 
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
-```text
+```
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes)
 ```
 
@@ -16,7 +16,7 @@ The conditions for flushing the data are calculated separately for each of the '
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE merge.hits_buffer AS merge.hits ENGINE = Buffer(merge, hits, 16, 10, 100, 10000, 1000000, 10000000, 100000000)
 ```
 
@@ -52,3 +52,5 @@ A Buffer table is used when too many INSERTs are received from a large number of
 
 Note that it doesn't make sense to insert data one row at a time, even for Buffer tables. This will only produce a speed of a few thousand rows per second, while inserting larger blocks of data can produce over a million rows per second (see the section "Performance").
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/buffer/) <!--hide-->

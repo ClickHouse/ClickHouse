@@ -21,16 +21,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-bool functionIsInOrGlobalInOperator(const String & name)
-{
-    return name == "in" || name == "notIn" || name == "globalIn" || name == "globalNotIn";
-}
-
-}
-
 QueryNormalizer::QueryNormalizer(ASTPtr & query, const QueryNormalizer::Aliases & aliases,
                                  const Settings & settings, const Names & all_column_names,
                                  const TableNamesAndColumnNames & table_names_and_column_names)

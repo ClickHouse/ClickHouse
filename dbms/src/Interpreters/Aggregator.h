@@ -166,7 +166,7 @@ struct AggregationMethodOneNumber
 
     /** Insert the key from the hash table into columns.
       */
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
         static_cast<ColumnVector<FieldType> *>(key_columns[0].get())->insertData(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
@@ -243,7 +243,7 @@ struct AggregationMethodString
         return StringRef(value.first.data, value.first.size);
     }
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
     {
         key_columns[0]->insertData(value.first.data, value.first.size);
     }
@@ -312,7 +312,7 @@ struct AggregationMethodFixedString
         return StringRef(value.first.data, value.first.size);
     }
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
     {
         key_columns[0]->insertData(value.first.data, value.first.size);
     }
@@ -580,7 +580,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static const bool no_consecutive_keys_optimization = true;
     static const bool low_cardinality_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
         auto ref = Base::getValueRef(value);
         static_cast<ColumnLowCardinality *>(key_columns[0].get())->insertData(ref.data, ref.size);
@@ -783,8 +783,10 @@ struct AggregationMethodKeysFixed
     static const bool no_consecutive_keys_optimization = false;
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes & key_sizes)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & key_sizes)
     {
+        size_t keys_size = key_columns.size();
+
         static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
         /// In any hash key value, column values to be read start just after the bitmap, if it exists.
         size_t pos = bitmap_size;
@@ -891,10 +893,10 @@ struct AggregationMethodSerialized
     static const bool no_consecutive_keys_optimization = true;
     static const bool low_cardinality_optimization = false;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes &)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes &)
     {
         auto pos = value.first.data;
-        for (size_t i = 0; i < keys_size; ++i)
+        for (size_t i = 0; i < key_columns.size(); ++i)
             pos = key_columns[i]->deserializeAndInsertFromArena(pos);
     }
 
@@ -1284,10 +1286,10 @@ public:
         Block intermediate_header;
 
         /// What to count.
-        ColumnNumbers keys;
-        AggregateDescriptions aggregates;
-        size_t keys_size;
-        size_t aggregates_size;
+        const ColumnNumbers keys;
+        const AggregateDescriptions aggregates;
+        const size_t keys_size;
+        const size_t aggregates_size;
 
         /// The settings of approximate calculation of GROUP BY.
         const bool overflow_row;    /// Do we need to put into AggregatedDataVariants::without_key aggregates for keys that are not in max_rows_to_group_by.
@@ -1344,9 +1346,6 @@ public:
         {
             intermediate_header = intermediate_header_;
         }
-
-        /// Calculate the column numbers in `keys` and `aggregates`.
-        void calculateColumnNumbers(const Block & block);
     };
 
     Aggregator(const Params & params_);
