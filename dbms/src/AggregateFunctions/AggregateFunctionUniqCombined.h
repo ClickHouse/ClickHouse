@@ -133,8 +133,13 @@ struct __attribute__((__packed__)) AggregateFunctionUniqCombinedDataWithKey
 
     void init(UInt8 precision) const
     {
-        if (inited || precision == 17)
+        if (inited)
             return;
+
+        if (precision == 17) {
+            inited = precision;
+            return;
+        }
 
         // TODO: assert "inited == precision"
 
