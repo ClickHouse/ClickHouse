@@ -2674,8 +2674,8 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             if (!old_added_parts.empty())
                 parts_with_quorum.fromString(old_added_parts);
 
-            auto partition_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
-            parts_with_quorum.added_parts[partition_info.partition_id] = part_name;
+            auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+            parts_with_quorum.added_parts[part_info.partition_id] = part_name;
             
             String new_added_parts = parts_with_quorum.toString();
 
@@ -2976,9 +2976,9 @@ BlockInputStreams StorageReplicatedMergeTree::read(
             ReplicatedMergeTreeQuorumEntry quorum_entry;
             quorum_entry.fromString(value);
 
-            auto partition_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
+            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
 
-            max_added_blocks[partition_info.partition_id] = partition_info.max_block - 1;
+            max_added_blocks[part_info.partition_id] = part_info.max_block - 1;
         }
 
         String added_parts_str;
@@ -2988,7 +2988,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
             {
                 ReplicatedMergeTreeQuorumAddedParts part_with_quorum(data.format_version);
                 part_with_quorum.fromString(added_parts_str);
-                
+
                 auto added_parts = part_with_quorum.added_parts;
 
                 for (const auto & added_part : added_parts)
