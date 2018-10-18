@@ -2,21 +2,21 @@
 
 # Tuple(T1, T2, ...)
 
-A tuple of elements, each having an individual [type](index.md#data_types).
+元组，其中每个元素都有一个单独的 [type](index.md#data_types)
 
-You can't store tuples in tables (other than Memory tables). They are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../query_language/select.md#in_operators) and [Higher order functions](../query_language/functions/higher_order_functions.md#higher_order_functions).
+不能在表中存储元组（除了内存表）它们用于临时列分组在查询中使用IN表达式时，可以对列进行分组，以及指定lambda函数的某些形式参数有关更多信息，请参阅 [IN operators](../query_language/select.md#in_operators) and [Higher order functions](../query_language/functions/higher_order_functions.md#higher_order_functions)
 
-Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in brackets. In JSON formats, tuples are output as arrays (in square brackets).
+元组可以是查询的结果在这种情况下，对于JSON以外的文本格式，括号中的值是逗号分隔的在JSON格式中，元组作为数组输出（在方括号中）
 
-## Creating a tuple
+## 创建元组
 
-You can use a function to create a tuple:
+您可以使用函数来创建元组：
 
 ```
 tuple(T1, T2, ...)
 ```
 
-Example of creating a tuple:
+创建元组的示例：
 
 ```
 :) SELECT tuple(1,'a') AS x, toTypeName(x)
@@ -32,11 +32,11 @@ SELECT
 1 rows in set. Elapsed: 0.021 sec.
 ```
 
-## Working with data types
+## 使用数据类型
 
-When creating a tuple on the fly, ClickHouse automatically detects the type of each argument as the minimum of the types which can store the argument value. If the argument is [NULL](../query_language/syntax.md#null-literal), the type of the tuple element is [Nullable](nullable.md#data_type-nullable).
+在动态创建元组时，ClickHouse会自动检测每个参数的类型，作为可存储参数值的类型的最小值如果参数为 [NULL](../query_language/syntax.md#null-literal)，则元组元素的类型是 [Nullable](nullable.md#data_type-nullable)
 
-Example of automatic data type detection:
+自动数据类型检测示例：
 
 ```
 SELECT tuple(1, NULL) AS x, toTypeName(x)

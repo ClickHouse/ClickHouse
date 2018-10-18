@@ -1,8 +1,8 @@
 # Nested(Name1 Type1, Name2 Type2, ...)
 
-A nested data structure is like a nested table. The parameters of a nested data structure – the column names and types – are specified the same way as in a CREATE query. Each table row can correspond to any number of rows in a nested data structure.
+嵌套数据结构类似于嵌套表。嵌套数据结构的参数(列名和类型)与CREATE查询中指定的方法相同。每个表行可以对应于嵌套数据结构中的任意数量的行。
 
-Example:
+示例:
 
 ```sql
 CREATE TABLE test.visits
@@ -27,13 +27,13 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
+此示例声明了`Goals`嵌套数据结构，其中包含有关转换的数据（达到目的）。`visits`表中的每一行可以对应于零或任意数量的转换。
 
-Only a single nesting level is supported. Columns of nested structures containing arrays are equivalent to multidimensional arrays, so they have limited support (there is no support for storing these columns in tables with the MergeTree engine).
+只支持一个嵌套级别。包含数组的嵌套结构的列等价于多维数组，因此它们的支持有限（不支持使用MergeTree引擎将这些列存储在表中）。 
 
-In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
+在大多数情况下，在处理嵌套数据结构时，会指定它的各个列。为此，列名用点分隔。这些列构成匹配类型的数组。单个嵌套数据结构的所有列数组都具有相同的长度。
 
-Example:
+示例:
 
 ```sql
 SELECT
@@ -59,9 +59,9 @@ LIMIT 10
 └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-It is easiest to think of a nested data structure as a set of multiple column arrays of the same length.
+最简单的方法是将嵌套数据结构视为一组长度相同的多列数组。
 
-The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
+SELECT查询唯一可以指定整个嵌套数据结构而不是单个列的名称的地方是ARRAY JOIN子句。有关更多信息，请参见“ARRAY JOIN子句”。示例:
 
 ```sql
 SELECT
@@ -88,11 +88,11 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-You can't perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
+您不能对整个嵌套数据结构执行SELECT。您只能明确列出属于它一部分的各个列。
 
-For an INSERT query, you should pass all the component column arrays of a nested data structure separately (as if they were individual column arrays). During insertion, the system checks that they have the same length.
+对于INSERT查询，您应该分别传递嵌套数据结构的所有组件列数组(就像它们是单个列数组一样)。在插入过程中，系统检查它们是否具有相同的长度。
 
-For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
+对于DESCRIBE查询，嵌套数据结构中的列以相同的方式单独列出。
 
-The ALTER query is very limited for elements in a nested data structure.
+ALTER查询对于嵌套数据结构中的元素的操作非常有限。
 

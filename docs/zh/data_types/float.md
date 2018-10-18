@@ -2,16 +2,16 @@
 
 [Floating point numbers](https://en.wikipedia.org/wiki/IEEE_754).
 
-Types are equivalent to types of C:
+这些类型类似于C语言的中类型：
 
 - `Float32` - `float`
 - `Float64`  - `double`
 
-We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
+我们建议您尽可能以整数形式存储数据例如，将固定精度的数字转换为整数值，例如货币数量或页面加载时间用毫秒为单位表示
 
-## Using Floating-point Numbers
+## 使用浮点数
 
-- Computations with floating-point numbers might produce a rounding error.
+- 用浮点数字进行计算可能会产生舍入误差
 
 ```sql
 SELECT 1 - 0.9
@@ -23,15 +23,15 @@ SELECT 1 - 0.9
 └─────────────────────┘
 ```
 
-- The result of the calculation depends on the calculation method (the processor type and architecture of the computer system).
-- Floating-point calculations might result in numbers such as infinity (`Inf`) and "not-a-number" (`NaN`). This should be taken into account when processing the results of calculations.
-- When reading floating point numbers from rows, the result might not be the nearest machine-representable number.
+- 计算的结果取决于计算方法（计算机系统的处理器类型和体系结构）
+- 浮点计算可能会导致诸如无穷大（`INF`）和非数字（`NaN`）的数字在处理计算结果时应考虑这一点 
+- 当从行读取浮点数时，结果可能不是最接近的机器可表示的数
 
 ## NaN and Inf
 
-In contrast to standard SQL, ClickHouse supports the following categories of floating-point numbers:
+与标准SQL相比，ClickHouse支持以下类别的浮点数：
 
-- `Inf` – Infinity.
+- `Inf` – 无穷大
 
 ```sql
 SELECT 0.5 / 0
@@ -43,7 +43,7 @@ SELECT 0.5 / 0
 └────────────────┘
 ```
 
-- `-Inf` – Negative infinity.
+- `-Inf` – 负无穷大
 
 ```sql
 SELECT -0.5 / 0
@@ -55,7 +55,7 @@ SELECT -0.5 / 0
 └─────────────────┘
 ```
 
-- `NaN` – Not a number.
+- `NaN` – 非数字
 
 ```
 SELECT 0 / 0
@@ -67,5 +67,4 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-  See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md#query_language-queries-order_by).
-
+请参阅本节中的`NaN`排序规则 [ORDER BY clause](../query_language/select.md#query_language-queries-order_by)

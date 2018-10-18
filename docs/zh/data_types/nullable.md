@@ -2,22 +2,24 @@
 
 # Nullable(TypeName)
 
-Allows to store special marker ([NULL](../query_language/syntax.md#null-literal)) that denotes "missing value" alongside normal values allowed by `TypeName`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that don't have a value will store `NULL`.
+允许存储的特殊标记 ([NULL](../query_language/syntax.md#null-literal)) 表示缺失值，可以与'TypeName`的正常值存放一起例如，`Nullable(Int8)`类型的列可以存储`Int8`类型值，而没有值的行将存储'NULL`
 
-For a `TypeName`, you can't use composite data types [Array](array.md#data_type is array) and [Tuple](tuple.md#data_type-tuple). Composite data types can contain `Nullable` type values, such as `Array(Nullable(Int8))`.
+对于 `TypeName`，您不能使用复合数据类型 [Array](array.md#data_type is array) 和 [Tuple](tuple.md#data_type-tuple)复合数据类型可以包含`Nullable`类型值，例如`Array(Nullable(Int8))`
 
-A `Nullable` type field can't be included in table indexes.
+`Nullable` 类型字段不能包含在表索引中
 
-`NULL` is the default value for any `Nullable` type, unless specified otherwise in the ClickHouse server configuration.
+除非在ClickHouse服务器配置中指定，否则`NULL`是任何`Nullable`类型的默认值
 
-## Storage features
+## 存储特征
 
-To store `Nullable` type values in table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and default value of corresponding data type for each table row. Because of additional file, `Nullable` column consumes additional storage space compared to similar normal one.
+为了在表的列中存储`Nullable`类型值，ClickHouse除了使用普通值文件外，还使用一个带有 `NULL` 掩码的单独文件掩码文件中的条目允许ClickHouse区分每个表行的`NULL`和相应数据类型的默认值由于附加文件，`Nullable`列与类似的普通文件相比消耗额外的存储空间
 
-!!! info "Note"
-    Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
+!!! 注意点
+    使用`Nullable`几乎总是对性能产生负面影响，在设计数据库时请记住这一点
 
-## Usage example
+掩码文件中的条目允许ClickHouse区分每个表行的对应数据类型的"NULL"和默认值由于有额外的文件，"Nullable"列比普通列消耗更多的存储空间
+
+## 用法示例
 
 ```
 :) CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

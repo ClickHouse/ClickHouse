@@ -2,14 +2,14 @@
 
 # DateTime
 
-Date with time. Stored in four bytes as a Unix timestamp (unsigned). Allows storing values in the same range as for the Date type. The minimal value is output as 0000-00-00 00:00:00.
-The time is stored with accuracy up to one second (without leap seconds).
 
-## Time Zones
+时间戳类型用四个字节存储Unix时间戳(无符号) 允许存储与日期类型相同的范围内的值 最小值输出为0000-00-00 00:00:00 时间精确到一秒钟（没有闰秒）
 
-The date with time is converted from text (divided into component parts) to binary and back, using the system's time zone at the time the client or server starts. In text format, information about daylight savings is lost.
+## 时区
 
-By default, the client switches to the timezone of the server when it connects. You can change this behavior by enabling the client command-line option `--use_client_time_zone`.
+在客户机或服务器启动时，使用系统的时区，将带有时间的日期从文本(被分为组件部分)转换为二进制并返回在文本格式中，有关夏令时的信息会丢失
 
-So when working with a textual date (for example, when saving text dumps), keep in mind that there may be ambiguity during changes for daylight savings time, and there may be problems matching data if the time zone changed.
+默认情况下，客户端在连接时切换到服务器的时区 您可以通过启用客户端命令行选项`--use_client_time_zone`来更改此行为
+
+因此，在处理文本日期时（例如，在保存文本转储时），请记住在夏令时更改期间可能存在歧义，如果时区发生更改，则可能存在匹配数据的问题
 

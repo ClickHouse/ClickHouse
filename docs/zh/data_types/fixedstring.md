@@ -1,10 +1,10 @@
 # FixedString(N)
 
-A fixed-length string of N bytes (not characters or code points). N must be a strictly positive natural number.
-When the server reads a string that contains fewer bytes (such as when parsing INSERT data), the string is padded to N bytes by appending null bytes at the right.
-When the server reads a string that contains more bytes, an error message is returned.
-When the server writes a string (such as when outputting the result of a SELECT query), null bytes are not trimmed off of the end of the string, but are output.
-Note that this behavior differs from MySQL behavior for the CHAR type (where strings are padded with spaces, and the spaces are removed for output).
+N字节的固定长度字符串（不是字符或代码点）N必须是正自然数
+当服务器读取字节数小于N字节的字符串（例如解析INSERT数据时），通过在右侧附加空字节将字符串填充为N个字节
+当服务器读取字节数大于N字节的字符串，将返回错误消息
+当服务器写入一个字符串（例如，当输出SELECT查询的结果）时，NULL字节不会从字符串的末尾被移除，而是被输出 
+请注意，此行为与MySQL的CHAR类型不同（其中字符串用空格填充，并且输出时删除空格）
 
-Fewer functions can work with the FixedString(N) type than with String, so it is less convenient to use.
+使用FixedString（N）类型的函数比使用String的函数少，因此使用起来不太方便
 

@@ -1,7 +1,6 @@
 # Date
 
-A date. Stored in two bytes as the number of days since 1970-01-01 (unsigned). Allows storing values from just after the beginning of the Unix Epoch to the upper threshold defined by a constant at the compilation stage (currently, this is until the year 2106, but the final fully-supported year is 2105).
-The minimum value is output as 0000-00-00.
+日期类型，用两个字节存储，表示自1970-01-01(无符号)以来的天数允许存储从Unix Epoch开始到编译阶段定义的上限阈值常量（目前上限是2106年，但最终完全支持的年份为2105）最小值输出为0000-00-00
 
-The date is stored without the time zone.
+日期存储不含有时区
 
