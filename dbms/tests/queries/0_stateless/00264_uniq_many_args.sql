@@ -1,5 +1,6 @@
 SELECT
     uniq(x), uniq((x)), uniq(x, y), uniq((x, y)), uniq(x, y, z), uniq((x, y, z)),
+    uniqCombined(x), uniqCombined((x)), uniqCombined(x, y), uniqCombined((x, y)), uniqCombined(x, y, z), uniqCombined((x, y, z)),
     uniqCombined(17)(x), uniqCombined(17)((x)), uniqCombined(17)(x, y), uniqCombined(17)((x, y)), uniqCombined(17)(x, y, z), uniqCombined(17)((x, y, z)),
     uniqHLL12(x), uniqHLL12((x)), uniqHLL12(x, y), uniqHLL12((x, y)), uniqHLL12(x, y, z), uniqHLL12((x, y, z)),
     uniqExact(x), uniqExact((x)), uniqExact(x, y), uniqExact((x, y)), uniqExact(x, y, z), uniqExact((x, y, z)),
@@ -16,6 +17,7 @@ FROM
 
 SELECT k,
     uniq(x), uniq((x)), uniq(x, y), uniq((x, y)), uniq(x, y, z), uniq((x, y, z)),
+    uniqCombined(x), uniqCombined((x)), uniqCombined(x, y), uniqCombined((x, y)), uniqCombined(x, y, z), uniqCombined((x, y, z)),
     uniqCombined(17)(x), uniqCombined(17)((x)), uniqCombined(17)(x, y), uniqCombined(17)((x, y)), uniqCombined(17)(x, y, z), uniqCombined(17)((x, y, z)),
     uniqHLL12(x), uniqHLL12((x)), uniqHLL12(x, y), uniqHLL12((x, y)), uniqHLL12(x, y, z), uniqHLL12((x, y, z)),
     uniqExact(x), uniqExact((x)), uniqExact(x, y), uniqExact((x, y)), uniqExact(x, y, z), uniqExact((x, y, z)),
