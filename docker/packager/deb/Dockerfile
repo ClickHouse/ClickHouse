@@ -7,6 +7,7 @@ RUN apt-get update -y \
             fakeroot \
             ccache \
             distcc \
+            distcc-pump \
             cmake \
             curl \
             gcc-7 \
