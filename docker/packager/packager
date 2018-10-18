@@ -70,7 +70,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
         result.append("CCACHE_PREFIX={}".format(cache))
 
     if distcc_hosts:
-        hosts_with_params = ["{}/24,lz4".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
+        hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
         result.append('DISTCC_HOSTS="{}"'.format(" ".join(hosts_with_params)))
     elif cache == "distcc":
         result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))

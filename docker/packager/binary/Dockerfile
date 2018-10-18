@@ -7,6 +7,7 @@ RUN apt-get update -y \
             cmake \
             ccache \
             distcc \
+            distcc-pump \
             curl \
             gcc-7 \
             g++-7 \
