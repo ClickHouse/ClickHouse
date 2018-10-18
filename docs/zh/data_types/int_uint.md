@@ -2,7 +2,7 @@
 
 # UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 
-带或不带符号的固定长度的整数
+带或不带符号的固定长度的整数。
 
 ## Int 范围
 

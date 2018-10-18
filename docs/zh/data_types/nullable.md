@@ -2,7 +2,7 @@
 
 # Nullable(TypeName)
 
-允许存储的特殊标记 ([NULL](../query_language/syntax.md#null-literal)) 表示缺失值，可以与'TypeName`的正常值存放一起例如，`Nullable(Int8)`类型的列可以存储`Int8`类型值，而没有值的行将存储'NULL`
+允许存储的特殊标记 ([NULL](../query_language/syntax.md#null-literal)) 表示"缺失值"，可以与'TypeName`的正常值存放一起例如，`Nullable(Int8)`类型的列可以存储`Int8`类型值，而没有值的行将存储'NULL`
 
 对于 `TypeName`，您不能使用复合数据类型 [Array](array.md#data_type is array) 和 [Tuple](tuple.md#data_type-tuple)复合数据类型可以包含`Nullable`类型值，例如`Array(Nullable(Int8))`
 
