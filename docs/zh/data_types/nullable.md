@@ -2,10 +2,9 @@
 
 # Nullable(TypeName)
 
-允许加上一个符号 ([NULL](../query_language/syntax.md#null-literal)) 表示“缺失值”和 `TypeName` 允许的正常值。 例如，`Nullable（Int8）` 类型列可以存储 `Int8` 类型值，而没有值的行将存储 `NULL` 。
+允许用特殊标记 ([NULL](../query_language/syntax.md#null-literal)) 表示"缺失值"，可以与 `TypeName` 的正常值存放一起。例如，`Nullable(Int8)` 类型的列可以存储 `Int8` 类型值，而没有值的行将存储 `NULL`。
 
-对于`TypeName`，您不能使用复合数据类型 [Array](array.md#data_type is array) 和 [Tuple](tuple.md#data_type-tuple)。 复合数据类型可以包含 `Nullable` 类型值，例如 `Array (Nullable(Int8))`。
-
+对于 `TypeName`，不能使用复合数据类型 [Array](array.md#data_type is array) 和 [Tuple](tuple.md#data_type-tuple)。复合数据类型可以包含 `Nullable` 类型值，例如`Array(Nullable(Int8))`。
 
 `Nullable` 类型字段不能包含在表索引中。
 
@@ -15,11 +14,12 @@
 
 要在表的列中存储 `Nullable` 类型值，ClickHouse 除了使用带有值的普通文件外，还使用带有 `NULL` 掩码的单独文件。 掩码文件中的条目允许 ClickHouse 区分每个表行的 `NULL` 和相应数据类型的默认值。 由于附加了新文件，`Nullable` 列与类似的普通文件相比消耗额外的存储空间。
 
-!!! info "Note"
-    使用 `Nullable` 几乎总是会对性能产生负面影响，在设计数据库时请记住这一点。
-    
+!!! 注意点
+    使用 `Nullable` 几乎总是对性能产生负面影响，在设计数据库时请记住这一点
 
-## 使用案例
+掩码文件中的条目允许ClickHouse区分每个表行的对应数据类型的"NULL"和默认值由于有额外的文件，"Nullable"列比普通列消耗更多的存储空间
+
+## 用法示例
 
 ```
 :) CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
@@ -55,5 +55,3 @@ FROM t_null
 
 2 rows in set. Elapsed: 0.144 sec.
 ```
-
-[来源文章](https://clickhouse.yandex/docs/en/data_types/nullable/) <!--hide-->
