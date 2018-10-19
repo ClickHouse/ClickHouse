@@ -2,7 +2,7 @@
 
 # CollapsingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds to data parts merge algorithm the logic of rows collapsing.
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm.
 
 `CollapsingMergeTree` deletes (collapses) pairs of rows by specific rules. The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
 
@@ -27,7 +27,7 @@ For a description of request parameters, see [request description](../../query_l
 
 **CollapsingMergeTree Parameters**
 
-- `sign` — Name of the column with the type of row: `1` — "state" row, `-1` — "cancel" row.
+- `sign` — Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row.
 
     Column data type — `Int8`.
 
@@ -35,7 +35,7 @@ For a description of request parameters, see [request description](../../query_l
 
 When creating a `CollapsingMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
 
-### Deprecated Method for Creating a Table
+<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
 !!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
@@ -54,6 +54,7 @@ All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
 - `sign` — Name of the column with the type of row: `1` — "state" row, `-1` — "cancel" row.
 
     Column Data Type — `Int8`.
+</details>
 
 <a name="collapsingmergetree-algorithm"></a>
 
@@ -121,7 +122,7 @@ For each resulting data part ClickHouse saves:
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
 
-The `Sign` is required because the merging algorithm doesn't guarantee that all of the rows with the same primary key will be in the same resulting data part and even on the same physical server.  ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely "collapsed" data from `CollapsingMergeTree` table.
+The `Sign` is required because the merging algorithm doesn't guarantee that all of the rows with the same primary key will be in the same resulting data part and even on the same physical server. ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. The aggregation is required if there is a need to get completely "collapsed" data from `CollapsingMergeTree` table.
 
 To finalize collapsing write a query with `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and so on, and also add `HAVING sum(Sign) > 0`.
 
@@ -166,7 +167,7 @@ INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 
 
 We use two `INSERT` queries to create two different data parts. If we insert the data with one query ClickHouse creates one data part and will not perform any merge ever.
 
-Getting the data
+Getting the data:
 
 ```
 SELECT * FROM UAct

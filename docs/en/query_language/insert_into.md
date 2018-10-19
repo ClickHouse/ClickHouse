@@ -12,7 +12,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case, the rest of the columns are filled with:
 
-- The values calculated from the `DEFAULT`  expressions specified in the table definition.
+- The values calculated from the `DEFAULT` expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
 If [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), columns that do not have `DEFAULT` defined must be listed in the query.
@@ -40,6 +40,8 @@ INSERT INTO t FORMAT TabSeparated
 ```
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
+
+<a name="queries-insert-select"></a>
 
 ### Inserting The Results of `SELECT`
 

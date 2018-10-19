@@ -75,7 +75,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 `index_granularity` можно было не указывать, поскольку 8192 — это значение по умолчанию.
 
-### Устаревший способ создания таблицы
+<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
 
 !!! attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
@@ -103,6 +103,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 ```
 
 Движок `MergeTree` сконфигурирован таким же образом, как и в примере выше для основного способа конфигурирования движка.
+</details>
 
 ## Хранение данных
 
