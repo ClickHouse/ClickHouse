@@ -72,13 +72,12 @@ void QueryAliasesVisitor::getNodeAlias(const ASTPtr & ast, Aliases & aliases, co
 
         if (subquery->alias.empty())
         {
-            size_t subquery_index = 1;
+            static std::atomic_uint64_t subquery_index = 1;
             while (true)
             {
-                alias = "_subquery" + toString(subquery_index);
-                if (!aliases.count("_subquery" + toString(subquery_index)))
+                alias = "_subquery" + std::to_string(subquery_index++);
+                if (!aliases.count(alias))
                     break;
-                ++subquery_index;
             }
 
             subquery->setAlias(alias);
