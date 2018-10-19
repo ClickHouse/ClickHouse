@@ -30,7 +30,7 @@ bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpres
     return std::tie(this->or_function, this->expression) < std::tie(rhs.or_function, rhs.expression);
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, LogicalExpressionsOptimizerSettings && settings_)
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, ExtractedSettings && settings_)
     : select_query(select_query_), settings(settings_)
 {
 }
