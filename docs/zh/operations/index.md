@@ -1,1 +1,4 @@
-../../en/operations/index.md
+# Operations 
+
+
+[Original article](https://clickhouse.yandex/docs/en/operations/) <!--hide-->
