@@ -31,7 +31,7 @@ FinishSortingBlockInputStream::FinishSortingBlockInputStream(
     max_merged_block_size(max_merged_block_size_), limit(limit_)
 {
     if (!isPrefix(description_sorted, description_to_sort))
-        throw Exception("Can`t finish sorting. SortDescription of already sorted stream is not prefix of"
+        throw Exception("Can`t finish sorting. SortDescription of already sorted stream is not prefix of "
             "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
 
     children.push_back(input);
