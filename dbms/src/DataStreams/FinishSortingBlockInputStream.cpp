@@ -29,10 +29,10 @@ FinishSortingBlockInputStream::FinishSortingBlockInputStream(
     size_t max_merged_block_size_, size_t limit_)
     : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
     max_merged_block_size(max_merged_block_size_), limit(limit_)
-    
 {
     if (!isPrefix(description_sorted, description_to_sort))
-        throw Exception("Can`t finish sorting. SortDescription of already sorted streamis not prefix of SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can`t finish sorting. SortDescription of already sorted stream is not prefix of"
+            "SortDescription needed to sort", ErrorCodes::LOGICAL_ERROR);
 
     children.push_back(input);
     header = children.at(0)->getHeader();
@@ -81,11 +81,9 @@ Block FinishSortingBlockInputStream::readImpl()
         if (tail_block)
             blocks.push_back(std::move(tail_block));
 
-        Block block;
-        size_t tail_pos = 0;
         while (true)
         {
-            block = children.back()->read();
+            Block block = children.back()->read();
 
             /// End of input stream, but we can`t return immediatly, we need to merge already read blocks.
             /// Check it later, when get end of stream from impl.
@@ -104,7 +102,7 @@ Block FinishSortingBlockInputStream::readImpl()
             if (size == 0)
                 continue;
 
-            /// We need to sort each block separatly before merging. 
+            /// We need to sort each block separatly before merging.
             sortBlock(block, description_to_sort);
 
             removeConstantsFromBlock(block);
@@ -128,7 +126,7 @@ Block FinishSortingBlockInputStream::readImpl()
                 /// and we should sort these rows in one chunk.
                 if (it != perm.end())
                 {
-                    tail_pos = it - perm.begin();
+                    size_t tail_pos = it - perm.begin();
                     Block head_block = block.cloneEmpty();
                     tail_block = block.cloneEmpty();
 

@@ -57,7 +57,6 @@ int main(int argc, char ** argv)
         sort_descr_final.emplace_back("col1", 1, 1);
         sort_descr_final.emplace_back("col2", 1, 1);
 
-        stream = std::make_shared<PartialSortingBlockInputStream>(stream, sort_descr_final);
         stream = std::make_shared<FinishSortingBlockInputStream>(stream, sort_descr, sort_descr_final, n, 0);
 
         {
@@ -97,6 +96,7 @@ int main(int argc, char ** argv)
                 << std::endl;
         }
     }
+    catch (const Exception & e)
     {
         std::cerr << e.displayText() << std::endl;
         return -1;

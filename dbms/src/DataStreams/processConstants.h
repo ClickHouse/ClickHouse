@@ -6,7 +6,7 @@
 
 namespace DB
 {
-/** Functions for manipulate constansts for sorting. 
+/** Functions for manipulate constants for sorting.
   * See MergeSortingBlocksBlockInputStream and FinishSortingBlockInputStream for details.
 */
 
