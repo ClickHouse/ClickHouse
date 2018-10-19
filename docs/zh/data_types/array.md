@@ -4,11 +4,11 @@
 
 由 `T` 类型元素组成的数组。
 
-`T` 可以是任意类型，包含数组类型。不推荐使用多维数组，ClickHouse 对多维数组的支持有限。例如，不能存储在 `MergeTree` 表中存储多维数组。
+`T` 可以是任意类型，包含数组类型。 但不推荐使用多维数组，ClickHouse 对多维数组的支持有限。例如，不能存储在 `MergeTree` 表中存储多维数组。
 
 ## 创建数组
 
-您可以使用一个函数创建数组：
+您可以使用array函数来创建数组：
 
 ```
 array(T)
@@ -50,7 +50,7 @@ SELECT
 
 ## 使用数据类型
 
-当动态创建数组时，ClickHouse 自动将参数类型定义为可以存储所有列出的参数的最窄的数据类型。如果存在任何 [NULL](../query_language/syntax.md#null-literal) 或者 [Nullable](nullable.md#data_type-nullable) 类型参数，那么数组元素的类型是 [Nullable](nullable.md#data_type-nullable)。
+ClickHouse会自动检测数组元素,并根据元素计算出存储这些元素最小的数据类型。如果在元素中存在[NULL](../query_language/syntax.md#null-literal)或存在[Nullable](nullable.md#data_type-nullable)类型元素，那么数组的元素类型将会变成[Nullable](nullable.md#data_type-nullable)。
 
 如果 ClickHouse 无法确定数据类型，它将产生异常。当尝试同时创建一个包含字符串和数字的数组时会发生这种情况 (`SELECT array(1, 'a')`)。
 
