@@ -45,6 +45,4 @@ void enrichBlockWithConstants(Block & block, const Block & header)
             block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
     }
 }
-
-
 }

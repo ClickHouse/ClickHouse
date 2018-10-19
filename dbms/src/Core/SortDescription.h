@@ -43,4 +43,3 @@ struct SortColumnDescription
 using SortDescription = std::vector<SortColumnDescription>;
 
 }
-
