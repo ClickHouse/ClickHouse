@@ -680,7 +680,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             ///  and assign a stream to read from it.
             while (need_marks > 0 && !parts.empty())
             {
-                RangesInDataPart part = parts.back();
+                RangesInDataPart & part = parts.back();
                 size_t & marks_in_part = sum_marks_in_parts.back();
 
                 /// We will not take too few rows from a part.
