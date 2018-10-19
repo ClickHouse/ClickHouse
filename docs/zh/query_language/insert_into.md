@@ -39,7 +39,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-你能够单独从查询中插入数据，通过命令行或 HTTP 接口. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
+你能够单独从查询中插入数据，通过命令行或 HTTP 接口. 进一步信息, 参见 "[Interfaces](../interfaces/index.md#interfaces)".
 
 ### Inserting The Results of `SELECT`
 
@@ -47,22 +47,22 @@ INSERT INTO t FORMAT TabSeparated
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 ```
 
-Columns are mapped according to their position in the SELECT clause. However, their names in the SELECT expression and the table for INSERT may differ. If necessary, type casting is performed.
+在 SELECT语句中, 根据字段的位置来映射. 然而, 在SELECT表达式中的名称和表名可能不同. 如果必要, 可以进行类型转换.
 
-None of the data formats except Values allow setting values to expressions such as `now()`, `1 + 2`,  and so on. The Values format allows limited use of expressions, but this is not recommended, because in this case inefficient code is used for their execution.
+除了值以外没有其他数据类型允许设置值到表达式中, 例如 `now()`, `1 + 2`, 等. 值格式允许使用有限制的表达式, 但是它并不推荐, 因为在这种情况下, 执行了低效的代码.
 
-Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
-However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
+不支持修改数据分区的查询如下: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
+然而, 你能够使用 `ALTER TABLE ... DROP PARTITION`来删除旧数据.
 
 ### Performance Considerations
 
-`INSERT` sorts the input data by primary key and splits them into partitions by month. If you insert data for mixed months, it can significantly reduce the performance of the `INSERT` query. To avoid this:
+`INSERT` 通过主键来排序数据, 并通过月份来拆分数据到每个分区中. 如果插入的数据有混合的月份, 会显著降低`INSERT` 插入的性能. 应该避免此类操作:
 
-- Add data in fairly large batches, such as 100,000 rows at a time.
-- Group data by month before uploading it to ClickHouse.
+- 大批量地添加数据, 如每次 100,000 行.
+- 在上传数据之前, 通过月份分组数据.
 
-Performance will not decrease if:
+下面操作性能不会下降:
 
-- Data is added in real time.
-- You upload data that is usually sorted by time.
+- 数据实时插入.
+- 上传的数据通过时间来排序.
 
