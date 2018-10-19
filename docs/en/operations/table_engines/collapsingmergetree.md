@@ -4,9 +4,9 @@
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm.
 
-`CollapsingMergeTree` deletes (collapses) pairs of rows by specific rules. The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
+`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#collapsingmergetree-collapsing) section of the document.
 
-See [Collapsing](#collapsingmergetree-algorithm) section of document about `CollapsingMergeTree` input data and algorithm.
+The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
 
 ## Creating a Table
 
@@ -56,7 +56,7 @@ All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
     Column Data Type — `Int8`.
 </details>
 
-<a name="collapsingmergetree-algorithm"></a>
+<a name="collapsingmergetree-collapsing"></a>
 
 ## Collapsing
 
@@ -117,7 +117,7 @@ For each resulting data part ClickHouse saves:
   1. The first "cancel" row, if there is one more "cancel" row than "state" rows.
   1. None of the rows, in all other cases.
 
-      The merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted accidentally more than once.
+      The merge continues, but ClickHouse treats this situation as a logical error and records it in the server log. This error can occur if the same data were inserted more than once.
 
 Thus, collapsing should not change the results of calculating statistics.
 Changes gradually collapsed so that in the end only the last state of almost every object left.
