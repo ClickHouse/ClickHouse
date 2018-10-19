@@ -8,7 +8,7 @@
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
 #if USE_POCO_SQLODBC
-#include <Poco/SQL/ODBC/Utility.h>
+#include <Poco/SQL/ODBC/Utility.h> // Y_IGNORE
 #endif
 #if USE_POCO_DATAODBC
 #include <Poco/Data/ODBC/Utility.h>
