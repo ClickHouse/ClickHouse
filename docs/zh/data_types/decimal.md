@@ -2,17 +2,17 @@
 
 # Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S)
 
-有符号的定点数，在进行加减乘操作的过程中都会保留精度。对于除法，最低有效数字被丢弃（不舍入）。
+有符号的定点数，可在加、减和乘法运算过程中保持精度。对于除法，最低有效数字会被丢弃（不舍入）。
 
 ## 参数
 
-- P - 精度。范围值: [ 1 : 38 ]，决定可以有多少个十进制数字（包括分数）。
-- S - 范围。范围值: [ 0 : P ]，决定小数的位数。
+- P - 精度。有效范围：[1:38]，决定可以有多少个十进制数字（包括分数）。
+- S - 规模。有效范围：[0：P]，决定数字的小数部分中包含的小数位数。
 
 对于不同的 P 参数值 Decimal 表示，以下例子都是同义的：
-- [ 1 : 9 ] 的 P - for Decimal32(S)
-- [ 10 : 18 ] 的 P - for Decimal64(S)
-- [ 19 : 38 ] 的 P - for Decimal128(S)
+- P from [ 1 : 9 ] - for Decimal32(S)
+- P from [ 10 : 18 ] - for Decimal64(S)
+- P from [ 19 : 38 ] - for Decimal128(S)
 
 ## 十进制值范围
 
@@ -20,38 +20,37 @@
 - Decimal64(S) - ( -1 * 10^(18 - S), 1 * 10^(18 - S) )
 - Decimal128(S) - ( -1 * 10^(38 - S), 1 * 10^(38 - S) )
 
-例如, Decimal32(4) 可以表示 -99999.9999 到 99999.9999 范围内步数为 0.0001 的值。
+例如，Decimal32(4) 可以表示 -99999.9999 至 99999.9999 的数值，步长为0.0001。
 
 ## 内部表示方式
 
 数据采用与自身位宽相同的有符号整数存储。这个数在内存中实际范围会高于上述范围，从 String 转换到十进制数的时候会做对应的检查。
 
-Decimal32/Decimal64 通常处理速度要高于Decimal128，这是因为当前通用CPU不支持128位的操作导致的。
+由于现代CPU不支持128位数字，因此 Decimal128 上的操作由软件模拟。所以 Decimal128 的运算速度明显慢于 Decimal32/Decimal64。
 
-## 运算以及结果的类型
+## 运算和结果类型
 
-对Decimal的二进制运算导致更宽的结果类型（具有任何参数顺序）。
+对Decimal的二进制运算导致更宽的结果类型（无论参数的顺序如何）。
 
 - Decimal64(S1) <op> Decimal32(S2) -> Decimal64(S)
 - Decimal128(S1) <op> Decimal32(S2) -> Decimal128(S)
 - Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)
 
-精度变化的规则:
+精度变化的规则：
 
-- 加，减： S = max(S1, S2).
-- 相乘： S = S1 + S2.
-- 相除：S = S1.
+- 加法，减法：S = max(S1, S2)。
+- 乘法：S = S1 + S2。
+- 除法：S = S1。
 
-对于 Decimal 和整数之间的类似操作，结果为一样参数值的 Decimal。
+对于 Decimal 和整数之间的类似操作，结果是与参数大小相同的十进制。
 
-没有定义 Decimal 和 Float32/Float64 的操作。如果你真的需要他们，你可以某一个参数明确地转换为 toDecimal32，toDecimal64， toDecimal128 或 toFloat32， toFloat64。注意这个操作会丢失精度，并且类型转换是一个代价昂贵的操作。
+未定义Decimal和Float32/Float64之间的函数。要执行此类操作，您可以使用：toDecimal32、toDecimal64、toDecimal128 或 toFloat32，toFloat64，需要显式地转换其中一个参数。注意，结果将失去精度，类型转换是昂贵的操作。
 
-有一些函数对 Decimal 进行操作后是返回 Float64 的（例如，var 或 stddev）。计算的结果可能仍在 Decimal 中执行，这可能导致 Float64 和具有相同值的 Decimal 输入计算后的结果不同。
-
+Decimal上的一些函数返回结果为Float64（例如，var或stddev）。对于其中一些，中间计算发生在Decimal中。对于此类函数，尽管结果类型相同，但Float64和Decimal中相同数据的结果可能不同。
 
 ## 溢出检查
 
-在对 Decimal 计算的过程中，数值会有可能溢出。分数中的过多数字被丢弃（不是舍入的）。 整数中的过多数字将导致异常。
+在对 Decimal 类型执行操作时，数值可能会发生溢出。分数中的过多数字被丢弃（不是舍入的）。整数中的过多数字将导致异常。
 
 ```
 SELECT toDecimal32(2, 4) AS x, x / 3
@@ -76,7 +75,7 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 DB::Exception: Decimal math overflow.
 ```
 
-溢出检查会导致操作减慢。 如果已知溢出不可能，则使用`decimal_check_overflow`设置禁用检查是有意义的。 禁用检查并发生溢出时，结果将不正确：
+检查溢出会导致计算变慢。如果已知溢出不可能，则可以通过设置`decimal_check_overflow`来禁用溢出检查，在这种情况下，溢出将导致结果不正确：
 
 ```
 SET decimal_check_overflow = 0;
@@ -88,7 +87,7 @@ SELECT toDecimal32(4.2, 8) AS x, 6 * x
 └────────────┴──────────────────────────────────┘
 ```
 
-溢出检查不仅会在数学运算中进行，还会在值比较中进行：
+溢出检查不仅发生在算术运算上，还发生在比较运算上：
 
 ```
 SELECT toDecimal32(1, 8) < 100
@@ -96,5 +95,3 @@ SELECT toDecimal32(1, 8) < 100
 ```
 DB::Exception: Can't compare.
 ```
-
-[来源文章](https://clickhouse.yandex/docs/en/data_types/decimal/) <!--hide-->
