@@ -1,4 +1,4 @@
-## CREATE DATABASE
+## 创建数据库
 
 创建 'db_name' 数据库.
 
@@ -10,7 +10,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 
 <a name="query_language-queries-create_table"></a>
 
-## CREATE TABLE
+## 创建表
 
 'CREATE TABLE' 语句有几种形式.
 
@@ -43,7 +43,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
 在所有情况下,如果'IF NOT EXISTS'被指定, 如果表已经存在, 查询并不返回一个错误. 在这种情况下, 查询并不做任何事情.
 
-### Default Values
+### 默认值
 
 列描述能够为默认值指定一个表达式, 其中一个方法是:DEFAULT expr, MATERIALIZED expr, ALIAS expr. 
 例如: URLDomain String DEFAULT domain(URL).
@@ -60,13 +60,13 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
 正常的默认值. 如果 INSERT 查询并没有指定对应的字段, 它将通过计算对应的表达式来填充.
 
-`MATERIALIZED expr`
+`物化表达式`
 
 物化表达式. 此类型字段并没有指定插入操作, 因为它经常执行计算任务. 对一个插入操作, 无字段列表, 那么这些字段将不考虑. 另外, 当在一个SELECT查询语句中使用星号时, 此字段并不被替换. 这将保证INSERT INTO SELECT * FROM 的不可变性.
 
-`ALIAS expr`
+`别名表达式`
 
-同义词. 此字段不存储在表中. 
+别名. 此字段不存储在表中. 
 此列的值不插入到表中, 当在一个SELECT查询语句中使用星号时,此字段并不被替换. 
 它能够用在 SELECTs中，如果别名在查询解析时被扩展.
 
@@ -78,9 +78,9 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
 
 
-### Temporary Tables
+### 临时表
 
-在任何情况下, 如果 TEMPORARY 被指定, 一个临时表将被创建. 临时表有如下的特性:
+在任何情况下, 如果临时表被指定, 一个临时表将被创建. 临时表有如下的特性:
 
 - 当会话结束后, 临时表将删除,或者连接丢失.
 - 一个临时表使用内存表引擎创建. 其他的表引擎不支持临时表.
@@ -90,7 +90,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 
 在大多数情况下, 临时表并不能手工创建, 但当查询外部数据或使用分布式全局(GLOBAL)IN时，可以创建临时表. 
 
-Distributed DDL queries (ON CLUSTER clause)
+分布式 DDL 查询 (ON CLUSTER clause)
 ----------------------------------------------
 
 'CREATE', 'DROP', 'ALTER', 和 'RENAME' 查询支持在集群上分布式执行. 例如, 如下的查询在集群中的每个机器节点上创建了 all_hits Distributed 表:
