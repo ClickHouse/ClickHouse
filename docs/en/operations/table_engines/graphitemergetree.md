@@ -46,7 +46,7 @@ The names of these columns should be set in the rollup configuration.
 
 When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
 
-### Deprecated Method for Creating a Table
+<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
 !!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
@@ -66,7 +66,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 All of the parameters excepting `config_section` have the same meaning as in `MergeTree`.
 
 - `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
-
+</details>
 
 ## Rollup configuration
 

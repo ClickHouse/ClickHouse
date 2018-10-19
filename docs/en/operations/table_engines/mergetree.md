@@ -24,7 +24,7 @@ Main features:
 
     If necessary, you can set the data sampling method in the table.
 
-!!!info
+!!! info
     The [Merge](merge.md#table_engine-merge) engine does not belong to the `*MergeTree` family.
 
 <a name="table_engines-mergetree-configuring"></a>
@@ -76,7 +76,7 @@ We also set an expression for sampling as a hash by the user ID. This allows you
 
 `index_granularity` could be omitted because 8192 is the default value.
 
-### Deprecated Method for Creating a Table
+<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
 !!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
@@ -104,6 +104,7 @@ MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)
 ```
 
 The `MergeTree` engine is configured in the same way as in the example above for the main engine configuration method.
+</details>
 
 ## Data Storage
 

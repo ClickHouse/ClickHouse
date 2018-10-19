@@ -34,9 +34,10 @@ The columns must be of a numeric type and must not be in the primary key.
 
 When creating a `SummingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
 
-### Deprecated Method for Creating a Table
+<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -50,6 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
 - `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
+</details>
 
 ## Usage Example
 

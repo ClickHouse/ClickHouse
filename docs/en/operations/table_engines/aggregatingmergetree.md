@@ -8,7 +8,7 @@ You can use `AggregatingMergeTree` tables for incremental data aggregation, incl
 
 The engine processes all columns with [AggregateFunction](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction) type.
 
-It is appropriate to use  `AggregatingMergeTree` if it reduces the number of rows by orders.
+It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
 ## Creating a Table
 
@@ -29,11 +29,12 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
+When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
 
-### Deprecated Method for Creating a Table
+<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
-!!! attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,14 +46,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ```
 
 All of the parameters have the same meaning as in `MergeTree`.
+</details>
 
 ## SELECT and INSERT
 
-To insert data, use `INSERT SELECT` query with aggregate `- State`- functions.
+To insert data, use [INSERT SELECT](../../query_language/insert_into.md#queries-insert-select) query with aggregate `-State`- functions.
 
-When selecting data from `AggregatingMergeTree`  table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `- Merge` suffix.
+When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge` suffix.
 
-In the results of `SELECT` query the values of  `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated`  format with `SELECT`  query  then this dump can be loaded back using `INSERT` query.
+In the results of `SELECT` query the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
 
 ## Example of an Aggregated Materialized View
 

@@ -35,7 +35,7 @@ For a description of request parameters, see [request description](../../query_l
 
 When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
 
-### Deprecated Method for Creating a Table
+<details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
 !!! attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
@@ -53,5 +53,6 @@ All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
 
 - `ver` - column with the version. Optional parameter. For a description, see the text above.
+</details>
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replacingmergetree/) <!--hide-->

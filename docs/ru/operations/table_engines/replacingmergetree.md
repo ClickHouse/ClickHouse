@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 При создании таблицы `ReplacingMergeTree` используются те же [секции](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
 
-### Устаревший способ создания таблицы
+<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
 
 !!! attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
@@ -53,5 +53,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Все параметры, кроме `ver` имеют то же значение, что в и `MergeTree`.
 
 - `ver` — столбец с версией. Необязательный параметр. Описание смотрите выше по тексту.
+</details>
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->
