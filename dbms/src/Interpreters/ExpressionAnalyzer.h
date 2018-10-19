@@ -96,6 +96,15 @@ private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
     struct ExtractedSettings
     {
+        /// for QueryNormalizer
+        const UInt64 max_ast_depth;
+        const UInt64 max_expanded_ast_elements;
+        const String count_distinct_implementation;
+
+        /// for PredicateExpressionsOptimizer
+        const bool enable_optimize_predicate_expression;
+
+        /// for ExpressionAnalyzer
         const bool asterisk_left_columns_only;
         const bool use_index_for_in_with_subqueries;
         const bool enable_conditional_computation;
@@ -105,27 +114,19 @@ private:
         const String join_default_strictness;
         const UInt64 min_equality_disjunction_chain_length;
 
-        /// for PredicateExpressionsOptimizer
-        const bool enable_optimize_predicate_expression;
-
-        /// for QueryNormalizer
-        const UInt64 max_ast_depth;
-        const UInt64 max_expanded_ast_elements;
-        const String count_distinct_implementation;
-
         ExtractedSettings(const Settings & settings)
-        :   asterisk_left_columns_only(settings.asterisk_left_columns_only),
+        :   max_ast_depth(settings.max_ast_depth),
+            max_expanded_ast_elements(settings.max_expanded_ast_elements),
+            count_distinct_implementation(settings.count_distinct_implementation),
+            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
+            asterisk_left_columns_only(settings.asterisk_left_columns_only),
             use_index_for_in_with_subqueries(settings.use_index_for_in_with_subqueries),
             enable_conditional_computation(settings.enable_conditional_computation),
             join_use_nulls(settings.join_use_nulls),
             size_limits_for_set(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode),
             size_limits_for_join(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
             join_default_strictness(settings.join_default_strictness.toString()),
-            min_equality_disjunction_chain_length(settings.optimize_min_equality_disjunction_chain_length),
-            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
-            max_ast_depth(settings.max_ast_depth),
-            max_expanded_ast_elements(settings.max_expanded_ast_elements),
-            count_distinct_implementation(settings.count_distinct_implementation)
+            min_equality_disjunction_chain_length(settings.optimize_min_equality_disjunction_chain_length)
         {}
     };
 

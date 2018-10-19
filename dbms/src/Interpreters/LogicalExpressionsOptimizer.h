@@ -16,15 +16,6 @@ struct Settings;
 class ASTFunction;
 class ASTSelectQuery;
 
-struct LogicalExpressionsOptimizerSettings
-{
-    const UInt64 optimize_min_equality_disjunction_chain_length;
-
-    LogicalExpressionsOptimizerSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
-    :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_)
-    {}
-};
-
 
 /** This class provides functions for optimizing boolean expressions within queries.
   *
@@ -34,9 +25,18 @@ struct LogicalExpressionsOptimizerSettings
   */
 class LogicalExpressionsOptimizer final
 {
+    struct ExtractedSettings
+    {
+        const UInt64 optimize_min_equality_disjunction_chain_length;
+
+        ExtractedSettings(UInt64 optimize_min_equality_disjunction_chain_length_)
+        :   optimize_min_equality_disjunction_chain_length(optimize_min_equality_disjunction_chain_length_)
+        {}
+    };
+
 public:
     /// Constructor. Accepts the root of the query DAG.
-    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, LogicalExpressionsOptimizerSettings && settings_);
+    LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, ExtractedSettings && settings_);
 
     /** Replace all rather long homogeneous OR-chains expr = x1 OR ... OR expr = xN
       * on the expressions `expr` IN (x1, ..., xN).
@@ -100,7 +100,7 @@ private:
 
 private:
     ASTSelectQuery * select_query;
-    const LogicalExpressionsOptimizerSettings settings;
+    const ExtractedSettings settings;
     /// Information about the OR-chains inside the query.
     DisjunctiveEqualityChainsMap disjunctive_equality_chains_map;
     /// Number of processed OR-chains.

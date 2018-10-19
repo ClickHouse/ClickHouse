@@ -44,19 +44,20 @@ class PredicateExpressionsOptimizer
     /// Extracts settings, mostly to show which are used and which are not.
     struct ExtractedSettings
     {
-        const bool enable_optimize_predicate_expression;
-
         /// QueryNormalizer settings
         const UInt64 max_ast_depth;
         const UInt64 max_expanded_ast_elements;
         const String count_distinct_implementation;
 
+        /// for PredicateExpressionsOptimizer
+        const bool enable_optimize_predicate_expression;
+
         template<typename T>
         ExtractedSettings(const T & settings)
-        :   enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
-            max_ast_depth(settings.max_ast_depth),
+        :   max_ast_depth(settings.max_ast_depth),
             max_expanded_ast_elements(settings.max_expanded_ast_elements),
-            count_distinct_implementation(settings.count_distinct_implementation)
+            count_distinct_implementation(settings.count_distinct_implementation),
+            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
         {}
     };
 
