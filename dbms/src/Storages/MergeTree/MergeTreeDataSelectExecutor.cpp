@@ -681,6 +681,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             while (need_marks > 0 && !parts.empty())
             {
                 RangesInDataPart part = parts.back();
+                parts.pop_back();
+
                 size_t & marks_in_part = sum_marks_in_parts.back();
 
                 /// We will not take too few rows from a part.
@@ -704,7 +706,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                     ranges_to_get_from_part = part.ranges;
 
                     need_marks -= marks_in_part;
-                    parts.pop_back();
                     sum_marks_in_parts.pop_back();
                 }
                 else
@@ -727,6 +728,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                         if (range.begin == range.end)
                             part.ranges.pop_back();
                     }
+                    parts.emplace_back(part);
                 }
 
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
