@@ -385,6 +385,17 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER = 408;
     extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 409;
     extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 410;
+    extern const int PTHREAD_ERROR = 411;
+    extern const int NETLINK_ERROR = 412;
+    extern const int CANNOT_SET_SIGNAL_HANDLER = 413;
+    extern const int CANNOT_READLINE = 414;
+    extern const int ALL_REPLICAS_LOST = 415;
+    extern const int REPLICA_STATUS_CHANGED = 416;
+    extern const int EXPECTED_ALL_OR_ANY = 417;
+    extern const int UNKNOWN_JOIN_STRICTNESS = 418;
+    extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN = 419;
+    extern const int CANNOT_UPDATE_COLUMN = 420;
+    extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

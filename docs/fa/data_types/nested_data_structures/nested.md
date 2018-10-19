@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Nested(Name1 Type1, Name2 Type2, ...)
 
@@ -8,7 +8,7 @@
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -31,7 +31,7 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 این مثال `Goals` را به عنوان یک ساختار داده nested تعریف می کند، که می تواند شامل داده های مربوط به conversion (اهداف رسیده) باشد. هر سطر در جدول `visit` می تواند با صفر یا چند coversion ارتباط داشته باشد.
 
@@ -43,7 +43,7 @@ CREATE TABLE test.visits
 
 </div>
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -52,7 +52,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+```
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -67,7 +67,7 @@ LIMIT 10
 └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 ساده ترین راه برای فکر کردن به یک ساختار داده nestet این است که، یک nestet  مجموعه ای از آرایه های چند ستونی با طول ثابت است.
 
@@ -75,7 +75,7 @@ LIMIT 10
 
 </div>
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -85,7 +85,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+```
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │
@@ -100,7 +100,7 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 شما نمیتوانید در قسمت SELECT تمام ساختار داده ی nested را قرار دهید. شما فقط می توانید ستون های فردی که هر کدام بخشی از این ساختار داده هستند را لیست کنید.
 
@@ -111,3 +111,4 @@ LIMIT 10
 دستور ALTER برای عناصر داخل nested بسیار محدود است.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/nested_data_structures/nested/) <!--hide-->

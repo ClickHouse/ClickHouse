@@ -156,7 +156,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(con
 BlockInputStreams IStorageURLBase::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
@@ -170,7 +170,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
         getName(),
-        getSampleBlock(),
+        getHeaderBlock(column_names),
         context,
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};
@@ -186,7 +186,8 @@ BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Sett
 
 void registerStorageURL(StorageFactory & factory)
 {
-    factory.registerStorage("URL", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (!(engine_args.size() == 1 || engine_args.size() == 2))

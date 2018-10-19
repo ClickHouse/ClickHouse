@@ -19,7 +19,7 @@ class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
     PushingToViewsBlockOutputStream(
-        const String & database, const String & table, const StoragePtr & storage,
+        const String & database, const String & table, const StoragePtr & storage_,
         const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
     Block getHeader() const override { return storage->getSampleBlock(); }
@@ -47,6 +47,8 @@ private:
 
     std::vector<ViewInfo> views;
     std::unique_ptr<Context> views_context;
+
+    void process(const Block & block, size_t view_num);
 };
 
 

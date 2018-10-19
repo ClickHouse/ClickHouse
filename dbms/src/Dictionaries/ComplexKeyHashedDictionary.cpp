@@ -45,7 +45,7 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(const ComplexKeyHashedDic
 #define DECLARE(TYPE)\
 void ComplexKeyHashedDictionary::get##TYPE(\
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
-    PaddedPODArray<TYPE> & out) const\
+    ResultArrayType<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
     \
@@ -70,6 +70,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void ComplexKeyHashedDictionary::getString(
@@ -92,7 +95,7 @@ void ComplexKeyHashedDictionary::getString(
 #define DECLARE(TYPE)\
 void ComplexKeyHashedDictionary::get##TYPE(\
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
-    const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const\
+    const PaddedPODArray<TYPE> & def, ResultArrayType<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
     \
@@ -115,6 +118,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void ComplexKeyHashedDictionary::getString(
@@ -135,7 +141,7 @@ void ComplexKeyHashedDictionary::getString(
 #define DECLARE(TYPE)\
 void ComplexKeyHashedDictionary::get##TYPE(\
     const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
-    const TYPE def, PaddedPODArray<TYPE> & out) const\
+    const TYPE def, ResultArrayType<TYPE> & out) const\
 {\
     dict_struct.validateKeyTypes(key_types);\
     \
@@ -158,6 +164,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void ComplexKeyHashedDictionary::getString(
@@ -195,6 +204,10 @@ void ComplexKeyHashedDictionary::has(const Columns & key_columns, const DataType
         case AttributeUnderlyingType::Float32: has<Float32>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::Float64: has<Float64>(attribute, key_columns, out); break;
         case AttributeUnderlyingType::String: has<StringRef>(attribute, key_columns, out); break;
+
+        case AttributeUnderlyingType::Decimal32: has<Decimal32>(attribute, key_columns, out); break;
+        case AttributeUnderlyingType::Decimal64: has<Decimal64>(attribute, key_columns, out); break;
+        case AttributeUnderlyingType::Decimal128: has<Decimal128>(attribute, key_columns, out); break;
     }
 }
 
@@ -244,8 +257,8 @@ void ComplexKeyHashedDictionary::blockToAttributes(const Block & block)
 
         for (const auto attribute_idx : ext::range(0, attributes_size))
         {
-            const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
-            auto &attribute = attributes[attribute_idx];
+            const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+            auto & attribute = attributes[attribute_idx];
             const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
             if (!inserted)
                 should_rollback = true;
@@ -289,7 +302,7 @@ void ComplexKeyHashedDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
 
         stream->readPrefix();
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
             {
@@ -387,6 +400,11 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::Int64: addAttributeSize<Int64>(attribute); break;
             case AttributeUnderlyingType::Float32: addAttributeSize<Float32>(attribute); break;
             case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
+
+            case AttributeUnderlyingType::Decimal32: addAttributeSize<Decimal32>(attribute); break;
+            case AttributeUnderlyingType::Decimal64: addAttributeSize<Decimal64>(attribute); break;
+            case AttributeUnderlyingType::Decimal128: addAttributeSize<Decimal128>(attribute); break;
+
             case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
@@ -424,6 +442,11 @@ ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttribut
         case AttributeUnderlyingType::Int64: createAttributeImpl<Int64>(attr, null_value); break;
         case AttributeUnderlyingType::Float32: createAttributeImpl<Float32>(attr, null_value); break;
         case AttributeUnderlyingType::Float64: createAttributeImpl<Float64>(attr, null_value); break;
+
+        case AttributeUnderlyingType::Decimal32: createAttributeImpl<Decimal32>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal64: createAttributeImpl<Decimal64>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal128: createAttributeImpl<Decimal128>(attr, null_value); break;
+
         case AttributeUnderlyingType::String:
         {
             std::get<String>(attr.null_values) = null_value.get<String>();
@@ -459,6 +482,9 @@ void ComplexKeyHashedDictionary::getItemsNumber(
     DISPATCH(Int64)
     DISPATCH(Float32)
     DISPATCH(Float64)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
 #undef DISPATCH
     else
         throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
@@ -517,6 +543,11 @@ bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const 
         case AttributeUnderlyingType::Int64: return setAttributeValueImpl<Int64>(attribute, key, value.get<Int64>());
         case AttributeUnderlyingType::Float32: return setAttributeValueImpl<Float32>(attribute, key, value.get<Float64>());
         case AttributeUnderlyingType::Float64: return setAttributeValueImpl<Float64>(attribute, key, value.get<Float64>());
+
+        case AttributeUnderlyingType::Decimal32: return setAttributeValueImpl<Decimal32>(attribute, key, value.get<Decimal32>());
+        case AttributeUnderlyingType::Decimal64: return setAttributeValueImpl<Decimal64>(attribute, key, value.get<Decimal64>());
+        case AttributeUnderlyingType::Decimal128: return setAttributeValueImpl<Decimal128>(attribute, key, value.get<Decimal128>());
+
         case AttributeUnderlyingType::String:
         {
             auto & map = *std::get<ContainerPtrType<StringRef>>(attribute.maps);
@@ -604,6 +635,10 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
         case AttributeUnderlyingType::Float32: return getKeys<Float32>(attribute);
         case AttributeUnderlyingType::Float64: return getKeys<Float64>(attribute);
         case AttributeUnderlyingType::String: return getKeys<StringRef>(attribute);
+
+        case AttributeUnderlyingType::Decimal32: return getKeys<Decimal32>(attribute);
+        case AttributeUnderlyingType::Decimal64: return getKeys<Decimal64>(attribute);
+        case AttributeUnderlyingType::Decimal128: return getKeys<Decimal128>(attribute);
     }
     return {};
 }

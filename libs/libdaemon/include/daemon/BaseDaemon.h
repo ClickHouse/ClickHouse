@@ -13,7 +13,6 @@
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
@@ -35,7 +34,7 @@ namespace Poco { class TaskManager; }
 /// #    --config-file или --config - имя файла конфигурации. По умолчанию - config.xml
 /// #    --pid-file - имя PID файла. По умолчанию - pid
 /// #    --log-file - имя лог файла
-/// #    --error-file - имя лог файла, в который будут помещаться только ошибки
+/// #    --errorlog-file - имя лог файла, в который будут помещаться только ошибки
 /// #    --daemon - запустить в режиме демона; если не указан - логгирование будет вестись на консоль
 /// <daemon_name> --daemon --config-file=localfile.xml --pid-file=pid.pid --log-file=log.log --errorlog-file=error.log
 /// \endcode
@@ -58,7 +57,7 @@ public:
     static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
-    ~BaseDaemon();
+    ~BaseDaemon() override;
 
     /// Загружает конфигурацию и "строит" логгеры на запись в файлы
     void initialize(Poco::Util::Application &) override;

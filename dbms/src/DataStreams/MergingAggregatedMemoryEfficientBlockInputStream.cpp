@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
+#include <Common/CurrentThread.h>
 
 
 namespace CurrentMetrics
@@ -175,10 +176,10 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
         {
             auto & child = children[i];
 
-            auto memory_tracker = current_memory_tracker;
-            reading_pool->schedule([&child, memory_tracker]
+            auto thread_group = CurrentThread::getGroup();
+            reading_pool->schedule([&child, thread_group]
             {
-                current_memory_tracker = memory_tracker;
+                CurrentThread::attachToIfDetached(thread_group);
                 setThreadName("MergeAggReadThr");
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                 child->readPrefix();
@@ -196,8 +197,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
           */
 
         for (size_t i = 0; i < merging_threads; ++i)
-            pool.schedule(std::bind(&MergingAggregatedMemoryEfficientBlockInputStream::mergeThread,
-                this, current_memory_tracker));
+            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); } );
     }
 }
 
@@ -293,14 +293,16 @@ void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
 }
 
 
-void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker * memory_tracker)
+void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(ThreadGroupStatusPtr thread_group)
 {
-    setThreadName("MergeAggMergThr");
-    current_memory_tracker = memory_tracker;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
     try
     {
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
+        setThreadName("MergeAggMergThr");
+
         while (!parallel_merge_data->finish)
         {
             /** Receiving next blocks is processing by one thread pool, and merge is in another.
@@ -480,10 +482,10 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
         {
             if (need_that_input(input))
             {
-                auto memory_tracker = current_memory_tracker;
-                reading_pool->schedule([&input, &read_from_input, memory_tracker]
+                auto thread_group = CurrentThread::getGroup();
+                reading_pool->schedule([&input, &read_from_input, thread_group]
                 {
-                    current_memory_tracker = memory_tracker;
+                    CurrentThread::attachToIfDetached(thread_group);
                     setThreadName("MergeAggReadThr");
                     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                     read_from_input(input);

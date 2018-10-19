@@ -45,10 +45,19 @@ public:
 
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
 
+/// Cache for functions result if it was executed on low cardinality column.
+class PreparedFunctionLowCardinalityResultCache;
+using PreparedFunctionLowCardinalityResultCachePtr = std::shared_ptr<PreparedFunctionLowCardinalityResultCache>;
+
 class PreparedFunctionImpl : public IPreparedFunction
 {
 public:
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final;
+
+    /// Create cache which will be used to store result of function executed on LowCardinality column.
+    /// Only for default LowCardinality implementation.
+    /// Cannot be called concurrently for the same object.
+    void createLowCardinalityResultCache(size_t cache_size);
 
 protected:
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
@@ -68,11 +77,11 @@ protected:
       */
     virtual bool useDefaultImplementationForConstants() const { return false; }
 
-    /** If function arguments has single column with dictionary and all other arguments are constants, call function on nested column.
-      * Otherwise, convert all columns with dictionary to ordinary columns.
-      * Returns ColumnWithDictionary if at least one argument is ColumnWithDictionary.
+    /** If function arguments has single low cardinality column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all low cardinality columns to ordinary columns.
+      * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
       */
-    virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
+    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
     /** Some arguments could remain constant during this implementation.
       */
@@ -85,11 +94,14 @@ protected:
 
 private:
     bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
-                                           size_t input_rows_count);
+                                       size_t input_rows_count);
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
-                                                       size_t input_rows_count);
-    void executeWithoutColumnsWithDictionary(Block & block, const ColumnNumbers & arguments, size_t result,
+                                                   size_t input_rows_count);
+    void executeWithoutLowCardinalityColumns(Block & block, const ColumnNumbers & arguments, size_t result,
                                              size_t input_rows_count);
+
+    /// Cache is created by function createLowCardinalityResultCache()
+    PreparedFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
 };
 
 using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
@@ -108,12 +120,12 @@ public:
 
     /// Do preparations and return executable.
     /// sample_block should contain data types of arguments and values of constants, if relevant.
-    virtual PreparedFunctionPtr prepare(const Block & sample_block) const = 0;
+    virtual PreparedFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
     /// TODO: make const
     virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-        return prepare(block)->execute(block, arguments, result, input_rows_count);
+        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -280,12 +292,12 @@ protected:
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
     /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl().
-      * If function arguments has types with dictionary, convert them to ordinary types.
-      * getReturnType returns ColumnWithDictionary if at least one argument type is ColumnWithDictionary.
+      * If function arguments has low cardinality types, convert them to ordinary types.
+      * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
       */
-    virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
+    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
-    /// If it isn't, will convert all ColumnWithDictionary arguments to full columns.
+    /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
@@ -297,7 +309,7 @@ protected:
 
 private:
 
-    DataTypePtr getReturnTypeWithoutDictionary(const ColumnsWithTypeAndName & arguments) const;
+    DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
 
 /// Previous function interface.
@@ -312,7 +324,7 @@ public:
     /// Override this functions to change default implementation behavior. See details in IMyFunction.
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool canBeExecutedOnDefaultArguments() const override { return true; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return isDeterministicInScopeOfQuery(); }
@@ -322,7 +334,7 @@ public:
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const final
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const final
     {
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -394,7 +406,7 @@ protected:
     }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
-    bool useDefaultImplementationForColumnsWithDictionary() const final { return function->useDefaultImplementationForColumnsWithDictionary(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
 
@@ -421,7 +433,10 @@ public:
 
 #endif
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override { return std::make_shared<DefaultExecutable>(function); }
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    {
+        return std::make_shared<DefaultExecutable>(function);
+    }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
 
@@ -462,7 +477,7 @@ protected:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return function->useDefaultImplementationForColumnsWithDictionary(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

@@ -5,8 +5,15 @@
 #include <memory>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
 #include <port/clock.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event ThrottlerSleepMicroseconds;
+}
 
 
 namespace DB
@@ -69,10 +76,14 @@ public:
             if (desired_ns > elapsed_ns)
             {
                 UInt64 sleep_ns = desired_ns - elapsed_ns;
-                timespec sleep_ts;
+                ::timespec sleep_ts;
                 sleep_ts.tv_sec = sleep_ns / 1000000000;
                 sleep_ts.tv_nsec = sleep_ns % 1000000000;
-                nanosleep(&sleep_ts, nullptr);    /// NOTE Returns early in case of a signal. This is considered normal.
+
+                /// NOTE: Returns early in case of a signal. This is considered normal.
+                ::nanosleep(&sleep_ts, nullptr);
+
+                ProfileEvents::increment(ProfileEvents::ThrottlerSleepMicroseconds, sleep_ns / 1000UL);
             }
         }
 

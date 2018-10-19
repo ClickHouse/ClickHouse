@@ -38,3 +38,5 @@
 ## dictHas
 `dictHas('dict_name', id)`
 - проверить наличие ключа в словаре. Возвращает значение типа UInt8, равное 0, если ключа нет и 1, если ключ есть.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ext_dict_functions/) <!--hide-->

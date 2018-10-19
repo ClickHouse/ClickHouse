@@ -2,15 +2,19 @@
 
 ## System Requirements
 
-This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, with x86_64 architecture and support for the SSE 4.2 instruction set.
+Installation from the official repository requires Linux with x86_64 architecture and support for the SSE 4.2 instruction set.
+
 To check for SSE 4.2:
 
 ```bash
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-We recommend using Ubuntu Trusty, Ubuntu Xenial, or Ubuntu Precise.
-The terminal must use UTF-8 encoding (the default in Ubuntu).
+We recommend using Ubuntu or Debian. The terminal must use UTF-8 encoding.
+
+For rpm-based systems, you can use 3rd-party packages: https://packagecloud.io/altinity/clickhouse or install debian packages.
+
+ClickHouse also works on FreeBSD and Mac OS X. It can be compiled for x86_64 processors without SSE 4.2 support, and for AArch64 CPUs.
 
 ## Installation
 
@@ -20,7 +24,7 @@ For testing and development, the system can be installed on a single server or o
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
-```text
+```
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
@@ -47,14 +51,14 @@ To compile, follow the instructions: build.md
 You can compile packages and install them.
 You can also use programs without installing packages.
 
-```text
+```
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
 For the server, create a catalog with data, such as:
 
-```text
+```
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```
@@ -62,7 +66,7 @@ For the server, create a catalog with data, such as:
 (Configurable in the server config.)
 Run 'chown' for the desired user.
 
-Note the path to logs in the server config (src/dbms/programs/config.xml).
+Note the path to logs in the server config (src/dbms/programs/server/config.xml).
 
 ### Other Installation Methods
 
@@ -133,3 +137,5 @@ SELECT 1
 
 To continue experimenting, you can try to download from the test data sets.
 
+
+[Original article](https://clickhouse.yandex/docs/en/getting_started/) <!--hide-->

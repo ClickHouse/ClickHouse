@@ -78,7 +78,7 @@
 
 Пример:
 
-```text
+```
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 ```
 
@@ -152,6 +152,8 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Отсутствует ограничение на использование сетевой полосы при восстановлении. Имейте это ввиду, если восстанавливаете сразу много реплик.
 
+<a name="convert-mergetree-to-replicated"></a>
+
 ## Преобразование из MergeTree в ReplicatedMergeTree
 
 Здесь и далее, под `MergeTree` подразумеваются все движки таблиц семейства `MergeTree`, так же для `ReplicatedMergeTree`.
@@ -178,3 +180,5 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 ## Восстановление в случае потери или повреждения метаданных на ZooKeeper кластере
 
 Если данные в ZooKeeper оказались утеряны или повреждены, то вы можете сохранить данные, переместив их в нереплицируемую таблицу, как описано в пункте выше.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/replication/) <!--hide-->

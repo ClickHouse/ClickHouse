@@ -1,7 +1,7 @@
 project (ClickHouse)
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 3.3)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
@@ -18,7 +18,7 @@ else ()
 endif ()
 
 # Check that submodules are present only if source was downloaded with git
-if (EXISTS "${ClickHouse_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
@@ -32,9 +32,24 @@ if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
 endif ()
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
+message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+
+option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
+option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+if (NOT MAKE_STATIC_LIBRARIES)
+    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
+endif ()
+
+if (SPLIT_SHARED_LIBRARIES)
+    set (LINK_MODE SHARED)
+endif ()
+
+if (USE_STATIC_LIBRARIES)
+    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
+endif ()
 
 include (cmake/sanitize.cmake)
 
@@ -63,22 +78,7 @@ endif ()
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
 
-option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
-option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
-if (NOT MAKE_STATIC_LIBRARIES)
-    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
-    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
-endif ()
-
-if (SPLIT_SHARED_LIBRARIES)
-    set (SPLIT_SHARED SHARED)
-endif ()
-
-if (USE_STATIC_LIBRARIES)
-    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
-endif ()
-
-if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
     if (OS_LINUX)
@@ -147,7 +147,7 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND OS_FREEBSD))
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
     # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
@@ -158,7 +158,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 include (cmake/test_compiler.cmake)
 
-if (OS_LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if (OS_LINUX AND COMPILER_CLANG)
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS}")
 
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
@@ -218,7 +218,7 @@ else ()
     set (CLICKHOUSE_ETC_DIR "${CMAKE_INSTALL_PREFIX}/etc")
 endif ()
 
-option (UNBUNDLED "Try find all libraries in system (if fail - use bundled from contrib/)" OFF)
+option (UNBUNDLED "Try find all libraries in system. We recommend to avoid this mode for production builds, because we cannot guarantee exact versions and variants of libraries your system has installed. This mode exists for enthusiastic developers who search for trouble. Also it is useful for maintainers of OS packages." OFF)
 if (UNBUNDLED)
     set(NOT_UNBUNDLED 0)
 else ()
@@ -254,6 +254,7 @@ include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
 include (cmake/find_cpuid.cmake)
+include (cmake/find_consistent-hashing.cmake)
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
 endif ()
@@ -273,12 +274,6 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
-
-# Directory for Yandex specific files
-set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
-if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-    add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
-endif ()
 
 add_subdirectory (contrib)
 add_subdirectory (libs)

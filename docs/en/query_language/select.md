@@ -2,7 +2,7 @@
 
 `SELECT` performs data retrieval.
 
-```sql
+``` sql
 SELECT [DISTINCT] expr_list
     [FROM [db.]table | (subquery) | table_function] [FINAL]
     [SAMPLE sample_coeff]
@@ -55,7 +55,7 @@ In the second case, the query will be executed on a sample of no more than 'n' r
 
 Example:
 
-```sql
+``` sql
 SELECT
     Title,
     count() * 10 AS PageViews
@@ -86,7 +86,7 @@ Allows executing JOIN with an array or nested data structure. The intent is simi
 
 `ARRAY JOIN` is essentially `INNER JOIN` with an array. Example:
 
-```text
+```
 :) CREATE TABLE arrays_test (s String, arr Array(UInt8)) ENGINE = Memory
 
 CREATE TABLE arrays_test
@@ -139,7 +139,7 @@ ARRAY JOIN arr
 
 An alias can be specified for an array in the ARRAY JOIN clause. In this case, an array item can be accessed by this alias, but the array itself by the original name. Example:
 
-```text
+```
 :) SELECT s, arr, a FROM arrays_test ARRAY JOIN arr AS a
 
 SELECT s, arr, a
@@ -159,7 +159,7 @@ ARRAY JOIN arr AS a
 
 Multiple arrays of the same size can be comma-separated in the ARRAY JOIN clause. In this case, JOIN is performed with them simultaneously (the direct sum, not the direct product). Example:
 
-```text
+```
 :) SELECT s, arr, a, num, mapped FROM arrays_test ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS mapped
 
 SELECT s, arr, a, num, mapped
@@ -195,7 +195,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num
 
 ARRAY JOIN also works with nested data structures. Example:
 
-```text
+```
 :) CREATE TABLE nested_test (s String, nest Nested(x UInt8, y UInt32)) ENGINE = Memory
 
 CREATE TABLE nested_test
@@ -250,7 +250,7 @@ ARRAY JOIN nest
 
 When specifying names of nested data structures in ARRAY JOIN, the meaning is the same as ARRAY JOIN with all the array elements that it consists of. Example:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x, nest.y
 
 SELECT s, `nest.x`, `nest.y`
@@ -270,7 +270,7 @@ ARRAY JOIN `nest.x`, `nest.y`
 
 This variation also makes sense:
 
-```text
+```
 :) SELECT s, nest.x, nest.y FROM nested_test ARRAY JOIN nest.x
 
 SELECT s, `nest.x`, `nest.y`
@@ -290,7 +290,7 @@ ARRAY JOIN `nest.x`
 
 An alias may be used for a nested data structure, in order to select either the JOIN result or the source array. Example:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y FROM nested_test ARRAY JOIN nest AS n
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`
@@ -310,7 +310,7 @@ ARRAY JOIN nest AS n
 
 Example of using the arrayEnumerate function:
 
-```text
+```
 :) SELECT s, n.x, n.y, nest.x, nest.y, num FROM nested_test ARRAY JOIN nest AS n, arrayEnumerate(nest.x) AS num
 
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -336,7 +336,7 @@ The corresponding conversion can be performed before the WHERE/PREWHERE clause (
 
 The normal JOIN, which is not related to ARRAY JOIN described above.
 
-```sql
+``` sql
 [GLOBAL] ANY|ALL INNER|LEFT [OUTER] JOIN (subquery)|table USING columns_list
 ```
 
@@ -371,7 +371,7 @@ When running a JOIN, there is no optimization of the order of execution in relat
 
 Example:
 
-```sql
+``` sql
 SELECT
     CounterID,
     hits,
@@ -395,7 +395,7 @@ ORDER BY hits DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─CounterID─┬───hits─┬─visits─┐
 │   1143050 │ 523264 │  13665 │
 │    731962 │ 475698 │ 102716 │
@@ -426,12 +426,20 @@ Among the various types of JOINs, the most efficient is ANY LEFT JOIN, then ANY 
 
 If you need a JOIN for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a JOIN might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of JOIN. For more information, see the section "External dictionaries".
 
+<a name="query_language-queries-where"></a>
+
 ### WHERE Clause
+
+The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1,`  `JOIN` works like in standard SQL.
+
+If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
 
 If indexes are supported by the database table engine, the expression is evaluated on the ability to use indexes.
+
+<a name="query_language-queries-prewhere"></a>
 
 ### PREWHERE Clause
 
@@ -461,7 +469,7 @@ If a query contains only table columns inside aggregate functions, the GROUP BY 
 
 Example:
 
-```sql
+``` sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -475,7 +483,7 @@ As opposed to MySQL (and conforming to standard SQL), you can't get some value o
 
 Example:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),
@@ -489,6 +497,38 @@ For every different key value encountered, GROUP BY calculates a set of aggregat
 GROUP BY is not supported for array columns.
 
 A constant can't be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: `count()`.
+
+#### NULL processing
+
+ For grouping, ClickHouse interprets [NULL](syntax.md#null-literal) as a value, and `NULL=NULL`.
+
+ Here's an example to show what this means.
+
+ Assume you have this table:
+
+ ```
+ ┌─x─┬────y─┐
+ │ 1 │    2 │
+ │ 2 │ ᴺᵁᴸᴸ │
+ │ 3 │    2 │
+ │ 3 │    3 │
+ │ 3 │ ᴺᵁᴸᴸ │
+ └───┴──────┘
+ ```
+
+ The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
+
+ ```
+ ┌─sum(x)─┬────y─┐
+ │      4 │    2 │
+ │      3 │    3 │
+ │      5 │ ᴺᵁᴸᴸ │
+ └────────┴──────┘
+ ```
+
+ You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this value.
+
+ If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
 #### WITH TOTALS Modifier
 
@@ -539,7 +579,7 @@ LIMIT N BY COLUMNS selects the top N rows for each group of COLUMNS. LIMIT N BY 
 
 Example:
 
-```sql
+``` sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     domainWithoutWWW(REFERRER_URL) AS referrer,
@@ -572,6 +612,48 @@ We only recommend using COLLATE for final sorting of a small number of rows, sin
 
 Rows that have identical values for the list of sorting expressions are output in an arbitrary order, which can also be nondeterministic (different each time).
 If the ORDER BY clause is omitted, the order of the rows is also undefined, and may be nondeterministic as well.
+
+`NaN` and `NULL` sorting order:
+
+ - With the modifier `NULLS FIRST` — First `NULL`, then `NaN`, then other values.
+ - With the modifier `NULLS LAST` — First the values, then `NaN`, then `NULL`.
+ - Default — The same as with the `NULLS LAST` modifier.
+
+ Example:
+
+ For the table
+
+ ```
+ ┌─x─┬────y─┐
+ │ 1 │ ᴺᵁᴸᴸ │
+ │ 2 │    2 │
+ │ 1 │  nan │
+ │ 2 │    2 │
+ │ 3 │    4 │
+ │ 5 │    6 │
+ │ 6 │  nan │
+ │ 7 │ ᴺᵁᴸᴸ │
+ │ 6 │    7 │
+ │ 8 │    9 │
+ └───┴──────┘
+ ```
+
+ Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
+
+ ```
+ ┌─x─┬────y─┐
+ │ 1 │ ᴺᵁᴸᴸ │
+ │ 7 │ ᴺᵁᴸᴸ │
+ │ 1 │  nan │
+ │ 6 │  nan │
+ │ 2 │    2 │
+ │ 2 │    2 │
+ │ 3 │    4 │
+ │ 5 │    6 │
+ │ 6 │    7 │
+ │ 8 │    9 │
+ └───┴──────┘
+ ```
 
 When floating point numbers are sorted, NaNs are separate from the other values. Regardless of the sorting order, NaNs come at the end. In other words, for ascending sorting they are placed as if they are larger than all the other numbers, while for descending sorting they are placed as if they are smaller than the rest.
 
@@ -610,11 +692,13 @@ LIMIT n, m allows you to select the first 'm' rows from the result after skippin
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
+`DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
+
 ### UNION ALL Clause
 
 You can use UNION ALL to combine any number of queries. Example:
 
-```sql
+``` sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
     FROM test.hits
     GROUP BY CounterID
@@ -631,7 +715,7 @@ Only UNION ALL is supported. The regular UNION (UNION DISTINCT) is not supported
 
 Queries that are parts of UNION ALL can be run simultaneously, and their results can be mixed together.
 
-The structure of results (the number and type of columns) must match for the queries. But the column names can differ. In this case, the column names for the final result will be taken from the first query.
+The structure of results (the number and type of columns) must match for the queries. But the column names can differ. In this case, the column names for the final result will be taken from the first query. Type casting is performed for unions. For example, if two queries being combined have the same field with non-`Nullable` and `Nullable` types from a compatible type, the resulting `UNION ALL` has a `Nullable` type field.
 
 Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
@@ -652,6 +736,8 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
+<a name="query_language-in_operators"></a>
+
 ### IN Operators
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
@@ -660,7 +746,7 @@ The left side of the operator is either a single column or a tuple.
 
 Examples:
 
-```sql
+``` sql
 SELECT UserID IN (123, 456) FROM ...
 SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 ```
@@ -678,7 +764,7 @@ If the right side of the operator is a table name that has the Set engine (a pre
 The subquery may specify more than one column for filtering tuples.
 Example:
 
-```sql
+``` sql
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -687,7 +773,7 @@ The columns to the left and right of the IN operator should have the same type.
 The IN operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-```sql
+``` sql
 SELECT
     EventDate,
     avg(UserID IN
@@ -701,7 +787,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-```text
+```
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │
@@ -715,6 +801,39 @@ ORDER BY EventDate ASC
 
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
+
+#### NULL processing
+
+ During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+
+ Here is an example with the `t_null` table:
+
+ ```
+ ┌─x─┬────y─┐
+ │ 1 │ ᴺᵁᴸᴸ │
+ │ 2 │    3 │
+ └───┴──────┘
+ ```
+
+ Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
+
+ ```
+ ┌─x─┐
+ │ 2 │
+ └───┘
+ ```
+
+ You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
+
+ ```
+ SELECT y IN (NULL, 3)
+ FROM t_null
+
+ ┌─in(y, tuple(NULL, 3))─┐
+ │                     0 │
+ │                     1 │
+ └───────────────────────┘
+ ```
 
 <a name="queries-distributed-subrequests"></a>
 
@@ -739,13 +858,13 @@ For a query to the **distributed_table**, the query will be sent to all the remo
 
 For example, the query
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table
 ```
 
 will be sent to all remote servers as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table
 ```
 
@@ -753,7 +872,7 @@ and run on each of them in parallel, until it reaches the stage where intermedia
 
 Now let's examine a query with IN:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -761,7 +880,7 @@ SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID I
 
 This query will be sent to all remote servers as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -771,19 +890,19 @@ This will work correctly and optimally if you are prepared for this case and hav
 
 To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 This query will be sent to all remote servers as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The subquery will begin running on each remote server. Since the subquery uses a distributed table, the subquery that is on each remote server will be resent to every remote server as
 
-```sql
+``` sql
 SELECT UserID FROM local_table WHERE CounterID = 34
 ```
 
@@ -791,19 +910,19 @@ For example, if you have a cluster of 100 servers, executing the entire query wi
 
 In such cases, you should always use GLOBAL IN instead of IN. Let's look at how it works for the query
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The requestor server will run the subquery
 
-```sql
+``` sql
 SELECT UserID FROM distributed_table WHERE CounterID = 34
 ```
 
 and the result will be put in a temporary table in RAM. Then the request will be sent to each remote server as
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
@@ -845,3 +964,5 @@ You can put an asterisk in any part of a query instead of an expression. When th
 - In subqueries (since columns that aren't needed for the external query are excluded from subqueries).
 
 In all other cases, we don't recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/select/) <!--hide-->

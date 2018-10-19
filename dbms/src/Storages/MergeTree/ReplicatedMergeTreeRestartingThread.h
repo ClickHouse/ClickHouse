@@ -2,7 +2,7 @@
 
 #include <Poco/Event.h>
 #include <common/logger_useful.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Types.h>
 #include <thread>
 #include <atomic>
@@ -23,9 +23,12 @@ class ReplicatedMergeTreeRestartingThread
 {
 public:
     ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
-    ~ReplicatedMergeTreeRestartingThread();
+
+    void start() { task->activateAndSchedule(); }
 
     void wakeup() { task->schedule(); }
+
+    void shutdown();
 
 private:
     StorageReplicatedMergeTree & storage;

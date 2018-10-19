@@ -34,7 +34,8 @@ Date: Fri, 16 Nov 2012 19:21:50 GMT
 1
 ```
 
-As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.Although wget escapes everything itself, we don't recommend using it because it doesn't work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
+As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.
+Although wget escapes everything itself, we don't recommend using it because it doesn't work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
@@ -170,8 +171,7 @@ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @
 ```
 
 If the user name is not indicated, the username 'default' is used. If the password is not indicated, an empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:
-http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the section "Settings".
 
@@ -218,3 +218,5 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
 
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->

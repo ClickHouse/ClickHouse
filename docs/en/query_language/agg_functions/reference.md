@@ -9,6 +9,8 @@ The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate f
 
 A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
+<a name="agg_function-any"></a>
+
 ## any(x)
 
 Selects the first encountered value.
@@ -28,13 +30,14 @@ anyHeavy(column)
 ```
 
 **Arguments**
+
 - `column` – The column name.
 
 **Example**
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select any frequently occurring value in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
@@ -62,9 +65,26 @@ Calculates the maximum.
 
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
+**Example:**
+```
+┌─user─────┬─salary─┐
+│ director │   5000 │
+│ manager  │   3000 │
+│ worker   │   1000 │
+└──────────┴────────┘
+
+SELECT argMin(user, salary) FROM salary
+
+┌─argMin(user, salary)─┐
+│ worker               │
+└──────────────────────┘
+```
+
 ## argMax(arg, val)
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
+
+<a name="agg_function-sum"></a>
 
 ## sum(x)
 
@@ -77,6 +97,8 @@ Computes the sum of the numbers, using the same data type for the result as for 
 
 Only works for numbers.
 
+<a name="agg_function-summap"></a>
+
 ## sumMap(key, value)
 
 Totals the 'value' array according to the keys specified in the 'key' array.
@@ -85,7 +107,7 @@ Returns a tuple of two arrays: keys in sorted order, and values ​​summed for
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -106,7 +128,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```text
+```
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -118,6 +140,8 @@ GROUP BY timeslot
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
+
+<a name="agg_function-uniq"></a>
 
 ## uniq(x)
 
@@ -252,7 +276,7 @@ A hash table is used as the algorithm. Because of this, if the passed values ​
 
 Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
 
-The performance of the function is lower than for ` quantile`, ` quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than for `quantile` or `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
@@ -290,7 +314,7 @@ The result is equal to the square root of `varPop(x)`.
 
 Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
 
-Implements the [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
 ```
 topK(N)(column)
@@ -301,6 +325,7 @@ This function doesn't provide a guaranteed result. In certain situations, errors
 We recommend using the `N < 10 ` value; performance is reduced with large `N` values. Maximum value of ` N = 65536`.
 
 **Arguments**
+
 - 'N' is the number of values.
 - ' x ' – The column.
 
@@ -308,10 +333,11 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
+
 ```
 ┌─res─────────────────┐
 │ [19393,19790,19805] │
@@ -332,3 +358,5 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

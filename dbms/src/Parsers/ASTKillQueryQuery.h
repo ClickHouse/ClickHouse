@@ -17,7 +17,7 @@ public:
         auto clone = std::make_shared<ASTKillQueryQuery>(*this);
         clone->where_expression = where_expression->clone();
         clone->children = {clone->where_expression};
-        return std::move(clone);
+        return clone;
     }
 
     String getID() const override;

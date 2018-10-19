@@ -25,6 +25,7 @@ select 5 = windowFunnel(4)(timestamp, event = 1003, event = 1004, event = 1005, 
 select 2 = windowFunnel(10000)(timestamp, event = 1001, event = 1008) from funnel_test2;
 select 1 = windowFunnel(10000)(timestamp, event = 1008, event = 1001) from funnel_test2;
 select 5 = windowFunnel(4)(timestamp, event = 1003, event = 1004, event = 1005, event = 1006, event = 1007) from funnel_test2;
+select 4 = windowFunnel(4)(timestamp, event <= 1007, event >= 1002, event <= 1006, event >= 1004) from funnel_test2;
 
 drop table funnel_test;
 drop table funnel_test2;

@@ -133,6 +133,14 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::UPDATE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UPDATE " << (settings.hilite ? hilite_none : "");
+        update_assignments->formatImpl(settings, state, frame);
+
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        predicate->formatImpl(settings, state, frame);
+    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }

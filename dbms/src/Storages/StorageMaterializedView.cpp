@@ -168,11 +168,16 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
     return getTargetTable()->hasColumn(column_name);
 }
 
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
+{
+    return getTargetTable()->getQueryProcessingStage(context);
+}
+
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -253,6 +258,12 @@ void StorageMaterializedView::freezePartition(const ASTPtr & partition, const St
 {
     checkStatementCanBeForwarded();
     getTargetTable()->freezePartition(partition, with_name, context);
+}
+
+void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->mutate(commands, context);
 }
 
 void StorageMaterializedView::shutdown()

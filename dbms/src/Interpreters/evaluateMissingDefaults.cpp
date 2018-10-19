@@ -50,12 +50,17 @@ void evaluateMissingDefaults(Block & block,
     ExpressionAnalyzer{default_expr_list, context, {}, available_columns}.getActions(true)->execute(copy_block);
 
     /// move evaluated columns to the original block, materializing them at the same time
-    for (auto & column_name_type : copy_block)
+    size_t pos = 0;
+    for (auto col = required_columns.begin(); col != required_columns.end(); ++col, ++pos)
     {
-        if (ColumnPtr converted = column_name_type.column->convertToFullColumnIfConst())
-            column_name_type.column = converted;
+        if (copy_block.has(col->name))
+        {
+            auto evaluated_col = copy_block.getByName(col->name);
+            if (ColumnPtr converted = evaluated_col.column->convertToFullColumnIfConst())
+                evaluated_col.column = converted;
 
-        block.insert(std::move(column_name_type));
+            block.insert(pos, std::move(evaluated_col));
+        }
     }
 }
 

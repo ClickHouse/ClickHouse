@@ -15,7 +15,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data is replicated for `INSERT` and `ALTER` queries (see the description of the [ALTER](../../query_language/alter.md#query_language_queries_alter) query).
+Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](../../query_language/alter.md#query_language_queries_alter)).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
@@ -74,15 +74,37 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
-Two parameters are also added in the beginning of the parameters list – the path to the table in ZooKeeper, and the replica name in ZooKeeper.
+**Replicated\*MergeTree parameters**
+
+- `zoo_path` — The path to the table in ZooKeeper.
+- `replica_name` — The replica name in ZooKeeper.
 
 Example:
 
-```text
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+```sql
+CREATE TABLE table_name
+(
+    EventDate DateTime,
+    CounterID UInt32,
+    UserID UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}')
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
 ```
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the config file. Example:
+Example in deprecated syntax:
+
+```sql
+CREATE TABLE table_name
+(
+    EventDate DateTime,
+    CounterID UInt32,
+    UserID UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+```
+
+As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the configuration file. Example:
 
 ```xml
 <macros>
@@ -152,9 +174,11 @@ An alternative recovery option is to delete information about the lost replica f
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
+<a name="convert-mergetree-to-replicated"></a>
+
 ## Converting from MergeTree to ReplicatedMergeTree
 
-We use the term `MergeTree` to refer to all table engines in the ` MergeTree family`, the same as for ` ReplicatedMergeTree`.
+We use the term `MergeTree` to refer to all table engines in the ` MergeTree family`, the same as for `ReplicatedMergeTree`.
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicatable table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
@@ -179,5 +203,4 @@ After this, you can launch the server, create a `MergeTree` table, move the data
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 
-If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
-
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replication/) <!--hide-->

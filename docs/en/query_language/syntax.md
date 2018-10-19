@@ -4,7 +4,7 @@ There are two types of parsers in the system: the full SQL parser (a recursive d
 In all cases except the INSERT query, only the full SQL parser is used.
 The INSERT query uses both parsers:
 
-```sql
+``` sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -70,6 +70,20 @@ For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
 
+<a name="null-literal"></a>
+
+### NULL Literal
+
+Indicates that the value is missing.
+
+In order to store `NULL` in a table field, it must be of the [Nullable](../data_types/nullable.md#data_type-nullable) type.
+
+Depending on the data format (input or output), `NULL` may have a different representation. For more information, see the documentation for [data formats](../interfaces/formats.md#formats).
+
+There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation will also be `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
+
+In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md#operator-is-not-null) operators and the related functions `isNull` and `isNotNull`.
+
 ## Functions
 
 Functions are written like an identifier with a list of arguments (possibly empty) in brackets. In contrast to standard SQL, the brackets are required, even for an empty arguments list. Example: `now()`.
@@ -89,7 +103,7 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 In the SELECT query, expressions can specify synonyms using the AS keyword. Any expression is placed to the left of AS. The identifier name for the synonym is placed to the right of AS. As opposed to standard SQL, synonyms are not only declared on the top level of expressions:
 
-```sql
+``` sql
 SELECT (1 AS n) + 2, n
 ```
 
@@ -105,3 +119,5 @@ An expression is a function, identifier, literal, application of an operator, ex
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/syntax/) <!--hide-->

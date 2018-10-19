@@ -29,10 +29,6 @@ const int HTTP_TOO_MANY_REQUESTS = 429;
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout);
 
 
-/// Call this method if you are going to make HTTPS requests. It's safe to call it many time from different threads.
-void initSSL();
-
-
 /// Create session object to perform requests and set required parameters.
 std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts);
 

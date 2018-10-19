@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 
@@ -20,3 +20,4 @@
 - UInt64 - [0 : 18446744073709551615]
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/int_uint/) <!--hide-->

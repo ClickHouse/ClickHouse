@@ -3,7 +3,9 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include "Handlers.h"
+#include "MainHandler.h"
+#include "ColumnInfoHandler.h"
+#include "IdentifierQuoteHandler.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -13,7 +15,7 @@
 
 namespace DB
 {
-/** Factory for '/ping' and '/' handlers.
+/** Factory for '/ping', '/', '/columns_info', '/identifier_quote' handlers.
   * Also stores Session pools for ODBC connections
   */
 class HandlerFactory : public Poco::Net::HTTPRequestHandlerFactory

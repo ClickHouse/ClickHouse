@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # FixedString(N)
 
@@ -7,3 +7,4 @@
 توابع کمتری نسبت به String برای FixedString(N) وجود دارد، و برای استفاده کمتر مناسب است.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/fixedstring/) <!--hide-->

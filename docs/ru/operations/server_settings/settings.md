@@ -279,12 +279,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## keep_alive_timeout
 
-Время в миллисекундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
+Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем закрыть соединение.
 
 **Пример**
 
 ```xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 <a name="server_settings-listen_host"></a>
@@ -532,6 +532,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - database_name - Имя базы даных.
 - table_name - Имя таблицы.
 - part_name - Имя куска данных.
+- partition_id - Идентификатор партиции.
 - size_in_bytes - Размер куска данных в байтах.
 - merged_from - Массив имён кусков, из которых он образован при мерже (так же заполняется в случае скачивания уже смерженного куска).
 - merge_time_ms - Время, потраченное на мерж.
@@ -718,3 +719,5 @@ ClickHouse использует ZooKeeper для хранения метадан
 ```xml
 <zookeeper incl="zookeeper-servers" optional="true" />
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->

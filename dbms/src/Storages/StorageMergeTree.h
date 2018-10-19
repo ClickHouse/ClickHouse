@@ -56,7 +56,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -94,6 +94,10 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
+
+    ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
+
 private:
     String path;
     String database_name;
@@ -130,7 +134,7 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate,
+    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate,
                String * out_disable_reason = nullptr);
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.

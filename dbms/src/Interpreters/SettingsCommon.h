@@ -191,6 +191,37 @@ struct SettingLoadBalancing
 };
 
 
+enum class JoinStrictness
+{
+    Unspecified = 0, /// Query JOIN without strictness will throw Exception.
+    ALL, /// Query JOIN without strictness -> ALL JOIN ...
+    ANY, /// Query JOIN without strictness -> ANY JOIN ...
+};
+
+
+struct SettingJoinStrictness
+{
+    JoinStrictness value;
+    bool changed = false;
+
+    SettingJoinStrictness(JoinStrictness x) : value(x) {}
+
+    operator JoinStrictness() const { return value; }
+    SettingJoinStrictness & operator= (JoinStrictness x) { set(x); return *this; }
+
+    static JoinStrictness getJoinStrictness(const String & s);
+
+    String toString() const;
+
+    void set(JoinStrictness x);
+    void set(const Field & x);
+    void set(const String & x);
+    void set(ReadBuffer & buf);
+
+    void write(WriteBuffer & buf) const;
+};
+
+
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {

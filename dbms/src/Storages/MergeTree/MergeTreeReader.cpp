@@ -36,7 +36,7 @@ MergeTreeReader::~MergeTreeReader() = default;
 MergeTreeReader::MergeTreeReader(const String & path,
     const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
     UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
-    MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+    const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
@@ -200,7 +200,7 @@ MergeTreeReader::Stream::Stream(
             getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
     }
 
-    /// Avoid empty buffer. May happen while reading dictionary for DataTypeWithDictionary.
+    /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     if (max_mark_range == 0)
         max_mark_range = max_read_buffer_size;
@@ -267,7 +267,7 @@ void MergeTreeReader::Stream::loadMarks()
     auto load = [&]() -> MarkCache::MappedPtr
     {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(path).getSize();
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
@@ -427,6 +427,7 @@ void MergeTreeReader::readData(
     }
 
     settings.getter = get_stream_getter(false);
+    settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
     type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
@@ -453,11 +454,8 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults)
+void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
-    if (!res)
-        throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
-
     try
     {
         /// For a missing column of a nested data structure we must create not a column of empty
@@ -527,7 +525,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(res.rows())->convertToFullColumnIfConst();
+                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));
@@ -542,7 +540,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
     }
 }
 
-void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
+void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names, const String * filter_name)
 {
     try
     {
@@ -551,6 +549,9 @@ void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
         for (const auto & name : ordered_names)
             if (res.has(name))
                 ordered_block.insert(res.getByName(name));
+
+        if (filter_name && !ordered_block.has(*filter_name) && res.has(*filter_name))
+            ordered_block.insert(res.getByName(*filter_name));
 
         std::swap(res, ordered_block);
     }

@@ -19,11 +19,15 @@ GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
     params(params), time_of_merge(time_of_merge)
 {
     size_t max_size_of_aggregate_state = 0;
-    for (const auto & pattern : params.patterns)
-        if (pattern.function->sizeOfData() > max_size_of_aggregate_state)
-            max_size_of_aggregate_state = pattern.function->sizeOfData();
+    size_t max_alignment_of_aggregate_state = 1;
 
-    place_for_aggregate_state.resize(max_size_of_aggregate_state);
+    for (const auto & pattern : params.patterns)
+    {
+        max_size_of_aggregate_state = std::max(max_size_of_aggregate_state, pattern.function->sizeOfData());
+        max_alignment_of_aggregate_state = std::max(max_alignment_of_aggregate_state, pattern.function->alignOfData());
+    }
+
+    place_for_aggregate_state.reset(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
 
     /// Memoize column numbers in block.
     path_column_num = header.getPositionByName(params.path_column_name);
@@ -128,7 +132,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
         is_first = false;
 
-        time_t next_row_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
+        time_t next_row_time = next_cursor->all_columns[time_column_num]->getUInt(next_cursor->pos);
         /// Is new key before rounding.
         bool is_new_key = new_path || next_row_time != current_time;
 

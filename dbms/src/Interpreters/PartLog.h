@@ -25,6 +25,7 @@ struct PartLogElement
     String database_name;
     String table_name;
     String part_name;
+    String partition_id;
 
     /// Size of the part
     UInt64 rows = 0;
@@ -32,13 +33,13 @@ struct PartLogElement
     /// Size of files in filesystem
     UInt64 bytes_compressed_on_disk = 0;
 
-    //// Makes sense for merges and mutations.
+    /// Makes sense for merges and mutations.
     Strings source_part_names;
     UInt64 bytes_uncompressed = 0;
     UInt64 rows_read = 0;
     UInt64 bytes_read_uncompressed = 0;
 
-    /// Is the operation was successful?
+    /// Was the operation successful?
     UInt16 error = 0;
     String exception;
 

@@ -1,21 +1,18 @@
 #include <map>
 #include <set>
-
 #include <boost/functional/hash/hash.hpp>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-
 #include <common/logger_useful.h>
 #include <pcg_random.hpp>
-
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -27,18 +24,21 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
 #include <Interpreters/Compiler.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
@@ -56,6 +56,7 @@
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -176,12 +177,17 @@ struct ContextShared
     ConfigurationPtr clusters_config;                        /// Soteres updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
+#endif
+
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> table -> exception_message
-    /// For the duration of the operation, an element is placed here, and an object is returned, which deletes the element in the destructor.
-    /// In case the element already exists, an exception is thrown. See class DDLGuard below.
+    /// database -> table -> (mutex, counter), counter: how many threads are running a query on the table at the same time
+    /// For the duration of the operation, an element is placed here, and an object is returned,
+    /// which deletes the element in the destructor when counter becomes zero.
+    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
     using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
@@ -634,7 +640,7 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         return;
     }
     if (!shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name))
-        throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
@@ -891,37 +897,30 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && /*lock*/, const String & elem, const String & message)
-    : map(map_), mutex(mutex_)
+DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+    : map(map_), guards_lock(std::move(guards_lock_))
 {
-    bool inserted;
-    std::tie(it, inserted) = map.emplace(elem, message);
-    if (!inserted)
-        throw Exception(it->second, ErrorCodes::DDL_GUARD_IS_ACTIVE);
+    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    ++it->second.counter;
+    guards_lock.unlock();
+    table_lock = std::unique_lock<std::mutex>(*it->second.mutex);
 }
 
 DDLGuard::~DDLGuard()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    map.erase(it);
+    guards_lock.lock();
+    --it->second.counter;
+    if (!it->second.counter)
+    {
+        table_lock.unlock();
+        map.erase(it);
+    }
 }
 
-std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table, const String & message) const
+std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
 {
     std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(shared->ddl_guards[database], shared->ddl_guards_mutex, std::move(lock), table, message);
-}
-
-
-std::unique_ptr<DDLGuard> Context::getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const
-{
-    auto lock = getLock();
-
-    Databases::const_iterator it = shared->databases.find(database);
-    if (shared->databases.end() != it && it->second->isTableExist(*this, table))
-        return {};
-
-    return getDDLGuard(database, table, message);
+    return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
 }
 
 
@@ -1529,7 +1528,7 @@ void Context::initializeSystemLogs()
 }
 
 
-QueryLog * Context::getQueryLog()
+QueryLog * Context::getQueryLog(bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1538,29 +1537,49 @@ QueryLog * Context::getQueryLog()
 
     if (!system_logs->query_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
         if (!global_context)
             throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
 
-        auto & config = getConfigRef();
-
-        String database     = config.getString("query_log.database",     "system");
-        String table        = config.getString("query_log.table",        "query_log");
-        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-
-        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
-
-        system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
+        system_logs->query_log = createDefaultSystemLog<QueryLog>(*global_context, "system", "query_log", getConfigRef(), "query_log");
     }
 
     return system_logs->query_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & part_database)
+QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
+{
+    auto lock = getLock();
+
+    if (!system_logs)
+        return nullptr;
+
+    if (!system_logs->query_thread_log)
+    {
+        if (!create_if_not_exists)
+            return nullptr;
+
+        if (shared->shutdown_called)
+            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
+
+        if (!global_context)
+            throw Exception("Logical error: no global context for query thread log", ErrorCodes::LOGICAL_ERROR);
+
+        system_logs->query_thread_log = createDefaultSystemLog<QueryThreadLog>(
+                *global_context, "system", "query_thread_log", getConfigRef(), "query_thread_log");
+    }
+
+    return system_logs->query_thread_log.get();
+}
+
+
+PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1577,24 +1596,21 @@ PartLog * Context::getPartLog(const String & part_database)
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == database)
+    if (!part_database.empty() && part_database == database)
         return nullptr;
 
     if (!system_logs->part_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
         if (!global_context)
             throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-        String table = config.getString("part_log.table", "part_log");
-        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-
-        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
-
-        system_logs->part_log = std::make_unique<PartLog>(*global_context, database, table, engine, flush_interval_milliseconds);
+        system_logs->part_log = createDefaultSystemLog<PartLog>(*global_context, "system", "part_log", getConfigRef(), "part_log");
     }
 
     return system_logs->part_log.get();
@@ -1663,12 +1679,12 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
     ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
-         << "1. Size (" << size_str << ") is greater than max_size_to_drop (" << max_size_to_drop_str << ")\n"
+         << "1. Size (" << size_str << ") is greater than max_[table/partition]_size_to_drop (" << max_size_to_drop_str << ")\n"
          << "2. File '" << force_file.path() << "' intended to force DROP "
          << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_size_to_drop in server config and restart ClickHouse\n"
+         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config and restart ClickHouse\n"
          << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
          << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
@@ -1790,6 +1806,35 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
     return getQueryContext().sample_block_cache;
 }
 
+
+#if USE_EMBEDDED_COMPILER
+
+std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    return shared->compiled_expression_cache;
+}
+
+void Context::setCompiledExpressionCache(size_t cache_size)
+{
+
+    auto lock = getLock();
+
+    if (shared->compiled_expression_cache)
+        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
+}
+
+void Context::dropCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    if (shared->compiled_expression_cache)
+        shared->compiled_expression_cache->reset();
+}
+
+#endif
+
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {
     auto lock = getLock();
@@ -1798,6 +1843,25 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
         shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
 
     return shared->action_locks_manager;
+}
+
+
+void Context::setExternalTablesInitializer(ExternalTablesInitializer && initializer)
+{
+    if (external_tables_initializer_callback)
+        throw Exception("External tables initializer is already set", ErrorCodes::LOGICAL_ERROR);
+
+    external_tables_initializer_callback = std::move(initializer);
+}
+
+void Context::initializeExternalTablesIfSet()
+{
+    if (external_tables_initializer_callback)
+    {
+        external_tables_initializer_callback(*this);
+        /// Reset callback
+        external_tables_initializer_callback = {};
+    }
 }
 
 

@@ -14,6 +14,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
 }
 
@@ -47,9 +48,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
-        std::optional<Stopwatch> watch;
-        if (profile_callback)
-            watch.emplace(clock_type);
+        Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         ssize_t res = 0;
         {
@@ -68,12 +67,18 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (res > 0)
             bytes_read += res;
 
+        /// It reports real time spent including the time spent while thread was preempted doing nothing.
+        /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it (TaskStatsInfoGetter has about 500K RPS).
+        watch.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+
         if (profile_callback)
         {
             ProfileInfo info;
             info.bytes_requested = internal_buffer.size();
             info.bytes_read = res;
-            info.nanoseconds = watch->elapsed();
+            info.nanoseconds = watch.elapsed();
             profile_callback(info);
         }
     }
@@ -114,12 +119,17 @@ off_t ReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
     else
     {
         ProfileEvents::increment(ProfileEvents::Seek);
+        Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         pos = working_buffer.end();
-        off_t res = lseek(fd, new_pos, SEEK_SET);
+        off_t res = ::lseek(fd, new_pos, SEEK_SET);
         if (-1 == res)
             throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
         pos_in_file = new_pos;
+
+        watch.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
+
         return res;
     }
 }

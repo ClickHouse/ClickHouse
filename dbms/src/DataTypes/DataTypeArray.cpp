@@ -360,31 +360,6 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
         });
 }
 
-
-void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-
-void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
-
-void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-
-void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
-
 void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);

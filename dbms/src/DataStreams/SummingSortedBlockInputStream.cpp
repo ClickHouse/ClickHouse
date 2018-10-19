@@ -76,7 +76,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         }
         else
         {
-            bool is_agg_func = checkDataType<DataTypeAggregateFunction>(column.type.get());
+            bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
             if (!column.type->isSummable() && !is_agg_func)
             {
                 column_numbers_not_to_aggregate.push_back(i);
@@ -216,7 +216,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
                     if (desc.column_numbers.size() == 1)
                     {
                         // Flag row as non-empty if at least one column number if non-zero
-                        current_row_is_zero = current_row_is_zero && desc.merged_column->get64(desc.merged_column->size() - 1) == 0;
+                        current_row_is_zero = current_row_is_zero && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
                     }
                     else
                     {
@@ -273,7 +273,7 @@ Block SummingSortedBlockInputStream::readImpl()
     for (auto & desc : columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -292,7 +292,7 @@ Block SummingSortedBlockInputStream::readImpl()
     /// Place aggregation results into block.
     for (auto & desc : columns_to_aggregate)
     {
-        if (!desc.is_agg_func_type && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();

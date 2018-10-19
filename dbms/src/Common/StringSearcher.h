@@ -182,7 +182,8 @@ public:
                     {
                         /// @note assuming sequences for lowercase and uppercase have exact same length
                         const auto len = UTF8::seqLength(*pos);
-                        pos += len, needle_pos += len;
+                        pos += len;
+                        needle_pos += len;
                     }
 
                     if (needle_pos == needle_end)
@@ -206,7 +207,8 @@ public:
                    Poco::Unicode::toLower(utf8.convert(needle_pos)))
             {
                 const auto len = UTF8::seqLength(*pos);
-                pos += len, needle_pos += len;
+                pos += len;
+                needle_pos += len;
             }
 
             if (needle_pos == needle_end)
@@ -266,7 +268,8 @@ public:
                             {
                                 /// @note assuming sequences for lowercase and uppercase have exact same length
                                 const auto len = UTF8::seqLength(*haystack_pos);
-                                haystack_pos += len, needle_pos += len;
+                                haystack_pos += len;
+                                needle_pos += len;
                             }
 
                             if (needle_pos == needle_end)
@@ -296,7 +299,8 @@ public:
                        Poco::Unicode::toLower(utf8.convert(needle_pos)))
                 {
                     const auto len = UTF8::seqLength(*haystack_pos);
-                    haystack_pos += len, needle_pos += len;
+                    haystack_pos += len;
+                    needle_pos += len;
                 }
 
                 if (needle_pos == needle_end)
@@ -389,7 +393,10 @@ public:
                     auto needle_pos = needle + n;
 
                     while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
-                        ++pos, ++needle_pos;
+                    {
+                        ++pos;
+                        ++needle_pos;
+                    }
 
                     if (needle_pos == needle_end)
                         return true;
@@ -408,7 +415,10 @@ public:
             auto needle_pos = needle + 1;
 
             while (needle_pos < needle_end && std::tolower(*pos) == std::tolower(*needle_pos))
-                ++pos, ++needle_pos;
+            {
+                ++pos;
+                ++needle_pos;
+            }
 
             if (needle_pos == needle_end)
                 return true;
@@ -460,7 +470,10 @@ public:
 
                             while (haystack_pos < haystack_end && needle_pos < needle_end &&
                                    std::tolower(*haystack_pos) == std::tolower(*needle_pos))
-                                ++haystack_pos, ++needle_pos;
+                            {
+                                ++haystack_pos;
+                                ++needle_pos;
+                            }
 
                             if (needle_pos == needle_end)
                                 return haystack;
@@ -485,7 +498,10 @@ public:
 
                 while (haystack_pos < haystack_end && needle_pos < needle_end &&
                        std::tolower(*haystack_pos) == std::tolower(*needle_pos))
-                    ++haystack_pos, ++needle_pos;
+                {
+                    ++haystack_pos;
+                    ++needle_pos;
+                }
 
                 if (needle_pos == needle_end)
                     return haystack;

@@ -1,6 +1,6 @@
 #pragma once
 
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
 
 #include <ext/singleton.h>
 #include <condition_variable>
@@ -26,7 +26,7 @@ class AIOContextPool : public ext::singleton<AIOContextPool>
     using BytesRead = ssize_t;
 
     /// Autoincremental id used to identify completed requests
-    ID id{};
+    ID next_id{};
     mutable std::mutex mutex;
     mutable std::condition_variable have_resources;
     std::map<ID, std::promise<BytesRead>> promises;

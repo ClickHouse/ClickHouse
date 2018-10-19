@@ -1,3 +1,5 @@
+<a name="table_engine-collapsingmergetree"></a>
+
 # CollapsingMergeTree
 
 *Движок достаточно специфичен для Яндекс.Метрики.*
@@ -12,7 +14,7 @@
 
 CollapsingMergeTree принимает дополнительный параметр - имя столбца типа Int8, содержащего "знак" строки. Пример:
 
-```sql
+``` sql
 CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID), 8192, Sign)
 ```
 
@@ -34,4 +36,4 @@ CollapsingMergeTree(EventDate, (CounterID, EventDate, intHash32(UniqID), VisitID
 1.  Написать запрос с GROUP BY и агрегатными функциями, учитывающими знак. Например, чтобы посчитать количество, надо вместо count() написать sum(Sign); чтобы посчитать сумму чего-либо, надо вместо sum(x) написать sum(Sign \* x) и т. п., а также добавить HAVING sum(Sign) `>` 0. Не все величины можно посчитать подобным образом. Например, агрегатные функции min, max не могут быть переписаны.
 2.  Если необходимо вынимать данные без агрегации (например, проверить наличие строк, самые новые значения которых удовлетворяют некоторым условиям), можно использовать модификатор FINAL для секции FROM. Это вариант существенно менее эффективен.
 
-
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/collapsingmergetree/) <!--hide-->

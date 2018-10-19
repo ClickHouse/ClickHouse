@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # کتابخانه های توسعه دهندگان third-party
 
@@ -48,3 +48,4 @@
 ما این کتابخانه ها را تست نکردیم. آنها به صورت تصادفی انتخاب شده اند.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party_client_libraries/) <!--hide-->

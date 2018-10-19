@@ -67,7 +67,7 @@ void CompressedWriteBuffer::nextImpl()
             unalignedStore(&compressed_buffer[1], compressed_size_32);
             unalignedStore(&compressed_buffer[5], uncompressed_size_32);
 
-            compressed_buffer_ptr = &compressed_buffer[0];
+            compressed_buffer_ptr = compressed_buffer.data();
             break;
         }
         case CompressionMethod::ZSTD:
@@ -96,7 +96,7 @@ void CompressedWriteBuffer::nextImpl()
             unalignedStore(&compressed_buffer[1], compressed_size_32);
             unalignedStore(&compressed_buffer[5], uncompressed_size_32);
 
-            compressed_buffer_ptr = &compressed_buffer[0];
+            compressed_buffer_ptr = compressed_buffer.data();
             break;
         }
         case CompressionMethod::NONE:
@@ -115,7 +115,7 @@ void CompressedWriteBuffer::nextImpl()
             unalignedStore(&compressed_buffer[5], uncompressed_size_32);
             memcpy(&compressed_buffer[9], working_buffer.begin(), uncompressed_size);
 
-            compressed_buffer_ptr = &compressed_buffer[0];
+            compressed_buffer_ptr = compressed_buffer.data();
             break;
         }
         default:

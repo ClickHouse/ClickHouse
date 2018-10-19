@@ -2,7 +2,9 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <common/logger_useful.h>
@@ -59,6 +61,8 @@ namespace
             case ValueType::String: static_cast<ColumnString &>(column).insert(value.convert<String>()); break;
             case ValueType::Date: static_cast<ColumnUInt16 &>(column).insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
             case ValueType::DateTime: static_cast<ColumnUInt32 &>(column).insert(time_t{LocalDateTime{value.convert<String>()}}); break;
+            case ValueType::UUID: static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>())); break;
+
         }
     }
 
@@ -88,9 +92,18 @@ Block ODBCBlockInputStream::readImpl()
             const Poco::Dynamic::Var & value = row[idx];
 
             if (!value.isEmpty())
-                insertValue(*columns[idx], description.types[idx], value);
+            {
+                if (description.types[idx].second)
+                {
+                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    column_nullable.getNullMapData().emplace_back(0);
+                }
+                else
+                    insertValue(*columns[idx], description.types[idx].first, value);
+            }
             else
-                insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }
 
         ++iterator;

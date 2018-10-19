@@ -4,11 +4,11 @@ All the functions return a Float64 number. The accuracy of the result is close t
 
 ## e()
 
-Returns a Float64 number close to the e number.
+Returns a Float64 number that is close to the number e.
 
 ## pi()
 
-Returns a Float64 number close to π.
+Returns a Float64 number that is close to the number π.
 
 ## exp(x)
 
@@ -20,7 +20,7 @@ Accepts a numeric argument and returns a Float64 number close to the natural log
 
 ## exp2(x)
 
-Accepts a numeric argument and returns a Float64 number close to 2^x.
+Accepts a numeric argument and returns a Float64 number close to 2 to the power of x.
 
 ## log2(x)
 
@@ -28,7 +28,7 @@ Accepts a numeric argument and returns a Float64 number close to the binary loga
 
 ## exp10(x)
 
-Accepts a numeric argument and returns a Float64 number close to 10^x.
+Accepts a numeric argument and returns a Float64 number close to 10 to the power of x.
 
 ## log10(x)
 
@@ -48,11 +48,11 @@ If 'x' is non-negative, then erf(x / σ√2)<g> is the probability that a random
 
 Example (three sigma rule):
 
-```sql
+``` sql
 SELECT erf(3 / sqrt(2))
 ```
 
-```text
+```
 ┌─erf(divide(3, sqrt(2)))─┐
 │      0.9973002039367398 │
 └─────────────────────────┘
@@ -96,4 +96,6 @@ The arc tangent.
 
 ## pow(x, y)
 
-Accepts two numeric arguments and returns a Float64 number close to x^y.
+Takes two numeric arguments x and y. Returns a Float64 number close to x to the power of y.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/math_functions/) <!--hide-->

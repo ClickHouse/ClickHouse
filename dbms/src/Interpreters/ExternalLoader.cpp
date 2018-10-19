@@ -66,7 +66,7 @@ void ExternalLoader::init(bool throw_on_error)
     {
         /// During synchronous loading of external dictionaries at moment of query execution,
         /// we should not use per query memory limit.
-        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         reloadAndUpdate(throw_on_error);
     }
@@ -78,7 +78,9 @@ void ExternalLoader::init(bool throw_on_error)
 ExternalLoader::~ExternalLoader()
 {
     destroy.set();
-    reloading_thread.join();
+    /// It can be partially initialized
+    if (reloading_thread.joinable())
+        reloading_thread.join();
 }
 
 
@@ -260,7 +262,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_repository->getLastModificationTime(config_path);
         if (force_reload || last_modified > config_last_modified)
         {
-            auto config = config_repository->load(config_path);
+            auto loaded_config = config_repository->load(config_path);
 
             loadable_objects_defined_in_config[config_path].clear();
 
@@ -272,7 +274,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
-            config->keys(keys);
+            loaded_config->keys(keys);
 
             /// for each loadable object defined in xml config
             for (const auto & key : keys)
@@ -289,7 +291,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                 try
                 {
-                    name = config->getString(key + "." + config_settings.external_name);
+                    name = loaded_config->getString(key + "." + config_settings.external_name);
                     if (name.empty())
                     {
                         LOG_WARNING(log, config_path << ": " + config_settings.external_name + " name cannot be empty");
@@ -312,7 +314,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                                         + " already declared in file " + object_it->second.origin,
                                         ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
-                    auto object_ptr = create(name, *config, key);
+                    auto object_ptr = create(name, *loaded_config, key);
 
                     /// If the object could not be loaded.
                     if (const auto exception_ptr = object_ptr->getCreationException())

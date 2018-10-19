@@ -114,6 +114,7 @@ void Connection::disconnect()
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
     in = nullptr;
+    last_input_packet_type.reset();
     out = nullptr; // can write to socket
     if (socket)
         socket->close();
@@ -228,6 +229,14 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     version_minor = server_version_minor;
     version_patch = server_version_patch;
     revision = server_revision;
+}
+
+UInt64 Connection::getServerRevision()
+{
+    if (!connected)
+        connect();
+
+    return server_revision;
 }
 
 const String & Connection::getServerTimezone()
@@ -348,7 +357,7 @@ void Connection::sendQuery(
     {
         ClientInfo client_info_to_send;
 
-        if (!client_info)
+        if (!client_info || client_info->empty())
         {
             /// No client info passed - means this query initiated by me.
             client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
@@ -379,6 +388,7 @@ void Connection::sendQuery(
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
     block_in.reset();
+    block_logs_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
@@ -506,20 +516,50 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
-bool Connection::hasReadBufferPendingData() const
+bool Connection::hasReadPendingData() const
 {
-    return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+
+std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
+{
+    if (last_input_packet_type.has_value())
+        return last_input_packet_type;
+
+    if (hasReadPendingData() || poll(timeout_microseconds))
+    {
+        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        UInt64 packet_type;
+        readVarUInt(packet_type, *in);
+
+        last_input_packet_type.emplace(packet_type);
+        return last_input_packet_type;
+    }
+
+    return {};
 }
 
 
 Connection::Packet Connection::receivePacket()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving packet");
-
     try
     {
         Packet res;
-        readVarUInt(res.type, *in);
+
+        /// Have we already read packet type?
+        if (last_input_packet_type)
+        {
+            res.type = *last_input_packet_type;
+            last_input_packet_type.reset();
+        }
+        else
+        {
+            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+            readVarUInt(res.type, *in);
+        }
+
+        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
         switch (res.type)
         {
@@ -549,6 +589,10 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveData();
                 return res;
 
+            case Protocol::Server::Log:
+                res.block = receiveLogData();
+                return res;
+
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -576,14 +620,26 @@ Block Connection::receiveData()
     //LOG_TRACE(log_wrapper.get(), "Receiving data");
 
     initBlockInput();
+    return receiveDataImpl(block_in);
+}
 
+
+Block Connection::receiveLogData()
+{
+    initBlockLogsInput();
+    return receiveDataImpl(block_logs_in);
+}
+
+
+Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
+{
     String external_table_name;
     readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = block_in->read();
+    Block res = stream->read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
@@ -592,16 +648,35 @@ Block Connection::receiveData()
 }
 
 
+void Connection::initInputBuffers()
+{
+
+}
+
+
 void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (compression == Protocol::Compression::Enable)
-            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-        else
-            maybe_compressed_in = in;
+        if (!maybe_compressed_in)
+        {
+            if (compression == Protocol::Compression::Enable)
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+            else
+                maybe_compressed_in = in;
+        }
 
         block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
+    }
+}
+
+
+void Connection::initBlockLogsInput()
+{
+    if (!block_logs_in)
+    {
+        /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
+        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
     }
 }
 

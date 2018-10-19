@@ -27,6 +27,13 @@ A constant expression is also considered a constant (for example, the right half
 
 Functions can be implemented in different ways for constant and non-constant arguments (different code is executed). But the results for a constant and for a true column containing only the same value should match each other.
 
+## NULL processing
+
+Functions have the following behaviors:
+
+- If at least one of the arguments of the function is `NULL`, the function result is also `NULL`.
+- Special behavior that is specified individually in the description of each function. In the ClickHouse source code, these functions have `UseDefaultImplementationForNulls=false`.
+
 ## Constancy
 
 Functions can't change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
@@ -56,3 +63,5 @@ Another example is the `hostName` function, which returns the name of the server
 
 If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an 'any' aggregate function or add it to a key in `GROUP BY`.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/) <!--hide-->

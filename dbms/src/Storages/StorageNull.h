@@ -23,8 +23,8 @@ public:
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo &,
-        const Context &,
-        QueryProcessingStage::Enum &,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processing_stage*/,
         size_t,
         unsigned) override
     {

@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common ${SPLIT_SHARED}
+add_library (common ${LINK_MODE}
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -23,6 +23,7 @@ add_library (common ${SPLIT_SHARED}
     src/SetTerminalEcho.cpp
 
     include/common/Types.h
+    include/common/DayNum.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h
@@ -104,8 +105,8 @@ target_link_libraries (
     pocoext
     ${CITYHASH_LIBRARIES}
     ${CCTZ_LIBRARY}
-    ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     ${GLIBC_COMPATIBILITY_LIBRARIES}

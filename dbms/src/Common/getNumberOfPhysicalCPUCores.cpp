@@ -1,6 +1,5 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <thread>
-#include <fstream>
 
 #if defined(__x86_64__)
 
@@ -14,25 +13,6 @@
 
 unsigned getNumberOfPhysicalCPUCores()
 {
-#if defined(__linux__)
-    /// On Linux we try to look at Cgroups limit if it is available.
-    std::ifstream cgroup_read_in("/sys/fs/cgroup/cpu/cpu.cfs_quota_us");
-    if (cgroup_read_in.is_open())
-    {
-        std::string allocated_cpus_share_str{ std::istreambuf_iterator<char>(cgroup_read_in), std::istreambuf_iterator<char>() };
-        int allocated_cpus_share_int = std::stoi(allocated_cpus_share_str);
-
-        cgroup_read_in.close();
-
-        // If a valid value is present
-        if (allocated_cpus_share_int > 0)
-        {
-            unsigned allocated_cpus = (allocated_cpus_share_int + 999) / 1000;
-            return allocated_cpus;
-        }
-    }
-#endif
-
 #if defined(__x86_64__)
     cpu_raw_data_t raw_data;
     if (0 != cpuid_get_raw_data(&raw_data))

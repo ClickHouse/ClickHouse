@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Tuple(T1, T2, ...)
 
@@ -7,3 +7,4 @@ Tuple ها نمیتوانند در جدول نوشته شوند (به غیر ج�
 Tuple می توانند در خروجی نتیجه query در حال اجرا باشند. در این مورد، برای فرمت های text به غیر از JSON\*، مقادیر به صورت comma-separate داخل براکت قرار میگیرند. در فرمت های JSON\* مقادیر tuple به صورت آرایه در خروجی می آیند.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/tuple/) <!--hide-->

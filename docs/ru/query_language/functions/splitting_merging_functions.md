@@ -16,3 +16,14 @@ separator - необязательный параметр, константна�
 ## alphaTokens(s)
 Выделяет подстроки из подряд идущих байт из диапазонов a-z и A-Z.
 Возвращается массив выделенных подстрок.
+
+**Пример:**
+
+```
+SELECT alphaTokens('abca1abc')
+
+┌─alphaTokens('abca1abc')─┐
+│ ['abca','abc']          │
+└─────────────────────────┘
+```
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/splitting_merging_functions/) <!--hide-->

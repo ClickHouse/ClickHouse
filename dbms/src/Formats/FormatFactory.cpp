@@ -41,6 +41,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
+    format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
     format_settings.input_allow_errors_ratio = settings.input_format_allow_errors_ratio;
@@ -65,6 +66,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
+    format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
 

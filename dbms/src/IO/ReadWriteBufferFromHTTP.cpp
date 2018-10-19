@@ -14,7 +14,7 @@ namespace DB
 {
 
 
-ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
+ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(Poco::URI uri,
     const std::string & method_,
     OutStreamCallback out_stream_callback,
     const ConnectionTimeouts & timeouts,
@@ -25,6 +25,10 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
       method{!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
       session{makeHTTPSession(uri, timeouts)}
 {
+    // With empty path poco will send "POST  HTTP/1.1" its bug.
+    if (uri.getPath().empty())
+        uri.setPath("/");
+
     Poco::Net::HTTPRequest request(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     request.setHost(uri.getHost()); // use original, not resolved host name in header
 
