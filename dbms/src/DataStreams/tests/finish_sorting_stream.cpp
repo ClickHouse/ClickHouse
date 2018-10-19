@@ -7,6 +7,7 @@
 
 #include <DataStreams/MergeSortingBlockInputStream.h>
 #include <DataStreams/PartialSortingBlockInputStream.h>
+#include <DataStreams/FinishSortingBlockInputStream.h>
 
 #include <Interpreters/sortBlock.h>
 
@@ -96,9 +97,9 @@ int main(int argc, char ** argv)
                 << std::endl;
         }
     }
-    catch (const Exception & e)
     {
         std::cerr << e.displayText() << std::endl;
+        return -1;
     }
 
     return 0;
