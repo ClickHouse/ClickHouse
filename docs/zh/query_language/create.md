@@ -6,7 +6,7 @@
 CREATE DATABASE [IF NOT EXISTS] db_name
 ```
 
-一个数据库是表的一个目录。 如果包含`IF NOT EXISTS`， 如果数据库已经存在，则查询不返回错误。
+数据库是一个包含多个表的目录，如果在CREATE DATABASE语句中包含`IF NOT EXISTS`，则在数据库已经存在的情况下查询也不会返回错误。
 
 <a name="query_language-queries-create_table"></a>
 
