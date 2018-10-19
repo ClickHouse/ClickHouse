@@ -209,6 +209,9 @@ public:
       */
     const Tables & getExternalTables() const { return external_tables; }
 
+    /// Get intermediates for tests
+    const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
+
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
