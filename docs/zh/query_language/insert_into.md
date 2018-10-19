@@ -1,1 +1,0 @@
-../../en/query_language/insert_into.md
