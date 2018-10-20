@@ -15,8 +15,8 @@ If `IF NOT EXISTS` is included, the query won't return an error if the database 
 
 The `CREATE TABLE` query can have several forms.
 
-``` sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
@@ -31,18 +31,20 @@ A column description is `name type` in the simplest case. Example: `RegionID UIn
 Expressions can also be defined for default values (see below).
 
 ``` sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Creates a table with the same structure as another table. You can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the `db2.name2` table.
 
 ``` sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
+CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
 Creates a table with a structure like the result of the `SELECT` query, with the 'engine' engine, and fills it with data from SELECT.
 
 In all cases, if `IF NOT EXISTS` is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
+
+There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](../operations/table_engines/index.md#table_engines).
 
 ### Default Values
 
@@ -81,18 +83,28 @@ It is not possible to set default values for elements in nested data structures.
 
 ### Temporary Tables
 
-In all cases, if `TEMPORARY` is specified, a temporary table will be created. Temporary tables have the following characteristics:
+ClickHouse supports temporary tables which have the following characteristics:
 
 - Temporary tables disappear when the session ends, including if the connection is lost.
-- A temporary table is created with the Memory engine. The other table engines are not supported.
+- A temporary table use the Memory engine only.
 - The DB can't be specified for a temporary table. It is created outside of databases.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables used in a query are passed to remote servers.
 
+To create a temporary table, use the following syntax:
+
+```sql
+CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+)
+```
+
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
 
-Distributed DDL queries (ON CLUSTER clause)
-----------------------------------------------
+## Distributed DDL queries (ON CLUSTER clause)
 
 The `CREATE`, `DROP`, `ALTER`, and `RENAME` queries support distributed execution on a cluster.
 For example, the following query creates the `all_hits` `Distributed` table on each host in `cluster`:
@@ -108,7 +120,7 @@ The local version of the query will eventually be implemented on each host in th
 ## CREATE VIEW
 
 ``` sql
-CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
