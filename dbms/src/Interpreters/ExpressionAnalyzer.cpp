@@ -1801,7 +1801,8 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     for (const auto & left_key_ast : analyzed_join.key_asts_left)
     {
-        RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, {}, required_joined_columns);
+        NameSet empty;
+        RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, empty, required_joined_columns);
         columns_visitor.visit(left_key_ast);
     }
 

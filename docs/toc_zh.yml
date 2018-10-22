@@ -3,7 +3,7 @@ nav:
 - '介绍':
   - '概貌': 'index.md'
   - 'ClickHouse的独特功能': 'introduction/distinctive_features.md'
-  - 'ClickHouse不擅长做什么': 'introduction/features_considered_disadvantages.md'
+  - 'ClickHouse功能可被视为缺点': 'introduction/features_considered_disadvantages.md'
   - '性能': 'introduction/performance.md'
   - 'Yandex.Metrica使用案例': 'introduction/ya_metrika_task.md'
 

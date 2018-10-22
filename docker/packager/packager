@@ -52,7 +52,7 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts):
     result = []
     if package_type == "deb":
         result.append("DEB_CC={}".format(compiler))
@@ -66,18 +66,28 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type):
     if build_type:
         result.append("BUILD_TYPE={}".format(build_type))
 
+    if cache:
+        result.append("CCACHE_PREFIX={}".format(cache))
+
+    if distcc_hosts:
+        hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
+        result.append('DISTCC_HOSTS="{}"'.format(" ".join(hosts_with_params)))
+    elif cache == "distcc":
+        result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
 
     return result
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     parser = argparse.ArgumentParser(description="ClickHouse building script via docker")
-    parser.add_argument("--package-type", choices=IMAGE_MAP.keys())
+    parser.add_argument("--package-type", choices=IMAGE_MAP.keys(), required=True)
     parser.add_argument("--clickhouse-repo-path", default="../../")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
     parser.add_argument("--compiler", choices=("clang-6.0", "gcc-7", "gcc-8"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
+    parser.add_argument("--cache", choices=("ccache", "distcc"))
+    parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
 
     args = parser.parse_args()
@@ -95,5 +105,6 @@ if __name__ == "__main__":
     if not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
             build_image(image_name, dockerfile)
-    run_image_with_env(image_name, args.output_dir, parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type), ch_root)
+    env_prepared = parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type, args.cache, args.distcc_hosts)
+    run_image_with_env(image_name, args.output_dir, env_prepared, ch_root)
     logging.info("Output placed into {}".format(args.output_dir))
