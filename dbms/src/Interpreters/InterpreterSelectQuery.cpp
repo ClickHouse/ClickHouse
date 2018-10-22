@@ -1164,7 +1164,7 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
 
 static size_t getLimitForSorting(ASTSelectQuery & query)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
+    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
     size_t limit = 0;
     if (!query.distinct && !query.limit_by_expression_list && !query.has_array_join)
     {
