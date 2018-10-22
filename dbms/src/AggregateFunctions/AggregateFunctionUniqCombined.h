@@ -73,6 +73,8 @@ namespace detail
 template <typename Key>
 struct AggregateFunctionUniqCombinedDataWithKey
 {
+    using value_type = Key;
+
     template <UInt8 K>
     using Set = CombinedCardinalityEstimator<Key,
         HashSet<Key, TrivialHash, HashTableGrower<>>,
@@ -87,6 +89,7 @@ struct AggregateFunctionUniqCombinedDataWithKey
     mutable UInt8 inited = 0;
     union
     {
+        mutable char stub[sizeof(Set<20>)];
         mutable Set<12> set_12;
         mutable Set<13> set_13;
         mutable Set<14> set_14;
@@ -98,19 +101,12 @@ struct AggregateFunctionUniqCombinedDataWithKey
         mutable Set<20> set_20;
     };
 
-#define PASTE(x, y) x##y
-#define EVAL(x, y) PASTE(x, y)
-#define DEFAULT_SET EVAL(set_, DEFAULT_HLL_PRECISION)
-
-    AggregateFunctionUniqCombinedDataWithKey() : DEFAULT_SET() {}
+    AggregateFunctionUniqCombinedDataWithKey() : stub() {}
 
     ~AggregateFunctionUniqCombinedDataWithKey()
     {
         switch (inited)
         {
-            case 0:
-                DEFAULT_SET.~CombinedCardinalityEstimator();
-                break;
             case 12:
                 set_12.~CombinedCardinalityEstimator();
                 break;
@@ -141,20 +137,12 @@ struct AggregateFunctionUniqCombinedDataWithKey
         }
     }
 
-    void init(UInt8 precision) const
+    void ALWAYS_INLINE init(UInt8 precision) const
     {
         if (inited)
             return;
 
-        if (precision == DEFAULT_HLL_PRECISION)
-        {
-            inited = precision;
-            return;
-        }
-
         // TODO: assert "inited == precision"
-
-        DEFAULT_SET.~CombinedCardinalityEstimator();
 
         switch (precision)
         {
@@ -221,40 +209,39 @@ struct AggregateFunctionUniqCombinedDataWithKey
             break;         \
     }
 
-#define SET_RETURN_METHOD(method)      \
-    switch (inited)                    \
-    {                                  \
-        case 12:                       \
-            return set_12.method;      \
-        case 13:                       \
-            return set_13.method;      \
-        case 14:                       \
-            return set_14.method;      \
-        case 15:                       \
-            return set_15.method;      \
-        case 16:                       \
-            return set_16.method;      \
-        case 17:                       \
-            return set_17.method;      \
-        case 18:                       \
-            return set_18.method;      \
-        case 19:                       \
-            return set_19.method;      \
-        case 20:                       \
-            return set_20.method;      \
-        default:                       \
-            return DEFAULT_SET.method; \
+#define SET_RETURN_METHOD(method)    \
+    switch (inited)                  \
+    {                                \
+        case 12:                     \
+            return set_12.method;    \
+        case 13:                     \
+            return set_13.method;    \
+        case 14:                     \
+            return set_14.method;    \
+        case 15:                     \
+            return set_15.method;    \
+        case 16:                     \
+            return set_16.method;    \
+        case 17:                     \
+            return set_17.method;    \
+        case 18:                     \
+            return set_18.method;    \
+        case 19:                     \
+            return set_19.method;    \
+        case 20:                     \
+            return set_20.method;    \
+        default:                     \
+            /* TODO: UNREACHABLE! */ \
+            return set_12.method;    \
     }
 
-    void insert(Key value, UInt8 precision)
+    void ALWAYS_INLINE insert(Key value)
     {
-        init(precision);
         SET_METHOD(insert(value));
     }
 
-    void merge(const AggregateFunctionUniqCombinedDataWithKey<Key> & rhs, UInt8 precision)
+    void ALWAYS_INLINE merge(const AggregateFunctionUniqCombinedDataWithKey<Key> & rhs)
     {
-        init(precision);
         switch (inited)
         {
             case 12:
@@ -287,41 +274,35 @@ struct AggregateFunctionUniqCombinedDataWithKey
         }
     }
 
-    void write(DB::WriteBuffer & out, UInt8 precision) const
+    void ALWAYS_INLINE write(DB::WriteBuffer & out) const
     {
-        init(precision);
         SET_METHOD(write(out));
     }
 
-    void read(DB::ReadBuffer & in, UInt8 precision)
+    void ALWAYS_INLINE read(DB::ReadBuffer & in)
     {
-        init(precision);
         SET_METHOD(read(in));
     }
 
-    UInt32 size(UInt8 precision) const
+    UInt32 ALWAYS_INLINE size() const
     {
-        init(precision);
         SET_RETURN_METHOD(size());
     }
 
 #undef SET_METHOD
 #undef SET_RETURN_METHOD
-#undef PASTE
-#undef EVAL
-#undef DEFAULT_SET
 #undef DEFAULT_HLL_PRECISION
 };
 
 
 template <typename T>
-struct __attribute__((__packed__)) AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedDataWithKey<UInt32>
+struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedDataWithKey<UInt32>
 {
 };
 
 
 template <>
-struct __attribute__((__packed__)) AggregateFunctionUniqCombinedData<String> : public AggregateFunctionUniqCombinedDataWithKey<UInt64>
+struct AggregateFunctionUniqCombinedData<String> : public AggregateFunctionUniqCombinedDataWithKey<UInt64>
 {
 };
 
@@ -346,38 +327,44 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    void create(AggregateDataPtr place) const override
+    {
+        IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<T>, AggregateFunctionUniqCombined<T>>::create(place);
+        this->data(place).init(precision);
+    }
+
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (!std::is_same_v<T, String>)
         {
             const auto & value = static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
-            this->data(place).insert(detail::AggregateFunctionUniqCombinedTraits<T>::hash(value), precision);
+            this->data(place).insert(detail::AggregateFunctionUniqCombinedTraits<T>::hash(value));
         }
         else
         {
             StringRef value = columns[0]->getDataAt(row_num);
-            this->data(place).insert(CityHash_v1_0_2::CityHash64(value.data, value.size), precision);
+            this->data(place).insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
         }
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), precision);
+        this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).write(buf, precision);
+        this->data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
-        this->data(place).read(buf, precision);
+        this->data(place).read(buf);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size(precision));
+        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
 
     const char * getHeaderFilePath() const override
@@ -417,31 +404,37 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    void create(AggregateDataPtr place) const override
+    {
+        IAggregateFunctionDataHelper<AggregateFunctionUniqCombinedData<UInt64>,
+            AggregateFunctionUniqCombinedVariadic<is_exact, argument_is_tuple>>::create(place);
+        this->data(place).init(precision);
+    }
+
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).insert(typename AggregateFunctionUniqCombinedData<UInt64>::Set<12>::value_type(
-                                     UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)),
-            precision);
+        this->data(place).insert(typename AggregateFunctionUniqCombinedData<UInt64>::value_type(
+            UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), precision);
+        this->data(place).merge(this->data(rhs));
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
-        this->data(place).write(buf, precision);
+        this->data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
-        this->data(place).read(buf, precision);
+        this->data(place).read(buf);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size(precision));
+        static_cast<ColumnUInt64 &>(to).getData().push_back(this->data(place).size());
     }
 
     const char * getHeaderFilePath() const override
