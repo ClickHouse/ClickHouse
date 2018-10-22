@@ -73,7 +73,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 Get the element with the index 'n' from the array 'arr'.'n' must be any integer type.
 Indexes in an array begin from one.
-Negative indexes are supported. In this case, it SELECTs the corresponding element numbered from the end. For example, 'arr\[-1\]' is the last item in the array.
+Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, 'arr\[-1\]' is the last item in the array.
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.).
 
