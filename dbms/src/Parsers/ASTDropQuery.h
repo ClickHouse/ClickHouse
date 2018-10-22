@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -9,7 +9,7 @@ namespace DB
 
 /** DROP query
   */
-class ASTDropQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTDropQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
     enum Kind
@@ -21,9 +21,6 @@ public:
 
     Kind kind;
     bool if_exists{false};
-    bool temporary{false};
-    String database;
-    String table;
 
     /** Get the text that identifies this element. */
     String getID() const override;
