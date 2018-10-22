@@ -166,11 +166,11 @@ protected:
                     else
                     {
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(static_cast<UInt64>(it->second.data_compressed));
+                            res_columns[res_index++]->insert(it->second.data_compressed);
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(static_cast<UInt64>(it->second.data_uncompressed));
+                            res_columns[res_index++]->insert(it->second.data_uncompressed);
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(static_cast<UInt64>(it->second.marks));
+                            res_columns[res_index++]->insert(it->second.marks);
                     }
                 }
 

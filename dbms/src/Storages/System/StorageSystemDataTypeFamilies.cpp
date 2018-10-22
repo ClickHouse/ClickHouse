@@ -23,12 +23,12 @@ void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, const
     for (const auto & name : names)
     {
         res_columns[0]->insert(name);
-        res_columns[1]->insert(UInt64(factory.isCaseInsensitive(name)));
+        res_columns[1]->insert(factory.isCaseInsensitive(name));
 
         if (factory.isAlias(name))
             res_columns[2]->insert(factory.aliasTo(name));
         else
-            res_columns[2]->insert(String(""));
+            res_columns[2]->insert("");
     }
 }
 

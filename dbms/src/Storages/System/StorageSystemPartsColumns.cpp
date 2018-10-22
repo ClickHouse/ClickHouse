@@ -110,28 +110,28 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
                 columns[j++]->insert(out.str());
             }
             columns[j++]->insert(part->name);
-            columns[j++]->insert(static_cast<UInt64>(part_state == State::Committed));
-            columns[j++]->insert(static_cast<UInt64>(part->marks_count));
+            columns[j++]->insert(part_state == State::Committed);
+            columns[j++]->insert(part->marks_count);
 
-            columns[j++]->insert(static_cast<UInt64>(part->rows_count));
-            columns[j++]->insert(static_cast<UInt64>(part->bytes_on_disk));
-            columns[j++]->insert(static_cast<UInt64>(columns_size.data_compressed));
-            columns[j++]->insert(static_cast<UInt64>(columns_size.data_uncompressed));
-            columns[j++]->insert(static_cast<UInt64>(columns_size.marks));
-            columns[j++]->insert(static_cast<UInt64>(part->modification_time));
-            columns[j++]->insert(static_cast<UInt64>(part->remove_time.load(std::memory_order_relaxed)));
+            columns[j++]->insert(part->rows_count);
+            columns[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
+            columns[j++]->insert(columns_size.data_compressed);
+            columns[j++]->insert(columns_size.data_uncompressed);
+            columns[j++]->insert(columns_size.marks);
+            columns[j++]->insert(UInt64(part->modification_time));
+            columns[j++]->insert(UInt64(part->remove_time.load(std::memory_order_relaxed)));
 
-            columns[j++]->insert(static_cast<UInt64>(use_count));
+            columns[j++]->insert(UInt64(use_count));
 
-            columns[j++]->insert(static_cast<UInt64>(min_date));
-            columns[j++]->insert(static_cast<UInt64>(max_date));
+            columns[j++]->insert(min_date);
+            columns[j++]->insert(max_date);
             columns[j++]->insert(part->info.partition_id);
             columns[j++]->insert(part->info.min_block);
             columns[j++]->insert(part->info.max_block);
-            columns[j++]->insert(static_cast<UInt64>(part->info.level));
-            columns[j++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
-            columns[j++]->insert(static_cast<UInt64>(index_size_in_bytes));
-            columns[j++]->insert(static_cast<UInt64>(index_size_in_allocated_bytes));
+            columns[j++]->insert(part->info.level);
+            columns[j++]->insert(UInt64(part->info.getDataVersion()));
+            columns[j++]->insert(index_size_in_bytes);
+            columns[j++]->insert(index_size_in_allocated_bytes);
 
             columns[j++]->insert(info.database);
             columns[j++]->insert(info.table);
@@ -153,10 +153,10 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             }
 
             MergeTreeDataPart::ColumnSize column_size = part->getColumnSize(column.name, *column.type);
-            columns[j++]->insert(static_cast<UInt64>(column_size.data_compressed + column_size.marks));
-            columns[j++]->insert(static_cast<UInt64>(column_size.data_compressed));
-            columns[j++]->insert(static_cast<UInt64>(column_size.data_uncompressed));
-            columns[j++]->insert(static_cast<UInt64>(column_size.marks));
+            columns[j++]->insert(column_size.data_compressed + column_size.marks);
+            columns[j++]->insert(column_size.data_compressed);
+            columns[j++]->insert(column_size.data_uncompressed);
+            columns[j++]->insert(column_size.marks);
 
             if (has_state_column)
                 columns[j++]->insert(part->stateString());
