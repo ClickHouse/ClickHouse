@@ -2,6 +2,10 @@
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+
 namespace DB
 {
 
@@ -44,7 +48,7 @@ void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
 
 
 DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const ASTTableExpression & table_expression,
-                                                                   const Context & context)
+                                                                   const String & current_database)
 {
     DatabaseAndTableWithAlias database_and_table_with_alias;
 
@@ -56,7 +60,7 @@ DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const ASTTabl
 
         if (table_expression.database_and_table_name->children.empty())
         {
-            database_and_table_with_alias.database = context.getCurrentDatabase();
+            database_and_table_with_alias.database = current_database;
             database_and_table_with_alias.table = identifier.name;
         }
         else
@@ -133,6 +137,9 @@ std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const ASTIdentif
 
 String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
 {
+    if (alias.empty() && table.empty())
+        return "";
+
     return (!alias.empty() ? alias : (database + '.' + table)) + '.';
 }
 

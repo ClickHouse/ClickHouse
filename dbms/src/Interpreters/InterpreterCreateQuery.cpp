@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
+    extern const int THERE_IS_NO_DEFAULT_VALUE;
 }
 
 
@@ -224,6 +225,10 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
         const auto block = actions->getSampleBlock();
 
+        for (auto action : actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+
         for (auto & column : defaulted_columns)
         {
             const auto name_and_type_ptr = column.first;
@@ -364,9 +369,8 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
 {
     const auto & settings = context.getSettingsRef();
     bool allow_low_cardinality = settings.allow_experimental_low_cardinality_type != 0;
-    bool allow_decimal = settings.allow_experimental_decimal_type;
 
-    if (allow_low_cardinality && allow_decimal)
+    if (allow_low_cardinality)
         return;
 
     auto check_types = [&](const NamesAndTypesList & list)
@@ -378,12 +382,6 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
                 String message = "Cannot create table with column '" + column.name + "' which type is '"
                                  + column.type->getName() + "' because LowCardinality type is not allowed. "
                                  + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
-                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
-            }
-            if (!allow_decimal && column.type && isDecimal(column.type))
-            {
-                String message = "Cannot create table with column '" + column.name + "' which type is '" + column.type->getName()
-                                 + "'. Set setting allow_experimental_decimal_type = 1 in order to allow it.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }

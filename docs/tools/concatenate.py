@@ -45,7 +45,7 @@ def concatenate(lang, docs_path, single_page_file):
             # function is passed into re.sub() to process links
             def link_proc(matchObj):
                 text, link = matchObj.group().strip('[)').split('](')
-                if link.startswith('http'):
+                if link.startswith('http') or '.jpeg' in link or '.jpg' in link or '.png' in link or '.gif' in link:
                     return '[' + text + '](' + link + ')'
                 else:
                     sharp_pos = link.find('#')
