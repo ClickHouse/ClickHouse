@@ -1,1 +1,4 @@
-../../../en/data_types/special_data_types/set.md
+# Set
+
+可以用在 IN 表达式的右半部分。
+

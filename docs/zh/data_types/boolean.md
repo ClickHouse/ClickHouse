@@ -1,1 +1,3 @@
-../../en/data_types/boolean.md
+# Boolean Values
+
+没有单独的类型来存储布尔值。可以使用 UInt8 类型，取值限制为 0 或 1。
