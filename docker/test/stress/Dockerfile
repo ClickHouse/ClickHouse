@@ -25,4 +25,4 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb; \
-    service clickhouse-server start && ./stress --output-folder test_output
+    service clickhouse-server start && sleep 1 && ./stress --output-folder test_output
