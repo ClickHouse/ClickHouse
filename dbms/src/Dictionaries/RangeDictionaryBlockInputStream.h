@@ -141,7 +141,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getCo
     auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     for (T value : array)
-        column_vector->insert(value);
+        column_vector->insertValue(value);
     return column_vector;
 }
 

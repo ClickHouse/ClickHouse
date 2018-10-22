@@ -39,7 +39,7 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
     {
         /// Replace the filter column to a constant with value 1.
         FilterDescription filter_description_check(*column_elem.column);
-        column_elem.column = column_elem.type->createColumnConst(header.rows(), UInt64(1));
+        column_elem.column = column_elem.type->createColumnConst(header.rows(), 1u);
     }
 
     if (remove_filter)
@@ -144,7 +144,7 @@ Block FilterBlockInputStream::readImpl()
         if (filtered_rows == filter_and_holder.data->size())
         {
             /// Replace the column with the filter by a constant.
-            res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createColumnConst(filtered_rows, UInt64(1));
+            res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createColumnConst(filtered_rows, 1u);
             /// No need to touch the rest of the columns.
             return removeFilterIfNeed(std::move(res));
         }
@@ -161,7 +161,7 @@ Block FilterBlockInputStream::readImpl()
                 /// Example:
                 ///  SELECT materialize(100) AS x WHERE x
                 /// will work incorrectly.
-                current_column.column = current_column.type->createColumnConst(filtered_rows, UInt64(1));
+                current_column.column = current_column.type->createColumnConst(filtered_rows, 1u);
                 continue;
             }
 

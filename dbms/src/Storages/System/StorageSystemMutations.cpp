@@ -119,7 +119,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
             res_columns[col_num++]->insert(block_partition_ids);
             res_columns[col_num++]->insert(block_numbers);
             res_columns[col_num++]->insert(status.parts_to_do);
-            res_columns[col_num++]->insert(UInt64(status.is_done));
+            res_columns[col_num++]->insert(status.is_done);
         }
     }
 }

@@ -1059,11 +1059,11 @@ public:
                 ++num_hosts_finished;
 
                 columns[0]->insert(host);
-                columns[1]->insert(static_cast<UInt64>(port));
-                columns[2]->insert(static_cast<Int64>(status.code));
+                columns[1]->insert(port);
+                columns[2]->insert(status.code);
                 columns[3]->insert(status.message);
-                columns[4]->insert(static_cast<UInt64>(waiting_hosts.size() - num_hosts_finished));
-                columns[5]->insert(static_cast<UInt64>(current_active_hosts.size()));
+                columns[4]->insert(waiting_hosts.size() - num_hosts_finished);
+                columns[5]->insert(current_active_hosts.size());
             }
             res = sample.cloneWithColumns(std::move(columns));
         }

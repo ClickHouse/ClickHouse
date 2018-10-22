@@ -9,6 +9,8 @@
 #include <Common/UInt128.h>
 #include <Core/Types.h>
 #include <Core/Defines.h>
+#include <Core/UUID.h>
+#include <common/DayNum.h>
 #include <common/strong_typedef.h>
 
 
@@ -181,10 +183,7 @@ public:
     }
 
     template <typename T>
-    Field(T && rhs, std::integral_constant<int, Field::TypeToEnum<std::decay_t<T>>::value> * = nullptr)
-    {
-        createConcrete(std::forward<T>(rhs));
-    }
+    Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *> = nullptr);
 
     /// Create a string inplace.
     Field(const char * data, size_t size)
@@ -242,18 +241,7 @@ public:
 
     template <typename T>
     std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
-    operator= (T && rhs)
-    {
-        if (which != TypeToEnum<std::decay_t<T>>::value)
-        {
-            destroy();
-            createConcrete(std::forward<T>(rhs));
-        }
-        else
-            assignConcrete(std::forward<T>(rhs));
-
-        return *this;
-    }
+    operator= (T && rhs);
 
     ~Field()
     {
@@ -596,7 +584,9 @@ template <> struct NearestFieldType<UInt8>   { using Type = UInt64; };
 template <> struct NearestFieldType<UInt16>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt32>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt64>  { using Type = UInt64; };
+template <> struct NearestFieldType<DayNum>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt128> { using Type = UInt128; };
+template <> struct NearestFieldType<UUID>  { using Type = UInt128; };
 template <> struct NearestFieldType<Int8>    { using Type = Int64; };
 template <> struct NearestFieldType<Int16>   { using Type = Int64; };
 template <> struct NearestFieldType<Int32>   { using Type = Int64; };
@@ -605,19 +595,57 @@ template <> struct NearestFieldType<Int128>  { using Type = Int128; };
 template <> struct NearestFieldType<Decimal32>   { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldType<Decimal64>   { using Type = DecimalField<Decimal64>; };
 template <> struct NearestFieldType<Decimal128>  { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldType<DecimalField<Decimal32>>   { using Type = DecimalField<Decimal32>; };
+template <> struct NearestFieldType<DecimalField<Decimal64>>   { using Type = DecimalField<Decimal64>; };
+template <> struct NearestFieldType<DecimalField<Decimal128>>  { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldType<Float32> { using Type = Float64; };
 template <> struct NearestFieldType<Float64> { using Type = Float64; };
+template <> struct NearestFieldType<const char*>  { using Type = String; };
 template <> struct NearestFieldType<String>  { using Type = String; };
 template <> struct NearestFieldType<Array>   { using Type = Array; };
 template <> struct NearestFieldType<Tuple>   { using Type = Tuple; };
 template <> struct NearestFieldType<bool>    { using Type = UInt64; };
 template <> struct NearestFieldType<Null>    { using Type = Null; };
 
+template <typename T>
+decltype(auto) nearestFieldType(T && x)
+{
+    using U = typename NearestFieldType<std::decay_t<T>>::Type;
+    if constexpr (std::is_same_v<std::decay_t<T>, U>)
+        return std::forward<T>(x);
+    else
+        return U(x);
+}
+
+/// This (rather tricky) code is to avoid ambiguity in expressions like
+/// Field f = 1;
+/// instead of
+/// Field f = Int64(1);
+/// Things to note:
+/// 1. float <--> int needs explicit cast
+/// 2. customized types needs explicit cast
+template <typename T>
+Field::Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *>)
+{
+    auto && val = nearestFieldType(std::forward<T>(rhs));
+    createConcrete(std::forward<decltype(val)>(val));
+}
 
 template <typename T>
-typename NearestFieldType<T>::Type nearestFieldType(const T & x)
+std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, Field &>
+Field::operator= (T && rhs)
 {
-    return typename NearestFieldType<T>::Type(x);
+    auto && val = nearestFieldType(std::forward<T>(rhs));
+    using U = decltype(val);
+    if (which != TypeToEnum<std::decay_t<U>>::value)
+    {
+        destroy();
+        createConcrete(std::forward<U>(val));
+    }
+    else
+        assignConcrete(std::forward<U>(val));
+
+    return *this;
 }
 
 
