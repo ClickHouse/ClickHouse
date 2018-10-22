@@ -1400,7 +1400,8 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     queue_.pullLogsToQueue(zookeeper);
 
     Coordination::GetResponse quorum_last_part_response = quorum_last_part_future.get();
-    if (!quorum_last_part_response.error) {
+    if (!quorum_last_part_response.error)
+    {
         ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(queue.format_version);
         if (!quorum_last_part_response.data.empty())
         {
