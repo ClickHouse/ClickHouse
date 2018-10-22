@@ -60,6 +60,9 @@ Returns the date.
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
 
+!!! attention
+    The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do "natural" overflow.
+
 ## toStartOfQuarter
 
 Rounds down a date or date with time to the first day of the quarter.
