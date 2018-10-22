@@ -69,6 +69,7 @@ namespace
     AggregateFunctionPtr createAggregateFunctionUniqCombined(
         const std::string & name, const DataTypes & argument_types, const Array & params)
     {
+        /// log2 of the number of cells in HyperLogLog.
         /// Reasonable default value, selected to be comparable in quality with "uniq" aggregate function.
         UInt8 precision = 17;
 
