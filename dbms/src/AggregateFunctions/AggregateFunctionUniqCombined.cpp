@@ -30,8 +30,7 @@ namespace
     template <UInt8 K>
     AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_types)
     {
-        /// We use exact hash function if the user wants it;
-        /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.
+        /// We use exact hash function if the arguments are not contiguous in memory, because only exact hash function has support for this case.
         bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 
         if (argument_types.size() == 1)
