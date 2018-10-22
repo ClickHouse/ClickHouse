@@ -42,7 +42,7 @@ if __name__ == "__main__":
     parser.add_argument("--perf-test-xml-path", default='/usr/share/clickhouse-test/performance/')
     parser.add_argument("--server-log-folder", default='/var/log/clickhouse-server')
     parser.add_argument("--output-folder")
-    parser.add_argument("--num-parallel", default=cpu_count() // 2);
+    parser.add_argument("--num-parallel", default=cpu_count() // 3);
 
     args = parser.parse_args()
     func_pipes = []
