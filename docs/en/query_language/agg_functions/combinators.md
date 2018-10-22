@@ -4,6 +4,8 @@
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
+<a name="agg-functions-combinator-if"></a>
+
 ## -If
 
 The suffix -If can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument – a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
@@ -24,7 +26,7 @@ Example 2: `uniqArray(arr)` – Count the number of unique elements in all 'arr'
 
 ## -State
 
-If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the 'uniq' function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an AggregateFunction(...) that can be used for further processing or stored in a table to finish aggregating later. See the sections "AggregatingMergeTree" and "Functions for working with intermediate aggregation states".
+If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the `uniq` function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an AggregateFunction(...) that can be used for further processing or stored in a table to finish aggregating later. See the sections "AggregatingMergeTree" and "Functions for working with intermediate aggregation states".
 
 ## -Merge
 
