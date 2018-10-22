@@ -48,6 +48,9 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
+    StoragePtr getTargetTable() const;
+    StoragePtr tryGetTargetTable() const;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -71,7 +74,6 @@ private:
     bool has_inner_table = false;
 
     StoragePtr getTargetTable() const;
-
     void checkStatementCanBeForwarded() const;
 
 protected:

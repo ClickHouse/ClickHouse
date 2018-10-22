@@ -23,7 +23,7 @@ SELECT * FROM (SELECT 1 AS id UNION ALL SELECT 2) WHERE id = 1;
 SELECT * FROM (SELECT arrayJoin([1, 2, 3]) AS id) WHERE id = 1;
 SELECT id FROM (SELECT arrayJoin([1, 2, 3]) AS id) WHERE id = 1;
 
-SELECT * FROM (SELECT 1 AS id, (SELECT 1)) WHERE _subquery1  = 1;
+SELECT * FROM (SELECT 1 AS id, (SELECT 1) as subquery) WHERE subquery = 1;
 SELECT * FROM (SELECT toUInt64(b) AS a, sum(id) AS b FROM test.test) WHERE a = 3;
 SELECT * FROM (SELECT toUInt64(b), sum(id) AS b FROM test.test) WHERE `toUInt64(sum(id))` = 3;
 SELECT date, id, name, value FROM (SELECT date, name, value, min(id) AS id FROM test.test GROUP BY date, name, value) WHERE id = 1;

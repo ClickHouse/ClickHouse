@@ -45,6 +45,10 @@ add_executable (in_join_subqueries_preprocessor in_join_subqueries_preprocessor.
 target_link_libraries (in_join_subqueries_preprocessor dbms)
 add_check(in_join_subqueries_preprocessor)
 
+add_executable (expression_analyzer expression_analyzer.cpp)
+target_link_libraries (expression_analyzer dbms clickhouse_storages_system)
+add_check(expression_analyzer)
+
 add_executable (users users.cpp)
 target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY})
 
