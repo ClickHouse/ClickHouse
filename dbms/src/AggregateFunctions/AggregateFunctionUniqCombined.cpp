@@ -114,8 +114,7 @@ namespace
                 return createAggregateFunctionWithK<20>(argument_types);
         }
 
-        // TODO: not reached!
-        return {};
+        __builtin_unreachable();
     }
 
 } // namespace
