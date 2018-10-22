@@ -77,6 +77,11 @@ void Connection::connect()
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
+        if (timeouts.keep_alive_timeout.totalSeconds())
+        {
+            socket->setKeepAlive(true);
+            socket->setOption(SOL_TCP, TCP_KEEPIDLE, timeouts.keep_alive_timeout);
+        }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
