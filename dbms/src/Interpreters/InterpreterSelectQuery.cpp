@@ -463,6 +463,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     }
 
     AnalysisResult expressions;
+    SelectQueryInfo query_info;
 
     if (dry_run)
     {
@@ -486,7 +487,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info);
+        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, query_info);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
     }
@@ -541,7 +542,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             if (!expressions.second_stage && !expressions.need_aggregate && !expressions.has_having)
             {
                 if (expressions.has_order_by)
-                    executeOrder(pipeline);
+                    executeOrder(pipeline, query_info);
 
                 if (expressions.has_order_by && query.limit_length)
                     executeDistinct(pipeline, false, expressions.selected_columns);
@@ -608,7 +609,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (!expressions.first_stage && !expressions.need_aggregate && !(query.group_by_with_totals && !aggregate_final))
                     executeMergeSorted(pipeline);
                 else    /// Otherwise, just sort.
-                    executeOrder(pipeline);
+                    executeOrder(pipeline, query_info);
             }
 
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
@@ -672,7 +673,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 }
 
 void InterpreterSelectQuery::executeFetchColumns(
-    QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info)
+    QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info, SelectQueryInfo & query_info)
 {
 
     const Settings & settings = context.getSettingsRef();
@@ -884,7 +885,6 @@ void InterpreterSelectQuery::executeFetchColumns(
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        SelectQueryInfo query_info;
         query_info.query = query_ptr;
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;
@@ -1179,7 +1179,7 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 }
 
 
-void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
+void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo & query_info)
 {
     SortDescription order_descr = getSortDescription(query);
 
@@ -1189,31 +1189,32 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
     const Settings & settings = context.getSettingsRef();
     size_t limit = getLimitForSorting(query);
 
-    bool use_sorting = true;
+    /// If columns in ORDER BY are prefix of primary key
+    /// Can read data without sorting.
+    bool can_read_without_sorting = false;
 
-    auto order = order_descr[0].direction;
+    auto direction = order_descr[0].direction;
 
     if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
     {
-        if (!query.distinct && !query.group_expression_list)
+        if (!query.distinct && !query.group_expression_list && !query.limit_by_value && !query.limit_by_expression_list)
         {
             auto aliases = query_analyzer->getAliases();
-            merge_tree->do_not_read_with_order = true;
             auto column_sorted_order = merge_tree->getData().getSortColumns();
 
             for (size_t i = 0; i < order_descr.size(); ++i)
             {
                 if ((i == column_sorted_order.size())
                     || (order_descr[i].column_name != column_sorted_order[i])
-                    || (order != order_descr[i].direction)
+                    || (direction != order_descr[i].direction)
                     || aliases.find(order_descr[i].column_name) != aliases.end())
                     break;
 
                 if (i == order_descr.size() - 1)
                 {
-                    /// Threads can not steal task. (for order)
-                    merge_tree->do_not_read_with_order = false;
-                    use_sorting = false;
+                    /// Threads can not steal task. For read with order.
+                    query_info.steal_task = false;
+                    can_read_without_sorting = true;
 
                     pipeline.transform([&](auto & stream)
                     {
@@ -1221,12 +1222,11 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
                         stream = async_stream;
                     });
 
-                    if (order == -1)
+                    if (direction == -1)
                     {
                         pipeline.transform([&](auto & stream)
                         {
-                            auto reverse_stream = std::make_shared<ReverseBlockInputStream>(stream);
-                            stream = reverse_stream;
+                            stream = std::make_shared<ReverseBlockInputStream>(stream);
                         });
                     }
                 }
@@ -1234,7 +1234,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
         }
     }
 
-    if (use_sorting)
+    if (!can_read_without_sorting)
     {
 
         pipeline.transform([&](auto & stream)

@@ -318,8 +318,6 @@ public:
 
     bool is_dropped{false};
 
-    bool do_not_read_with_order{true};
-
     /// Does table support index for IN sections
     virtual bool supportsIndexForIn() const { return false; }
 

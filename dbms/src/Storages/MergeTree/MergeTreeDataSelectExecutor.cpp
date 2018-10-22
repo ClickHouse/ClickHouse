@@ -137,12 +137,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Context & context,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read,
-    bool do_not_read_with_order) const
+    Int64 max_block_number_to_read) const
 {
     return readFromParts(
         data.getDataPartsVector(), column_names_to_return, query_info, context,
-        max_block_size, num_streams, max_block_number_to_read, do_not_read_with_order);
+        max_block_size, num_streams, max_block_number_to_read);
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
@@ -152,8 +151,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Context & context,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read,
-    bool do_not_read_with_order) const
+    Int64 max_block_number_to_read) const
 {
     size_t part_index = 0;
 
@@ -587,7 +585,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             query_info.prewhere_info,
             virt_column_names,
             settings,
-            do_not_read_with_order);
+            query_info.steal_task);
     }
 
     if (use_sampling)
@@ -617,7 +615,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     const PrewhereInfoPtr & prewhere_info,
     const Names & virt_columns,
     const Settings & settings,
-    bool do_not_read_with_order) const
+    bool steal_task) const
 {
     const size_t min_marks_for_concurrent_read =
         (settings.merge_tree_min_rows_for_concurrent_read + data.index_granularity - 1) / data.index_granularity;
@@ -651,7 +649,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
         MergeTreeReadPoolPtr pool = std::make_shared<MergeTreeReadPool>(
             num_streams, sum_marks, min_marks_for_concurrent_read, parts, data, prewhere_info, true,
-            column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, do_not_read_with_order);
+            column_names, MergeTreeReadPool::BackoffSettings(settings), settings.preferred_block_size_bytes, steal_task);
 
         /// Let's estimate total number of rows for progress bar.
         const size_t total_rows = data.index_granularity * sum_marks;

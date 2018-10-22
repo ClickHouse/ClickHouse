@@ -28,8 +28,7 @@ public:
         const Context & context,
         size_t max_block_size,
         unsigned num_streams,
-        Int64 max_block_number_to_read,
-        bool do_not_read_with_order = false) const;
+        Int64 max_block_number_to_read) const;
 
     BlockInputStreams readFromParts(
         MergeTreeData::DataPartsVector parts,
@@ -38,8 +37,7 @@ public:
         const Context & context,
         size_t max_block_size,
         unsigned num_streams,
-        Int64 max_block_number_to_read,
-        bool do_not_read_with_order = false) const;
+        Int64 max_block_number_to_read) const;
 
 private:
     MergeTreeData & data;
@@ -55,7 +53,7 @@ private:
         const PrewhereInfoPtr & prewhere_info,
         const Names & virt_columns,
         const Settings & settings,
-        bool do_read_with_order) const;
+        bool steal_task) const;
 
     BlockInputStreams spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
