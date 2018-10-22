@@ -54,9 +54,9 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
 
-    void visit(ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const;
-    void visit(ASTTableExpression *, ASTPtr &, const DumpASTNode &) const;
+    void visit(const ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode & dump) const;
+    void visit(const ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const;
+    void visit(const ASTTableExpression *, ASTPtr &, const DumpASTNode &) const;
 
     void visitChildren(ASTPtr & ast) const
     {
@@ -67,7 +67,7 @@ private:
     template <typename T>
     bool tryVisit(ASTPtr & ast, const DumpASTNode & dump) const
     {
-        if (T * t = typeid_cast<T *>(ast.get()))
+        if (const T * t = typeid_cast<const T *>(ast.get()))
         {
             visit(t, ast, dump);
             return true;

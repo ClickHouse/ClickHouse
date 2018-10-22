@@ -1,12 +1,17 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <memory>
+#include <unordered_map>
 
 namespace DB
 {
-class ExpressionAnalyzer;
 
+class ExpressionAnalyzer;
+class Context;
 struct ScopeStack;
+
 
 namespace ErrorCodes
 {
