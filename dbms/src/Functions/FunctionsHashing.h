@@ -173,7 +173,6 @@ struct SHA256Impl
 struct SipHash64Impl
 {
     static constexpr auto name = "sipHash64";
-
     using ReturnType = UInt64;
 
     static UInt64 apply(const char * begin, size_t size)
@@ -181,7 +180,8 @@ struct SipHash64Impl
         return sipHash64(begin, size);
     }
 
-    static UInt64 mergeHashes(UInt64 h1, UInt64 h2){
+    static UInt64 mergeHashes(UInt64 h1, UInt64 h2)
+    {
         return IntHash64Impl::apply(h1) ^ h2;
     }
 };
@@ -635,7 +635,6 @@ struct MurmurHash2Impl32
 struct MurmurHash2Impl64
 {
     static constexpr auto name = "murmurHash2_64";
-
     using ReturnType = UInt64;
 
     static UInt64 apply(const char * data, const size_t size)
@@ -643,7 +642,8 @@ struct MurmurHash2Impl64
         return MurmurHash64A(data, size, 0);
     }
 
-    static UInt64 mergeHashes(UInt64 h1, UInt64 h2){
+    static UInt64 mergeHashes(UInt64 h1, UInt64 h2)
+    {
         return IntHash64Impl::apply(h1) ^ h2;
     }
 };
@@ -651,7 +651,6 @@ struct MurmurHash2Impl64
 struct MurmurHash3Impl32
 {
     static constexpr auto name = "murmurHash3_32";
-
     using ReturnType = UInt32;
 
     static UInt32 apply(const char * data, const size_t size)
