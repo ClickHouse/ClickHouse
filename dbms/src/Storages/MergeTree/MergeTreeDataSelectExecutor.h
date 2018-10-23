@@ -23,7 +23,7 @@ public:
       * max_blocks_number_to_read - if not nullptr, do not read all the parts whose right border is greater than max_block in partition.
       */
     using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-    
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,

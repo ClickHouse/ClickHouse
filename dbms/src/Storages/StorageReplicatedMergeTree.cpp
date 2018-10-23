@@ -2675,7 +2675,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
             Coordination::Requests ops;
             Coordination::Responses responses;
-            
+
             Coordination::Stat added_parts_stat;
             String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
 
@@ -2686,7 +2686,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
             auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
             parts_with_quorum.added_parts[part_info.partition_id] = part_name;
-            
+
             String new_added_parts = parts_with_quorum.toString();
 
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
