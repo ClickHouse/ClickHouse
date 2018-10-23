@@ -64,7 +64,7 @@ struct Less
 
 Block FinishSortingBlockInputStream::readImpl()
 {
-    if (limit && total_rows_processed == limit)
+    if (limit && total_rows_processed >= limit)
         return {};
 
     Block res;
