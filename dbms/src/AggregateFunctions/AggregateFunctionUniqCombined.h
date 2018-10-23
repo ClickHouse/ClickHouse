@@ -69,11 +69,19 @@ namespace detail
 template <typename Key, UInt8 K>
 struct AggregateFunctionUniqCombinedDataWithKey
 {
+    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<>>, 16, K - 3, K, TrivialHash, Key>;
+
+    Set set;
+};
+
+template <typename Key>
+struct AggregateFunctionUniqCombinedDataWithKey<Key, 17>
+{
     using Set = CombinedCardinalityEstimator<Key,
         HashSet<Key, TrivialHash, HashTableGrower<>>,
         16,
-        K - 3,
-        K,
+        14,
+        17,
         TrivialHash,
         Key,
         HyperLogLogBiasEstimator<UniqCombinedBiasData>,
