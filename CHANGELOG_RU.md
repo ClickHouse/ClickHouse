@@ -68,7 +68,7 @@
 * Исправлена ошибка парсинга формата CSV с числами с плавающей запятой, если используется разделитель CSV не по-умолчанию, такой как например, `;` [#3155](https://github.com/yandex/ClickHouse/pull/3155).
 * Исправлена функция `arrayCumSumNonNegative` (она не накапливает отрицательные значения, если аккумулятор становится меньше нуля). [Aleksey Studnev](https://github.com/yandex/ClickHouse/pull/3163)
 * Исправлена работа `Merge` таблицы поверх `Distributed` таблиц при использовании `PREWHERE`. [#3165](https://github.com/yandex/ClickHouse/pull/3165)
-* Исправления ошибок в запросе ALTER UPDATE.
+* Исправления ошибок в запросе `ALTER UPDATE`.
 * Исправления ошибок в табличной функции `odbc`, которые возникли в версии 18.12. [#3197](https://github.com/yandex/ClickHouse/pull/3197)
 * Исправлена работа агрегатных функций с комбинаторами `StateArray`. [#3188](https://github.com/yandex/ClickHouse/pull/3188)
 * Исправлено падение при делении значения типа `Decimal` на ноль. [69dd6609](https://github.com/yandex/ClickHouse/commit/69dd6609193beb4e7acd3e6ad216eca0ccfb8179)
