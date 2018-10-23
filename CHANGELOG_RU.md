@@ -66,7 +66,7 @@
 * Исправление преобразования типов между `Decimal` и целыми числами. [#3211](https://github.com/yandex/ClickHouse/pull/3211)
 * Исправлены ошибки в работе настройки `enable_optimize_predicate_expression`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3231)
 * Исправлена ошибка парсинга формата CSV с числами с плавающей запятой, если используется разделитель CSV не по-умолчанию, такой как например, `;` [#3155](https://github.com/yandex/ClickHouse/pull/3155).
-* Испоавлена функция `arrayCumSumNonNegative` (она не накапливает отрицательные значения, если аккумулятор становится меньше нуля). [Aleksey Studnev](https://github.com/yandex/ClickHouse/pull/3163)
+* Исправлена функция `arrayCumSumNonNegative` (она не накапливает отрицательные значения, если аккумулятор становится меньше нуля). [Aleksey Studnev](https://github.com/yandex/ClickHouse/pull/3163)
 * Исправлена работа `Merge` таблицы поверх `Distributed` таблиц при использовании `PREWHERE`. [#3165](https://github.com/yandex/ClickHouse/pull/3165)
 * Исправления ошибок в запросе ALTER UPDATE.
 * Исправления ошибок в табличной функции `odbc`, которые возникли в версии 18.12. [#3197](https://github.com/yandex/ClickHouse/pull/3197)
