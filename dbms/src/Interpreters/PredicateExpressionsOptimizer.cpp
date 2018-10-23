@@ -395,7 +395,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
             {
                 const auto database_and_table_ast = static_cast<ASTIdentifier*>(table_expression->database_and_table_name.get());
                 const auto database_and_table_name = getDatabaseAndTableNameFromIdentifier(*database_and_table_ast);
-                storage = context.tryGetTable(database_and_table_name.first, database_and_table_name.second);
+                storage = context.getTable(database_and_table_name.first, database_and_table_name.second);
             }
 
             const auto block = storage->getSampleBlock();
