@@ -53,6 +53,135 @@ FROM ontime
 Selects the last value encountered.
 The result is just as indeterminate as for the `any` function.
 
+##groupBitAnd
+
+Applies bitwise `AND` for series of numbers.
+
+```
+groupBitAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+The query:
+
+```
+SELECT groupBitAnd(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+00000100 = 4
+```
+
+##groupBitOr
+
+Applies bitwise `OR` for series of numbers.
+
+```
+groupBitOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitOr(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01111101 = 125
+```
+
+##groupBitXor
+
+Applies bitwise `XOR` for series of numbers.
+
+```
+groupBitXor(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitXor(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01101000 = 104
+```
+
 ## min(x)
 
 Calculates the minimum.
