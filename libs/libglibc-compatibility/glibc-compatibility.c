@@ -147,7 +147,7 @@ const char * __shm_directory(size_t * len)
  * OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-void explicit_bzero(void * buf, size_t len)
+void __attribute__((__weak__)) explicit_bzero(void * buf, size_t len)
 {
     memset(buf, 0, len);
     __asm__ __volatile__("" :: "r"(buf) : "memory");

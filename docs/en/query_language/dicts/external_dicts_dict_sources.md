@@ -400,6 +400,7 @@ Setting fields:
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where ` – The selection criteria. May be omitted.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
 <a name="dicts-external_dicts_dict_sources-mongodb"></a>
 

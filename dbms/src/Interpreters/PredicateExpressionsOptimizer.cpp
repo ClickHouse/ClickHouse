@@ -16,7 +16,7 @@ namespace DB
 static constexpr auto and_function_name = "and";
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
-    ASTSelectQuery * ast_select_, const Settings & settings_, const Context & context_)
+    ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
         : ast_select(ast_select_), settings(settings_), context(context_)
 {
 }
@@ -395,7 +395,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
             {
                 const auto database_and_table_ast = static_cast<ASTIdentifier*>(table_expression->database_and_table_name.get());
                 const auto database_and_table_name = getDatabaseAndTableNameFromIdentifier(*database_and_table_ast);
-                storage = context.tryGetTable(database_and_table_name.first, database_and_table_name.second);
+                storage = context.getTable(database_and_table_name.first, database_and_table_name.second);
             }
 
             const auto block = storage->getSampleBlock();
