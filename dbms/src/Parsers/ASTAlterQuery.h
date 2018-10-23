@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -113,12 +113,9 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-class ASTAlterQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    String database;
-    String table;
-
     ASTAlterCommandList * command_list = nullptr;
 
     String getID() const override;
