@@ -211,11 +211,15 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_ast, const ASTPtr & new_sorting_key_ast)
 {
-    if (!new_primary_key_ast)
-        throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
-
     if (!new_sorting_key_ast)
         throw Exception("Sorting key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+    bool new_sorting_and_primary_keys_independent = true;
+    if (!new_primary_key_ast)
+    {
+        new_primary_key_ast = new_sorting_key_ast->clone();
+        new_sorting_and_primary_keys_independent = false;
+    }
 
     if (new_sorting_key_ast.get() != sorting_key_ast.get()
         && merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -275,6 +279,7 @@ void MergeTreeData::setPrimaryKey(ASTPtr new_primary_key_ast, const ASTPtr & new
     sorting_key_ast = new_sorting_key_ast;
     sorting_key_columns = std::move(new_sorting_key_columns);
     sorting_key_expr = std::move(new_sorting_key_expr);
+    sorting_and_primary_keys_independent = new_sorting_and_primary_keys_independent;
 
     primary_key_ast = new_primary_key_ast;
     primary_key_columns = std::move(new_primary_key_columns);

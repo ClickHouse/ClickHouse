@@ -590,8 +590,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->primary_key)
             primary_expr_list = extractKeyExpressionList(*args.storage_def->primary_key);
-        else
-            primary_expr_list = sorting_expr_list->clone();
 
         if (args.storage_def->sample_by)
             sampling_expression = args.storage_def->sample_by->ptr();
@@ -617,7 +615,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 ErrorCodes::BAD_ARGUMENTS);
 
         sorting_expr_list = extractKeyExpressionList(*engine_args[1]);
-        primary_expr_list = sorting_expr_list->clone();
 
         auto ast = typeid_cast<const ASTLiteral *>(engine_args.back().get());
         if (ast && ast->value.getType() == Field::Types::UInt64)

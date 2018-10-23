@@ -161,6 +161,7 @@ protected:
       * primary_key_ast - values of this expression for one row in every `index_granularity` rows
       *     are written in the primary.idx to speed up range queries.
       *     Primary key must be a prefix of the sorting key;
+      *     If it is nullptr, then it will be determined from sorting_key_ast.
       *
       * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
           otherwise, partition_expr_ast is used as the partitioning expression;

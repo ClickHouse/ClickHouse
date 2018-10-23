@@ -288,6 +288,7 @@ public:
     /// primary_key_ast - values of this expression for one row in every `index_granularity` rows
     ///     are written in the primary.idx to speed up range queries.
     ///     Primary key must be a prefix of the sorting key;
+    ///     If it is nullptr, then it will be determined from sorting_key_ast.
     ///
     /// date_column_name - if not empty, the name of the Date column used for partitioning by month.
     ///     Otherwise, partition_expr_ast is used for partitioning.
@@ -559,6 +560,8 @@ public:
     DataTypes primary_key_data_types;
 
     ASTPtr sorting_key_ast;
+    /// If true, sorting and primary keys were set using separate clauses in the CREATE TABLE statement.
+    bool sorting_and_primary_keys_independent = false;
 
     ASTPtr partition_expr_ast;
     ExpressionActionsPtr partition_expr;

@@ -206,6 +206,8 @@ void StorageMergeTree::alter(
     bool sorting_key_is_modified = false;
     ASTPtr new_sorting_key_ast = data.sorting_key_ast;
 
+    bool new_sorting_and_primary_keys_independent = data.sorting_and_primary_keys_independent;
+
     for (const AlterCommand & param : params)
     {
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
@@ -216,6 +218,7 @@ void StorageMergeTree::alter(
         else if (param.type == AlterCommand::MODIFY_ORDER_BY)
         {
             sorting_key_is_modified = true;
+            new_sorting_and_primary_keys_independent = true;
             new_sorting_key_ast = param.sorting_key;
         }
     }
@@ -249,13 +252,11 @@ void StorageMergeTree::alter(
 
                 if (storage_ast.order_by)
                 {
-                    if (storage_ast.primary_key)
+                    /// The table was created using the syntax with key expressions in separate clauses.
+                    if (new_sorting_and_primary_keys_independent)
                         storage_ast.set(storage_ast.primary_key, tuple);
                     else
-                    {
                         storage_ast.set(storage_ast.order_by, tuple);
-                        new_sorting_key_ast = new_primary_key_ast->clone();
-                    }
                 }
                 else
                 {
@@ -277,7 +278,11 @@ void StorageMergeTree::alter(
                     throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
 
                 if (!storage_ast.primary_key)
+                {
+                    /// Primary and sorting key become independent after this ALTER so we have to
+                    /// save the old ORDER BY expression as the new primary key.
                     storage_ast.set(storage_ast.primary_key, storage_ast.order_by->clone());
+                }
 
                 storage_ast.set(storage_ast.order_by, tuple);
             }
@@ -288,7 +293,10 @@ void StorageMergeTree::alter(
     setColumns(std::move(new_columns));
 
     /// Reinitialize primary key because primary key column types might have changed.
-    data.setPrimaryKey(new_primary_key_ast, new_sorting_key_ast);
+    if (new_sorting_and_primary_keys_independent)
+        data.setPrimaryKey(new_primary_key_ast, new_sorting_key_ast);
+    else
+        data.setPrimaryKey(nullptr, new_primary_key_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
