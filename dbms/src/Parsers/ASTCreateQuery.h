@@ -112,14 +112,7 @@ public:
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        auto query_ptr = clone();
-        ASTCreateQuery & query = static_cast<ASTCreateQuery &>(*query_ptr);
-
-        query.cluster.clear();
-        if (query.database.empty())
-            query.database = new_database;
-
-        return query_ptr;
+        return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
 
 protected:
