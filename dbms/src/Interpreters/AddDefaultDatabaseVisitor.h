@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/typeid_cast.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 
