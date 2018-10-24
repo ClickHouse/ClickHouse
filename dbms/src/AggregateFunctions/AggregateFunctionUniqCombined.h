@@ -69,6 +69,8 @@ namespace detail
 template <typename Key, UInt8 K>
 struct AggregateFunctionUniqCombinedDataWithKey
 {
+    // TODO(ilezhankin): pre-generate values for |UniqCombinedBiasData|,
+    //                   at the moment gen-bias-data.py script doesn't work.
     using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<>>, 16, K - 3, K, TrivialHash, Key>;
 
     Set set;
