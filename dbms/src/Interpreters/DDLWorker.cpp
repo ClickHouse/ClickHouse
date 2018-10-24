@@ -12,6 +12,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/getFQDNOrHostName.h>
@@ -1157,6 +1158,13 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
             if (!isSupportedAlterType(command->type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
+    }
+
+    const String & default_database = context.getCurrentDatabase();
+    if (!default_database.empty())
+    {
+        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase());
+        visitor.visit(query_ptr);
     }
 
     query->cluster = context.getMacros()->expand(query->cluster);
