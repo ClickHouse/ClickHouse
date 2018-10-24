@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "select name from system.table_functions format TSV;" > $S
 # This is short run for ordinary tests.
 # if you want long run use: env SQL_FUZZY_RUNS=100000 clickhouse-test sql_fuzzy
 
-for SQL_FUZZY_RUN in $(seq ${SQL_FUZZY_RUNS:=100}); do
+for SQL_FUZZY_RUN in $(seq ${SQL_FUZZY_RUNS:=10}); do
     env SQL_FUZZY_RUN=$SQL_FUZZY_RUN $CURDIR/00746_sql_fuzzy.pl | $CLICKHOUSE_CLIENT -n --ignore-error >/dev/null 2>&1
     if [[ `$CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"` != 'Still alive' ]]; then
         break
