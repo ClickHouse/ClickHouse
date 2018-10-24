@@ -1160,10 +1160,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
         }
     }
 
-    const String & default_database = context.getCurrentDatabase();
-    if (!default_database.empty())
+    const String & current_database = context.getCurrentDatabase();
+    if (!current_database.empty())
     {
-        AddDefaultDatabaseVisitor visitor(context.getCurrentDatabase());
+        AddDefaultDatabaseVisitor visitor(current_database);
         visitor.visit(query_ptr);
     }
 
@@ -1193,7 +1193,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     }
 
     for (const String & database : databases_to_check_access_rights)
-        context.checkDatabaseAccessRights(database.empty() ? context.getCurrentDatabase() : database);
+        context.checkDatabaseAccessRights(database.empty() ? current_database : database);
 
     String node_path = ddl_worker.enqueueQuery(entry);
 
