@@ -206,8 +206,14 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
                 prepared_function->createLowCardinalityResultCache(settings.max_threads);
 
+            bool compile_expressions = false;
+#if USE_EMBEDDED_COMPILER
+            compile_expressions = settings.compile_expressions;
+#endif
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-            if (all_const && function_base->isSuitableForConstantFolding())
+            /// But if we compile expressions compiled version of this function maybe placed in cache,
+            /// so we don't want to unfold non deterministic functions
+            if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
                 function->execute(sample_block, arguments, result_position, sample_block.rows());
 
