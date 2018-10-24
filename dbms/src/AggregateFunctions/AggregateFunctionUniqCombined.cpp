@@ -30,8 +30,7 @@ namespace
     template <UInt8 K>
     AggregateFunctionPtr createAggregateFunctionWithK(const DataTypes & argument_types)
     {
-        /// We use exact hash function if the user wants it;
-        /// or if the arguments are not contiguous in memory, because only exact hash function have support for this case.
+        /// We use exact hash function if the arguments are not contiguous in memory, because only exact hash function has support for this case.
         bool use_exact_hash_function = !isAllArgumentsContiguousInMemory(argument_types);
 
         if (argument_types.size() == 1)
@@ -70,6 +69,8 @@ namespace
     AggregateFunctionPtr createAggregateFunctionUniqCombined(
         const std::string & name, const DataTypes & argument_types, const Array & params)
     {
+        /// log2 of the number of cells in HyperLogLog.
+        /// Reasonable default value, selected to be comparable in quality with "uniq" aggregate function.
         UInt8 precision = 17;
 
         if (!params.empty())
@@ -113,8 +114,7 @@ namespace
                 return createAggregateFunctionWithK<20>(argument_types);
         }
 
-        // TODO: not reached!
-        return {};
+        __builtin_unreachable();
     }
 
 } // namespace
