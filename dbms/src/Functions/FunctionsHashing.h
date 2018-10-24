@@ -108,9 +108,10 @@ struct HalfMD5Impl
         return Poco::ByteOrder::flipBytes(buf.uint64_data);        /// Compatibility with existing code.
     }
 
-    static UInt64 mergeHashes(UInt64 h1, UInt64 h2)
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-        return IntHash64Impl::apply(h1) ^ h2;
+        UInt64 hashes[] = {h1, h2};
+        return apply(reinterpret_cast<const char *>(hashes), 16);
     }
 };
 
@@ -180,9 +181,10 @@ struct SipHash64Impl
         return sipHash64(begin, size);
     }
 
-    static UInt64 mergeHashes(UInt64 h1, UInt64 h2)
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-        return IntHash64Impl::apply(h1) ^ h2;
+        UInt64 hashes[] = {h1, h2};
+        return apply(reinterpret_cast<const char *>(hashes), 16);
     }
 };
 
@@ -364,7 +366,7 @@ private:
                 if (first)
                     vec_to[i] = h;
                 else
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], h);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
         else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
@@ -384,7 +386,7 @@ private:
             else
             {
                 for (size_t i = 0; i < size; ++i)
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], hash);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], hash);
             }
         }
         else
@@ -412,7 +414,7 @@ private:
                 if (first)
                     vec_to[i] = h;
                 else
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], h);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
 
                 current_offset = offsets[i];
             }
@@ -429,7 +431,7 @@ private:
                 if (first)
                     vec_to[i] = h;
                 else
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], h);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
@@ -446,7 +448,7 @@ private:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], hash);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], hash);
                 }
             }
         }
@@ -486,10 +488,10 @@ private:
                 if (first)
                     vec_to[i] = h;
                 else
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], h);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], h);
 
                 for (size_t j = current_offset; j < next_offset; ++j)
-                    vec_to[i] = Impl::mergeHashes(vec_to[i], vec_temp[j]);
+                    vec_to[i] = Impl::combineHashes(vec_to[i], vec_temp[j]);
 
                 current_offset = offsets[i];
             }
@@ -626,7 +628,7 @@ struct MurmurHash2Impl32
         return MurmurHash2(data, size, 0);
     }
 
-    static UInt32 mergeHashes(UInt32 h1, UInt32 h2)
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
     {
         return IntHash32Impl::apply(h1) ^ h2;
     }
@@ -642,7 +644,7 @@ struct MurmurHash2Impl64
         return MurmurHash64A(data, size, 0);
     }
 
-    static UInt64 mergeHashes(UInt64 h1, UInt64 h2)
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
         return IntHash64Impl::apply(h1) ^ h2;
     }
@@ -664,7 +666,7 @@ struct MurmurHash3Impl32
         return h;
     }
 
-    static UInt32 mergeHashes(UInt32 h1, UInt32 h2)
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
     {
         return IntHash32Impl::apply(h1) ^ h2;
     }
@@ -686,7 +688,7 @@ struct MurmurHash3Impl64
         return h[0] ^ h[1];
     }
 
-    static UInt64 mergeHashes(UInt64 h1, UInt64 h2)
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
         return IntHash64Impl::apply(h1) ^ h2;
     }
@@ -903,7 +905,7 @@ struct ImplCityHash64
     using ReturnType = UInt64;
     using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto mergeHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
@@ -914,7 +916,7 @@ struct ImplFarmHash64
     using ReturnType = UInt64;
     using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
 
-    static auto mergeHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(uint128_t(h1, h2)); }
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
 };
 
@@ -924,7 +926,7 @@ struct ImplMetroHash64
     using ReturnType = UInt64;
     using uint128_t = CityHash_v1_0_2::uint128;
 
-    static auto mergeHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
     static auto apply(const char * s, const size_t len)
     {
         union
