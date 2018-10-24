@@ -80,7 +80,20 @@ void Connection::connect()
         if (timeouts.tcp_keep_alive_timeout.totalSeconds())
         {
             socket->setKeepAlive(true);
-            socket->setOption(SOL_TCP, TCP_KEEPIDLE, timeouts.tcp_keep_alive_timeout);
+
+            socket->setOption(
+#if defined(SOL_TCP)
+                SOL_TCP
+#else
+                IPPROTO_TCP
+#endif
+                ,
+#if defined(TCP_KEEPIDLE)
+                TCP_KEEPIDLE
+#else
+                TCPTV_KEEP_IDLE
+#endif
+                , timeouts.tcp_keep_alive_timeout);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
