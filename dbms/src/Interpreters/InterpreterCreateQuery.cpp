@@ -443,7 +443,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.storage)
     {
-        if (create.is_temporary && create.storage->engine->name != "Memory")
+        if (create.temporary && create.storage->engine->name != "Memory")
             throw Exception(
                 "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
                 ErrorCodes::INCORRECT_QUERY);
@@ -451,7 +451,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.is_temporary)
+    if (create.temporary)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -546,7 +546,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         String data_path;
         DatabasePtr database;
 
-        if (!create.is_temporary)
+        if (!create.temporary)
         {
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
@@ -578,7 +578,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             create.attach,
             false);
 
-        if (create.is_temporary)
+        if (create.temporary)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
@@ -601,17 +601,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         auto insert = std::make_shared<ASTInsertQuery>();
 
-        if (!create.is_temporary)
+        if (!create.temporary)
             insert->database = database_name;
 
         insert->table = table_name;
         insert->select = create.select->clone();
 
-        if (create.is_temporary && !context.getSessionContext().hasQueryContext())
+        if (create.temporary && !context.getSessionContext().hasQueryContext())
             context.getSessionContext().setQueryContext(context.getSessionContext());
 
         return InterpreterInsertQuery(insert,
-            create.is_temporary ? context.getSessionContext() : context,
+            create.temporary ? context.getSessionContext() : context,
             context.getSettingsRef().insert_allow_materialized_columns).execute();
     }
 
@@ -657,7 +657,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
         throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
 
-    if (create.is_temporary && readonly >= 2)
+    if (create.temporary && readonly >= 2)
         return;
 
     if (readonly)

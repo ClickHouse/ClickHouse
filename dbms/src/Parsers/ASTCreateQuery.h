@@ -4,7 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -74,7 +74,7 @@ public:
 
 
 /// CREATE TABLE or ATTACH TABLE query
-class ASTCreateQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
@@ -82,9 +82,6 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_populate{false};
-    bool is_temporary{false};
-    String database;
-    String table;
     ASTExpressionList * columns = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
@@ -155,7 +152,7 @@ protected:
             settings.ostr
                 << (settings.hilite ? hilite_keyword : "")
                     << (attach ? "ATTACH " : "CREATE ")
-                    << (is_temporary ? "TEMPORARY " : "")
+                    << (temporary ? "TEMPORARY " : "")
                     << what << " "
                     << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
