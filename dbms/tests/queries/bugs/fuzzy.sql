@@ -5,3 +5,4 @@ SELECT sequenceCount((CAST((( SELECT NULL ) AS rg, ( SELECT ( SELECT [], '<e', c
 SELECT extractURLParameter('?_', '\0');
 SELECT extractURLParameter('ZiqSZeh?', '\0')
 SELECT globalNotIn(['"wh'], [NULL]);
+SELECT globalIn([''], [NULL])
