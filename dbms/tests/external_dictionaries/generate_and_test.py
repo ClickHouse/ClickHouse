@@ -670,7 +670,7 @@ def generate_dictionaries(args):
                  (layout_range_hashed, range_hashed_range_type)],
             ])
 
-    dict_name_filter = args.filter.split('/')[0]
+    dict_name_filter = args.filter.split('/')[0] if args.filter else None
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
         if args.filter and not fnmatch.fnmatch(name, dict_name_filter):
             continue
