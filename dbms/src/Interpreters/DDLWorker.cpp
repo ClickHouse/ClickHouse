@@ -12,6 +12,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/getFQDNOrHostName.h>
@@ -39,6 +40,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -1135,7 +1137,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, const NameSet & query_databases)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, NameSet && query_databases)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -1163,30 +1165,56 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 
-    DDLLogEntry entry;
-    entry.query = queryToString(query_ptr);
-    entry.initiator = ddl_worker.getCommonHostID();
-
     /// Check database access rights, assume that all servers have the same users config
-    NameSet databases_to_check_access_rights;
+    NameSet databases_to_access;
+    const String & current_database = context.getCurrentDatabase();
 
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
 
+    std::vector<HostID> hosts;
+    bool use_shard_default_db = false;
+    bool use_local_default_db = false;
     for (const auto & shard : shards)
     {
         for (const auto & addr : shard)
         {
-            entry.hosts.emplace_back(addr);
+            hosts.emplace_back(addr);
 
-            /// Expand empty database name to shards' default database name
+            /// Expand empty database name to shards' default (o current) database name
             for (const String & database : query_databases)
-                databases_to_check_access_rights.emplace(database.empty() ? addr.default_database : database);
+            {
+                if (database.empty())
+                {
+                    bool has_shard_default_db = !addr.default_database.empty();
+                    use_shard_default_db |= has_shard_default_db;
+                    use_local_default_db |= !has_shard_default_db;
+                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database );
+                }
+                else
+                    databases_to_access.emplace(database);
+            }
         }
     }
 
-    for (const String & database : databases_to_check_access_rights)
-        context.checkDatabaseAccessRights(database.empty() ? context.getCurrentDatabase() : database);
+    if (use_shard_default_db && use_local_default_db)
+        throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
 
+    if (databases_to_access.empty())
+        throw Exception("No databases to access in distributed DDL query", ErrorCodes::LOGICAL_ERROR);
+
+    for (const String & database : databases_to_access)
+        context.checkDatabaseAccessRights(database);
+
+    if (use_local_default_db)
+    {
+        AddDefaultDatabaseVisitor visitor(current_database);
+        visitor.visit(query_ptr);
+    }
+
+    DDLLogEntry entry;
+    entry.hosts = std::move(hosts);
+    entry.query = queryToString(query_ptr);
+    entry.initiator = ddl_worker.getCommonHostID();
     String node_path = ddl_worker.enqueueQuery(entry);
 
     BlockIO io;

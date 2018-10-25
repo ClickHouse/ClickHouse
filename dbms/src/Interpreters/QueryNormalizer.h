@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/Settings.h>
 #include <Interpreters/evaluateQualified.h>
 
 namespace DB
@@ -22,12 +21,28 @@ inline bool functionIsInOrGlobalInOperator(const String & name)
 using TableNameAndColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
 using TableNamesAndColumnNames = std::vector<TableNameAndColumnNames>;
 
+
 class QueryNormalizer
 {
+    /// Extracts settings, mostly to show which are used and which are not.
+    struct ExtractedSettings
+    {
+        const UInt64 max_ast_depth;
+        const UInt64 max_expanded_ast_elements;
+        const String count_distinct_implementation;
+
+        template <typename T>
+        ExtractedSettings(const T & settings)
+        :   max_ast_depth(settings.max_ast_depth),
+            max_expanded_ast_elements(settings.max_expanded_ast_elements),
+            count_distinct_implementation(settings.count_distinct_implementation)
+        {}
+    };
+
 public:
     using Aliases = std::unordered_map<String, ASTPtr>;
 
-    QueryNormalizer(ASTPtr & query, const Aliases & aliases, const Settings & settings, const Names & all_columns_name,
+    QueryNormalizer(ASTPtr & query, const Aliases & aliases, ExtractedSettings && settings, const Names & all_columns_name,
                     const TableNamesAndColumnNames & table_names_and_column_names);
 
     void perform();
@@ -38,7 +53,7 @@ private:
 
     ASTPtr & query;
     const Aliases & aliases;
-    const Settings & settings;
+    const ExtractedSettings settings;
     const Names & all_column_names;
     const TableNamesAndColumnNames & table_names_and_column_names;
 

@@ -137,11 +137,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Context & context,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read) const
+    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     return readFromParts(
         data.getDataPartsVector(), column_names_to_return, query_info, context,
-        max_block_size, num_streams, max_block_number_to_read);
+        max_block_size, num_streams, max_block_numbers_to_read);
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
@@ -151,7 +151,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Context & context,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read) const
+    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     size_t part_index = 0;
 
@@ -271,8 +271,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
-            if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
-                continue;
+            if (max_block_numbers_to_read)
+            {
+                auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+                if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                    continue;
+            }
 
             parts.push_back(part);
         }
