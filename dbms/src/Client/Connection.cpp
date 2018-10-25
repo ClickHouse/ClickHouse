@@ -77,6 +77,17 @@ void Connection::connect()
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
+        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+        {
+            socket->setKeepAlive(true);
+            socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+                TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
+#endif
+                , timeouts.tcp_keep_alive_timeout);
+        }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
