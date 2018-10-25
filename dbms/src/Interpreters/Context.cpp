@@ -1419,11 +1419,13 @@ String Context::getInterserverScheme() const
     return shared->interserver_scheme;
 }
 
-UInt16 Context::getTCPPort() const
+UInt16 Context::getTCPPort(bool secure) const
 {
     auto lock = getLock();
 
     auto & config = getConfigRef();
+    if (secure)
+        return config.getInt("tcp_port_secure");
     return config.getInt("tcp_port");
 }
 
