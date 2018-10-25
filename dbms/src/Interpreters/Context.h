@@ -275,7 +275,7 @@ public:
     String getInterserverScheme() const;
 
     /// The port that the server listens for executing SQL queries.
-    UInt16 getTCPPort() const;
+    UInt16 getTCPPort(bool secure = false) const;
 
     /// Get query for the CREATE table.
     ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
