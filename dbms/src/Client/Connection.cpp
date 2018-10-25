@@ -81,10 +81,10 @@ void Connection::connect()
         {
             socket->setKeepAlive(true);
             socket->setOption(IPPROTO_TCP,
-#if defined(TCP_KEEPIDLE) // __APPLE__
-                TCP_KEEPIDLE
-#else
+#if defined(TCP_KEEPALIVE)
                 TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
 #endif
                 , timeouts.tcp_keep_alive_timeout);
         }
