@@ -20,3 +20,6 @@ for SQL_FUZZY_RUN in $(seq ${SQL_FUZZY_RUNS:=100}); do
 done
 
 $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"
+
+# Query replay:
+# cat clickhouse-server.log  | grep -aF "<Debug> executeQuery: (from " | perl -lpe 's/^.*executeQuery: \(from \S+\) (.*)/$1;/' | clickhouse-client -n --ignore-error
