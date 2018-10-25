@@ -242,7 +242,7 @@ def main(args):
                                             stderr_element = et.Element("system-err")
                                             stderr_element.text = et.CDATA(stderr)
                                             report_testcase.append(stderr_element)
-                                            print(stderr)
+                                            print(stderr.encode('utf-8'))
 
                                         if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                             SERVER_DIED = True
