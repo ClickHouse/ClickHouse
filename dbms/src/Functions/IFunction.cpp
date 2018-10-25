@@ -314,7 +314,7 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
 
     executeWithoutLowCardinalityColumns(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
 
-    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, input_rows_count);
+    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column->cloneResized(1), input_rows_count);
     return true;
 }
 
