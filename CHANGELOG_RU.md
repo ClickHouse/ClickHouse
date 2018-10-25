@@ -1,3 +1,8 @@
+## ClickHouse release 18.14.10, 2018-10-23
+
+* Настройка `compile_expressions` (JIT компиляция выражений) выключена по умолчанию. [#3410](https://github.com/yandex/ClickHouse/pull/3410)
+* Настройка `enable_optimize_predicate_expression` выключена по умолчанию.
+
 ## ClickHouse release 18.14.9, 2018-10-16
 
 ### Новые возможности:
