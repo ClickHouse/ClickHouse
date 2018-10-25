@@ -86,4 +86,4 @@ if (ENABLE_ODBC)
     endif ()
 endif ()
 
-message (STATUS "Using odbc: ${ODBC_INCLUDE_DIRECTORIES} : ${ODBC_LIBRARIES}")
+message (STATUS "Using odbc=${ODBC_FOUND}: ${ODBC_INCLUDE_DIRECTORIES} : ${ODBC_LIBRARIES}")
