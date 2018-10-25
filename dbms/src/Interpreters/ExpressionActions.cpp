@@ -677,7 +677,8 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    if (action.type == ExpressionAction::APPLY_FUNCTION)
+    /// Compiled functions are custom functions and them don't need building
+    if (action.type == ExpressionAction::APPLY_FUNCTION && !action.is_function_compiled)
     {
         if (sample_block.has(action.result_name))
             throw Exception("Column '" + action.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
