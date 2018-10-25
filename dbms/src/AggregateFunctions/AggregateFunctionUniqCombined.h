@@ -71,7 +71,11 @@ struct AggregateFunctionUniqCombinedDataWithKey
 {
     // TODO(ilezhankin): pre-generate values for |UniqCombinedBiasData|,
     //                   at the moment gen-bias-data.py script doesn't work.
-    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<>>, 16, K - 3, K, TrivialHash, Key>;
+
+    // We want to migrate from |HashSet| to |HyperLogLogCounter| when the sizes in memory become almost equal.
+    // The size per element in |HashSet| is sizeof(Key)*2 bytes, and the overall size of |HyperLogLogCounter| is 2^K * 6 bits.
+    // For Key=UInt32 we can calculate: 2^X * 4 * 2 ≤ 2^(K-3) * 6 ⇒ X ≤ K-4.
+    using Set = CombinedCardinalityEstimator<Key, HashSet<Key, TrivialHash, HashTableGrower<>>, 16, K - 4, K, TrivialHash, Key>;
 
     Set set;
 };
@@ -82,7 +86,7 @@ struct AggregateFunctionUniqCombinedDataWithKey<Key, 17>
     using Set = CombinedCardinalityEstimator<Key,
         HashSet<Key, TrivialHash, HashTableGrower<>>,
         16,
-        14,
+        13,
         17,
         TrivialHash,
         Key,
