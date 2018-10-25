@@ -122,7 +122,10 @@ public:
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        return removeOnCluster<ASTAlterQuery>(clone(), new_database);
+    }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

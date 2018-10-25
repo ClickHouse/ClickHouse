@@ -487,7 +487,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (!create.to_table.empty())
             databases.emplace(create.to_database);
 
-        return executeDDLQueryOnCluster(query_ptr, context, databases);
+        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
 
     String path = context.getPath();
