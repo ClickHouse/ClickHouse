@@ -26,7 +26,10 @@ public:
     String getID() const override;
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        return removeOnCluster<ASTDropQuery>(clone(), new_database);
+    }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
