@@ -119,6 +119,7 @@ String transformQueryForExternalDatabase(
         {
             if (function->name == "and")
             {
+                bool compatibleFound = false;
                 auto new_function_and = std::make_shared<ASTFunction>();
                 auto new_function_and_arguments = std::make_shared<ASTExpressionList>();
                 new_function_and->arguments = new_function_and_arguments;
@@ -126,9 +127,13 @@ String transformQueryForExternalDatabase(
 
                 for (const auto & elem : function->arguments->children)
                     if (isCompatible(*elem))
+                    {
                         new_function_and_arguments->children.push_back(elem);
+                        compatibleFound = true;
+                    }
 
-                select->where_expression = std::move(new_function_and);
+                if (compatibleFound)
+                     select->where_expression = std::move(new_function_and);
             }
         }
     }
