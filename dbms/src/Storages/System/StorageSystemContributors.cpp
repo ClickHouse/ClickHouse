@@ -3,8 +3,10 @@
 #include "StorageSystemContributors.h"
 
 #include <algorithm>
-#include <random>
+#include <pcg_random.hpp>
 #include <DataTypes/DataTypeString.h>
+#include <Common/randomSeed.h>
+
 
 extern const char * auto_contributors[];
 
@@ -23,9 +25,8 @@ void StorageSystemContributors::fillData(MutableColumns & res_columns, const Con
     for (auto it = auto_contributors; *it; ++it)
         contributors.emplace_back(*it);
 
-    std::random_device rd;
-    std::mt19937 g(rd());
-    std::shuffle(contributors.begin(), contributors.end(), g);
+    pcg64 rng(randomSeed());
+    std::shuffle(contributors.begin(), contributors.end(), rng);
 
     for (auto & it : contributors)
         res_columns[0]->insert(String(it));
