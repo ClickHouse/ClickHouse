@@ -353,6 +353,42 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 
 Из подзапроса удаляются все ненужные для JOIN-а столбцы.
 
+Пример:
+
+``` sql
+SELECT
+    endpoint,
+    metric,
+    value,
+    idcName
+FROM datapoints
+ALL INNER JOIN
+(
+    SELECT
+        ips AS endpoint,
+        idcName
+    FROM cmdb
+) USING (endpoint)
+LIMIT 10
+```
+
+```
+┌─endpoint─────┬─metric────────────┬───────value─┬─idcName─┐
+│ 192.168.1.100 │ disk.total        │ 50465866000 │ office  │
+│ 192.168.1.100 │ disk.total        │   494927870 │ office  │
+│ 192.168.1.100 │ disk.used.percent │          48 │ office  │
+│ 192.168.1.100 │ disk.used.percent │          50 │ office  │
+│ 192.168.1.100 │ disk.util         │           0 │ office  │
+│ 192.168.1.100 │ disk.util         │           0 │ office  │
+│ 192.168.1.100 │ disk.util         │           0 │ office  │
+│ 192.168.1.100 │ disk.util         │           0 │ office  │
+│ 192.168.1.100 │ load.15min        │        0.02 │ office  │
+│ 192.168.1.100 │ load.1min         │        0.11 │ office  │
+└──────────────┴───────────────────┴─────────────┴─────────┘
+```
+
+Обратите внимание на то, что столбец `endpoint` в `USING` присутствует и в изначальном запросе `SELECT` и в подзапросе.
+
 JOIN-ы бывают нескольких видов:
 
 `INNER` или `LEFT` - тип:
