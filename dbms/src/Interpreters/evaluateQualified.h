@@ -9,6 +9,7 @@ namespace DB
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
+class ASTSelectQuery;
 class ASTIdentifier;
 struct ASTTableExpression;
 
@@ -35,5 +36,8 @@ size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifie
                                                               const DatabaseAndTableWithAlias & names);
 
 std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const ASTIdentifier & identifier);
+
+std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery * select_query);
+std::vector<DatabaseAndTableWithAlias> getDatabaseAndTableWithAliases(const ASTSelectQuery * select_query, const String & current_database);
 
 }

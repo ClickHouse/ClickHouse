@@ -275,55 +275,14 @@ bool ExpressionAnalyzer::isRemoteStorage() const
 }
 
 
-static std::vector<ASTTableExpression> getTableExpressions(const ASTPtr & query)
-{
-    ASTSelectQuery * select_query = typeid_cast<ASTSelectQuery *>(query.get());
-
-    std::vector<ASTTableExpression> table_expressions;
-
-    if (select_query && select_query->tables)
-    {
-        for (const auto & element : select_query->tables->children)
-        {
-            ASTTablesInSelectQueryElement & select_element = static_cast<ASTTablesInSelectQueryElement &>(*element);
-
-            if (select_element.table_expression)
-                table_expressions.emplace_back(static_cast<ASTTableExpression &>(*select_element.table_expression));
-        }
-    }
-
-    return table_expressions;
-}
-
 void ExpressionAnalyzer::translateQualifiedNames()
 {
     if (!select_query || !select_query->tables || select_query->tables->children.empty())
         return;
 
-    std::vector<DatabaseAndTableWithAlias> tables;
-    std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
+    std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTableWithAliases(select_query, context.getCurrentDatabase());
 
     LogAST log;
-
-    for (const auto & table_expression : tables_expression)
-    {
-        auto table = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
-
-        { /// debug print
-            size_t depth = 0;
-            DumpASTNode dump(table_expression, log.stream(), depth, "getTableNames");
-            if (table_expression.database_and_table_name)
-                DumpASTNode(*table_expression.database_and_table_name, log.stream(), depth);
-            if (table_expression.table_function)
-                DumpASTNode(*table_expression.table_function, log.stream(), depth);
-            if (table_expression.subquery)
-                DumpASTNode(*table_expression.subquery, log.stream(), depth);
-            dump.print("getTableNameWithAlias", table.database + '.' + table.table + ' ' + table.alias);
-        }
-
-        tables.emplace_back(table);
-    }
-
     TranslateQualifiedNamesVisitor visitor(source_columns, tables, log.stream());
     visitor.visit(query);
 }
@@ -602,13 +561,13 @@ void ExpressionAnalyzer::normalizeTree()
     TableNamesAndColumnNames table_names_and_column_names;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
-        std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
+        std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
 
         bool first = true;
-        for (const auto & table_expression : tables_expression)
+        for (const auto * table_expression : tables_expression)
         {
-            const auto table_name = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
-            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(table_expression, context);
+            const auto table_name = getTableNameWithAliasFromTableExpression(*table_expression, context.getCurrentDatabase());
+            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
 
             if (!first)
             {
