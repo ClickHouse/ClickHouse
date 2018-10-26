@@ -49,7 +49,7 @@ if [ "${TEST_CONNECT}" ]; then
         echo "<yandex><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure>${CLICKHOUSE_SSL_CONFIG}</yandex>" > /etc/clickhouse-client/config.xml
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
-        chmod a+r /etc/clickhouse-server/* /etc/clickhouse-client/*
+        chmod a+r /etc/clickhouse-server/* /etc/clickhouse-client/* ||:
         CLIENT_ADD+="--secure --port ${CLICKHOUSE_PORT_TCP_SECURE}"
     else
         CLIENT_ADD+="--port ${CLICKHOUSE_PORT_TCP}"
