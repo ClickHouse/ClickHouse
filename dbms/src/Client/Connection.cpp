@@ -77,6 +77,17 @@ void Connection::connect()
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
+        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+        {
+            socket->setKeepAlive(true);
+            socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+                TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
+#endif
+                , timeouts.tcp_keep_alive_timeout);
+        }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
@@ -231,6 +242,14 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     revision = server_revision;
 }
 
+UInt64 Connection::getServerRevision()
+{
+    if (!connected)
+        connect();
+
+    return server_revision;
+}
+
 const String & Connection::getServerTimezone()
 {
     if (!connected)
@@ -349,7 +368,7 @@ void Connection::sendQuery(
     {
         ClientInfo client_info_to_send;
 
-        if (!client_info)
+        if (!client_info || client_info->empty())
         {
             /// No client info passed - means this query initiated by me.
             client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;

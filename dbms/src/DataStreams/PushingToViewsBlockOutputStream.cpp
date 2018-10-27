@@ -44,6 +44,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto dependent_table = context.getTable(database_table.first, database_table.second);
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
+            if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
+                addTableLock(inner_table->lockStructure(true, __PRETTY_FUNCTION__));
+
             auto query = materialized_view.getInnerQuery();
             BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
@@ -77,15 +80,15 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         return;
 
     // Insert data into materialized views only after successful insert into main table
-    bool allow_concurrent_view_processing = context.getSettingsRef().allow_concurrent_view_processing;
-    if (allow_concurrent_view_processing && views.size() > 1)
+    const Settings & settings = context.getSettingsRef();
+    if (settings.parallel_view_processing && views.size() > 1)
     {
         // Push to views concurrently if enabled, and more than one view is attached
-        ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), views.size()));
+        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.schedule([=] ()
+            pool.schedule([=]
             {
                 setThreadName("PushingToViewsBlockOutputStream");
                 CurrentThread::attachToIfDetached(thread_group);

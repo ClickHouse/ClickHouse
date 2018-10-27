@@ -199,8 +199,10 @@ void TCPHandler::runImpl()
             else
                 processOrdinaryQuery();
 
-            sendLogs();
+            /// Do it before sending end of stream, to have a chance to show log message in client.
+            query_scope->logPeakMemoryUsage();
 
+            sendLogs();
             sendEndOfStream();
 
             query_scope.reset();

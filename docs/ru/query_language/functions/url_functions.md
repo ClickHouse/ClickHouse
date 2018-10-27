@@ -57,7 +57,7 @@
 То же самое, но без протокола и хоста в результате. Элемент / (корень) не включается. Пример:
 Функция используется для реализации древовидных отчётов по URL в Яндекс.Метрике.
 
-```text
+```
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -69,11 +69,11 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 Возвращает декодированный URL.
 Пример:
 
-```sql
+``` sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```text
+```
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
@@ -97,3 +97,5 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 
 ### cutURLParameter(URL, name)
 Удаляет параметр URL с именем name, если такой есть. Функция работает при допущении, что имя параметра закодировано в URL в точности таким же образом, что и в переданном аргументе.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/url_functions/) <!--hide-->

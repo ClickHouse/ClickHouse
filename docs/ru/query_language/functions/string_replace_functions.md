@@ -17,7 +17,7 @@
 
 Пример 1. Переведём дату в американский формат:
 
-```sql
+``` sql
 SELECT DISTINCT
     EventDate,
     replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
@@ -26,7 +26,7 @@ LIMIT 7
 FORMAT TabSeparated
 ```
 
-```text
+```
 2014-03-17      03/17/2014
 2014-03-18      03/18/2014
 2014-03-19      03/19/2014
@@ -38,11 +38,11 @@ FORMAT TabSeparated
 
 Пример 2. Размножить строку десять раз:
 
-```sql
+``` sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
-```text
+```
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -51,11 +51,11 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 ## replaceRegexpAll(haystack, pattern, replacement)
 То же самое, но делается замена всех вхождений. Пример:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
-```text
+```
 ┌─res────────────────────────┐
 │ HHeelllloo,,  WWoorrlldd!! │
 └────────────────────────────┘
@@ -64,12 +64,14 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 В качестве исключения, если регулярное выражение сработало на пустой подстроке, то замена делается не более одного раза.
 Пример:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
-```text
+```
 ┌─res─────────────────┐
 │ here: Hello, World! │
 └─────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_replace_functions/) <!--hide-->

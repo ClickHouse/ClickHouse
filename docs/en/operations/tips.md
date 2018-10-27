@@ -91,8 +91,7 @@ Most other file systems should also work fine. File systems with delayed allocat
 
 ## Linux Kernel
 
-Don't use an outdated Linux kernel. In 2015, 3.18.19 was new enough.
-Consider using the kernel build from Yandex:<https://github.com/yandex/smart> – it provides at least a 5% performance increase.
+Don't use an outdated Linux kernel.
 
 ## Network
 
@@ -179,7 +178,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Java version:
 
-```text
+```
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -227,7 +226,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```text
+```
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]
@@ -256,3 +255,5 @@ script
 end script
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/tips/) <!--hide-->

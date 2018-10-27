@@ -21,7 +21,7 @@ public:
         const size_t max_block_size,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
-        MergeTreeData & storage,
+        const MergeTreeData & storage,
         const bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         const Settings & settings,
@@ -44,6 +44,8 @@ private:
     std::shared_ptr<MergeTreeReadPool> pool;
     size_t min_marks_to_read;
 
+    /// Last part readed in this thread
+    std::string last_readed_part_path;
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
 };

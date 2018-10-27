@@ -8,7 +8,7 @@ Checks whether the argument is [NULL](../syntax.md#null-literal).
 isNull(x)
 ```
 
-**Parameters:**
+**Parameters**
 
 - `x` — A value with a non-compound data type.
 
@@ -293,3 +293,5 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

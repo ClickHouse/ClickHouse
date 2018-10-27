@@ -153,13 +153,9 @@ ConnectionPoolWithFailover::tryGetEntry(
     {
         result.entry = pool.get(settings, /* force_connected = */ false);
 
-        String server_name;
-        UInt64 server_version_major;
-        UInt64 server_version_minor;
-        UInt64 server_version_patch;
-        UInt64 server_revision;
+        UInt64 server_revision = 0;
         if (table_to_check)
-            result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            server_revision = result.entry->getServerRevision();
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {

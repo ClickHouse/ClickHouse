@@ -115,3 +115,5 @@ Configuration fields:
 - `hierarchical` – Hierarchical support. Mirrored to the parent identifier. By default, ` false`.
 - `injective` – Whether the `id -> attribute` image is injective. If ` true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
 - `is_object_id` – Whether the query is executed for a MongoDB document by `ObjectID`.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

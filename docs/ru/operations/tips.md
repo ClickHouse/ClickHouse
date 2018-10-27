@@ -91,8 +91,7 @@ XFS также подходит, но не так тщательно проте�
 
 ## Ядро Linux
 
-Не используйте слишком старое ядро Linux. В 2015 году 3.18.19 — достаточно свежее.
-Рассмотрите возможность использования сборки ядра от Яндекса: <https://github.com/yandex/smart> — это дает прирост в производительности не менее 5%.
+Не используйте слишком старое ядро Linux.
 
 ## Сеть
 
@@ -179,7 +178,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Версия Java:
 
-```text
+```
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -227,7 +226,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```text
+```
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]
@@ -255,3 +254,5 @@ script
         -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
 end script
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/tips/) <!--hide-->

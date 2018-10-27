@@ -162,7 +162,18 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
-void assertChar(char symbol, ReadBuffer & buf);
+
+void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
+
+inline void assertChar(char symbol, ReadBuffer & buf)
+{
+    if (buf.eof() || *buf.position() != symbol)
+    {
+        char err[2] = {symbol, '\0'};
+        throwAtAssertionFailed(err, buf);
+    }
+    ++buf.position();
+}
 
 inline void assertString(const String & s, ReadBuffer & buf)
 {

@@ -13,9 +13,19 @@ namespace ErrorCodes
 }
 
 
-using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
+static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
+{
+    if (!description.collator)
+        return false;
 
-static ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description)
+    if (!typeid_cast<const ColumnString *>(column))    /// TODO Nullable(String)
+        throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
+
+    return true;
+}
+
+
+ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description)
 {
     size_t size = description.size();
     ColumnsWithSortDescriptions res;
@@ -31,18 +41,6 @@ static ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & b
     }
 
     return res;
-}
-
-
-static inline bool needCollation(const IColumn * column, const SortColumnDescription & description)
-{
-    if (!description.collator)
-        return false;
-
-    if (!typeid_cast<const ColumnString *>(column))    /// TODO Nullable(String)
-        throw Exception("Collations could be specified only for String columns.", ErrorCodes::BAD_COLLATION);
-
-    return true;
 }
 
 
@@ -65,6 +63,7 @@ struct PartialSortingLess
         return false;
     }
 };
+
 
 struct PartialSortingLessWithCollation
 {

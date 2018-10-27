@@ -9,7 +9,10 @@
 # auto generated files
 *.logrt
 
+dbms/src/Storages/System/StorageSystemContributors.generated.cpp
+
 /build
+/build_*
 /docs/build
 /docs/edit
 /docs/tools/venv/

@@ -130,13 +130,13 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
     finalizePerformanceCounters();
 
-    /// For better logging ({query_id} will be shown here)
-    if (thread_group && thread_group.use_count() == 1)
-        thread_group->memory_tracker.logPeakMemoryUsage();
-
     /// Detach from thread group
     performance_counters.setParent(&ProfileEvents::global_counters);
+    memory_tracker.reset();
+
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
     memory_tracker.setParent(nullptr);
+
     query_context = nullptr;
     thread_group.reset();
 
@@ -244,10 +244,19 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
     CurrentThread::attachQueryContext(query_context);
 }
 
+void CurrentThread::QueryScope::logPeakMemoryUsage()
+{
+    log_peak_memory_usage_in_destructor = false;
+    CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+}
+
 CurrentThread::QueryScope::~QueryScope()
 {
     try
     {
+        if (log_peak_memory_usage_in_destructor)
+            logPeakMemoryUsage();
+
         CurrentThread::detachQueryIfNotDetached();
     }
     catch (...)

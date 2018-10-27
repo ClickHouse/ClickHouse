@@ -11,6 +11,8 @@
 Запрос вида `SELECT count() FROM table` не оптимизируется, так как количество записей в таблице нигде не хранится отдельно - из таблицы будет выбран какой-нибудь достаточно маленький столбец, и будет посчитано количество значений в нём.
 
 
+<a name="agg_function-any"></a>
+
 ## any(x)
 
 Выбирает первое попавшееся значение.
@@ -37,7 +39,7 @@ anyHeavy(column)
 
 Возьмем набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
@@ -52,7 +54,6 @@ FROM ontime
 
 Выбирает последнее попавшееся значение.
 Результат так же недетерминирован, как и для функции `any`.
-
 
 ## min(x)
 
@@ -87,6 +88,7 @@ SELECT argMin(user, salary) FROM salary
 
 Вычисляет значение arg при максимальном значении val. Если есть несколько разных значений arg для максимальных значений val, то выдаётся первое попавшееся из таких значений.
 
+<a name="agg_function-sum"></a>
 
 ## sum(x)
 
@@ -100,6 +102,7 @@ SELECT argMin(user, salary) FROM salary
 
 Работает только для чисел.
 
+<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -109,7 +112,7 @@ SELECT argMin(user, salary) FROM salary
 
 Пример:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -130,7 +133,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```text
+```
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -143,6 +146,9 @@ GROUP BY timeslot
 Вычисляет среднее.
 Работает только для чисел.
 Результат всегда - Float64.
+
+
+<a name="agg_function-uniq"></a>
 
 ## uniq(x)
 
@@ -352,7 +358,7 @@ topK(N)(column)
 
 Возьмем набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
@@ -377,3 +383,5 @@ FROM ontime
 ## corr(x, y)
 
 Вычисляет коэффициент корреляции Пирсона: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/reference/) <!--hide-->

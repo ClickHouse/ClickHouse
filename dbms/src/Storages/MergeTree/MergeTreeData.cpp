@@ -1228,7 +1228,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */);
+        IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+        MergedColumnOnlyOutputStream out(
+            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */, unused_written_offsets);
 
         in.readPrefix();
         out.writePrefix();

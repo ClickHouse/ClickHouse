@@ -340,7 +340,7 @@ struct ConvertImplGenericToString
         ColumnString::Chars_t & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
-        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
+        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitrary.
         offsets_to.resize(size);
 
         WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
@@ -784,6 +784,9 @@ public:
         }
         else if constexpr (to_decimal)
         {
+            if (!arguments[1].column)
+                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)

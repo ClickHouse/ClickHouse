@@ -413,3 +413,5 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 - [insert_quorum](#setting-insert_quorum)
 - [insert_quorum_timeout](#setting-insert_quorum_timeout)
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->
