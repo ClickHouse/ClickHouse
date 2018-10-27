@@ -36,7 +36,8 @@ public:
             res->children.push_back(res->default_expression);
         }
 
-        if (comment_expression) {
+        if (comment_expression)
+        {
             res->comment_expression = comment_expression->clone();
             res->children.push_back(res->comment_expression);
         }
@@ -62,7 +63,8 @@ public:
             default_expression->formatImpl(settings, state, frame);
         }
 
-        if (comment_expression) {
+        if (comment_expression)
+        {
             settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
             comment_expression->formatImpl(settings, state, frame);
         }

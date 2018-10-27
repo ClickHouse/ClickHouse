@@ -8,7 +8,8 @@
 namespace DB
 {
 
-struct ColumnComment {
+struct ColumnComment
+{
     ASTPtr expression;
 };
 

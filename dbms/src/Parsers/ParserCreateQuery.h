@@ -173,7 +173,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(default_expression));
     }
 
-    if (comment_expression) {
+    if (comment_expression)
+    {
         column_declaration->comment_expression = comment_expression;
         column_declaration->children.push_back(std::move(comment_expression));
     }
