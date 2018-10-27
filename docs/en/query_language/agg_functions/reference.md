@@ -9,6 +9,8 @@ The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate f
 
 A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
+<a name="agg_function-any"></a>
+
 ## any(x)
 
 Selects the first encountered value.
@@ -35,7 +37,7 @@ anyHeavy(column)
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select any frequently occurring value in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT anyHeavy(AirlineID) AS res
 FROM ontime
 ```
@@ -50,6 +52,135 @@ FROM ontime
 
 Selects the last value encountered.
 The result is just as indeterminate as for the `any` function.
+
+##groupBitAnd
+
+Applies bitwise `AND` for series of numbers.
+
+```
+groupBitAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+The query:
+
+```
+SELECT groupBitAnd(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+00000100 = 4
+```
+
+##groupBitOr
+
+Applies bitwise `OR` for series of numbers.
+
+```
+groupBitOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitOr(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01111101 = 125
+```
+
+##groupBitXor
+
+Applies bitwise `XOR` for series of numbers.
+
+```
+groupBitXor(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitXor(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01101000 = 104
+```
 
 ## min(x)
 
@@ -82,6 +213,8 @@ SELECT argMin(user, salary) FROM salary
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
+<a name="agg_function-sum"></a>
+
 ## sum(x)
 
 Calculates the sum.
@@ -93,6 +226,8 @@ Computes the sum of the numbers, using the same data type for the result as for 
 
 Only works for numbers.
 
+<a name="agg_function-summap"></a>
+
 ## sumMap(key, value)
 
 Totals the 'value' array according to the keys specified in the 'key' array.
@@ -101,7 +236,7 @@ Returns a tuple of two arrays: keys in sorted order, and values ​​summed for
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE sum_map(
     date Date,
     timeslot DateTime,
@@ -122,7 +257,7 @@ FROM sum_map
 GROUP BY timeslot
 ```
 
-```text
+```
 ┌────────────timeslot─┬─sumMap(statusMap.status, statusMap.requests)─┐
 │ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])               │
 │ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])               │
@@ -134,6 +269,8 @@ GROUP BY timeslot
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
+
+<a name="agg_function-uniq"></a>
 
 ## uniq(x)
 
@@ -268,7 +405,7 @@ A hash table is used as the algorithm. Because of this, if the passed values ​
 
 Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
 
-The performance of the function is lower than for `quantile`, `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than for `quantile` or `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
@@ -325,7 +462,7 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
 
-```sql
+``` sql
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
@@ -350,3 +487,5 @@ Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
 
 Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->

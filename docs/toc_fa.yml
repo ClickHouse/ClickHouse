@@ -31,6 +31,7 @@ nav:
   - 'Introduction': 'data_types/index.md'
   - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
   - 'Float32, Float64': 'data_types/float.md'
+  - 'Decimal': 'data_types/decimal.md'
   - ' مقادیر Boolean': 'data_types/boolean.md'
   - 'String': 'data_types/string.md'
   - 'FixedString(N)': 'data_types/fixedstring.md'
@@ -96,6 +97,7 @@ nav:
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
     - 'url': 'query_language/table_functions/url.md'
+    - 'jdbc': 'query_language/table_functions/jdbc.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External dictionaries':

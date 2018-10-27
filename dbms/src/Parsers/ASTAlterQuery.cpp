@@ -194,18 +194,6 @@ ASTPtr ASTAlterQuery::clone() const
     return res;
 }
 
-ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
-{
-    auto query_ptr = clone();
-    auto & query = static_cast<ASTAlterQuery &>(*query_ptr);
-
-    query.cluster.clear();
-    if (query.database.empty())
-        query.database = new_database;
-
-    return query_ptr;
-}
-
 void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     frame.need_parens = false;

@@ -292,3 +292,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data is stored in a `trie`. It must completely fit into RAM.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

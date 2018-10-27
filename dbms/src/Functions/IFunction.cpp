@@ -288,7 +288,10 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
         const ColumnWithTypeAndName & column = block.getByPosition(args[arg_num]);
 
         if (arguments_to_remain_constants.end() != std::find(arguments_to_remain_constants.begin(), arguments_to_remain_constants.end(), arg_num))
-            temporary_block.insert(column);
+            if (column.column->empty())
+                temporary_block.insert({column.column->cloneResized(1), column.type, column.name});
+            else
+                temporary_block.insert(column);
         else
         {
             have_converted_columns = true;
@@ -311,7 +314,15 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
 
     executeWithoutLowCardinalityColumns(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
 
-    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, input_rows_count);
+    ColumnPtr result_column;
+    /// extremely rare case, when we have function with completely const arguments
+    /// but some of them produced by non isDeterministic function
+    if (temporary_block.getByPosition(arguments_size).column->size() > 1)
+        result_column = temporary_block.getByPosition(arguments_size).column->cloneResized(1);
+    else
+        result_column = temporary_block.getByPosition(arguments_size).column;
+
+    block.getByPosition(result).column = ColumnConst::create(result_column, input_rows_count);
     return true;
 }
 

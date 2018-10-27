@@ -4,7 +4,7 @@ There are two types of parsers in the system: the full SQL parser (a recursive d
 In all cases except the INSERT query, only the full SQL parser is used.
 The INSERT query uses both parsers:
 
-```sql
+``` sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -103,7 +103,7 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 In the SELECT query, expressions can specify synonyms using the AS keyword. Any expression is placed to the left of AS. The identifier name for the synonym is placed to the right of AS. As opposed to standard SQL, synonyms are not only declared on the top level of expressions:
 
-```sql
+``` sql
 SELECT (1 AS n) + 2, n
 ```
 
@@ -119,3 +119,5 @@ An expression is a function, identifier, literal, application of an operator, ex
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/syntax/) <!--hide-->

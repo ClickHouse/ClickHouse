@@ -156,7 +156,12 @@ void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const 
 
     impl.clear();
     for (const auto & key : config_keys)
+    {
+        if (key.find('.') != String::npos)
+            throw Exception("Cluster names with dots are not supported: `" + key + "`", ErrorCodes::SYNTAX_ERROR);
+
         impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+    }
 }
 
 Clusters::Impl Clusters::getContainer() const

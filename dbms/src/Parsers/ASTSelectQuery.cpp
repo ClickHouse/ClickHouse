@@ -7,6 +7,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/typeid_cast.h>
+#include "ASTSelectWithUnionQuery.h"
 
 
 namespace DB
@@ -339,25 +340,41 @@ const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 
 void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
 {
-    ASTTableExpression * table_expression = getFirstTableExpression(*this);
-    if (!table_expression)
+    if (!tables)
         return;
 
-    if (!table_expression->database_and_table_name)
-        return;
+    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*tables);
 
-    if (table_expression->database_and_table_name->children.empty())
+    for (auto & child : tables_in_select_query.children)
     {
-        ASTPtr database = ASTIdentifier::createSpecial(database_name);
-        ASTPtr table = table_expression->database_and_table_name;
+        const auto & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*child);
+        if (tables_element.table_expression)
+        {
+            const auto table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
 
-        const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
-        table_expression->database_and_table_name = ASTIdentifier::createSpecial(database_name + "." + old_name);
-        table_expression->database_and_table_name->children = {database, table};
-    }
-    else if (table_expression->database_and_table_name->children.size() != 2)
-    {
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+            if (!table_expression->database_and_table_name && !table_expression->subquery)
+                continue;
+
+            if (table_expression->subquery)
+            {
+                const auto subquery = static_cast<const ASTSubquery *>(table_expression->subquery.get());
+                const auto select_with_union_query = static_cast<ASTSelectWithUnionQuery *>(subquery->children[0].get());
+                select_with_union_query->setDatabaseIfNeeded(database_name);
+            }
+            else if (table_expression->database_and_table_name->children.empty())
+            {
+                ASTPtr database = ASTIdentifier::createSpecial(database_name);
+                ASTPtr table = table_expression->database_and_table_name;
+
+                const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
+                table_expression->database_and_table_name = ASTIdentifier::createSpecial(database_name + "." + old_name);
+                table_expression->database_and_table_name->children = {database, table};
+            }
+            else if (table_expression->database_and_table_name->children.size() != 2)
+            {
+                throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
+            }
+        }
     }
 }
 

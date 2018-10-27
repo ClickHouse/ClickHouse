@@ -71,7 +71,7 @@ UInt128 stringToUUID(const String & str)
     return parseFromString<UUID>(str);
 }
 
-static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
+void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
     out <<  "Cannot parse input: expected " << escape << s;
@@ -120,15 +120,6 @@ void assertString(const char * s, ReadBuffer & buf)
         throwAtAssertionFailed(s, buf);
 }
 
-void assertChar(char symbol, ReadBuffer & buf)
-{
-    if (buf.eof() || *buf.position() != symbol)
-    {
-        char err[2] = {symbol, '\0'};
-        throwAtAssertionFailed(err, buf);
-    }
-    ++buf.position();
-}
 
 void assertEOF(ReadBuffer & buf)
 {

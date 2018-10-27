@@ -75,11 +75,14 @@ public:
     static void detachQuery();
     static void detachQueryIfNotDetached();
 
-    /// Initializes query with current thread as master thread in constructor, and detaches it in desstructor
+    /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope
     {
         explicit QueryScope(Context & query_context);
         ~QueryScope();
+
+        void logPeakMemoryUsage();
+        bool log_peak_memory_usage_in_destructor = true;
     };
 
     /// Implicitly finalizes current thread in the destructor

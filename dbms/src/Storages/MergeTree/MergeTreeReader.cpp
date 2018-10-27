@@ -36,7 +36,7 @@ MergeTreeReader::~MergeTreeReader() = default;
 MergeTreeReader::MergeTreeReader(const String & path,
     const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
     UncompressedCache * uncompressed_cache, MarkCache * mark_cache, bool save_marks_in_cache,
-    MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+    const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
     size_t aio_threshold, size_t max_read_buffer_size, const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback,
     clockid_t clock_type)
@@ -454,11 +454,8 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults)
+void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
-    if (!res)
-        throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
-
     try
     {
         /// For a missing column of a nested data structure we must create not a column of empty
@@ -528,7 +525,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(res.rows())->convertToFullColumnIfConst();
+                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));
