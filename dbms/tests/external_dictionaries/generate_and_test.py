@@ -141,7 +141,7 @@ def generate_structure(args):
         base_name = 'range_hashed_' + range_hashed_range_type
         dictionaries.extend([
             [ 'file_' + base_name, 3, False ],
-            # [ 'clickhouse_' + base_name, 3, True ],
+            [ 'clickhouse_' + base_name, 3, False ],
             # [ 'executable_flat' + base_name, 3, True ]
         ])
 
@@ -150,8 +150,6 @@ def generate_structure(args):
             base_name = 'range_hashed_' + range_hashed_range_type
             dictionaries.extend([
                 ['mysql_' + base_name, 3, False],
-                # [ 'clickhouse_' + base_name, 3, True ],
-                # [ 'executable_flat' + base_name, 3, True ]
             ])
 
 
@@ -230,6 +228,22 @@ range_hashed_mysql_column_types = {
     'DateTime': 'datetime',
 }
 
+range_hashed_clickhouse_column_types = {
+    'UInt8':  'UInt8',
+    'UInt16': 'UInt16',
+    'UInt32': 'UInt32',
+    'UInt64': 'UInt64',
+    'Int8':   'Int8',
+    'Int16':  'Int16',
+    'Int32':  'Int32',
+    'Int64':  'Int64',
+    # default type (Date) for compatibility with older versions:
+    '':       'Date',
+    'Date':   'Date',
+    'DateTime': 'DateTime',
+}
+
+
 def dump_report(destination, suite, test_case, report):
     if destination is not None:
         destination_file = os.path.join(destination, suite, test_case + ".xml")
@@ -291,9 +305,26 @@ def generate_data(args):
         query = file_source_query % comma_separated(chain(keys, columns(), ['Parent'] if 1 == len(keys) else []))
         call([args.client, '--port', args.port, '--query', query], 'generated/' + file)
 
+        table_name = "test.dictionary_source_" + range_hashed_range_type
+        col_type = range_hashed_clickhouse_column_types[range_hashed_range_type]
+
+        source_tsv_full_path = "{0}/generated/{1}".format(prefix, file)
+        print 'Creating Clickhouse table for "{0}" range_hashed dictionary...'.format(range_hashed_range_type)
+        system('cat {source} | {ch} --port={port} -m -n --query "'
+              'create database if not exists test;'
+              'drop table if exists {table_name};'
+              'create table {table_name} ('
+                    'id UInt64, StartDate {col_type}, EndDate {col_type},'
+                    'UInt8_ UInt8, UInt16_ UInt16, UInt32_ UInt32, UInt64_ UInt64,'
+                    'Int8_ Int8, Int16_ Int16, Int32_ Int32, Int64_ Int64,'
+                    'Float32_ Float32, Float64_ Float64,'
+                    'String_ String,'
+                    'Date_ Date, DateTime_ DateTime, UUID_ UUID'
+              ') engine=Log; insert into {table_name} format TabSeparated'
+              '"'.format(table_name=table_name, col_type=col_type, source=source_tsv_full_path, ch=args.client, port=args.port))
+
         if not args.no_mysql:
-            print 'Creating MySQL table for "{0}"...'.format(range_hashed_range_type)
-            table_name = "test.dictionary_source_" + range_hashed_range_type
+            print 'Creating MySQL table for "{0}" range_hashed dictionary...'.format(range_hashed_range_type)
             col_type = range_hashed_mysql_column_types[range_hashed_range_type]
             subprocess.check_call('echo "'
                       'create database if not exists test;'
@@ -305,8 +336,8 @@ def generate_data(args):
                               'Float32_ float, Float64_ double, '
                               'String_ text, Date_ date, DateTime_ datetime, UUID_ varchar(36)'
                       ');'
-                      'load data local infile \'{0}/generated/{file}\' into table {table_name};" | mysql $MYSQL_OPTIONS --local-infile=1'
-                      .format(prefix, table_name=table_name, col_type=col_type, file=file), shell=True)
+                      'load data local infile \'{source}\' into table {table_name};" | mysql $MYSQL_OPTIONS --local-infile=1'
+                      .format(prefix, table_name=table_name, col_type=col_type, source=source_tsv_full_path), shell=True)
 
 
     # create MySQL table from complete_query
@@ -406,7 +437,7 @@ def generate_dictionaries(args):
         <user>default</user>
         <password></password>
         <db>test</db>
-        <table>dictionary_source</table>
+        <table>dictionary_source{key_type}</table>
     </clickhouse>
     ''' % args.port
 
@@ -559,33 +590,34 @@ def generate_dictionaries(args):
     </attribute>
     '''
 
+    source_clickhouse_deafult = source_clickhouse.format(key_type="")
     sources_and_layouts = [
         # Simple key dictionaries
         [ source_file % (generated_prefix + files[0]), layout_flat],
-        [ source_clickhouse, layout_flat ],
+        [ source_clickhouse_deafult, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
-        [ source_clickhouse, layout_hashed ],
+        [ source_clickhouse_deafult, layout_hashed ],
         [ source_executable % (generated_prefix + files[0]), layout_hashed ],
 
-        [ source_clickhouse, layout_cache ],
+        [ source_clickhouse_deafult, layout_cache ],
         [ source_executable_cache % (generated_prefix + files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
-        [ source_clickhouse, layout_complex_key_hashed ],
+        [ source_clickhouse_deafult, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
 
-        [ source_clickhouse, layout_complex_key_cache ],
+        [ source_clickhouse_deafult, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
-        [ source_clickhouse, layout_complex_key_hashed ],
+        [ source_clickhouse_deafult, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
 
-        [ source_clickhouse, layout_complex_key_cache ],
+        [ source_clickhouse_deafult, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[2]), layout_complex_key_cache ],
     ]
 
@@ -655,9 +687,10 @@ def generate_dictionaries(args):
     ])
 
     for range_hashed_range_type in range_hashed_range_types:
+        key_type = "_" + range_hashed_range_type
         sources_and_layouts.extend([
             [ source_file % (generated_prefix + (files[3].format(range_hashed_range_type=range_hashed_range_type))), (layout_range_hashed, range_hashed_range_type) ],
-            # [ source_clickhouse, layout_range_hashed ],
+            [ source_clickhouse.format(key_type=key_type), (layout_range_hashed, range_hashed_range_type) ],
             # [ source_executable, layout_range_hashed ]
         ])
 
