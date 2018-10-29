@@ -37,7 +37,6 @@ public:
     ASTPtr limit_offset;
     ASTPtr limit_length;
     ASTPtr settings;
-    bool has_array_join = false;
 
     /// Compatibility with old parser of tables list. TODO remove
     ASTPtr database() const;

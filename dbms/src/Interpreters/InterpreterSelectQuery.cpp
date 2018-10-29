@@ -1166,7 +1166,7 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
     size_t limit = 0;
-    if (!query.distinct && !query.limit_by_expression_list && !query.has_array_join)
+    if (!query.distinct && !query.limit_by_expression_list)
     {
         size_t limit_length = 0;
         size_t limit_offset = 0;
@@ -1181,7 +1181,12 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
-    size_t limit = getLimitForSorting(query);
+
+    size_t limit = 0;
+
+    auto array_join_expression_list = query.array_join_expression_list();
+    if (!array_join_expression_list)
+        limit = getLimitForSorting(query);
 
     const Settings & settings = context.getSettingsRef();
 
