@@ -242,46 +242,6 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
 }
 
 
-ASTPtr ASTSelectQuery::database() const
-{
-    const ASTTableExpression * table_expression = getFirstTableExpression(*this);
-    if (!table_expression || !table_expression->database_and_table_name || table_expression->database_and_table_name->children.empty())
-        return {};
-
-    if (table_expression->database_and_table_name->children.size() != 2)
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-
-    return table_expression->database_and_table_name->children[0];
-}
-
-
-ASTPtr ASTSelectQuery::table() const
-{
-    const ASTTableExpression * table_expression = getFirstTableExpression(*this);
-    if (!table_expression)
-        return {};
-
-    if (table_expression->database_and_table_name)
-    {
-        if (table_expression->database_and_table_name->children.empty())
-            return table_expression->database_and_table_name;
-
-        if (table_expression->database_and_table_name->children.size() != 2)
-            throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-
-        return table_expression->database_and_table_name->children[1];
-    }
-
-    if (table_expression->table_function)
-        return table_expression->table_function;
-
-    if (table_expression->subquery)
-        return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children.at(0);
-
-    throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-}
-
-
 ASTPtr ASTSelectQuery::sample_size() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);

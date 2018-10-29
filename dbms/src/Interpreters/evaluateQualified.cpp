@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 
 namespace DB
 {
@@ -194,6 +195,83 @@ std::vector<DatabaseAndTableWithAlias> getDatabaseAndTableWithAliases(const ASTS
         database_and_table_with_aliases.emplace_back(getTableNameWithAliasFromTableExpression(*table_expression, current_database));
 
     return database_and_table_with_aliases;
+}
+
+
+static const ASTTableExpression * getTableExpression(const ASTSelectQuery & select, size_t table_number)
+{
+    if (!select.tables)
+        return {};
+
+    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*select.tables);
+    if (tables_in_select_query.children.size() <= table_number)
+        return {};
+
+    ASTTablesInSelectQueryElement & tables_element =
+        static_cast<ASTTablesInSelectQueryElement &>(*tables_in_select_query.children[table_number]);
+    if (!tables_element.table_expression)
+        return {};
+
+    return static_cast<const ASTTableExpression *>(tables_element.table_expression.get());
+}
+
+bool getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number, DatabaseAndTableWithAlias & db_and_table)
+{
+    const ASTTableExpression * table_expression = getTableExpression(select, table_number);
+    if (!table_expression)
+        return false;
+
+    ASTPtr database_and_table_name = table_expression->database_and_table_name;
+    if (!database_and_table_name)
+        return false;
+
+    if (database_and_table_name->children.empty())
+    {
+        const ASTIdentifier * db_name = typeid_cast<const ASTIdentifier *>(database_and_table_name.get());
+        if (!db_name)
+            throw Exception("Logical error: Unexpected database node type. Identifier expected.", ErrorCodes::LOGICAL_ERROR);
+
+        db_and_table = DatabaseAndTableWithAlias{{}, db_name->name, {}};
+        return true;
+    }
+    else if (database_and_table_name->children.size() == 2)
+    {
+        const ASTIdentifier * db = typeid_cast<const ASTIdentifier *>(database_and_table_name->children[0].get());
+        const ASTIdentifier * table = typeid_cast<const ASTIdentifier *>(database_and_table_name->children[1].get());
+
+        if (db && table)
+        {
+            db_and_table = DatabaseAndTableWithAlias{db->name, table->name, {}};
+            return true;
+        }
+    }
+
+    return false;
+}
+
+ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number)
+{
+    const ASTTableExpression * table_expression = getTableExpression(select, table_number);
+    if (table_expression)
+    {
+#if 1   /// TODO: It hides some logical error in InterpreterSelectQuery & distributed tables
+        if (table_expression->database_and_table_name)
+        {
+            if (table_expression->database_and_table_name->children.empty())
+                return table_expression->database_and_table_name;
+
+            if (table_expression->database_and_table_name->children.size() == 2)
+                return table_expression->database_and_table_name->children[1];
+        }
+#endif
+        if (table_expression->table_function)
+            return table_expression->table_function;
+
+        if (table_expression->subquery)
+            return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children[0];
+    }
+
+    return nullptr;
 }
 
 }
