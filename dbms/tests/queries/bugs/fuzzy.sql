@@ -7,3 +7,6 @@ SELECT extractURLParameter('ZiqSZeh?', '\0')
 SELECT globalNotIn(['"wh'], [NULL]);
 SELECT globalIn([''], [NULL])
 SELECT ( SELECT toDecimal128([], rowNumberInBlock()) ) , lcm('', [[(CAST(('>A') AS String))]]);
+SELECT truncate(895, -16);
+SELECT (CAST((lowerUTF8('a7\xwK>-')) AS String)), [6935];
+SELECT upperUTF8(sipHash128('\0')), [], ['xD2jG'];
