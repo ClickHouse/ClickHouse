@@ -172,19 +172,9 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     if (!storage && select_query)
     {
-        auto select_database = select_query->database();
-        auto select_table = select_query->table();
-
-        if (select_table
-            && !typeid_cast<const ASTSelectWithUnionQuery *>(select_table.get())
-            && !typeid_cast<const ASTFunction *>(select_table.get()))
-        {
-            String database = select_database
-                ? typeid_cast<const ASTIdentifier &>(*select_database).name
-                : "";
-            const String & table = typeid_cast<const ASTIdentifier &>(*select_table).name;
-            storage = context.tryGetTable(database, table);
-        }
+        DatabaseAndTableWithAlias db_and_table;
+        if (getDatabaseAndTable(*select_query, 0, db_and_table))
+            storage = context.tryGetTable(db_and_table.database, db_and_table.table);
     }
 
     if (storage && source_columns.empty())

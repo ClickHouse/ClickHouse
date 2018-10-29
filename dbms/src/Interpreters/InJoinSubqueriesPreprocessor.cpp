@@ -1,5 +1,6 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateQualified.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -81,22 +82,13 @@ void forEachTable(IAST * node, F && f)
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    String database;
-    String table;
-
     const ASTIdentifier * id = static_cast<const ASTIdentifier *>(database_and_table.get());
+    if (!id)
+        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
-    if (id->children.empty())
-        table = id->name;
-    else if (id->children.size() == 2)
-    {
-        database = static_cast<const ASTIdentifier *>(id->children[0].get())->name;
-        table = static_cast<const ASTIdentifier *>(id->children[1].get())->name;
-    }
-    else
-        throw Exception("Logical error: unexpected number of components in table expression", ErrorCodes::LOGICAL_ERROR);
+    std::pair<String, String> db_and_table = getDatabaseAndTableNameFromIdentifier(*id);
 
-    return context.tryGetTable(database, table);
+    return context.tryGetTable(db_and_table.first, db_and_table.second);
 }
 
 

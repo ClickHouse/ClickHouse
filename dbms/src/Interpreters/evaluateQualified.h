@@ -40,4 +40,7 @@ std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const ASTIdentif
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery * select_query);
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTableWithAliases(const ASTSelectQuery * select_query, const String & current_database);
 
+bool getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number, DatabaseAndTableWithAlias &);
+ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number);
+
 }
