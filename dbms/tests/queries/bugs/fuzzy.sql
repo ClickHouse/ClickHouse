@@ -6,3 +6,4 @@ SELECT extractURLParameter('?_', '\0');
 SELECT extractURLParameter('ZiqSZeh?', '\0')
 SELECT globalNotIn(['"wh'], [NULL]);
 SELECT globalIn([''], [NULL])
+SELECT ( SELECT toDecimal128([], rowNumberInBlock()) ) , lcm('', [[(CAST(('>A') AS String))]]);
