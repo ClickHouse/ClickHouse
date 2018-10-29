@@ -44,11 +44,8 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     /// split predicate with `and`
     PredicateExpressions outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
-    std::vector<ASTTableExpression *> tables_expression = getSelectTablesExpression(ast_select);
-    std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases;
-    for (const auto & table_expression : tables_expression)
-        database_and_table_with_aliases.emplace_back(
-            getTableNameWithAliasFromTableExpression(*table_expression, context.getCurrentDatabase()));
+    std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases =
+        getDatabaseAndTableWithAliases(ast_select, context.getCurrentDatabase());
 
     bool is_rewrite_subquery = false;
     for (const auto & outer_predicate : outer_predicate_expressions)
@@ -336,7 +333,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
     if (!select_query->tables || select_query->tables->children.empty())
         return {};
 
-    std::vector<ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
+    std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
 
     if (const auto qualified_asterisk = typeid_cast<ASTQualifiedAsterisk *>(asterisk.get()))
     {
@@ -404,25 +401,6 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
         }
     }
     return projection_columns;
-}
-
-std::vector<ASTTableExpression *> PredicateExpressionsOptimizer::getSelectTablesExpression(ASTSelectQuery * select_query)
-{
-    if (!select_query->tables)
-        return {};
-
-    std::vector<ASTTableExpression *> tables_expression;
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select_query->tables);
-
-    for (const auto & child : tables_in_select_query.children)
-    {
-        ASTTablesInSelectQueryElement * tables_element = static_cast<ASTTablesInSelectQueryElement *>(child.get());
-
-        if (tables_element->table_expression)
-            tables_expression.emplace_back(static_cast<ASTTableExpression *>(tables_element->table_expression.get()));
-    }
-
-    return tables_expression;
 }
 
 void PredicateExpressionsOptimizer::cleanExpressionAlias(ASTPtr & expression)
