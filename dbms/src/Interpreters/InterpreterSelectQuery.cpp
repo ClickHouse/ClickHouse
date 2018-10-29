@@ -1234,6 +1234,11 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, SelectQueryInfo &
                             stream = std::make_shared<ReverseBlockInputStream>(stream);
                         });
                     }
+
+                    executeUnion(pipeline);
+
+                    pipeline.firstStream() = std::make_shared<MergingSortedBlockInputStream>(pipeline.streams, order_descr, settings.max_block_size, limit);
+                    return;
                 }
             }
         }

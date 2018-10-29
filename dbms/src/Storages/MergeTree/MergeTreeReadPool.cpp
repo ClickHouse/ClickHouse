@@ -25,7 +25,7 @@ MergeTreeReadPool::MergeTreeReadPool(
       predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}
 {
     /// parts don't contain duplicate MergeTreeDataPart's.
-    const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_info, check_columns);
+    const auto per_part_sum_marks = fillPerPartInfoForReadInPKOrder(parts, prewhere_info, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
 }
 
@@ -332,11 +332,106 @@ void MergeTreeReadPool::fillPerThreadInfo(
             }
 
             threads_tasks[i].parts_and_ranges.push_back({ part_idx, ranges_to_get_from_part });
+
             threads_tasks[i].sum_marks_in_parts.push_back(marks_in_ranges);
             if (marks_in_ranges != 0)
                 remaining_thread_tasks.insert(i);
         }
     }
+}
+
+std::vector<size_t> MergeTreeReadPool::fillPerPartInfoForReadInPKOrder(
+    RangesInDataParts & parts, const PrewhereInfoPtr & prewhere_info, const bool check_columns)
+{
+    std::vector<size_t> per_part_sum_marks;
+    Block sample_block = data.getSampleBlock();
+
+    for (const auto i : ext::range(0, parts.size()))
+    {
+        auto & part = parts[i];
+
+        /// Read marks for every data part.
+        size_t sum_marks = 0;
+        /// Ranges are in right-to-left order, due to 'reverse' in MergeTreeDataSelectExecutor.
+        for (const auto & range : part.ranges)
+            sum_marks += range.end - range.begin;
+
+        per_part_sum_marks.push_back(sum_marks);
+
+        per_part_columns_lock.emplace_back(part.data_part->columns_lock);
+
+        /// inject column names required for DEFAULT evaluation in current part
+        auto required_column_names = column_names;
+
+        const auto injected_columns = injectRequiredColumns(data, part.data_part, required_column_names);
+        auto should_reoder = !injected_columns.empty();
+
+        Names required_pre_column_names;
+
+        if (prewhere_info)
+        {
+            /// collect columns required for PREWHERE evaluation
+            if (prewhere_info->alias_actions)
+                required_pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+            else
+                required_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+
+            /// there must be at least one column required for PREWHERE
+            if (required_pre_column_names.empty())
+                required_pre_column_names.push_back(required_column_names[0]);
+
+            /// PREWHERE columns may require some additional columns for DEFAULT evaluation
+            const auto injected_pre_columns = injectRequiredColumns(data, part.data_part, required_pre_column_names);
+            if (!injected_pre_columns.empty())
+                should_reoder = true;
+
+            /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
+            const NameSet pre_name_set(required_pre_column_names.begin(), required_pre_column_names.end());
+
+            Names post_column_names;
+            for (const auto & name : required_column_names)
+                if (!pre_name_set.count(name))
+                    post_column_names.push_back(name);
+
+            required_column_names = post_column_names;
+        }
+
+        per_part_column_name_set.emplace_back(std::begin(required_column_names), std::end(required_column_names));
+
+        if (check_columns)
+        {
+            /** Under part->columns_lock check that all requested columns in part are of same type that in table.
+                *    This could be violated during ALTER MODIFY.
+                */
+            if (!required_pre_column_names.empty())
+                data.check(part.data_part->columns, required_pre_column_names);
+            if (!required_column_names.empty())
+                data.check(part.data_part->columns, required_column_names);
+
+            const NamesAndTypesList & physical_columns = data.getColumns().getAllPhysical();
+            per_part_pre_columns.push_back(physical_columns.addTypes(required_pre_column_names));
+            per_part_columns.push_back(physical_columns.addTypes(required_column_names));
+        }
+        else
+        {
+            per_part_pre_columns.push_back(part.data_part->columns.addTypes(required_pre_column_names));
+            per_part_columns.push_back(part.data_part->columns.addTypes(required_column_names));
+        }
+
+        per_part_should_reorder.push_back(should_reoder);
+
+        this->parts.push_back({ part.data_part, part.part_index_in_query });
+
+        if (predict_block_size_bytes)
+        {
+            per_part_size_predictor.emplace_back(std::make_unique<MergeTreeBlockSizePredictor>(
+                part.data_part, column_names, sample_block));
+        }
+        else
+            per_part_size_predictor.emplace_back(nullptr);
+    }
+
+    return per_part_sum_marks;
 }
 
 
