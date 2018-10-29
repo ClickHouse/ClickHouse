@@ -20,4 +20,6 @@ echo "const char * auto_contributors[] {" >> $CONTRIBUTORS_FILE
 cat  $CONTRIBUTORS_FILE.tmp               >> $CONTRIBUTORS_FILE
 echo "nullptr };"                         >> $CONTRIBUTORS_FILE
 
+echo "Collected `cat $CONTRIBUTORS_FILE.tmp | wc -l` contributors."
 rm $CONTRIBUTORS_FILE.tmp
+
