@@ -58,6 +58,13 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
         res.with_name = command_ast->with_name;
         return res;
     }
+    else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
+    {
+        PartitionCommand res;
+        res.type = FREEZE_ALL;
+        res.with_name = command_ast->with_name;
+        return res;
+    }
     else if (command_ast->type == ASTAlterCommand::DROP_COLUMN && command_ast->partition)
     {
         if (!command_ast->clear_column)

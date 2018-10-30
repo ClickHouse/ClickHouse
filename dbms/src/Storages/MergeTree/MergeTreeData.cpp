@@ -2104,6 +2104,40 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
+void MergeTreeData::freezeAll(const String & with_name, const Context & context)
+{
+    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+    String shadow_path = clickhouse_path + "shadow/";
+    Poco::File(shadow_path).createDirectories();
+    String backup_path = shadow_path
+        + (!with_name.empty()
+            ? escapeForFileName(with_name)
+            : toString(Increment(shadow_path + "increment.txt").get(true)))
+        + "/";
+
+    LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
+
+    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
+    const auto data_parts = getDataParts();
+
+    size_t parts_processed = 0;
+    for (const auto & part : data_parts)
+    {
+        LOG_DEBUG(log, "Freezing part " << part->name);
+
+        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
+        if (!startsWith(part_absolute_path, clickhouse_path))
+            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+
+        String backup_part_absolute_path = part_absolute_path;
+        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
+        localBackup(part_absolute_path, backup_part_absolute_path);
+        ++parts_processed;
+    }
+
+    LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+}
+
 size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
 {
     size_t size = 0;

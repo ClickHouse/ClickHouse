@@ -39,6 +39,7 @@ public:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void freezeAll(const String & with_name, const Context & context) override;
     void mutate(const MutationCommands & commands, const Context & context) override;
 
     void shutdown() override;

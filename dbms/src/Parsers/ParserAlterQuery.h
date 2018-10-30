@@ -15,7 +15,7 @@ namespace DB
   *     [MODIFY PRIMARY KEY (a, b, c...)]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
-  *     [FREEZE PARTITION]
+  *     [FREEZE [PARTITION]]
   *     [DELETE WHERE ...]
   *     [UPDATE col_name = expr, ... WHERE ...]
   */

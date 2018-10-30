@@ -4160,6 +4160,12 @@ void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const
 }
 
 
+void StorageReplicatedMergeTree::freezeAll(const String & with_name, const Context & context)
+{
+    data.freezeAll(with_name, context);
+}
+
+
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     /// Overview of the mutation algorithm.

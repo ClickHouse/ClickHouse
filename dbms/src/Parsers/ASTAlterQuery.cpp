@@ -128,6 +128,10 @@ void ASTAlterCommand::formatImpl(
                           << " " << std::quoted(with_name, '\'');
         }
     }
+    else if (type == ASTAlterCommand::FREEZE_ALL)
+    {
+        // TODO: implement this.
+    }
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");

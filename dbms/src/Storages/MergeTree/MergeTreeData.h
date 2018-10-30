@@ -501,6 +501,12 @@ public:
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
+    /** Create local backup (snapshot) for all parts.
+      * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
+      *  or if 'with_name' is specified - backup is created in directory with specified name.
+      */
+    void freezeAll(const String & with_name, const Context & context);
+
     /// Returns the size of partition in bytes.
     size_t getPartitionSize(const std::string & partition_id) const;
 
