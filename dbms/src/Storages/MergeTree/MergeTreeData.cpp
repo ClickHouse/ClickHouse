@@ -2117,6 +2117,8 @@ void MergeTreeData::freezeAll(const String & with_name, const Context & context)
 
     LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
 
+    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
     const auto data_parts = getDataParts();
 

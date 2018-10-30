@@ -25,7 +25,9 @@ done
 
 $chl "ALTER TABLE test.partition_428 FREEZE"
 
-find $ch_dir/shadow
+pushd
+cd $chdir && find shadow -type f -exec md5sum {} \;
+popd
 
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
@@ -37,6 +39,12 @@ for part in `$chl "SELECT name FROM system.parts WHERE database='test' AND table
 done
 
 $chl "ALTER TABLE test.partition_428 MODIFY COLUMN v1 Int8"
+
+# Check that backup hasn't changed
+pushd
+cd $chdir && find shadow -type f -exec md5sum {} \;
+popd
+
 $chl "OPTIMIZE TABLE test.partition_428"
 
 $chl "SELECT toUInt16(p), k, v1 FROM test.partition_428 ORDER BY k FORMAT CSV"
