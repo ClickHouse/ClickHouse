@@ -21,6 +21,8 @@ CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
 [ ! -f "${CONFIG_SERVER_DIR}server-test.xml" ] && CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR:=/etc/clickhouse-server/}
 export CLICKHOUSE_CONFIG_CLIENT=${CLICKHOUSE_CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
+CLICKHOUSE_CONFIG_USERS=${CONFIG_SERVER_DIR}users.xml
+[ ! -f "$CLICKHOUSE_CONFIG_USERS" ] && CLICKHOUSE_CONFIG_USERS=$CUR_DIR/../programs/server/users.xml
 [ -x "$CUR_DIR/clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/}
 [ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/local/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
@@ -43,7 +45,7 @@ mkdir -p $LOG_DIR $DATA_DIR/etc || true
 if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
     cat $CLICKHOUSE_CONFIG | sed -e s!$DATA_DIR_PATTERN!$DATA_DIR! > $DATA_DIR/etc/server-config.xml
     export CLICKHOUSE_CONFIG=$DATA_DIR/etc/server-config.xml
-    cp ${CONFIG_SERVER_DIR}users.xml $DATA_DIR/etc
+    cp $CLICKHOUSE_CONFIG_USERS $DATA_DIR/etc
 fi
 
 CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
