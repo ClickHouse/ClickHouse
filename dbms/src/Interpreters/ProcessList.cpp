@@ -1,7 +1,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -55,11 +55,10 @@ static bool isUnlimitedQuery(const IAST * ast)
         if (!ast_select)
             return false;
 
-        DatabaseAndTableWithAlias database_and_table;
-        if (!getDatabaseAndTable(*ast_select, 0, database_and_table))
-            return false;
+        if (auto database_and_table = getDatabaseAndTable(*ast_select, 0))
+            return database_and_table->database == "system" && database_and_table->table == "processes";
 
-        return database_and_table.database == "system" && database_and_table.table == "processes";
+        return false;
     }
 
     return false;
