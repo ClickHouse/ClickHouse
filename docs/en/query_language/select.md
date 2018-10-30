@@ -346,42 +346,6 @@ The table name can be specified instead of a subquery. This is equivalent to the
 
 All columns that are not needed for the JOIN are deleted from the subquery.
 
-Example:
-
-``` sql
-SELECT
-    endpoint,
-    metric,
-    value,
-    idcName
-FROM datapoints
-ALL INNER JOIN
-(
-    SELECT
-        ips AS endpoint,
-        idcName
-    FROM cmdb
-) USING (endpoint)
-LIMIT 10
-```
-
-```
-┌─endpoint─────┬─metric────────────┬───────value─┬─idcName─┐
-│ 192.168.1.100 │ disk.total        │ 50465866000 │ office  │
-│ 192.168.1.100 │ disk.total        │   494927870 │ office  │
-│ 192.168.1.100 │ disk.used.percent │          48 │ office  │
-│ 192.168.1.100 │ disk.used.percent │          50 │ office  │
-│ 192.168.1.100 │ disk.util         │           0 │ office  │
-│ 192.168.1.100 │ disk.util         │           0 │ office  │
-│ 192.168.1.100 │ disk.util         │           0 │ office  │
-│ 192.168.1.100 │ disk.util         │           0 │ office  │
-│ 192.168.1.100 │ load.15min        │        0.02 │ office  │
-│ 192.168.1.100 │ load.1min         │        0.11 │ office  │
-└──────────────┴───────────────────┴─────────────┴─────────┘
-```
-
-Notice the column in `USING`(endpoint) must be in former `SELECT` column list and subquery's.
-
 There are several types of JOINs:
 
 `INNER` or `LEFT` type:If INNER is specified, the result will contain only those rows that have a matching row in the right table.
