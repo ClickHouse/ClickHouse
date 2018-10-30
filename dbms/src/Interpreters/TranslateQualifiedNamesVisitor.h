@@ -5,7 +5,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Parsers/DumpASTNode.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {

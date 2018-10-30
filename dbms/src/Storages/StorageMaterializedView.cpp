@@ -6,7 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
@@ -27,24 +27,23 @@ namespace ErrorCodes
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
-    DatabaseAndTableWithAlias db_and_table;
-    bool is_table = getDatabaseAndTable(query, 0, db_and_table);
+    auto db_and_table = getDatabaseAndTable(query, 0);
     ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
 
-    if (!is_table && !subquery)
+    if (!db_and_table && !subquery)
         return;
 
-    if (is_table)
+    if (db_and_table)
     {
-        select_table_name = db_and_table.table;
+        select_table_name = db_and_table->table;
 
-        if (db_and_table.database.empty())
+        if (db_and_table->database.empty())
         {
-            db_and_table.database = select_database_name;
+            db_and_table->database = select_database_name;
             query.setDatabaseIfNeeded(select_database_name);
         }
         else
-            select_database_name = db_and_table.database;
+            select_database_name = db_and_table->database;
     }
     else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(subquery.get()))
     {

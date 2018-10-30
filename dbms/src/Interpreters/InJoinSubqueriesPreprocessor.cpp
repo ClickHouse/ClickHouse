@@ -1,6 +1,6 @@
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -86,9 +86,9 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & contex
     if (!id)
         throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
-    std::pair<String, String> db_and_table = getDatabaseAndTableNameFromIdentifier(*id);
+    DatabaseAndTableWithAlias db_and_table(*id);
 
-    return context.tryGetTable(db_and_table.first, db_and_table.second);
+    return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 
 

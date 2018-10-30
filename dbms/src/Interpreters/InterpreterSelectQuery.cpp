@@ -34,7 +34,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 
 #include <Storages/IStorage.h>
@@ -237,11 +237,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
-    DatabaseAndTableWithAlias db_and_table;
-    if (getDatabaseAndTable(query, 0, db_and_table))
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
     {
-        table_name = db_and_table.table;
-        database_name = db_and_table.database;
+        table_name = db_and_table->table;
+        database_name = db_and_table->database;
 
         /// If the database is not specified - use the current database.
         if (database_name.empty() && !context.tryGetTable("", table_name))
