@@ -863,6 +863,11 @@ void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & 
     data.freezePartition(partition, with_name, context);
 }
 
+void StorageMergeTree::freezeAll(const String & with_name, const Context & context)
+{
+    data.freezeAll(with_name, context);
+}
+
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
 {
     auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);

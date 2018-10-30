@@ -278,6 +278,13 @@ public:
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /** Run the FREEZE request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
+      */
+    virtual void freezeAll(const String & /*with_name*/, const Context & /*context*/)
+    {
+        throw Exception("Method freezeAll is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** Perform any background work. For example, combining parts in a MergeTree type table.
       * Returns whether any work has been done.
       */

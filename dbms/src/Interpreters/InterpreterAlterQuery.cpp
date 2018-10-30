@@ -85,6 +85,10 @@ BlockIO InterpreterAlterQuery::execute()
                 table->freezePartition(command.partition, command.with_name, context);
                 break;
 
+            case PartitionCommand::FREEZE_ALL:
+                table->freezeAll(command.with_name, context);
+                break;
+
             case PartitionCommand::CLEAR_COLUMN:
                 table->clearColumnInPartition(command.partition, command.column_name, context);
                 break;

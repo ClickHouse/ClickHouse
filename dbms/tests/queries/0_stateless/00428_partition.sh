@@ -23,6 +23,10 @@ for part in `$chl "SELECT name FROM system.parts WHERE database='test' AND table
              cat $ch_dir/data/test/partition_428/$part/columns.txt) | wc -l
 done
 
+$chl "ALTER TABLE test.partition_428 FREEZE"
+
+find $ch_dir/shadow
+
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
 

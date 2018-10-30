@@ -22,6 +22,7 @@ struct PartitionCommand
         REPLACE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
+        FREEZE_ALL,
         CLEAR_COLUMN,
     };
 
