@@ -46,7 +46,7 @@
     <keep_alive_timeout>3</keep_alive_timeout>
     <path>/tmp/clickhouse/data/</path>
     <tmp_path>/tmp/clickhouse/tmp/</tmp_path>
-    <users_config>../programs/server/users.xml</users_config>
+    <users_config>users.xml</users_config>
     <mark_cache_size>5368709120</mark_cache_size>
     <default_profile>default</default_profile>
     <default_database>default</default_database>
