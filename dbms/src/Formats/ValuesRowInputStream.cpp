@@ -2,7 +2,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Formats/ValuesRowInputStream.h>
@@ -29,20 +28,6 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
-
-bool is_array_type_compatible(const DataTypeArray & type, const Field & value)
-{
-    if (type.getNestedType()->isNullable())
-        return true;
-
-    const Array & array = DB::get<const Array &>(value);
-    size_t size = array.size();
-    for (size_t i = 0; i < size; ++i)
-        if (array[i].isNull())
-            return false;
-
-    return true;
-}
 
 ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings)
     : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings)
@@ -131,15 +116,14 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
                 std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
                 Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
-                const auto * array_type = typeid_cast<const DataTypeArray *>(&type);
-
                 /// Check that we are indeed allowed to insert a NULL.
-                if ((value.isNull() && !type.isNullable()) || (array_type && !is_array_type_compatible(*array_type, value)))
+                if (value.isNull())
                 {
-                    throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
-                        + ", that is out of range of type " + type.getName()
-                        + ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
-                        ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
+                    if (!type.isNullable())
+                        throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
+                            + ", that is out of range of type " + type.getName()
+                            + ", at: " + String(prev_istr_position, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, istr.buffer().end() - prev_istr_position)),
+                            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
                 }
 
                 columns[i]->insert(value);
