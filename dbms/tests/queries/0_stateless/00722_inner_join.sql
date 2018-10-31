@@ -2,10 +2,35 @@ CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.one;
 CREATE TABLE test.one(dummy UInt8) ENGINE = Memory;
 
+SELECT database, t.name
+    FROM system.tables AS t
+    ALL INNER JOIN (SELECT name AS database FROM system.databases) AS db USING database
+    WHERE database = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
+SELECT database, t.name
+    FROM (SELECT name AS database FROM system.databases) AS db
+    ALL INNER JOIN system.tables AS t USING database
+    WHERE database = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
+SELECT database, t.name
+    FROM (SELECT name, database FROM system.tables) AS t
+    ALL INNER JOIN (SELECT name AS database FROM system.databases) AS db USING database
+    WHERE database = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
 SELECT x, t.name
     FROM (SELECT name, database AS x FROM system.tables) AS t
     ALL INNER JOIN (SELECT name AS x FROM system.databases) AS db USING x
     WHERE x = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
+SELECT database, t.name
+    FROM (SELECT name, database FROM system.tables) AS t
+    JOIN (SELECT name AS database FROM system.databases) AS db USING database
+    WHERE database = 'system' AND t.name = 'one'
+    SETTINGS join_default_strictness = 'ALL'
     FORMAT PrettyCompactNoEscapes;
 
 SELECT x, t.name
