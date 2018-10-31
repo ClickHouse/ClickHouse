@@ -176,21 +176,22 @@ ExpressionAnalyzer::ExpressionAnalyzer(
             storage = context.tryGetTable(db_and_table->database, db_and_table->table);
     }
 
-    if (storage && source_columns.empty())
+    if (storage)
     {
         auto physical_columns = storage->getColumns().getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(physical_columns);
         else
-        {
             source_columns.insert(source_columns.end(), physical_columns.begin(), physical_columns.end());
-            removeDuplicateColumns(source_columns);
+
+        if (select_query)
+        {
+            const auto & storage_aliases = storage->getColumns().aliases;
+            source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
         }
     }
-    else
-        removeDuplicateColumns(source_columns);
 
-    addAliasColumns();
+    removeDuplicateColumns(source_columns);
 
     translateQualifiedNames();
 
@@ -573,19 +574,6 @@ void ExpressionAnalyzer::normalizeTree()
     }
 
     QueryNormalizer(query, aliases, settings, all_columns_name, table_names_and_column_names).perform();
-}
-
-
-void ExpressionAnalyzer::addAliasColumns()
-{
-    if (!select_query)
-        return;
-
-    if (!storage)
-        return;
-
-    const auto & storage_aliases = storage->getColumns().aliases;
-    source_columns.insert(std::end(source_columns), std::begin(storage_aliases), std::end(storage_aliases));
 }
 
 
