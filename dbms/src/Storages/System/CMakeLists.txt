@@ -1,6 +1,6 @@
-if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.generated.cpp)
-    execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh)
-endif()
+#if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.generated.cpp)
+#    execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh)
+#endif()
 
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp)
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
