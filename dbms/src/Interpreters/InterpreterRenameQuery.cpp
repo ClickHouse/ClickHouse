@@ -47,7 +47,7 @@ BlockIO InterpreterRenameQuery::execute()
             databases.emplace(elem.to.database);
         }
 
-        return executeDDLQueryOnCluster(query_ptr, context, databases);
+        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
 
     String path = context.getPath();

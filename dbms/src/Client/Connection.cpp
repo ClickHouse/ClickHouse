@@ -80,7 +80,13 @@ void Connection::connect()
         if (timeouts.tcp_keep_alive_timeout.totalSeconds())
         {
             socket->setKeepAlive(true);
-            socket->setOption(IPPROTO_TCP, TCP_KEEPIDLE, timeouts.tcp_keep_alive_timeout);
+            socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+                TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
+#endif
+                , timeouts.tcp_keep_alive_timeout);
         }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
