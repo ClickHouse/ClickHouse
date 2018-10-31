@@ -246,3 +246,6 @@ website/presentations
 website/package-lock.json
 .DS_Store
 */.DS_Store
+
+# Ignore files for locally disabled tests
+/dbms/tests/queries/**/*.disabled
