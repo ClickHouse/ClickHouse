@@ -53,4 +53,7 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+
+ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name);
+
 }
