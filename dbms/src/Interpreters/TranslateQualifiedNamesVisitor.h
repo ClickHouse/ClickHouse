@@ -18,7 +18,7 @@ struct ASTTableJoin;
 class NamesAndTypesList;
 
 
-/// It visits nodes, find identifiers and translate their names to needed form.
+/// It visits nodes, find columns (general identifiers and asterisks) and translate their names according to tables' names.
 class TranslateQualifiedNamesVisitor
 {
 public:
