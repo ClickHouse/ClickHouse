@@ -6,6 +6,6 @@ INSERT INTO test.sample_merge_tree VALUES (toDateTime('2018-10-31 05:05:00'), 0)
 
 OPTIMIZE TABLE test.sample_merge_tree FINAL;
 
-SELECT * FROM test.sample_merge_tree;
+SELECT * FROM test.sample_merge_tree ORDER BY x;
 
 DROP TABLE IF EXISTS test.sample_merge_tree;
