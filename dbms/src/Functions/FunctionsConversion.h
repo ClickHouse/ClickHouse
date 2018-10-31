@@ -784,6 +784,9 @@ public:
         }
         else if constexpr (to_decimal)
         {
+            if (!arguments[1].column)
+                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)

@@ -141,9 +141,16 @@ def generate_structure(args):
         base_name = 'range_hashed_' + range_hashed_range_type
         dictionaries.extend([
             [ 'file_' + base_name, 3, False ],
-            # [ 'clickhouse_' + base_name, 3, True ],
+            [ 'clickhouse_' + base_name, 3, False ],
             # [ 'executable_flat' + base_name, 3, True ]
         ])
+
+    if not args.no_mysql:
+        for range_hashed_range_type in range_hashed_range_types:
+            base_name = 'range_hashed_' + range_hashed_range_type
+            dictionaries.extend([
+                ['mysql_' + base_name, 3, False],
+            ])
 
 
 files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv', 'key_range_hashed_{range_hashed_range_type}.tsv' ]
@@ -204,6 +211,36 @@ range_hashed_dictGet_values = {
     'DateTime': [("toDateTime('2015-11-20 00:00:00')", "toDateTime('2015-11-25 00:00:00')"),
                  ("toDateTime('2015-11-20 00:00:00')", "toDateTime('2015-11-22 00:00:00')", "toDateTime('2015-11-25 00:00:00')"),
                  ("toDateTime('2015-11-19 23:59:59')", "toDateTime('2015-10-26 00:00:01')", "toDateTime('2018-09-14 00:00:00')")],
+}
+
+range_hashed_mysql_column_types = {
+    'UInt8':  'tinyint unsigned',
+    'UInt16': 'smallint unsigned',
+    'UInt32': 'int unsigned',
+    'UInt64': 'bigint unsigned',
+    'Int8':   'tinyint',
+    'Int16':  'smallint',
+    'Int32':  'int',
+    'Int64':  'bigint',
+    # default type (Date) for compatibility with older versions:
+    '':       'date',
+    'Date':   'date',
+    'DateTime': 'datetime',
+}
+
+range_hashed_clickhouse_column_types = {
+    'UInt8':  'UInt8',
+    'UInt16': 'UInt16',
+    'UInt32': 'UInt32',
+    'UInt64': 'UInt64',
+    'Int8':   'Int8',
+    'Int16':  'Int16',
+    'Int32':  'Int32',
+    'Int64':  'Int64',
+    # default type (Date) for compatibility with older versions:
+    '':       'Date',
+    'Date':   'Date',
+    'DateTime': 'DateTime',
 }
 
 
@@ -267,6 +304,41 @@ def generate_data(args):
         keys = list(chain(['id'], range_hashed_dictGet_values[range_hashed_range_type][0]))
         query = file_source_query % comma_separated(chain(keys, columns(), ['Parent'] if 1 == len(keys) else []))
         call([args.client, '--port', args.port, '--query', query], 'generated/' + file)
+
+        table_name = "test.dictionary_source_" + range_hashed_range_type
+        col_type = range_hashed_clickhouse_column_types[range_hashed_range_type]
+
+        source_tsv_full_path = "{0}/generated/{1}".format(prefix, file)
+        print 'Creating Clickhouse table for "{0}" range_hashed dictionary...'.format(range_hashed_range_type)
+        system('cat {source} | {ch} --port={port} -m -n --query "'
+              'create database if not exists test;'
+              'drop table if exists {table_name};'
+              'create table {table_name} ('
+                    'id UInt64, StartDate {col_type}, EndDate {col_type},'
+                    'UInt8_ UInt8, UInt16_ UInt16, UInt32_ UInt32, UInt64_ UInt64,'
+                    'Int8_ Int8, Int16_ Int16, Int32_ Int32, Int64_ Int64,'
+                    'Float32_ Float32, Float64_ Float64,'
+                    'String_ String,'
+                    'Date_ Date, DateTime_ DateTime, UUID_ UUID'
+              ') engine=Log; insert into {table_name} format TabSeparated'
+              '"'.format(table_name=table_name, col_type=col_type, source=source_tsv_full_path, ch=args.client, port=args.port))
+
+        if not args.no_mysql:
+            print 'Creating MySQL table for "{0}" range_hashed dictionary...'.format(range_hashed_range_type)
+            col_type = range_hashed_mysql_column_types[range_hashed_range_type]
+            subprocess.check_call('echo "'
+                      'create database if not exists test;'
+                      'drop table if exists {table_name};'
+                      'create table {table_name} ('
+                              'id tinyint unsigned, StartDate {col_type}, EndDate {col_type}, '
+                              'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
+                              'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
+                              'Float32_ float, Float64_ double, '
+                              'String_ text, Date_ date, DateTime_ datetime, UUID_ varchar(36)'
+                      ');'
+                      'load data local infile \'{source}\' into table {table_name};" | mysql $MYSQL_OPTIONS --local-infile=1'
+                      .format(prefix, table_name=table_name, col_type=col_type, source=source_tsv_full_path), shell=True)
+
 
     # create MySQL table from complete_query
     if not args.no_mysql:
@@ -365,7 +437,7 @@ def generate_dictionaries(args):
         <user>default</user>
         <password></password>
         <db>test</db>
-        <table>dictionary_source</table>
+        <table>dictionary_source{key_type}</table>
     </clickhouse>
     ''' % args.port
 
@@ -384,7 +456,7 @@ def generate_dictionaries(args):
         <user>root</user>
         <password></password>
         <db>test</db>
-        <table>dictionary_source</table>
+        <table>dictionary_source{key_type}</table>
     </mysql>
     '''
 
@@ -518,33 +590,34 @@ def generate_dictionaries(args):
     </attribute>
     '''
 
+    source_clickhouse_deafult = source_clickhouse.format(key_type="")
     sources_and_layouts = [
         # Simple key dictionaries
         [ source_file % (generated_prefix + files[0]), layout_flat],
-        [ source_clickhouse, layout_flat ],
+        [ source_clickhouse_deafult, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
-        [ source_clickhouse, layout_hashed ],
+        [ source_clickhouse_deafult, layout_hashed ],
         [ source_executable % (generated_prefix + files[0]), layout_hashed ],
 
-        [ source_clickhouse, layout_cache ],
+        [ source_clickhouse_deafult, layout_cache ],
         [ source_executable_cache % (generated_prefix + files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
-        [ source_clickhouse, layout_complex_key_hashed ],
+        [ source_clickhouse_deafult, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
 
-        [ source_clickhouse, layout_complex_key_cache ],
+        [ source_clickhouse_deafult, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
-        [ source_clickhouse, layout_complex_key_hashed ],
+        [ source_clickhouse_deafult, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
 
-        [ source_clickhouse, layout_complex_key_cache ],
+        [ source_clickhouse_deafult, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[2]), layout_complex_key_cache ],
     ]
 
@@ -568,14 +641,15 @@ def generate_dictionaries(args):
     ])
 
     if not args.no_mysql:
+        source_mysql_default = source_mysql.format(key_type="")
         sources_and_layouts.extend([
-        [ source_mysql, layout_flat ],
-        [ source_mysql, layout_hashed ],
-        [ source_mysql, layout_cache ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_cache ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_cache ],
+        [ source_mysql_default, layout_flat ],
+        [ source_mysql_default, layout_hashed ],
+        [ source_mysql_default, layout_cache ],
+        [ source_mysql_default, layout_complex_key_hashed ],
+        [ source_mysql_default, layout_complex_key_cache ],
+        [ source_mysql_default, layout_complex_key_hashed ],
+        [ source_mysql_default, layout_complex_key_cache ],
     ])
 
     if not args.no_mongo:
@@ -613,16 +687,29 @@ def generate_dictionaries(args):
     ])
 
     for range_hashed_range_type in range_hashed_range_types:
+        key_type = "_" + range_hashed_range_type
         sources_and_layouts.extend([
             [ source_file % (generated_prefix + (files[3].format(range_hashed_range_type=range_hashed_range_type))), (layout_range_hashed, range_hashed_range_type) ],
-            # [ source_clickhouse, layout_range_hashed ],
+            [ source_clickhouse.format(key_type=key_type), (layout_range_hashed, range_hashed_range_type) ],
             # [ source_executable, layout_range_hashed ]
         ])
 
+    if not args.no_mysql:
+        for range_hashed_range_type in range_hashed_range_types:
+            key_type = "_" + range_hashed_range_type
+            source_mysql_typed = source_mysql.format(key_type=key_type)
+            sources_and_layouts.extend([
+                [source_mysql_typed,
+                 (layout_range_hashed, range_hashed_range_type)],
+            ])
+
+    dict_name_filter = args.filter.split('/')[0] if args.filter else None
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
+        if args.filter and not fnmatch.fnmatch(name, dict_name_filter):
+            continue
+
         filename = os.path.join(args.generated, 'dictionary_%s.xml' % name)
         key = keys[key_idx]
-
         if key_idx == 3:
             layout, range_hashed_range_type = layout
             # Wrap non-empty type (default) with <type> tag.
@@ -670,7 +757,7 @@ def run_tests(args):
         global SERVER_DIED
 
         print "{0:100}".format('Dictionary: ' + dict + ' Name: ' + name + ": "),
-        if args.filter and not fnmatch.fnmatch(dict, args.filter) and not fnmatch.fnmatch(name, args.filter):
+        if args.filter and not fnmatch.fnmatch(dict + "/" + name, args.filter):
             print " ... skipped due to filter."
             return
 
