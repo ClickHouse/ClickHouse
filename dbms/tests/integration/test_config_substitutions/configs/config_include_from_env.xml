@@ -1,0 +1,15 @@
+<yandex>
+  <include_from from_env="INCLUDE_FROM_ENV"></include_from>
+  <profiles>
+    <default>
+        <max_query_size incl="mqs" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</yandex>

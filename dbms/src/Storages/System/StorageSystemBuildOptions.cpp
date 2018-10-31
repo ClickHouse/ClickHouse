@@ -1,7 +1,9 @@
-#include <Common/config_build.h>
+#include "StorageSystemBuildOptions.h"
+
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Settings.h>
-#include <Storages/System/StorageSystemBuildOptions.h>
+
+extern const char * auto_config_build[];
 
 namespace DB
 {

@@ -5,6 +5,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
@@ -162,6 +163,37 @@ void DatabaseAndTableWithAlias::makeQualifiedName(const ASTPtr & ast) const
         for (const auto & qualifier : qualifiers)
             identifier->children.emplace_back(std::make_shared<ASTIdentifier>(qualifier));
     }
+}
+
+std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery * select_query)
+{
+    if (!select_query->tables)
+        return {};
+
+    std::vector<const ASTTableExpression *> tables_expression;
+
+    for (const auto & child : select_query->tables->children)
+    {
+        ASTTablesInSelectQueryElement * tables_element = static_cast<ASTTablesInSelectQueryElement *>(child.get());
+
+        if (tables_element->table_expression)
+            tables_expression.emplace_back(static_cast<const ASTTableExpression *>(tables_element->table_expression.get()));
+    }
+
+    return tables_expression;
+}
+
+std::vector<DatabaseAndTableWithAlias> getDatabaseAndTableWithAliases(const ASTSelectQuery * select_query, const String & current_database)
+{
+    std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
+
+    std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases;
+    database_and_table_with_aliases.reserve(tables_expression.size());
+
+    for (const auto & table_expression : tables_expression)
+        database_and_table_with_aliases.emplace_back(getTableNameWithAliasFromTableExpression(*table_expression, current_database));
+
+    return database_and_table_with_aliases;
 }
 
 }
