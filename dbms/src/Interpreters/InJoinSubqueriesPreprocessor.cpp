@@ -91,24 +91,6 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & contex
     return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 
-
-void replaceDatabaseAndTable(ASTPtr & database_and_table, const String & database_name, const String & table_name)
-{
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    if (!database_name.empty())
-    {
-        ASTPtr database = ASTIdentifier::createSpecial(database_name);
-
-        database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
-        database_and_table->children = {database, table};
-    }
-    else
-    {
-        database_and_table = ASTIdentifier::createSpecial(table_name);
-    }
-}
-
 }
 
 
@@ -148,7 +130,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
 
     forEachNonGlobalSubquery(query, [&] (IAST * subquery, IAST * function, IAST * table_join)
     {
-         forEachTable(subquery, [&] (ASTPtr & database_and_table)
+        forEachTable(subquery, [&] (ASTPtr & database_and_table)
         {
             StoragePtr storage = tryGetTable(database_and_table, context);
 
@@ -191,7 +173,8 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                 std::string table;
                 std::tie(database, table) = getRemoteDatabaseAndTableName(*storage);
 
-                replaceDatabaseAndTable(database_and_table, database, table);
+                /// TODO: find a way to avoid AST node replacing
+                database_and_table = createDatabaseAndTableNode(database, table);
             }
             else
                 throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting", ErrorCodes::LOGICAL_ERROR);

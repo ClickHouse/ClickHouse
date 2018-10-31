@@ -19,6 +19,19 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name)
+{
+    if (database_name.empty())
+        return ASTIdentifier::createSpecial(table_name);
+
+    ASTPtr database = ASTIdentifier::createSpecial(database_name);
+    ASTPtr table = ASTIdentifier::createSpecial(table_name);
+
+    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
+    database_and_table->children = {database, table};
+    return database_and_table;
+}
+
 
 ASTPtr ASTSelectQuery::clone() const
 {
@@ -323,12 +336,9 @@ void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
             }
             else if (table_expression->database_and_table_name->children.empty())
             {
-                ASTPtr database = ASTIdentifier::createSpecial(database_name);
-                ASTPtr table = table_expression->database_and_table_name;
+                const ASTIdentifier & identifier = static_cast<const ASTIdentifier &>(*table_expression->database_and_table_name);
 
-                const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
-                table_expression->database_and_table_name = ASTIdentifier::createSpecial(database_name + "." + old_name);
-                table_expression->database_and_table_name->children = {database, table};
+                table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, identifier.name);
             }
             else if (table_expression->database_and_table_name->children.size() != 2)
             {
@@ -356,19 +366,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    if (!database_name.empty())
-    {
-        ASTPtr database = ASTIdentifier::createSpecial(database_name);
-
-        table_expression->database_and_table_name = ASTIdentifier::createSpecial(database_name + "." + table_name);
-        table_expression->database_and_table_name->children = {database, table};
-    }
-    else
-    {
-        table_expression->database_and_table_name = ASTIdentifier::createSpecial(table_name);
-    }
+    table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, table_name);
 }
 
 
