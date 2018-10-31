@@ -322,9 +322,6 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    /// Adds a list of ALIAS columns from the table.
-    void addAliasColumns();
-
     /// Replacing scalar subqueries with constant values.
     void executeScalarSubqueries();
 
