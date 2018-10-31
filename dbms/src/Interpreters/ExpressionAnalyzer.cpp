@@ -1250,13 +1250,19 @@ const ExpressionAnalyzer::AnalyzedJoin::JoinedColumnsList & ExpressionAnalyzer::
 
             for (auto & column : columns)
             {
-                columns_from_joined_table.emplace_back(column, column.name);
+                JoinedColumn joined_column(column, column.name);
 
                 if (source_columns.contains(column.name))
                 {
                     auto qualified_name = table_name_with_alias.getQualifiedNamePrefix() + column.name;
-                    columns_from_joined_table.back().name_and_type.name = qualified_name;
+                    joined_column.name_and_type.name = qualified_name;
                 }
+
+                /// We don't want to add duplicate columns.
+                /// They may appear from nested joins with unaliased subqueries, but actually they exist only in AST
+                if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
+                    columns_from_joined_table.push_back(joined_column);
+
             }
         }
     }
