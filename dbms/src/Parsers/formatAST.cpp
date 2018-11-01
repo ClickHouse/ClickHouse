@@ -13,4 +13,11 @@ void formatAST(const IAST & ast, std::ostream & s, bool hilite, bool one_line)
     ast.format(settings);
 }
 
+String serializeAST(const IAST & ast, bool one_line)
+{
+    std::stringstream ss;
+    formatAST(ast, ss, false, one_line);
+    return ss.str();
+}
+
 }

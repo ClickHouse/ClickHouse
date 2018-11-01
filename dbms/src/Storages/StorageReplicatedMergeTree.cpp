@@ -6,6 +6,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
@@ -99,7 +100,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int UNFINISHED;
-    extern const int METADATA_MISMATCH;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int TOO_MANY_FETCHES;
     extern const int BAD_DATA_PART_NAME;
@@ -314,176 +314,9 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
     /// Mutations
     zookeeper->createIfNotExists(zookeeper_path + "/mutations", String());
     zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
-}
 
-
-static String formattedAST(const ASTPtr & ast)
-{
-    if (!ast)
-        return "";
-    std::stringstream ss;
-    formatAST(*ast, ss, false, true);
-    return ss.str();
-}
-
-
-namespace
-{
-    /** The basic parameters of table engine for saving in ZooKeeper.
-      * Lets you verify that they match local ones.
-      */
-    struct TableMetadata
-    {
-        const MergeTreeData & data;
-
-        explicit TableMetadata(const MergeTreeData & data_)
-            : data(data_) {}
-
-        void write(WriteBuffer & out) const
-        {
-            out << "metadata format version: 1" << "\n"
-                << "date column: ";
-
-            if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-                out << data.minmax_idx_columns[data.minmax_idx_date_column_pos] << "\n";
-            else
-                out << "\n";
-
-            out << "sampling expression: " << formattedAST(data.sampling_expression) << "\n"
-                << "index granularity: " << data.index_granularity << "\n"
-                << "mode: " << static_cast<int>(data.merging_params.mode) << "\n"
-                << "sign column: " << data.merging_params.sign_column << "\n"
-                << "primary key: " << formattedAST(data.primary_key_ast) << "\n";
-
-            if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            {
-                out << "data format version: " << data.format_version.toUnderType() << "\n";
-                out << "partition key: " << formattedAST(data.partition_expr_ast) << "\n";
-            }
-        }
-
-        String toString() const
-        {
-            WriteBufferFromOwnString out;
-            write(out);
-            return out.str();
-        }
-
-        void check(ReadBuffer & in) const
-        {
-            /// TODO Can be made less cumbersome.
-
-            in >> "metadata format version: 1";
-
-            in >> "\ndate column: ";
-            String read_date_column;
-            in >> read_date_column;
-
-            if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            {
-                const String & local_date_column = data.minmax_idx_columns[data.minmax_idx_date_column_pos];
-                if (local_date_column != read_date_column)
-                    throw Exception("Existing table metadata in ZooKeeper differs in date index column."
-                        " Stored in ZooKeeper: " + read_date_column + ", local: " + local_date_column,
-                        ErrorCodes::METADATA_MISMATCH);
-            }
-            else if (!read_date_column.empty())
-                throw Exception(
-                    "Existing table metadata in ZooKeeper differs in date index column."
-                    " Stored in ZooKeeper: " + read_date_column + ", local is custom-partitioned.",
-                    ErrorCodes::METADATA_MISMATCH);
-
-            in >> "\nsampling expression: ";
-            String read_sample_expression;
-            String local_sample_expression = formattedAST(data.sampling_expression);
-            in >> read_sample_expression;
-
-            if (read_sample_expression != local_sample_expression)
-                throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
-                    " Stored in ZooKeeper: " + read_sample_expression + ", local: " + local_sample_expression,
-                    ErrorCodes::METADATA_MISMATCH);
-
-            in >> "\nindex granularity: ";
-            size_t read_index_granularity = 0;
-            in >> read_index_granularity;
-
-            if (read_index_granularity != data.index_granularity)
-                throw Exception("Existing table metadata in ZooKeeper differs in index granularity."
-                    " Stored in ZooKeeper: " + DB::toString(read_index_granularity) + ", local: " + DB::toString(data.index_granularity),
-                    ErrorCodes::METADATA_MISMATCH);
-
-            in >> "\nmode: ";
-            int read_mode = 0;
-            in >> read_mode;
-
-            if (read_mode != static_cast<int>(data.merging_params.mode))
-                throw Exception("Existing table metadata in ZooKeeper differs in mode of merge operation."
-                    " Stored in ZooKeeper: " + DB::toString(read_mode) + ", local: "
-                    + DB::toString(static_cast<int>(data.merging_params.mode)),
-                    ErrorCodes::METADATA_MISMATCH);
-
-            in >> "\nsign column: ";
-            String read_sign_column;
-            in >> read_sign_column;
-
-            if (read_sign_column != data.merging_params.sign_column)
-                throw Exception("Existing table metadata in ZooKeeper differs in sign column."
-                    " Stored in ZooKeeper: " + read_sign_column + ", local: " + data.merging_params.sign_column,
-                    ErrorCodes::METADATA_MISMATCH);
-
-            in >> "\nprimary key: ";
-            String read_primary_key;
-            String local_primary_key = formattedAST(data.primary_key_ast);
-            in >> read_primary_key;
-
-            /// NOTE: You can make a less strict check of match expressions so that tables do not break from small changes
-            ///    in formatAST code.
-            if (read_primary_key != local_primary_key)
-                throw Exception("Existing table metadata in ZooKeeper differs in primary key."
-                    " Stored in ZooKeeper: " + read_primary_key + ", local: " + local_primary_key,
-                    ErrorCodes::METADATA_MISMATCH);
-
-            in >> "\n";
-            MergeTreeDataFormatVersion read_data_format_version;
-            if (in.eof())
-                read_data_format_version = 0;
-            else
-            {
-                in >> "data format version: ";
-                in >> read_data_format_version.toUnderType();
-            }
-
-            if (read_data_format_version != data.format_version)
-                throw Exception("Existing table metadata in ZooKeeper differs in data format version."
-                    " Stored in ZooKeeper: " + DB::toString(read_data_format_version.toUnderType()) +
-                    ", local: " + DB::toString(data.format_version.toUnderType()),
-                    ErrorCodes::METADATA_MISMATCH);
-
-            if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            {
-                in >> "\npartition key: ";
-                String read_partition_key;
-                String local_partition_key = formattedAST(data.partition_expr_ast);
-                in >> read_partition_key;
-
-                if (read_partition_key != local_partition_key)
-                    throw Exception(
-                        "Existing table metadata in ZooKeeper differs in partition key expression."
-                        " Stored in ZooKeeper: " + read_partition_key + ", local: " + local_partition_key,
-                        ErrorCodes::METADATA_MISMATCH);
-
-                in >> "\n";
-            }
-
-            assertEOF(in);
-        }
-
-        void check(const String & s) const
-        {
-            ReadBufferFromString in(s);
-            check(in);
-        }
-    };
+    /// ALTERs of the metadata node.
+    zookeeper->createIfNotExists(replica_path + "/metadata", String());
 }
 
 
@@ -499,7 +332,7 @@ void StorageReplicatedMergeTree::createTableIfNotExists()
     zookeeper->createAncestors(zookeeper_path);
 
     /// We write metadata of table so that the replicas can check table parameters with them.
-    String metadata = TableMetadata(data).toString();
+    String metadata = ReplicatedMergeTreeTableMetadata(data).toString();
 
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
@@ -537,12 +370,14 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 {
     auto zookeeper = getZooKeeper();
 
-    String metadata_str = zookeeper->get(zookeeper_path + "/metadata");
-    TableMetadata(data).check(metadata_str);
+    Coordination::Stat metadata_stat;
+    String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
+    ReplicatedMergeTreeTableMetadata(data).check(metadata_str);
+    metadata_version = metadata_stat.version;
 
-    Coordination::Stat stat;
-    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &stat));
-    columns_version = stat.version;
+    Coordination::Stat columns_stat;
+    auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(zookeeper_path + "/columns", &columns_stat));
+    columns_version = columns_stat.version;
 
     const ColumnsDescription & old_columns = getColumns();
     if (columns_from_zk != old_columns)
@@ -3090,9 +2925,33 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     LOG_DEBUG(log, "Doing ALTER");
 
-    int new_columns_version = -1;   /// Initialization is to suppress (useless) false positive warning found by cppcheck.
-    String new_columns_str;
-    Coordination::Stat stat;
+    /// Alter is done by modifying the metadata nodes in ZK that are shared between all replicas
+    /// (/columns, /metadata). We set contents of the shared nodes to the new values and wait while
+    /// replicas asynchronously apply changes (see ReplicatedMergeTreeAlterThread.cpp) and modify
+    /// their respective replica metadata nodes (/replicas/<replica>/columns, /replicas/<replica>/metadata).
+
+    struct ChangedNode
+    {
+        ChangedNode(const String & table_path_, String name_, String new_value_)
+            : table_path(table_path_), name(std::move(name_)), shared_path(table_path + "/" + name)
+            , new_value(std::move(new_value_))
+        {}
+
+        const String & table_path;
+        String name;
+
+        String shared_path;
+
+        String getReplicaPath(const String & replica) const
+        {
+            return table_path + "/replicas/" + replica + "/" + name;
+        }
+
+        String new_value;
+        int32_t new_version = -1; /// Initialization is to suppress (useless) false positive warning found by cppcheck.
+    };
+
+    std::vector<ChangedNode> changed_nodes;
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
@@ -3109,28 +2968,51 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
         ColumnsDescription new_columns = data.getColumns();
         params.apply(new_columns);
+        String new_columns_str = new_columns.toString();
+        if (new_columns_str != data.getColumns().toString())
+            changed_nodes.emplace_back(zookeeper_path, "columns", new_columns_str);
 
-        new_columns_str = new_columns.toString();
+        ReplicatedMergeTreeTableMetadata new_metadata(data);
+        for (const AlterCommand & param : params)
+        {
+            if (param.type == AlterCommand::MODIFY_ORDER_BY)
+            {
+                new_metadata.sorting_and_primary_keys_independent = true;
+                new_metadata.sorting_key_str = serializeAST(*param.sorting_key);
+            }
+        }
+        String new_metadata_str = new_metadata.toString();
+        if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
+            changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);
 
-        /// Do ALTER.
-        getZooKeeper()->set(zookeeper_path + "/columns", new_columns_str, -1, &stat);
+        /// Modify shared metadata nodes in ZooKeeper.
+        Coordination::Requests ops;
+        for (const auto & node : changed_nodes)
+            ops.emplace_back(zkutil::makeSetRequest(node.shared_path, node.new_value, -1));
 
-        new_columns_version = stat.version;
+        Coordination::Responses results = getZooKeeper()->multi(ops);
+
+        for (size_t i = 0; i < changed_nodes.size(); ++i)
+            changed_nodes[i].new_version = dynamic_cast<const Coordination::SetResponse &>(*results[i]).stat.version;
     }
 
-    LOG_DEBUG(log, "Updated columns in ZooKeeper. Waiting for replicas to apply changes.");
+    LOG_DEBUG(log, "Updated shared metadata nodes in ZooKeeper. Waiting for replicas to apply changes.");
 
     /// Wait until all replicas will apply ALTER.
 
-    /// Subscribe to change of columns, to finish waiting if someone will do another ALTER.
-    if (!getZooKeeper()->exists(zookeeper_path + "/columns", &stat, alter_query_event))
-        throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-
-    if (stat.version != new_columns_version)
+    for (const auto & node : changed_nodes)
     {
-        LOG_WARNING(log, zookeeper_path + "/columns changed before this ALTER finished; "
-            "overlapping ALTER-s are fine but use caution with nontransitive changes");
-        return;
+        Coordination::Stat stat;
+        /// Subscribe to change of shared ZK metadata nodes, to finish waiting if someone will do another ALTER.
+        if (!getZooKeeper()->exists(node.shared_path, &stat, alter_query_event))
+            throw Exception(node.shared_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+        if (stat.version != node.new_version)
+        {
+            LOG_WARNING(log, node.shared_path + " changed before this ALTER finished; " +
+                "overlapping ALTER-s are fine but use caution with nontransitive changes");
+            return;
+        }
     }
 
     Strings replicas = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -3146,8 +3028,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
         while (!partial_shutdown_called)
         {
+            auto zookeeper = getZooKeeper();
+
             /// Replica could be inactive.
-            if (!getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
+            if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
             {
                 LOG_WARNING(log, "Replica " << replica << " is not active during ALTER query."
                     " ALTER will be done asynchronously when replica becomes active.");
@@ -3156,39 +3040,91 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
                 break;
             }
 
-            String replica_columns_str;
-
-            /// Replica could has been removed.
-            if (!getZooKeeper()->tryGet(zookeeper_path + "/replicas/" + replica + "/columns", replica_columns_str, &stat))
+            struct ReplicaNode
             {
-                LOG_WARNING(log, replica << " was removed");
-                break;
+                explicit ReplicaNode(String path_) : path(std::move(path_)) {}
+
+                String path;
+                String value;
+                int32_t version = -1;
+            };
+
+            std::vector<ReplicaNode> replica_nodes;
+            for (const auto & node : changed_nodes)
+                replica_nodes.emplace_back(node.getReplicaPath(replica));
+
+            bool replica_was_removed = false;
+            for (auto & node : replica_nodes)
+            {
+                Coordination::Stat stat;
+
+                /// Replica could has been removed.
+                if (!zookeeper->tryGet(node.path, node.value, &stat))
+                {
+                    LOG_WARNING(log, replica << " was removed");
+                    replica_was_removed = true;
+                    break;
+                }
+
+                node.version = stat.version;
             }
 
-            int replica_columns_version = stat.version;
+            if (replica_was_removed)
+                break;
+
+            bool alter_was_applied = true;
+            for (size_t i = 0; i < replica_nodes.size(); ++i)
+            {
+                if (replica_nodes[i].value != changed_nodes[i].new_value)
+                {
+                    alter_was_applied = false;
+                    break;
+                }
+            }
 
             /// The ALTER has been successfully applied.
-            if (replica_columns_str == new_columns_str)
+            if (alter_was_applied)
                 break;
 
-            if (!getZooKeeper()->exists(zookeeper_path + "/columns", &stat))
-                throw Exception(zookeeper_path + "/columns doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-
-            if (stat.version != new_columns_version)
+            for (const auto & node : changed_nodes)
             {
-                LOG_WARNING(log, zookeeper_path + "/columns changed before ALTER finished; "
-                    "overlapping ALTER-s are fine but use caution with nontransitive changes");
-                return;
+                Coordination::Stat stat;
+                if (!zookeeper->exists(node.shared_path, &stat))
+                    throw Exception(node.shared_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+                if (stat.version != node.new_version)
+                {
+                    LOG_WARNING(log, node.shared_path + " changed before this ALTER finished; "
+                        "overlapping ALTER-s are fine but use caution with nontransitive changes");
+                    return;
+                }
             }
 
-            if (!getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/columns", &stat, alter_query_event))
+            bool replica_nodes_changed_concurrently = false;
+            for (const auto & replica_node : replica_nodes)
             {
-                LOG_WARNING(log, replica << " was removed");
+                Coordination::Stat stat;
+                if (!zookeeper->exists(replica_node.path, &stat, alter_query_event))
+                {
+                    LOG_WARNING(log, replica << " was removed");
+                    replica_was_removed = true;
+                    break;
+                }
+
+                if (stat.version != replica_node.version)
+                {
+                    replica_nodes_changed_concurrently = true;
+                    break;
+                }
+            }
+
+            if (replica_was_removed)
                 break;
-            }
 
-            if (stat.version != replica_columns_version)
+            if (replica_nodes_changed_concurrently)
                 continue;
+
+            /// Now wait for replica nodes to change.
 
             if (!replication_alter_columns_timeout)
             {
@@ -3844,7 +3780,9 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.database,
         context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
 
-    RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
+    std::stringstream new_query_ss;
+    formatAST(*new_query, new_query_ss, false, true);
+    RemoteBlockInputStream stream(connection, new_query_ss.str(), {}, context, &settings);
     NullBlockOutputStream output({});
 
     copyData(stream, output);
