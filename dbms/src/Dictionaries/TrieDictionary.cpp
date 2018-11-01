@@ -619,7 +619,7 @@ Columns TrieDictionary::getKeyColumns() const
 #if defined(__SIZEOF_INT128__)
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask)
     {
-        UInt64 * ip_array = reinterpret_cast<UInt64 *>(&ip);
+        Poco::UInt64 * ip_array = reinterpret_cast<Poco::UInt64 *>(&ip); // Poco:: for old poco + macos
         ip_array[0] = Poco::ByteOrder::fromNetwork(ip_array[0]);
         ip_array[1] = Poco::ByteOrder::fromNetwork(ip_array[1]);
         std::swap(ip_array[0], ip_array[1]);
