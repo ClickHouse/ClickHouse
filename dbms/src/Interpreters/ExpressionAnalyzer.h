@@ -259,6 +259,11 @@ private:
 
             JoinedColumn(const NameAndTypePair & name_and_type_, const String & original_name_)
                     : name_and_type(name_and_type_), original_name(original_name_) {}
+
+            bool operator==(const JoinedColumn & o) const
+            {
+                return name_and_type == o.name_and_type && original_name == o.original_name;
+            }
         };
 
         using JoinedColumnsList = std::list<JoinedColumn>;
