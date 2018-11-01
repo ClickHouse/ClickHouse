@@ -113,6 +113,10 @@ struct HalfMD5Impl
         UInt64 hashes[] = {h1, h2};
         return apply(reinterpret_cast<const char *>(hashes), 16);
     }
+
+    /// If true, it will use intHash32 or intHash64 to hash POD types. This behaviour is intended for better performance of some functions.
+    /// Otherwise it will hash bytes in memory as a string using corresponding hash function.
+    static constexpr bool use_int_hash_for_pods = false;
 };
 
 struct MD5Impl
@@ -186,8 +190,9 @@ struct SipHash64Impl
         UInt64 hashes[] = {h1, h2};
         return apply(reinterpret_cast<const char *>(hashes), 16);
     }
-};
 
+    static constexpr bool use_int_hash_for_pods = false;
+};
 
 struct SipHash128Impl
 {
@@ -198,6 +203,156 @@ struct SipHash128Impl
     {
         sipHash128(begin, size, reinterpret_cast<char*>(out_char_data));
     }
+};
+
+
+/** Why we need MurmurHash2?
+  * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
+  * Usually there is no reason to use MurmurHash.
+  * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
+  * in ClickHouse as is. For example, it is needed to reproduce the behaviour
+  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+  */
+struct MurmurHash2Impl32
+{
+    static constexpr auto name = "murmurHash2_32";
+
+    using ReturnType = UInt32;
+
+    static UInt32 apply(const char * data, const size_t size)
+    {
+        return MurmurHash2(data, size, 0);
+    }
+
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
+    {
+        return IntHash32Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct MurmurHash2Impl64
+{
+    static constexpr auto name = "murmurHash2_64";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * data, const size_t size)
+    {
+        return MurmurHash64A(data, size, 0);
+    }
+
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        return IntHash64Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct MurmurHash3Impl32
+{
+    static constexpr auto name = "murmurHash3_32";
+    using ReturnType = UInt32;
+
+    static UInt32 apply(const char * data, const size_t size)
+    {
+        union
+        {
+            UInt32 h;
+            char bytes[sizeof(h)];
+        };
+        MurmurHash3_x86_32(data, size, 0, bytes);
+        return h;
+    }
+
+    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
+    {
+        return IntHash32Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct MurmurHash3Impl64
+{
+    static constexpr auto name = "murmurHash3_64";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * data, const size_t size)
+    {
+        union
+        {
+            UInt64 h[2];
+            char bytes[16];
+        };
+        MurmurHash3_x64_128(data, size, 0, bytes);
+        return h[0] ^ h[1];
+    }
+
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        return IntHash64Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+struct MurmurHash3Impl128
+{
+    static constexpr auto name = "murmurHash3_128";
+    enum { length = 16 };
+
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
+    {
+        MurmurHash3_x64_128(begin, size, 0, out_char_data);
+    }
+};
+
+struct ImplCityHash64
+{
+    static constexpr auto name = "cityHash64";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+    static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
+    static constexpr bool use_int_hash_for_pods = true;
+};
+
+// see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
+struct ImplFarmHash64
+{
+    static constexpr auto name = "farmHash64";
+    using ReturnType = UInt64;
+    using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
+
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(uint128_t(h1, h2)); }
+    static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
+    static constexpr bool use_int_hash_for_pods = true;
+};
+
+struct ImplMetroHash64
+{
+    static constexpr auto name = "metroHash64";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+    static auto apply(const char * s, const size_t len)
+    {
+        union
+        {
+            UInt64 u64;
+            UInt8 u8[sizeof(u64)];
+        };
+
+        metrohash64_1(reinterpret_cast<const UInt8 *>(s), len, 0, u8);
+
+        return u64;
+    }
+
+    static constexpr bool use_int_hash_for_pods = true;
 };
 
 
@@ -259,12 +414,6 @@ public:
 };
 
 
-inline bool allowIntHash(const IDataType * data_type)
-{
-    return data_type->isValueRepresentedByNumber();
-}
-
-
 template <typename Impl, typename Name>
 class FunctionIntHash : public IFunction
 {
@@ -308,7 +457,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!allowIntHash(arguments[0].get()))
+        if (!arguments[0]->isValueRepresentedByNumber())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -359,10 +508,19 @@ private:
             for (size_t i = 0; i < size; ++i)
             {
                 ToType h;
-                if constexpr (std::is_same_v<ToType, UInt64>)
-                    h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
+
+                if constexpr (Impl::use_int_hash_for_pods)
+                {
+                    if constexpr (std::is_same_v<ToType, UInt64>)
+                        h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
+                    else
+                        h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
+                }
                 else
-                    h = IntHash32Impl::apply(ext::bit_cast<UInt32>(vec_from[i]));
+                {
+                    h = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
+                }
+
                 if (first)
                     vec_to[i] = h;
                 else
@@ -610,102 +768,6 @@ public:
 };
 
 
-/** Why we need MurmurHash2?
-  * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
-  * Usually there is no reason to use MurmurHash.
-  * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
-  * in ClickHouse as is. For example, it is needed to reproduce the behaviour
-  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
-  */
-struct MurmurHash2Impl32
-{
-    static constexpr auto name = "murmurHash2_32";
-
-    using ReturnType = UInt32;
-
-    static UInt32 apply(const char * data, const size_t size)
-    {
-        return MurmurHash2(data, size, 0);
-    }
-
-    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
-    {
-        return IntHash32Impl::apply(h1) ^ h2;
-    }
-};
-
-struct MurmurHash2Impl64
-{
-    static constexpr auto name = "murmurHash2_64";
-    using ReturnType = UInt64;
-
-    static UInt64 apply(const char * data, const size_t size)
-    {
-        return MurmurHash64A(data, size, 0);
-    }
-
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return IntHash64Impl::apply(h1) ^ h2;
-    }
-};
-
-struct MurmurHash3Impl32
-{
-    static constexpr auto name = "murmurHash3_32";
-    using ReturnType = UInt32;
-
-    static UInt32 apply(const char * data, const size_t size)
-    {
-        union
-        {
-            UInt32 h;
-            char bytes[sizeof(h)];
-        };
-        MurmurHash3_x86_32(data, size, 0, bytes);
-        return h;
-    }
-
-    static UInt32 combineHashes(UInt32 h1, UInt32 h2)
-    {
-        return IntHash32Impl::apply(h1) ^ h2;
-    }
-};
-
-struct MurmurHash3Impl64
-{
-    static constexpr auto name = "murmurHash3_64";
-    using ReturnType = UInt64;
-
-    static UInt64 apply(const char * data, const size_t size)
-    {
-        union
-        {
-            UInt64 h[2];
-            char bytes[16];
-        };
-        MurmurHash3_x64_128(data, size, 0, bytes);
-        return h[0] ^ h[1];
-    }
-
-    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
-    {
-        return IntHash64Impl::apply(h1) ^ h2;
-    }
-};
-
-struct MurmurHash3Impl128
-{
-    static constexpr auto name = "murmurHash3_128";
-    enum { length = 16 };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        MurmurHash3_x64_128(begin, size, 0, out_char_data);
-    }
-};
-
-
 struct URLHashImpl
 {
     static UInt64 apply(const char * data, const size_t size)
@@ -898,48 +960,6 @@ private:
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
-
-struct ImplCityHash64
-{
-    static constexpr auto name = "cityHash64";
-    using ReturnType = UInt64;
-    using uint128_t = CityHash_v1_0_2::uint128;
-
-    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
-    static auto apply(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
-};
-
-// see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
-struct ImplFarmHash64
-{
-    static constexpr auto name = "farmHash64";
-    using ReturnType = UInt64;
-    using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
-
-    static auto combineHashes(UInt64 h1, UInt64 h2) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(uint128_t(h1, h2)); }
-    static auto apply(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
-};
-
-struct ImplMetroHash64
-{
-    static constexpr auto name = "metroHash64";
-    using ReturnType = UInt64;
-    using uint128_t = CityHash_v1_0_2::uint128;
-
-    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
-    static auto apply(const char * s, const size_t len)
-    {
-        union
-        {
-            UInt64 u64;
-            UInt8 u8[sizeof(u64)];
-        };
-
-        metrohash64_1(reinterpret_cast<const UInt8 *>(s), len, 0, u8);
-
-        return u64;
-    }
-};
 
 using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
