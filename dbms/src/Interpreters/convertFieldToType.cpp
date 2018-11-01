@@ -218,7 +218,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
+            {
                 res[i] = convertFieldToType(src_arr[i], *nested_type);
+                if (res[i].isNull() && !type_array->getNestedType()->isNullable())
+                    throw Exception("Type mismatch of array elements in IN or VALUES section. Expected: " + type_array->getNestedType()->getName()
+                        + ". Got NULL in position " + toString(i + 1), ErrorCodes::TYPE_MISMATCH);
+            }
 
             return res;
         }
