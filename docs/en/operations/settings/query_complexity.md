@@ -2,7 +2,9 @@
 
 Restrictions on query complexity are part of the settings.
 They are used in order to provide safer execution from the user interface.
-Almost all the restrictions only apply to SELECTs.For distributed query processing, restrictions are applied on each server separately.
+Almost all the restrictions only apply to `SELECT`. For distributed query processing, restrictions are applied on each server separately.
+
+ClickHouse checks the restrictions for data parts, not for each row. It means that you can exceed the value of restriction with a size of the data part.
 
 Restrictions on the "maximum amount of something" can take the value 0, which means "unrestricted".
 Most restrictions also have an 'overflow_mode' setting, meaning what to do when the limit is exceeded.
