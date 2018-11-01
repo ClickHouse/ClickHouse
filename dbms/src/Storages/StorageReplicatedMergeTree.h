@@ -243,6 +243,8 @@ private:
       */
     int columns_version = -1;
 
+    int metadata_version = -1;
+
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     std::atomic<bool> is_leader {false};
