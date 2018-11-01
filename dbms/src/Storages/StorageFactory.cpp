@@ -1,7 +1,6 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
