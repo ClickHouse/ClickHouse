@@ -1,8 +1,6 @@
 # The file StorageSystemContributors.cpp is generated at release time and committed to the source tree.
 # You can also regenerate it manually this way:
-#if (NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.generated.cpp)
-#    execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh)
-#endif()
+# execute_process(COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemContributors.sh)
 
 set (CONFIG_BUILD ${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp)
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
