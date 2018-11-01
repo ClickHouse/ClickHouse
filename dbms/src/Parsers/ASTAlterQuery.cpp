@@ -130,7 +130,13 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::FREEZE_ALL)
     {
-        // TODO: implement this.
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE";
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+                          << " " << std::quoted(with_name, '\'');
+        }
     }
     else if (type == ASTAlterCommand::DELETE)
     {
