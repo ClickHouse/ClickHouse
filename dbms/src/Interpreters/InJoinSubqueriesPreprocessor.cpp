@@ -82,7 +82,7 @@ void forEachTable(IAST * node, F && f)
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    const ASTIdentifier * id = static_cast<const ASTIdentifier *>(database_and_table.get());
+    const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(database_and_table.get());
     if (!id)
         throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
