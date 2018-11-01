@@ -1258,8 +1258,7 @@ const ExpressionAnalyzer::AnalyzedJoin::JoinedColumnsList & ExpressionAnalyzer::
                     joined_column.name_and_type.name = qualified_name;
                 }
 
-                /// We don't want to add duplicate columns.
-                /// They may appear from nested joins with unaliased subqueries, but actually they exist only in AST
+                /// We don't want to select duplicate columns from the joined subquery if they appear
                 if (std::find(columns_from_joined_table.begin(), columns_from_joined_table.end(), joined_column) == columns_from_joined_table.end())
                     columns_from_joined_table.push_back(joined_column);
 
