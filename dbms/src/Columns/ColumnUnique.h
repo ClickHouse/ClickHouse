@@ -68,11 +68,7 @@ public:
         return getNestedColumn()->updateHashWithValue(n, hash);
     }
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
-    {
-        auto & column_unique = static_cast<const IColumnUnique &>(rhs);
-        return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
-    }
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -348,6 +344,28 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
         column->popBack(1);
 
     return static_cast<size_t>(index_pos);
+}
+
+template <typename ColumnType>
+int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+    if (is_nullable)
+    {
+        /// See ColumnNullable::compareAt
+        bool lval_is_null = n == getNullValueIndex();
+        bool rval_is_null = m == getNullValueIndex();
+
+        if (unlikely(lval_is_null || rval_is_null))
+        {
+            if (lval_is_null && rval_is_null)
+                return 0;
+            else
+                return lval_is_null ? nan_direction_hint : -nan_direction_hint;
+        }
+    }
+
+    auto & column_unique = static_cast<const IColumnUnique &>(rhs);
+    return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
 }
 
 template <typename IndexType>
