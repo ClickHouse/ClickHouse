@@ -1208,7 +1208,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (use_local_default_db)
     {
         AddDefaultDatabaseVisitor visitor(current_database);
-        visitor.visit(query_ptr);
+        visitor.visitDDL(query_ptr);
     }
 
     DDLLogEntry entry;

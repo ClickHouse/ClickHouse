@@ -7,6 +7,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
@@ -40,7 +41,8 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
         if (db_and_table->database.empty())
         {
             db_and_table->database = select_database_name;
-            query.setDatabaseIfNeeded(select_database_name);
+            AddDefaultDatabaseVisitor visitor(select_database_name);
+            visitor.visit(query);
         }
         else
             select_database_name = db_and_table->database;
