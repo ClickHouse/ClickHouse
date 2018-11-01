@@ -167,7 +167,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 return false;
 
             command->type = ASTAlterCommand::FREEZE_PARTITION;
-        } else {
+        }
+        else
+        {
             command->type = ASTAlterCommand::FREEZE_ALL;
         }
 
