@@ -12,13 +12,19 @@ namespace DB
 
 class ASTAlterCommand;
 
-/// Operation from the ALTER query (except for manipulation with PART/PARTITION). Adding Nested columns is not expanded to add individual columns.
+/// Operation from the ALTER query (except for manipulation with PART/PARTITION).
+/// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
     enum Type
     {
         ADD_COLUMN,
         DROP_COLUMN,
+
+        FREEZE_ALL,
+        // Even though this command operates on partitions, it needs global locks to prevent table alteration.
+        // It's vulnerable to the column modification commands.
+
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
     };
@@ -29,6 +35,9 @@ struct AlterCommand
 
     /// For DROP COLUMN ... FROM PARTITION
     String partition_name;
+
+    /// For FREEZE of all partitions
+    String with_name;
 
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type;

@@ -261,6 +261,15 @@ void StorageMergeTree::alter(
 
     if (primary_key_is_modified)
         data.loadDataParts(false);
+
+    /// Do freeze of all parts after all other operations.
+    for (const AlterCommand & param : params)
+    {
+        if (param.type == AlterCommand::FREEZE_ALL)
+        {
+            data.freezeAll(param.with_name, context);
+        }
+    }
 }
 
 
@@ -861,11 +870,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
     data.freezePartition(partition, with_name, context);
-}
-
-void StorageMergeTree::freezeAll(const String & with_name, const Context & context)
-{
-    data.freezeAll(with_name, context);
 }
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)

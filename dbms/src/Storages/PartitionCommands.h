@@ -17,13 +17,12 @@ struct PartitionCommand
 {
     enum Type
     {
-        DROP_PARTITION,
         ATTACH_PARTITION,
-        REPLACE_PARTITION,
+        CLEAR_COLUMN,
+        DROP_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
-        FREEZE_ALL,
-        CLEAR_COLUMN,
+        REPLACE_PARTITION,
     };
 
     Type type;

@@ -480,6 +480,9 @@ public:
         const ASTPtr & new_primary_key,
         bool skip_sanity_checks);
 
+    /// Freezes all parts.
+    void freezeAll(const String & with_name, const Context & context);
+
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
     {
@@ -500,12 +503,6 @@ public:
       *  or if 'with_name' is specified - backup is created in directory with specified name.
       */
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
-
-    /** Create local backup (snapshot) for all parts.
-      * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
-      *  or if 'with_name' is specified - backup is created in directory with specified name.
-      */
-    void freezeAll(const String & with_name, const Context & context);
 
     /// Returns the size of partition in bytes.
     size_t getPartitionSize(const std::string & partition_id) const;

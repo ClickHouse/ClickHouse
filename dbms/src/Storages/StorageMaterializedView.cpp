@@ -263,12 +263,6 @@ void StorageMaterializedView::freezePartition(const ASTPtr & partition, const St
     getTargetTable()->freezePartition(partition, with_name, context);
 }
 
-void StorageMaterializedView::freezeAll(const String & with_name, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->freezeAll(with_name, context);
-}
-
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
 {
     checkStatementCanBeForwarded();
