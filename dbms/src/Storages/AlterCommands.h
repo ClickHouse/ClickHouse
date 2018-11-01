@@ -21,9 +21,9 @@ struct AlterCommand
         ADD_COLUMN,
         DROP_COLUMN,
 
+        /// Even though this command operates on partitions, it needs global locks to prevent table alteration.
+        /// It's vulnerable to the column modification commands.
         FREEZE_ALL,
-        // Even though this command operates on partitions, it needs global locks to prevent table alteration.
-        // It's vulnerable to the column modification commands.
 
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
