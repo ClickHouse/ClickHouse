@@ -243,6 +243,7 @@ private:
 struct ZooKeeperResponse;
 using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
 
+/// Exposed in header file for Yandex.Metrica code.
 struct ZooKeeperRequest : virtual Request
 {
     ZooKeeper::XID xid = 0;
