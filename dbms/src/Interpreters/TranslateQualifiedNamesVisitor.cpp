@@ -65,18 +65,23 @@ void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk *, ASTPtr & ast,
     if (num_components > 2)
         throw Exception("Qualified asterisk cannot have more than two qualifiers", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
 
+    DatabaseAndTableWithAlias db_and_table(*ident);
+
     for (const auto & table_names : tables)
     {
         /// database.table.*, table.* or alias.*
-        if ((num_components == 2
-                && !table_names.database.empty()
-                && static_cast<const ASTIdentifier &>(*ident->children[0]).name == table_names.database
-                && static_cast<const ASTIdentifier &>(*ident->children[1]).name == table_names.table)
-            || (num_components == 0
-                && ((!table_names.table.empty() && ident->name == table_names.table)
-                    || (!table_names.alias.empty() && ident->name == table_names.alias))))
+        if (num_components == 2)
         {
-            return;
+            if (!table_names.database.empty() &&
+                db_and_table.database == table_names.database &&
+                db_and_table.table == table_names.table)
+                return;
+        }
+        else if (num_components == 0)
+        {
+            if ((!table_names.table.empty() && db_and_table.table == table_names.table) ||
+                (!table_names.alias.empty() && db_and_table.table == table_names.alias))
+                return;
         }
     }
 
