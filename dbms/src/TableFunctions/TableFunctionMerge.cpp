@@ -3,7 +3,6 @@
 
 #include <Storages/StorageMerge.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>

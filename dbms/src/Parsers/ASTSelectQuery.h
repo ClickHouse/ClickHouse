@@ -39,8 +39,6 @@ public:
     ASTPtr settings;
 
     /// Compatibility with old parser of tables list. TODO remove
-    ASTPtr database() const;
-    ASTPtr table() const;
     ASTPtr sample_size() const;
     ASTPtr sample_offset() const;
     ASTPtr array_join_expression_list() const;
@@ -54,5 +52,8 @@ public:
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+
+ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name);
 
 }
