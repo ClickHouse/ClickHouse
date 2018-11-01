@@ -40,11 +40,9 @@ public:
 
     void visit(ASTPtr & ast) const
     {
-        DumpASTNode dump(*ast, ostr, visit_depth, "executeScalarSubqueries");
-
-        if (!tryVisit<ASTSubquery>(ast, dump) &&
-            !tryVisit<ASTTableExpression>(ast, dump) &&
-            !tryVisit<ASTFunction>(ast, dump))
+        if (!tryVisit<ASTSubquery>(ast) &&
+            !tryVisit<ASTTableExpression>(ast) &&
+            !tryVisit<ASTFunction>(ast))
             visitChildren(ast);
     }
 
@@ -54,9 +52,9 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
 
-    void visit(const ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(const ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const;
-    void visit(const ASTTableExpression *, ASTPtr &, const DumpASTNode &) const;
+    void visit(const ASTSubquery & subquery, ASTPtr & ast) const;
+    void visit(const ASTFunction & func, ASTPtr & ast) const;
+    void visit(const ASTTableExpression &, ASTPtr &) const;
 
     void visitChildren(ASTPtr & ast) const
     {
@@ -65,11 +63,12 @@ private:
     }
 
     template <typename T>
-    bool tryVisit(ASTPtr & ast, const DumpASTNode & dump) const
+    bool tryVisit(ASTPtr & ast) const
     {
         if (const T * t = typeid_cast<const T *>(ast.get()))
         {
-            visit(t, ast, dump);
+            DumpASTNode dump(*ast, ostr, visit_depth, "executeScalarSubqueries");
+            visit(*t, ast);
             return true;
         }
         return false;
