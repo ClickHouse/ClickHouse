@@ -62,10 +62,7 @@ public:
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
-    {
-        return column_holder->serializeValueIntoArena(n, arena, begin);
-    }
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         return getNestedColumn()->updateHashWithValue(n, hash);
@@ -299,8 +296,43 @@ size_t ColumnUnique<ColumnType>::uniqueInsertDataWithTerminatingZero(const char 
 }
 
 template <typename ColumnType>
+StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    if (is_nullable)
+    {
+        const UInt8 null_flag = 1;
+        const UInt8 not_null_flag = 0;
+
+        auto pos = arena.allocContinue(sizeof(null_flag), begin);
+        auto & flag = (n == getNullValueIndex() ? null_flag : not_null_flag);
+        memcpy(pos, &flag, sizeof(flag));
+
+        size_t nested_size = 0;
+
+        if (n == getNullValueIndex())
+            nested_size = column_holder->serializeValueIntoArena(n, arena, begin).size;
+
+        return StringRef(pos, sizeof(null_flag) + nested_size);
+    }
+
+    return column_holder->serializeValueIntoArena(n, arena, begin);
+}
+
+template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos)
 {
+    if (is_nullable)
+    {
+        UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+        pos += sizeof(val);
+
+        if (val)
+        {
+            new_pos = pos;
+            return getNullValueIndex();
+        }
+    }
+
     auto column = getRawColumnPtr();
     size_t prev_size = column->size();
     new_pos = column->deserializeAndInsertFromArena(pos);
