@@ -9,7 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -104,8 +104,6 @@ private:
                                       String & qualified_name_prefix, const ASTPtr & subquery);
 
     ASTs getSelectQueryProjectionColumns(ASTPtr & ast);
-
-    std::vector<ASTTableExpression *> getSelectTablesExpression(ASTSelectQuery * select_query);
 
     ASTs evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk);
 
