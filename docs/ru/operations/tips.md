@@ -21,7 +21,7 @@ Turbo-Boost крайне не рекомендуется отключать. П�
 Нужно всегда использовать `performance` scaling governor. `ondemand` scaling governor работает намного хуже при постоянно высоком спросе.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
+sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## Ограничение CPU
