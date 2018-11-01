@@ -62,7 +62,7 @@ using QueryDescriptors = std::vector<QueryDescriptor>;
 
 static void insertResultRow(size_t n, CancellationCode code, const Block & source_processes, const Block & sample_block, MutableColumns & columns)
 {
-    columns[0]->insert(String(cancellationCodeToStatus(code)));
+    columns[0]->insert(cancellationCodeToStatus(code));
 
     for (size_t col_num = 1, size = columns.size(); col_num < size; ++col_num)
         columns[col_num]->insertFrom(*source_processes.getByName(sample_block.getByPosition(col_num).name).column, n);

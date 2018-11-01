@@ -22,7 +22,7 @@ public:
     explicit MergeTreePartition(Row value_) : value(std::move(value_)) {}
 
     /// For month-based partitioning.
-    explicit MergeTreePartition(UInt32 yyyymm) : value(1, static_cast<UInt64>(yyyymm)) {}
+    explicit MergeTreePartition(UInt32 yyyymm) : value(1, yyyymm) {}
 
     String getID(const MergeTreeData & storage) const;
 

@@ -279,8 +279,8 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
     if (size == 0)
     {
-        min = typename NearestFieldType<T>::Type(0);
-        max = typename NearestFieldType<T>::Type(0);
+        min = T(0);
+        max = T(0);
         return;
     }
 
