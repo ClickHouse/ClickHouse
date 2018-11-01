@@ -1181,7 +1181,6 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
-
     size_t limit = getLimitForSorting(query);
 
     const Settings & settings = context.getSettingsRef();
