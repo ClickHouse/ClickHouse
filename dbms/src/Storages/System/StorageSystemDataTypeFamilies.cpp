@@ -28,7 +28,7 @@ void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, const
         if (factory.isAlias(name))
             res_columns[2]->insert(factory.aliasTo(name));
         else
-            res_columns[2]->insert(String());
+            res_columns[2]->insertDefault();
     }
 }
 
