@@ -395,24 +395,8 @@ void ZooKeeper::read(T & x)
 }
 
 
-struct ZooKeeperResponse;
-using ZooKeeperResponsePtr = std::shared_ptr<ZooKeeperResponse>;
 
-
-struct ZooKeeperRequest : virtual Request
-{
-    ZooKeeper::XID xid = 0;
-    bool has_watch = false;
-    /// If the request was not send and the error happens, we definitely sure, that is has not been processed by the server.
-    /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
-    bool probably_sent = false;
-
-    virtual ~ZooKeeperRequest() {}
-
-    virtual ZooKeeper::OpNum getOpNum() const = 0;
-
-    /// Writes length, xid, op_num, then the rest.
-    void write(WriteBuffer & out) const
+    void ZooKeeperRequest::write(WriteBuffer & out) const
     {
         /// Excessive copy to calculate length.
         WriteBufferFromOwnString buf;
@@ -423,10 +407,6 @@ struct ZooKeeperRequest : virtual Request
         out.next();
     }
 
-    virtual void writeImpl(WriteBuffer &) const = 0;
-
-    virtual ZooKeeperResponsePtr makeResponse() const = 0;
-};
 
 struct ZooKeeperResponse : virtual Response
 {

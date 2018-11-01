@@ -105,7 +105,7 @@ struct HalfMD5Impl
         MD5_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         MD5_Final(buf.char_data, &ctx);
 
-        return Poco::ByteOrder::flipBytes(buf.uint64_data);        /// Compatibility with existing code.
+        return Poco::ByteOrder::flipBytes(static_cast<Poco::UInt64>(buf.uint64_data));        /// Compatibility with existing code. Cast need for old poco AND macos where UInt64 != uint64_t
     }
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
