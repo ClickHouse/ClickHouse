@@ -32,12 +32,10 @@ public:
 
     void visit(ASTPtr & ast) const
     {
-        DumpASTNode dump(*ast, ostr, visit_depth, "translateQualifiedNames");
-
-        if (!tryVisit<ASTIdentifier>(ast, dump) &&
-            !tryVisit<ASTQualifiedAsterisk>(ast, dump) &&
-            !tryVisit<ASTTableJoin>(ast, dump) &&
-            !tryVisit<ASTSelectQuery>(ast, dump))
+        if (!tryVisit<ASTIdentifier>(ast) &&
+            !tryVisit<ASTQualifiedAsterisk>(ast) &&
+            !tryVisit<ASTTableJoin>(ast) &&
+            !tryVisit<ASTSelectQuery>(ast))
             visitChildren(ast); /// default: do nothing, visit children
     }
 
@@ -47,19 +45,20 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
 
-    void visit(ASTIdentifier * node, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTQualifiedAsterisk * node, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTTableJoin * node, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTSelectQuery * ast, ASTPtr &, const DumpASTNode & dump) const;
+    void visit(ASTIdentifier & node, ASTPtr & ast, const DumpASTNode & dump) const;
+    void visit(ASTQualifiedAsterisk & node, ASTPtr & ast, const DumpASTNode & dump) const;
+    void visit(ASTTableJoin & node, ASTPtr & ast, const DumpASTNode & dump) const;
+    void visit(ASTSelectQuery & ast, ASTPtr &, const DumpASTNode & dump) const;
 
     void visitChildren(ASTPtr &) const;
 
     template <typename T>
-    bool tryVisit(ASTPtr & ast, const DumpASTNode & dump) const
+    bool tryVisit(ASTPtr & ast) const
     {
         if (T * t = typeid_cast<T *>(ast.get()))
         {
-            visit(t, ast, dump);
+            DumpASTNode dump(*ast, ostr, visit_depth, "translateQualifiedNames");
+            visit(*t, ast, dump);
             return true;
         }
         return false;

@@ -8,6 +8,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/DumpASTNode.h>
 
 namespace DB
 {
@@ -17,8 +18,10 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
-    AddDefaultDatabaseVisitor(const String & database_name_)
-    :   database_name(database_name_)
+    AddDefaultDatabaseVisitor(const String & database_name_, std::ostream * ostr_ = nullptr)
+    :   database_name(database_name_),
+        visit_depth(0),
+        ostr(ostr_)
     {}
 
     void visitDDL(ASTPtr & ast) const
@@ -28,6 +31,13 @@ public:
         if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(ast))
         {}
+    }
+
+    void visit(ASTPtr & ast) const
+    {
+        if (!tryVisit<ASTSelectQuery>(ast) &&
+            !tryVisit<ASTSelectWithUnionQuery>(ast))
+            visitChildren(ast);
     }
 
     void visit(ASTSelectQuery & select) const
@@ -44,6 +54,8 @@ public:
 
 private:
     const String database_name;
+    mutable size_t visit_depth;
+    std::ostream * ostr;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -55,6 +67,11 @@ private:
     {
         if (select.tables)
             tryVisit<ASTTablesInSelectQuery>(select.tables);
+
+        if (select.prewhere_expression)
+            visitChildren(select.prewhere_expression);
+        if (select.where_expression)
+            visitChildren(select.where_expression);
     }
 
     void visit(ASTTablesInSelectQuery & tables, ASTPtr &) const
@@ -93,11 +110,18 @@ private:
         tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
+    void visitChildren(ASTPtr & ast) const
+    {
+        for (auto & child : ast->children)
+            visit(child);
+    }
+
     template <typename T>
     bool tryVisit(ASTPtr & ast) const
     {
         if (T * t = typeid_cast<T *>(ast.get()))
         {
+            DumpASTNode dump(*ast, ostr, visit_depth, "addDefaultDatabaseName");
             visit(*t, ast);
             return true;
         }

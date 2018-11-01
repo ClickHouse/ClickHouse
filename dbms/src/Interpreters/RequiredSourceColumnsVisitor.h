@@ -48,28 +48,28 @@ private:
     const NameSet & available_joined_columns;
     NameSet & required_joined_columns;
 
-    void visit(const ASTIdentifier * node, const ASTPtr &) const
+    void visit(const ASTIdentifier & node, const ASTPtr &) const
     {
-        if (node->general()
-            && !ignored_names.count(node->name)
-            && !ignored_names.count(Nested::extractTableName(node->name)))
+        if (node.general()
+            && !ignored_names.count(node.name)
+            && !ignored_names.count(Nested::extractTableName(node.name)))
         {
-            if (!available_joined_columns.count(node->name)
-                || available_columns.count(node->name)) /// Read column from left table if has.
-                required_source_columns.insert(node->name);
+            if (!available_joined_columns.count(node.name)
+                || available_columns.count(node.name)) /// Read column from left table if has.
+                required_source_columns.insert(node.name);
             else
-                required_joined_columns.insert(node->name);
+                required_joined_columns.insert(node.name);
         }
     }
 
-    void visit(const ASTFunction * node, const ASTPtr & ast) const
+    void visit(const ASTFunction & node, const ASTPtr & ast) const
     {
-        if (node->name == "lambda")
+        if (node.name == "lambda")
         {
-            if (node->arguments->children.size() != 2)
+            if (node.arguments->children.size() != 2)
                 throw Exception("lambda requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(node->arguments->children.at(0).get());
+            ASTFunction * lambda_args_tuple = typeid_cast<ASTFunction *>(node.arguments->children.at(0).get());
 
             if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
                 throw Exception("First argument of lambda must be a tuple", ErrorCodes::TYPE_MISMATCH);
@@ -90,7 +90,7 @@ private:
                 }
             }
 
-            visit(node->arguments->children.at(1));
+            visit(node.arguments->children.at(1));
 
             for (size_t i = 0; i < added_ignored.size(); ++i)
                 ignored_names.erase(added_ignored[i]);
@@ -100,7 +100,7 @@ private:
 
         /// A special function `indexHint`. Everything that is inside it is not calculated
         /// (and is used only for index analysis, see KeyCondition).
-        if (node->name == "indexHint")
+        if (node.name == "indexHint")
             return;
 
         visitChildren(ast);
@@ -126,7 +126,7 @@ private:
     {
         if (const T * t = typeid_cast<const T *>(ast.get()))
         {
-            visit(t, ast);
+            visit(*t, ast);
             return true;
         }
         return false;

@@ -41,22 +41,22 @@ private:
     bool & has_global_subqueries;
 
     /// GLOBAL IN
-    void visit(ASTFunction * func, ASTPtr &) const
+    void visit(ASTFunction & func, ASTPtr &) const
     {
-        if (func->name == "globalIn" || func->name == "globalNotIn")
+        if (func.name == "globalIn" || func.name == "globalNotIn")
         {
-            addExternalStorage(func->arguments->children.at(1));
+            addExternalStorage(func.arguments->children.at(1));
             has_global_subqueries = true;
         }
     }
 
     /// GLOBAL JOIN
-    void visit(ASTTablesInSelectQueryElement * table_elem, ASTPtr &) const
+    void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &) const
     {
-        if (table_elem->table_join
-            && static_cast<const ASTTableJoin &>(*table_elem->table_join).locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join
+            && static_cast<const ASTTableJoin &>(*table_elem.table_join).locality == ASTTableJoin::Locality::Global)
         {
-            addExternalStorage(table_elem->table_expression);
+            addExternalStorage(table_elem.table_expression);
             has_global_subqueries = true;
         }
     }
@@ -66,7 +66,7 @@ private:
     {
         if (T * t = typeid_cast<T *>(ast.get()))
         {
-            visit(t, ast);
+            visit(*t, ast);
             return true;
         }
         return false;
