@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int READONLY;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_KILL;
 }
 
 
@@ -138,13 +139,16 @@ public:
 
                 auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
-                if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
+                /// Raise exception if this query is immortal, user have to know
+                if (code == CancellationCode::CancelCannotBeSent)
+                    throw Exception("Can't kill query '" + curr_process.query_id + "' it consits of unkillable stages", ErrorCodes::CANNOT_KILL);
+                else if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
                     curr_process.processed = true;
                     insertResultRow(curr_process.source_num, code, processes_block, res_sample_block, columns);
                     ++num_processed_queries;
                 }
-                /// Wait if QueryIsNotInitializedYet or CancelSent
+                /// Wait if CancelSent
             }
 
             /// KILL QUERY could be killed also
@@ -194,6 +198,11 @@ BlockIO InterpreterKillQueryQuery::execute()
         for (const auto & query_desc : queries_to_stop)
         {
             auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
+
+            /// Raise exception if this query is immortal, user have to know
+            if (code == CancellationCode::CancelCannotBeSent)
+                throw Exception("Can't kill query '" + query_desc.query_id + "' it consits of unkillable stages", ErrorCodes::CANNOT_KILL);
+
             insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
         }
 
