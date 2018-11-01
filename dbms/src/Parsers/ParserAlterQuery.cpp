@@ -183,6 +183,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else
         {
+            /// WITH NAME 'name' - place local backup to directory with specified name
+            if (s_with.ignore(pos, expected))
+            {
+                if (!s_name.ignore(pos, expected))
+                    return false;
+
+                ASTPtr ast_with_name;
+                if (!parser_string_literal.parse(pos, ast_with_name, expected))
+                    return false;
+
+                command->with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
+            }
+
             command->type = ASTAlterCommand::FREEZE_ALL;
         }
     }
