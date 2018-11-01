@@ -1,6 +1,5 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
