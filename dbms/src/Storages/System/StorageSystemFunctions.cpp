@@ -20,7 +20,7 @@ namespace
         if (f.isAlias(name))
             res_columns[3]->insert(f.aliasTo(name));
         else
-            res_columns[3]->insert(String());
+            res_columns[3]->insertDefault();
     }
 }
 
