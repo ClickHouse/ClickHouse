@@ -13,3 +13,4 @@ SELECT upperUTF8(sipHash128('\0')), [], ['xD2jG'];
 SELECT arrayEnumerateUniq(anyHeavy([]), []);
 SELECT notIn([['']], [[NULL]]);
 SELECT subtractDays((CAST((-5263074.47) AS DateTime)), -737895);
+SELECT arrayEnumerateDense([], [sequenceCount(NULL)]);
