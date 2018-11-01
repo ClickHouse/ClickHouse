@@ -1475,9 +1475,8 @@ void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_src,
     Arena * arena) const
 {
-    decltype(table_src.end()) end = table_src.end();
 
-    for (auto it = table_src.begin(); it != end; ++it)
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
         decltype(it) res_it;
         bool inserted;
