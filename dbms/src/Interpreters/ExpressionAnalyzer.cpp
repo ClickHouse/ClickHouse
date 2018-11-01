@@ -203,8 +203,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     addAliasColumns();
 
-    translateQualifiedNames();
-
     /// Depending on the user's profile, check for the execution rights
     /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
     InJoinSubqueriesPreprocessor(context).process(select_query);
@@ -221,6 +219,8 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
+
+    translateQualifiedNames();
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
