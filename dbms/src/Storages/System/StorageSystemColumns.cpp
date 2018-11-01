@@ -11,7 +11,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Databases/IDatabase.h>
 
 

@@ -59,7 +59,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
 
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -172,36 +172,26 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     if (!storage && select_query)
     {
-        auto select_database = select_query->database();
-        auto select_table = select_query->table();
-
-        if (select_table
-            && !typeid_cast<const ASTSelectWithUnionQuery *>(select_table.get())
-            && !typeid_cast<const ASTFunction *>(select_table.get()))
-        {
-            String database = select_database
-                ? typeid_cast<const ASTIdentifier &>(*select_database).name
-                : "";
-            const String & table = typeid_cast<const ASTIdentifier &>(*select_table).name;
-            storage = context.tryGetTable(database, table);
-        }
+        if (auto db_and_table = getDatabaseAndTable(*select_query, 0))
+            storage = context.tryGetTable(db_and_table->database, db_and_table->table);
     }
 
-    if (storage && source_columns.empty())
+    if (storage)
     {
         auto physical_columns = storage->getColumns().getAllPhysical();
         if (source_columns.empty())
             source_columns.swap(physical_columns);
         else
-        {
             source_columns.insert(source_columns.end(), physical_columns.begin(), physical_columns.end());
-            removeDuplicateColumns(source_columns);
+
+        if (select_query)
+        {
+            const auto & storage_aliases = storage->getColumns().aliases;
+            source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
         }
     }
-    else
-        removeDuplicateColumns(source_columns);
 
-    addAliasColumns();
+    removeDuplicateColumns(source_columns);
 
     translateQualifiedNames();
 
@@ -280,7 +270,7 @@ void ExpressionAnalyzer::translateQualifiedNames()
     if (!select_query || !select_query->tables || select_query->tables->children.empty())
         return;
 
-    std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTableWithAliases(select_query, context.getCurrentDatabase());
+    std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
     LogAST log;
     TranslateQualifiedNamesVisitor visitor(source_columns, tables, log.stream());
@@ -533,8 +523,8 @@ static NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableEx
     else if (table_expression.database_and_table_name)
     {
         const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
-        auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
-        const auto & table = context.getTable(database_table.first, database_table.second);
+        DatabaseAndTableWithAlias database_table(identifier);
+        const auto & table = context.getTable(database_table.database, database_table.table);
         names_and_type_list = table->getSampleBlockNonMaterialized().getNamesAndTypesList();
     }
 
@@ -561,12 +551,12 @@ void ExpressionAnalyzer::normalizeTree()
     TableNamesAndColumnNames table_names_and_column_names;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
-        std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
+        std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
 
         bool first = true;
         for (const auto * table_expression : tables_expression)
         {
-            const auto table_name = getTableNameWithAliasFromTableExpression(*table_expression, context.getCurrentDatabase());
+            DatabaseAndTableWithAlias table_name(*table_expression, context.getCurrentDatabase());
             NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
 
             if (!first)
@@ -584,19 +574,6 @@ void ExpressionAnalyzer::normalizeTree()
     }
 
     QueryNormalizer(query, aliases, settings, all_columns_name, table_names_and_column_names).perform();
-}
-
-
-void ExpressionAnalyzer::addAliasColumns()
-{
-    if (!select_query)
-        return;
-
-    if (!storage)
-        return;
-
-    const auto & storage_aliases = storage->getColumns().aliases;
-    source_columns.insert(std::end(source_columns), std::begin(storage_aliases), std::end(storage_aliases));
 }
 
 
@@ -1244,7 +1221,7 @@ const ExpressionAnalyzer::AnalyzedJoin::JoinedColumnsList & ExpressionAnalyzer::
         if (const ASTTablesInSelectQueryElement * node = select_query_with_join->join())
         {
             const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-            auto table_name_with_alias = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
+            DatabaseAndTableWithAlias table_name_with_alias(table_expression, context.getCurrentDatabase());
 
             auto columns = getNamesAndTypeListFromTableExpression(table_expression, context);
 
@@ -1307,8 +1284,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     if (table_to_join.database_and_table_name)
     {
         const auto & identifier = static_cast<const ASTIdentifier &>(*table_to_join.database_and_table_name);
-        auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
-        StoragePtr table = context.tryGetTable(database_table.first, database_table.second);
+        DatabaseAndTableWithAlias database_table(identifier);
+        StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
         if (table)
         {
@@ -1850,8 +1827,8 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
     const auto & left_table_expression = static_cast<const ASTTableExpression &>(*left_tables_element->table_expression);
     const auto & right_table_expression = static_cast<const ASTTableExpression &>(*right_tables_element->table_expression);
 
-    auto left_source_names = getTableNameWithAliasFromTableExpression(left_table_expression, context.getCurrentDatabase());
-    auto right_source_names = getTableNameWithAliasFromTableExpression(right_table_expression, context.getCurrentDatabase());
+    DatabaseAndTableWithAlias left_source_names(left_table_expression, context.getCurrentDatabase());
+    DatabaseAndTableWithAlias right_source_names(right_table_expression, context.getCurrentDatabase());
 
     /// Stores examples of columns which are only from one table.
     struct TableBelonging
@@ -2004,7 +1981,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns)
 
     const auto & table_join = static_cast<const ASTTableJoin &>(*node->table_join);
     const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-    auto joined_table_name = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
+    DatabaseAndTableWithAlias joined_table_name(table_expression, context.getCurrentDatabase());
 
     auto add_name_to_join_keys = [&](Names & join_keys, ASTs & join_asts, const ASTPtr & ast, bool right_table)
     {
