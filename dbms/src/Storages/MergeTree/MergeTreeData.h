@@ -723,6 +723,10 @@ private:
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+
+    /// Common part for |freezePartition()| and |freezeAll()|.
+    using MatcherFn = std::function<bool(DataPartPtr)>;
+    void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
 };
 
 }
