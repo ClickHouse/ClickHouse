@@ -9,7 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -41,14 +41,34 @@ using IdentifiersWithQualifiedNameSet = std::vector<IdentifierWithQualifiedName>
  */
 class PredicateExpressionsOptimizer
 {
+    /// Extracts settings, mostly to show which are used and which are not.
+    struct ExtractedSettings
+    {
+        /// QueryNormalizer settings
+        const UInt64 max_ast_depth;
+        const UInt64 max_expanded_ast_elements;
+        const String count_distinct_implementation;
+
+        /// for PredicateExpressionsOptimizer
+        const bool enable_optimize_predicate_expression;
+
+        template<typename T>
+        ExtractedSettings(const T & settings)
+        :   max_ast_depth(settings.max_ast_depth),
+            max_expanded_ast_elements(settings.max_expanded_ast_elements),
+            count_distinct_implementation(settings.count_distinct_implementation),
+            enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
+        {}
+    };
+
 public:
-    PredicateExpressionsOptimizer(ASTSelectQuery * ast_select_, const Settings & settings_, const Context & context_);
+    PredicateExpressionsOptimizer(ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_);
 
     bool optimize();
 
 private:
     ASTSelectQuery * ast_select;
-    const Settings & settings;
+    const ExtractedSettings settings;
     const Context & context;
 
     enum OptimizeKind
@@ -84,8 +104,6 @@ private:
                                       String & qualified_name_prefix, const ASTPtr & subquery);
 
     ASTs getSelectQueryProjectionColumns(ASTPtr & ast);
-
-    std::vector<ASTTableExpression *> getSelectTablesExpression(ASTSelectQuery * select_query);
 
     ASTs evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk);
 

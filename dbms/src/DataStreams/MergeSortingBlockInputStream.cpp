@@ -2,9 +2,11 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataStreams/processConstants.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
+#include <Interpreters/sortBlock.h>
 
 
 namespace ProfileEvents
@@ -15,54 +17,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-
-/** Remove constant columns from block.
-  */
-static void removeConstantsFromBlock(Block & block)
-{
-    size_t columns = block.columns();
-    size_t i = 0;
-    while (i < columns)
-    {
-        if (block.getByPosition(i).column->isColumnConst())
-        {
-            block.erase(i);
-            --columns;
-        }
-        else
-            ++i;
-    }
-}
-
-static void removeConstantsFromSortDescription(const Block & header, SortDescription & description)
-{
-    description.erase(std::remove_if(description.begin(), description.end(),
-        [&](const SortColumnDescription & elem)
-        {
-            if (!elem.column_name.empty())
-                return header.getByName(elem.column_name).column->isColumnConst();
-            else
-                return header.safeGetByPosition(elem.column_number).column->isColumnConst();
-        }), description.end());
-}
-
-/** Add into block, whose constant columns was removed by previous function,
-  *  constant columns from header (which must have structure as before removal of constants from block).
-  */
-static void enrichBlockWithConstants(Block & block, const Block & header)
-{
-    size_t rows = block.rows();
-    size_t columns = header.columns();
-
-    for (size_t i = 0; i < columns; ++i)
-    {
-        const auto & col_type_name = header.getByPosition(i);
-        if (col_type_name.column->isColumnConst())
-            block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
-    }
-}
-
 
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
@@ -303,5 +257,4 @@ void MergeSortingBlockInputStream::remerge()
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
 }
-
 }

@@ -61,3 +61,5 @@ FROM t_null
 2 rows in set. Elapsed: 0.144 sec.
 
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/nullable/) <!--hide-->

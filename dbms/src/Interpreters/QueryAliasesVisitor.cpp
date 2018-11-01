@@ -67,18 +67,18 @@ void QueryAliasesVisitor::getNodeAlias(const ASTPtr & ast, Aliases & aliases, co
     }
     else if (auto subquery = typeid_cast<ASTSubquery *>(ast.get()))
     {
-        /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
-        ///  and auto-generated column names could become incorrect.
+        /// Set unique aliases for all subqueries. This is needed, because:
+        /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
+        /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
 
         if (subquery->alias.empty())
         {
-            size_t subquery_index = 1;
+            static std::atomic_uint64_t subquery_index = 1;
             while (true)
             {
-                alias = "_subquery" + toString(subquery_index);
-                if (!aliases.count("_subquery" + toString(subquery_index)))
+                alias = "_subquery" + std::to_string(subquery_index++);
+                if (!aliases.count(alias))
                     break;
-                ++subquery_index;
             }
 
             subquery->setAlias(alias);

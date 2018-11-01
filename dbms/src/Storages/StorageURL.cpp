@@ -3,7 +3,6 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>

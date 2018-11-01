@@ -87,7 +87,7 @@
 
 ## Условное выражение
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -173,3 +173,5 @@ WHERE isNotNull(y)
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/operators/) <!--hide-->

@@ -4,7 +4,7 @@ Support for time zones
 
 All functions for working with the date and time that have a logical use for the time zone can accept a second optional time zone argument. Example: Asia/Yekaterinburg. In this case, they use the specified time zone instead of the local (default) one.
 
-```sql
+``` sql
 SELECT
     toDateTime('2016-06-15 23:00:00') AS time,
     toDate(time) AS date_local,
@@ -12,7 +12,7 @@ SELECT
     toString(time, 'US/Samoa') AS time_samoa
 ```
 
-```text
+```
 ┌────────────────time─┬─date_local─┬─date_yekat─┬─time_samoa──────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-16 │ 2016-06-15 09:00:00 │
 └─────────────────────┴────────────┴────────────┴─────────────────────┘
@@ -59,6 +59,9 @@ Returns the date.
 
 Rounds down a date or date with time to the first day of the month.
 Returns the date.
+
+!!! attention
+    The behavior of parsing incorrect dates is implementation specific. ClickHouse may return zero date, throw an exception or do "natural" overflow.
 
 ## toStartOfQuarter
 
@@ -182,3 +185,5 @@ Supported modifiers for Format:
 |%y|Year, last two digits (00-99)|18|
 |%Y|Year|2018|
 |%%|a % sign|%|
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/date_time_functions/) <!--hide-->
