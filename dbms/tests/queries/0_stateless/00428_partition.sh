@@ -25,9 +25,8 @@ done
 
 $chl "ALTER TABLE test.partition_428 FREEZE"
 
-pushd
-cd $chdir && find shadow -type f -exec md5sum {} \;
-popd
+# Do `cd` for consistent output for reference
+cd $ch_dir && find shadow -type f -exec md5sum {} \;
 
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
@@ -40,10 +39,8 @@ done
 
 $chl "ALTER TABLE test.partition_428 MODIFY COLUMN v1 Int8"
 
-# Check that backup hasn't changed
-pushd
-cd $chdir && find shadow -type f -exec md5sum {} \;
-popd
+# Check the backup hasn't changed
+cd $ch_dir && find shadow -type f -exec md5sum {} \;
 
 $chl "OPTIMIZE TABLE test.partition_428"
 

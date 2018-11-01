@@ -71,7 +71,6 @@ public:
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
-    void freezeAll(const String & with_name, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
