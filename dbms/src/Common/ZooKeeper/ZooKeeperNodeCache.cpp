@@ -47,21 +47,26 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, 
     if (cache_it != node_cache.end())
         return cache_it->second;
 
-    auto watch_callback = [=](const Coordination::WatchResponse & response)
+    std::weak_ptr<Context> weak_context(context);
+    auto watch_callback = [weak_context, caller_watch_callback](const Coordination::WatchResponse & response)
     {
         if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
             return;
 
+        auto owned_context = weak_context.lock();
+        if (!owned_context)
+            return;
+
         bool changed = false;
         {
-            std::lock_guard<std::mutex> lock(context->mutex);
+            std::lock_guard<std::mutex> lock(owned_context->mutex);
 
             if (response.type != Coordination::SESSION)
-                changed = context->invalidated_paths.emplace(response.path).second;
+                changed = owned_context->invalidated_paths.emplace(response.path).second;
             else if (response.state == Coordination::EXPIRED_SESSION)
             {
-                context->zookeeper = nullptr;
-                context->invalidated_paths.clear();
+                owned_context->zookeeper = nullptr;
+                owned_context->invalidated_paths.clear();
                 changed = true;
             }
         }
