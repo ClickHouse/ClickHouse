@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <Core/Types.h>
 
 namespace DB
@@ -37,7 +38,7 @@ size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifie
                                                               const DatabaseAndTableWithAlias & names);
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
-std::shared_ptr<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
+std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query);
 ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number);

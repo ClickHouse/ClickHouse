@@ -108,7 +108,7 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
 {
     if (table_expression.database_and_table_name)
     {
-        const auto * identifier = static_cast<const ASTIdentifier *>(table_expression.database_and_table_name.get());
+        const auto * identifier = typeid_cast<const ASTIdentifier *>(table_expression.database_and_table_name.get());
         if (!identifier)
             throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -200,7 +200,7 @@ std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery
     return database_and_table_with_aliases;
 }
 
-std::shared_ptr<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number)
+std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number)
 {
     const ASTTableExpression * table_expression = getTableExpression(select, table_number);
     if (!table_expression)
@@ -214,7 +214,7 @@ std::shared_ptr<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQu
     if (!identifier)
         return {};
 
-    return std::make_shared<DatabaseAndTableWithAlias>(*identifier);
+    return *identifier;
 }
 
 ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number)
