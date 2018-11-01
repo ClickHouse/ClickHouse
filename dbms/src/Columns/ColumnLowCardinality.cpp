@@ -527,7 +527,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
     while (position > getMaxPositionForCurrentType())
         expandType();
 
-    positions->assumeMutableRef().insert(UInt64(position));
+    positions->assumeMutableRef().insert(position);
     checkSizeOfType();
 }
 
