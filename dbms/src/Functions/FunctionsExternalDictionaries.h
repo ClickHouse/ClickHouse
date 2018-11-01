@@ -1445,7 +1445,7 @@ private:
             UInt8 res = 0;
 
             dictionary->isInConstantConstant(child_id, ancestor_id, res);
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(child_id_col->size(), UInt64(res));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(child_id_col->size(), res);
         }
         else
             throw Exception{"Illegal column " + ancestor_id_col_untyped->getName()

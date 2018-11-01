@@ -50,7 +50,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(1));
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, 1u);
     }
 };
 
