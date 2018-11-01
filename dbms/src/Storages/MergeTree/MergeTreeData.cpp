@@ -2071,7 +2071,8 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 
 
     freezePartitionsByMatcher(
-        [&prefix, &partition_id](DataPartPtr part) {
+        [&prefix, &partition_id](DataPartPtr part)
+        {
             if (prefix)
                 return startsWith(part->info.partition_id, *prefix);
             else
