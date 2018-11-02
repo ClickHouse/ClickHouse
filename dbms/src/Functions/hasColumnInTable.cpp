@@ -132,7 +132,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(has_column));
+    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, has_column);
 }
 
 
