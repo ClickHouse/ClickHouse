@@ -74,3 +74,11 @@ If the 's' string is non-empty and does not contain the 'c' character at the end
 
 Returns the string 's' that was converted from the encoding in 'from' to the encoding in 'to'.
 
+## base64Encode(s)
+Encodes 's' string into base64
+
+## base64Decode(s)
+Decode base64-encoded string 's' into original string. In case of failure raises an exception.
+
+## tryBase64Decode(s)
+Similar to base64Decode, but in case of error an empty string would be returned.

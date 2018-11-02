@@ -25,15 +25,31 @@ namespace ErrorCodes
 struct Base64Encode
 {
     static constexpr auto name = "base64Encode";
-    static constexpr auto buffer_size_multiplier = 5.0 / 3.0;
+    static size_t getBufferSize(size_t string_length, size_t string_count)
+    {
+        return ( ( string_length - string_count ) / 3  + string_count  ) * 4 + string_count ;
+    }
 };
 
 struct Base64Decode
 {
     static constexpr auto name = "base64Decode";
-    static constexpr auto buffer_size_multiplier = 3.0 / 4.0;
+
+    static size_t getBufferSize(size_t string_length, size_t string_count)
+    {
+        return ( ( string_length - string_count) / 4 + string_count) * 3 + string_count;
+    }
 };
 
+struct TryBase64Decode
+{
+    static constexpr auto name = "tryBase64Decode";
+
+    static size_t getBufferSize(size_t string_length, size_t string_count)
+    {
+        return Base64Decode::getBufferSize(string_length, string_count);
+    }
+};
 
 template <typename Func>
 class FunctionBase64Conversion : public IFunction
@@ -85,7 +101,7 @@ public:
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
-        size_t reserve = ceil(input->getChars().size() * Func::buffer_size_multiplier + input->size());
+        size_t reserve = Func::getBufferSize(input->getChars().size(), input->size());
         dst_data.resize(reserve);
         dst_offsets.resize(input_rows_count);
 
@@ -107,11 +123,24 @@ public:
             {
                 base64_encode(source, srclen, dst_pos, &outlen, codec);
             }
-            else
+            else if constexpr (std::is_same_v<Func, Base64Decode>)
             {
                 if (!base64_decode(source, srclen, dst_pos, &outlen, codec))
                 {
                     throw Exception("Failed to " + getName() + " input '" + String(source, srclen) + "'", ErrorCodes::INCORRECT_DATA);
+                }
+            }
+            else
+            {
+                // during decoding character array can be partially polluted
+                // if fail, revert back and clean
+                auto savepoint = dst_pos;
+                if (!base64_decode(source, srclen, dst_pos, &outlen, codec))
+                {
+                    outlen = 0;
+                    dst_pos = savepoint;
+                    // clean the symbol
+                    dst_pos[0] = 0;
                 }
             }
 
@@ -130,13 +159,7 @@ public:
 private:
     static int getCodec()
     {
-#if __SSE4_2__
-        return BASE64_FORCE_SSE42;
-#elif __SSE4_1__
-        return BASE64_FORCE_SSE41;
-#else
         return BASE64_FORCE_PLAIN;
-#endif
     }
 };
 }
