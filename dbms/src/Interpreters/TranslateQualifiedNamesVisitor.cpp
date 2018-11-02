@@ -1,12 +1,13 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 
-#include <Core/NamesAndTypes.h>
+#include <Core/Names.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
 
 namespace DB
 {
@@ -43,7 +44,7 @@ void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & 
         }
 
         /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && source_columns.contains(ast->getColumnName()))
+        if (best_table_pos && source_columns.count(ast->getColumnName()))
         {
             const DatabaseAndTableWithAlias & table = tables[best_table_pos];
             table.makeQualifiedName(ast);
