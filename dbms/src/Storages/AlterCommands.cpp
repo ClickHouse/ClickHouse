@@ -298,7 +298,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
 
                     default_expr_list->children.emplace_back(setAlias(
                         makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                            std::make_shared<ASTLiteral>(Field(column_type_raw_ptr->getName()))),
+                            std::make_shared<ASTLiteral>(column_type_raw_ptr->getName())),
                         final_column_name));
 
                     default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -368,7 +368,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
 
             default_expr_list->children.emplace_back(setAlias(
                 makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                    std::make_shared<ASTLiteral>(Field(column_type_ptr->getName()))),
+                    std::make_shared<ASTLiteral>(column_type_ptr->getName())),
                 column_name));
 
         default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
@@ -413,7 +413,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                 }
 
                 command_ptr->default_expression = makeASTFunction("CAST", command_ptr->default_expression->clone(),
-                    std::make_shared<ASTLiteral>(Field(explicit_type->getName())));
+                    std::make_shared<ASTLiteral>(explicit_type->getName()));
             }
         }
         else

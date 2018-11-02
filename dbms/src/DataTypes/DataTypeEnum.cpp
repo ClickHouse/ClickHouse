@@ -225,7 +225,7 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type(values.front().second);
+    return values.front().second;
 }
 
 template <typename Type>
@@ -293,7 +293,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        return static_cast<Int64>(getValue(value_or_name.get<String>()));
+        return getValue(value_or_name.get<String>());
     }
     else if (value_or_name.getType() == Field::Types::Int64
           || value_or_name.getType() == Field::Types::UInt64)

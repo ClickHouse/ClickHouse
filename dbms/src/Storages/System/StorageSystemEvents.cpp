@@ -23,9 +23,9 @@ void StorageSystemEvents::fillData(MutableColumns & res_columns, const Context &
 
         if (0 != value)
         {
-            res_columns[0]->insert(String(ProfileEvents::getName(ProfileEvents::Event(i))));
+            res_columns[0]->insert(ProfileEvents::getName(ProfileEvents::Event(i)));
             res_columns[1]->insert(value);
-            res_columns[2]->insert(String(ProfileEvents::getDocumentation(ProfileEvents::Event(i))));
+            res_columns[2]->insert(ProfileEvents::getDocumentation(ProfileEvents::Event(i)));
         }
     }
 }

@@ -122,7 +122,7 @@ protected:
                             res_columns[res_index++]->insert(table.second->getName());
 
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(UInt64(1));
+                            res_columns[res_index++]->insert(1u);
 
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
@@ -173,7 +173,7 @@ protected:
                     res_columns[res_index++]->insert(tables_it->table()->getName());
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(UInt64(0));
+                    res_columns[res_index++]->insert(0u);
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(tables_it->table()->getDataPath());

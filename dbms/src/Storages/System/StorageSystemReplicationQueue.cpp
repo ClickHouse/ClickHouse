@@ -115,20 +115,20 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
             res_columns[col_num++]->insert(replica_name);
-            res_columns[col_num++]->insert(UInt64(j));
+            res_columns[col_num++]->insert(j);
             res_columns[col_num++]->insert(entry.znode_name);
             res_columns[col_num++]->insert(entry.typeToString());
-            res_columns[col_num++]->insert(UInt64(entry.create_time));
-            res_columns[col_num++]->insert(UInt64(entry.quorum));
+            res_columns[col_num++]->insert(entry.create_time);
+            res_columns[col_num++]->insert(entry.quorum);
             res_columns[col_num++]->insert(entry.source_replica);
             res_columns[col_num++]->insert(entry.new_part_name);
             res_columns[col_num++]->insert(parts_to_merge);
-            res_columns[col_num++]->insert(UInt64(entry.detach));
-            res_columns[col_num++]->insert(UInt64(entry.currently_executing));
-            res_columns[col_num++]->insert(UInt64(entry.num_tries));
+            res_columns[col_num++]->insert(entry.detach);
+            res_columns[col_num++]->insert(entry.currently_executing);
+            res_columns[col_num++]->insert(entry.num_tries);
             res_columns[col_num++]->insert(entry.exception ? getExceptionMessage(entry.exception, false) : "");
             res_columns[col_num++]->insert(UInt64(entry.last_attempt_time));
-            res_columns[col_num++]->insert(UInt64(entry.num_postponed));
+            res_columns[col_num++]->insert(entry.num_postponed);
             res_columns[col_num++]->insert(entry.postpone_reason);
             res_columns[col_num++]->insert(UInt64(entry.last_postpone_time));
         }
