@@ -83,7 +83,8 @@ void ReplicatedMergeTreeAlterThread::run()
         auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
         const String & metadata_str = metadata_result.contents;
-        auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(storage.data, metadata_str);
+        auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+        auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage.data).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
 
         /// If you need to lock table structure, then suspend merges.
         ActionLock merge_blocker = storage.merger_mutator.actions_blocker.cancel();
@@ -108,8 +109,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
             auto table_lock = storage.lockStructureForAlter(__PRETTY_FUNCTION__);
 
-            if (columns_in_zk == storage.getColumns()
-                && ReplicatedMergeTreeTableMetadata(storage.data).sorting_key_str == metadata_in_zk.sorting_key_str)
+            if (columns_in_zk == storage.getColumns() && metadata_diff.empty())
             {
                 LOG_INFO(log, "Metadata nodes changed in ZooKeeper, but their contents didn't change. "
                     "Most probably it is a cyclic ALTER.");
@@ -118,7 +118,7 @@ void ReplicatedMergeTreeAlterThread::run()
             {
                 LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-                storage.setTableStructure(std::move(columns_in_zk), metadata_in_zk);
+                storage.setTableStructure(std::move(columns_in_zk), metadata_diff);
 
                 LOG_INFO(log, "Applied changes to the metadata of the table.");
             }

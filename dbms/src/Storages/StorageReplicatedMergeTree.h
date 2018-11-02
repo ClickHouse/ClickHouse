@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
@@ -28,8 +29,6 @@
 
 namespace DB
 {
-
-class ReplicatedMergeTreeTableMetadata;
 
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
@@ -336,7 +335,7 @@ private:
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockStructureForAlter() lock.
-    void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata & new_metadata);
+    void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.
