@@ -15,6 +15,8 @@
 namespace DB
 {
 
+template <> struct NearestFieldType<PartLogElement::Type>  { using Type = UInt64; };
+
 Block PartLogElement::createBlock()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
@@ -60,18 +62,18 @@ void PartLogElement::appendToBlock(Block & block) const
 
     size_t i = 0;
 
-    columns[i++]->insert(Int64(event_type));
-    columns[i++]->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
-    columns[i++]->insert(UInt64(event_time));
-    columns[i++]->insert(UInt64(duration_ms));
+    columns[i++]->insert(event_type);
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(event_time);
+    columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(database_name);
     columns[i++]->insert(table_name);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
 
-    columns[i++]->insert(UInt64(rows));
-    columns[i++]->insert(UInt64(bytes_compressed_on_disk));
+    columns[i++]->insert(rows);
+    columns[i++]->insert(bytes_compressed_on_disk);
 
     Array source_part_names_array;
     source_part_names_array.reserve(source_part_names.size());
@@ -80,11 +82,11 @@ void PartLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(source_part_names_array);
 
-    columns[i++]->insert(UInt64(bytes_uncompressed));
-    columns[i++]->insert(UInt64(rows_read));
-    columns[i++]->insert(UInt64(bytes_read_uncompressed));
+    columns[i++]->insert(bytes_uncompressed);
+    columns[i++]->insert(rows_read);
+    columns[i++]->insert(bytes_read_uncompressed);
 
-    columns[i++]->insert(UInt64(error));
+    columns[i++]->insert(error);
     columns[i++]->insert(exception);
 
     block.setColumns(std::move(columns));
