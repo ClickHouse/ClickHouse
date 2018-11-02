@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -14,23 +16,34 @@ class ReadBuffer;
  */
 struct ReplicatedMergeTreeTableMetadata
 {
-    const MergeTreeData & data;
+    String date_column;
+    String sampling_expression;
+    UInt64 index_granularity;
+    int merging_params_mode;
+    String sign_column;
+    String primary_key;
+    MergeTreeDataFormatVersion data_format_version;
+    String partition_key;
+    String sorting_key;
 
-    bool sorting_and_primary_keys_independent = false;
-    String sorting_key_str;
+    ReplicatedMergeTreeTableMetadata() = default;
+    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);
 
-    explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data_);
+    void read(ReadBuffer & in);
+    static ReplicatedMergeTreeTableMetadata parse(const String & s);
 
     void write(WriteBuffer & out) const;
     String toString() const;
 
-    void read(ReadBuffer & in);
-    static ReplicatedMergeTreeTableMetadata parse(const MergeTreeData & data_, const String & s);
+    struct Diff
+    {
+        bool sorting_key_changed = false;
+        String new_sorting_key;
 
-    void check(ReadBuffer & in) const;
-    void check(const String & s) const;
+        bool empty() const { return !sorting_key_changed; }
+    };
 
-    /// TODO: checkAndFindDiff(other);
+    Diff checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const;
 };
 
 }

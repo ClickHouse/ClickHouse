@@ -374,9 +374,8 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(data, metadata_str);
-    old_metadata.check(metadata_str);
-    const bool metadata_changed = metadata_str != old_metadata.toString();
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
+    auto metadata_diff = old_metadata.checkAndFindDiff(metadata_from_zk, allow_alter);
     metadata_version = metadata_stat.version;
 
     Coordination::Stat columns_stat;
@@ -384,7 +383,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     columns_version = columns_stat.version;
 
     const ColumnsDescription & old_columns = getColumns();
-    if (columns_from_zk != old_columns || metadata_changed)
+    if (columns_from_zk != old_columns || !metadata_diff.empty())
     {
         if (allow_alter &&
             (skip_sanity_checks ||
@@ -394,7 +393,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
             /// Without any locks, because table has not been created yet.
-            setTableStructure(std::move(columns_from_zk), metadata_from_zk);
+            setTableStructure(std::move(columns_from_zk), metadata_diff);
         }
         else
         {
@@ -405,17 +404,19 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 }
 
 
-void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata & new_metadata)
+void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     /// Note: setting columns first so that the new sorting key can use new columns.
     setColumns(std::move(new_columns));
 
     ASTPtr new_sorting_key_ast = data.sorting_key_ast;
+    bool new_sorting_and_primary_keys_independent = data.sorting_and_primary_keys_independent;
     IDatabase::ASTModifier storage_modifier;
-    if (ReplicatedMergeTreeTableMetadata(data).sorting_key_str != new_metadata.sorting_key_str)
+    if (!metadata_diff.empty())
     {
+        new_sorting_and_primary_keys_independent = true;
         ParserNotEmptyExpressionList parser(false);
-        new_sorting_key_ast = parseQuery(parser, new_metadata.sorting_key_str, 0);
+        new_sorting_key_ast = parseQuery(parser, metadata_diff.new_sorting_key, 0);
 
         storage_modifier = [&](IAST & ast)
         {
@@ -442,7 +443,10 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    data.setPrimaryKey(data.primary_key_ast, new_sorting_key_ast);
+    if (new_sorting_and_primary_keys_independent)
+        data.setPrimaryKey(data.primary_key_ast, new_sorting_key_ast);
+    else
+        data.setPrimaryKey(nullptr, new_sorting_key_ast);
 
     context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), storage_modifier);
 }
@@ -3021,10 +3025,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         for (const AlterCommand & param : params)
         {
             if (param.type == AlterCommand::MODIFY_ORDER_BY)
-            {
-                new_metadata.sorting_and_primary_keys_independent = true;
-                new_metadata.sorting_key_str = serializeAST(*param.sorting_key);
-            }
+                new_metadata.sorting_key = serializeAST(*param.sorting_key);
         }
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
