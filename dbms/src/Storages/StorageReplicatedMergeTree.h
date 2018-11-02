@@ -29,6 +29,8 @@
 namespace DB
 {
 
+class ReplicatedMergeTreeTableMetadata;
+
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
   * ZooKeeper is used for the following things:
@@ -331,6 +333,10 @@ private:
       * If not, throw an exception.
       */
     void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
+
+    /// A part of ALTER: apply metadata changes only (data parts are altered separately).
+    /// Must be called under IStorage::lockStructureForAlter() lock.
+    void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata & new_metadata);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.

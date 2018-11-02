@@ -370,9 +370,13 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 {
     auto zookeeper = getZooKeeper();
 
+    ReplicatedMergeTreeTableMetadata old_metadata(data);
+
     Coordination::Stat metadata_stat;
     String metadata_str = zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
-    ReplicatedMergeTreeTableMetadata(data).check(metadata_str);
+    auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parse(data, metadata_str);
+    old_metadata.check(metadata_str);
+    const bool metadata_changed = metadata_str != old_metadata.toString();
     metadata_version = metadata_stat.version;
 
     Coordination::Stat columns_stat;
@@ -380,7 +384,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
     columns_version = columns_stat.version;
 
     const ColumnsDescription & old_columns = getColumns();
-    if (columns_from_zk != old_columns)
+    if (columns_from_zk != old_columns || metadata_changed)
     {
         if (allow_alter &&
             (skip_sanity_checks ||
@@ -390,9 +394,7 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
             /// Without any locks, because table has not been created yet.
-            context.getDatabase(database_name)->alterTable(context, table_name, columns_from_zk, {});
-
-            setColumns(std::move(columns_from_zk));
+            setTableStructure(std::move(columns_from_zk), metadata_from_zk);
         }
         else
         {
@@ -400,6 +402,49 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
                             ErrorCodes::INCOMPATIBLE_COLUMNS);
         }
     }
+}
+
+
+void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata & new_metadata)
+{
+    /// Note: setting columns first so that the new sorting key can use new columns.
+    setColumns(std::move(new_columns));
+
+    ASTPtr new_sorting_key_ast = data.sorting_key_ast;
+    IDatabase::ASTModifier storage_modifier;
+    if (ReplicatedMergeTreeTableMetadata(data).sorting_key_str != new_metadata.sorting_key_str)
+    {
+        ParserNotEmptyExpressionList parser(false);
+        new_sorting_key_ast = parseQuery(parser, new_metadata.sorting_key_str, 0);
+
+        storage_modifier = [&](IAST & ast)
+        {
+            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+
+            auto tuple = std::make_shared<ASTFunction>();
+            tuple->name = "tuple";
+            tuple->arguments = new_sorting_key_ast;
+            tuple->children.push_back(tuple->arguments);
+
+            if (!storage_ast.order_by)
+                throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
+
+            if (!storage_ast.primary_key)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                storage_ast.set(storage_ast.primary_key, storage_ast.order_by->clone());
+            }
+
+            storage_ast.set(storage_ast.order_by, tuple);
+        };
+    }
+
+    /// Even if the primary/sorting keys didn't change we must reinitialize it
+    /// because primary key column types might have changed.
+    data.setPrimaryKey(data.primary_key_ast, new_sorting_key_ast);
+
+    context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), storage_modifier);
 }
 
 
