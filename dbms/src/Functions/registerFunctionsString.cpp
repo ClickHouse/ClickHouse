@@ -22,6 +22,7 @@ void registerFunctionEndsWith(FunctionFactory &);
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
 void registerFunctionBase64Decode(FunctionFactory &);
+void registerFunctionTryBase64Decode(FunctionFactory &);
 #endif
 
 void registerFunctionsString(FunctionFactory & factory)
@@ -45,6 +46,7 @@ void registerFunctionsString(FunctionFactory & factory)
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);
+    registerFunctionTryBase64Decode(factory);
 #endif
 }
 
