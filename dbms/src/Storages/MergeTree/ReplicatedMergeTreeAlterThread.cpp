@@ -118,45 +118,7 @@ void ReplicatedMergeTreeAlterThread::run()
             {
                 LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-                /// Note: setting columns first so that the new sorting key can use new columns.
-                storage.setColumns(std::move(columns_in_zk));
-
-                ASTPtr new_sorting_key_ast = storage.data.sorting_key_ast;
-                IDatabase::ASTModifier storage_modifier;
-                if (ReplicatedMergeTreeTableMetadata(storage.data).sorting_key_str != metadata_in_zk.sorting_key_str)
-                {
-                    ParserNotEmptyExpressionList parser(false);
-                    new_sorting_key_ast = parseQuery(parser, metadata_in_zk.sorting_key_str, 0);
-
-                    storage_modifier = [&](IAST & ast)
-                    {
-                        auto & storage_ast = typeid_cast<ASTStorage &>(ast);
-
-                        auto tuple = std::make_shared<ASTFunction>();
-                        tuple->name = "tuple";
-                        tuple->arguments = new_sorting_key_ast;
-                        tuple->children.push_back(tuple->arguments);
-
-                        if (!storage_ast.order_by)
-                            throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
-
-                        if (!storage_ast.primary_key)
-                        {
-                            /// Primary and sorting key become independent after this ALTER so we have to
-                            /// save the old ORDER BY expression as the new primary key.
-                            storage_ast.set(storage_ast.primary_key, storage_ast.order_by->clone());
-                        }
-
-                        storage_ast.set(storage_ast.order_by, tuple);
-                    };
-                }
-
-                /// Even if the primary/sorting keys didn't change we must reinitialize it
-                /// because primary key column types might have changed.
-                storage.data.setPrimaryKey(storage.data.primary_key_ast, new_sorting_key_ast);
-
-                storage.context.getDatabase(storage.database_name)->alterTable(
-                    storage.context, storage.table_name, storage.getColumns(), storage_modifier);
+                storage.setTableStructure(std::move(columns_in_zk), metadata_in_zk);
 
                 LOG_INFO(log, "Applied changes to the metadata of the table.");
             }
