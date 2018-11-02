@@ -806,7 +806,7 @@ def run_tests(args):
                     stderr_element = et.Element("system-err")
                     stderr_element.text = et.CDATA(stderr)
                     report_testcase.append(stderr_element)
-                    print(stderr)
+                    print(stderr.encode('utf-8'))
 
                 if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
                     SERVER_DIED = True
