@@ -11,6 +11,11 @@
 #include <Poco/Logger.h>
 
 
+#if defined(ARCADIA_ROOT)
+#   include <util/thread/singleton.h>
+#endif
+
+
 namespace DB
 {
 
@@ -21,10 +26,25 @@ namespace ErrorCodes
 
 SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
 
+// Smoker's implementation to avoid thread_local usage: error: undefined symbol: __cxa_thread_atexit
+#if defined(ARCADIA_ROOT)
+struct ThreadStatusPtrHolder : ThreadStatusPtr
+{
+    ThreadStatusPtrHolder() { ThreadStatusPtr::operator=(ThreadStatus::create()); }
+};
+struct ThreadScopePtrHolder : CurrentThread::ThreadScopePtr
+{
+    ThreadScopePtrHolder() { CurrentThread::ThreadScopePtr::operator=(std::make_shared<CurrentThread::ThreadScope>()); }
+};
+#   define current_thread (*FastTlsSingleton<ThreadStatusPtrHolder>())
+#   define current_thread_scope (*FastTlsSingleton<ThreadScopePtrHolder>())
+#else
 /// Order of current_thread and current_thread_scope matters
-thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
-thread_local CurrentThread::ThreadScopePtr current_thread_scope = std::make_shared<CurrentThread::ThreadScope>();
-
+thread_local ThreadStatusPtr _current_thread = ThreadStatus::create();
+thread_local CurrentThread::ThreadScopePtr _current_thread_scope = std::make_shared<CurrentThread::ThreadScope>();
+#   define current_thread _current_thread
+#   define current_thread_scope _current_thread_scope
+#endif
 
 void CurrentThread::updatePerformanceCounters()
 {

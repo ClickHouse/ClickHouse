@@ -751,7 +751,7 @@ private:
 
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
                 item_arg->size(),
-                static_cast<typename NearestFieldType<typename IndexConv::ResultType>::Type>(current));
+                static_cast<typename IndexConv::ResultType>(current));
         }
         else
         {
