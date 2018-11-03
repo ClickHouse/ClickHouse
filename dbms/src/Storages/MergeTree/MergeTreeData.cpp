@@ -651,9 +651,16 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
                     Poco::File(full_path + it.name()).remove(true);
                 }
             }
-            catch (const Poco::FileNotFoundException &)
+            catch (const Poco::FileNotFoundException & ex)
             {
                 /// If the file is already deleted, do nothing.
+                LOG_WARNING(log, ex.what() << " (concurrent directory removing, ignored)");
+            }
+            catch (const Poco::DirectoryNotEmptyException & ex)
+            {
+                // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
+                // in concurrent removing
+                LOG_WARNING(log, ex.what() << " (another thread is access the file in NFS, deferred)");
             }
         }
     }

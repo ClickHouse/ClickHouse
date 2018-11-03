@@ -328,6 +328,17 @@ void MergeTreeDataPart::remove() const
         {
             to_dir.remove(true);
         }
+        catch (const Poco::FileNotFoundException & ex)
+        {
+            /// If the file is already deleted, do nothing.
+            LOG_WARNING(storage.log, ex.what() << " (concurrent directory removing, ignored)");
+        }
+        catch (const Poco::DirectoryNotEmptyException & ex)
+        {
+            // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
+            // in concurrent removing
+            LOG_WARNING(storage.log, ex.what() << " (another thread is accessing the file in NFS, deferred)");
+        }
         catch (...)
         {
             LOG_ERROR(storage.log, "Cannot remove directory " << to << ". Check owner and access rights.");
@@ -347,7 +358,21 @@ void MergeTreeDataPart::remove() const
         return;
     }
 
-    to_dir.remove(true);
+    try
+    {
+        to_dir.remove(true);
+    }
+    catch (const Poco::FileNotFoundException & ex)
+    {
+        /// If the file is already deleted, do nothing.
+        LOG_WARNING(storage.log, ex.what() << " (concurrent directory removing, ignored)");
+    }
+    catch (const Poco::DirectoryNotEmptyException & ex)
+    {
+        // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
+        // in concurrent removing
+        LOG_WARNING(storage.log, ex.what() << " (another thread is access the file in NFS, deferred)");
+    }
 }
 
 
