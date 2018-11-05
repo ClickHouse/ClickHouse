@@ -211,15 +211,6 @@ protected:
     }
 
 
-    /// Find an empty cell, starting with the specified position and further along the collision resolution chain.
-    size_t ALWAYS_INLINE findEmptyCell(size_t place_value) const
-    {
-        while (!buf[place_value].isZero(*this))
-            place_value = grower.next(place_value);
-
-        return place_value;
-    }
-
     void alloc(const Grower & new_grower)
     {
         buf = reinterpret_cast<Cell *>(calloc(new_grower.bufSize() * sizeof(Cell), 1));
@@ -233,12 +224,6 @@ protected:
             ::free(buf);
             buf = nullptr;
         }
-    }
-
-
-    /// Increase the size of the buffer.
-    void resize()
-    {
     }
 
 
@@ -266,14 +251,6 @@ protected:
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
-    }
-
-
-    void destroyElements()
-    {
-        if (!std::is_trivially_destructible_v<Cell>)
-            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
-                it.ptr->~Cell();
     }
 
 
@@ -328,7 +305,7 @@ public:
     using key_type = Key;
     using value_type = typename Cell::value_type;
 
-    size_t hash(const Key & x) const { return Hash::operator()(x); }
+    size_t hash(const Key & x) const { return x; }
 
 
     HashTable()
@@ -338,17 +315,8 @@ public:
         alloc(grower);
     }
 
-    HashTable(size_t reserve_for_num_elements)
-    {
-        if (Cell::need_zero_value_storage)
-            this->zeroValue()->setZero();
-        grower.set(reserve_for_num_elements);
-        alloc(grower);
-    }
-
     ~HashTable()
     {
-        destroyElements();
         free();
     }
 
@@ -358,38 +326,10 @@ public:
         using iterator_base<iterator, false>::iterator_base;
     };
 
-    class const_iterator : public iterator_base<const_iterator, true>
-    {
-    public:
-        using iterator_base<const_iterator, true>::iterator_base;
-    };
-
-
-    const_iterator begin() const
-    {
-        if (!buf)
-            return end();
-
-        if (this->hasZero())
-            return iteratorToZero();
-
-        const Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
-        while (ptr < buf_end && ptr->isZero(*this))
-            ++ptr;
-
-        return const_iterator(this, ptr);
-    }
-
-    const_iterator cbegin() const { return begin(); }
-
     iterator begin()
     {
         if (!buf)
             return end();
-
-        if (this->hasZero())
-            return iteratorToZero();
 
         Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
@@ -399,44 +339,10 @@ public:
         return iterator(this, ptr);
     }
 
-    const_iterator end() const         { return const_iterator(this, buf + grower.bufSize()); }
-    const_iterator cend() const        { return end(); }
     iterator end()                     { return iterator(this, buf + grower.bufSize()); }
 
 
 protected:
-    const_iterator iteratorTo(const Cell * ptr) const { return const_iterator(this, ptr); }
-    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
-    const_iterator iteratorToZero() const             { return iteratorTo(this->zeroValue()); }
-    iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
-
-
-    /// If the key is zero, insert it into a special place and return true.
-    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
-    {
-        /// If it is claimed that the zero key can not be inserted into the table.
-        if (!Cell::need_zero_value_storage)
-            return false;
-
-        if (Cell::isZero(x, *this))
-        {
-            it = iteratorToZero();
-            if (!this->hasZero())
-            {
-                ++m_size;
-                this->setHasZero();
-                it.ptr->setHash(hash_value);
-                inserted = true;
-            }
-            else
-                inserted = false;
-
-            return true;
-        }
-
-        return false;
-    }
-
 
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
@@ -455,26 +361,6 @@ protected:
         buf[place_value].setHash(hash_value);
         inserted = true;
         ++m_size;
-
-        if (unlikely(grower.overflow(m_size)))
-        {
-            try
-            {
-                resize();
-            }
-            catch (...)
-            {
-                /** If we have not resized successfully, then there will be problems.
-                  * There remains a key, but uninitialized mapped-value,
-                  *  which, perhaps, can not even be called a destructor.
-                  */
-                --m_size;
-                buf[place_value].setZero();
-                throw;
-            }
-
-            it = find(x, hash_value);
-        }
     }
 
 
@@ -485,110 +371,12 @@ public:
         std::pair<iterator, bool> res;
 
         size_t hash_value = hash(Cell::getKey(x));
-        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
-            emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
+        emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
 
         if (res.second)
             res.first.ptr->setMapped(x);
 
         return res;
-    }
-
-
-    /// Reinsert node pointed to by iterator
-    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
-    {
-        reinsert(*it.getPtr(), hash_value);
-    }
-
-
-    /** Insert the key,
-      * return an iterator to a position that can be used for `placement new` of value,
-      * as well as the flag - whether a new key was inserted.
-      *
-      * You have to make `placement new` of value if you inserted a new key,
-      * since when destroying a hash table, it will call the destructor!
-      *
-      * Example usage:
-      *
-      * Map::iterator it;
-      * bool inserted;
-      * map.emplace(key, it, inserted);
-      * if (inserted)
-      *     new(&it->second) Mapped(value);
-      */
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted)
-    {
-        size_t hash_value = hash(x);
-        if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value);
-    }
-
-
-    /// Same, but with a precalculated value of hash function.
-    void ALWAYS_INLINE emplace(Key x, iterator & it, bool & inserted, size_t hash_value)
-    {
-        if (!emplaceIfZero(x, it, inserted, hash_value))
-            emplaceNonZero(x, it, inserted, hash_value);
-    }
-
-
-    /// Copy the cell from another hash table. It is assumed that the cell is not zero, and also that there was no such key in the table yet.
-    void ALWAYS_INLINE insertUniqueNonZero(const Cell * cell, size_t hash_value)
-    {
-        size_t place_value = findEmptyCell(grower.place(hash_value));
-
-        memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
-        ++m_size;
-
-        if (unlikely(grower.overflow(m_size)))
-            resize();
-    }
-
-
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
-
-        size_t hash_value = hash(x);
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
-    }
-
-
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
-
-        size_t hash_value = hash(x);
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
-    }
-
-
-    template <typename ObjectToCompareWith>
-    iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value)
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
-
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? iterator(this, &buf[place_value]) : end();
-    }
-
-
-    template <typename ObjectToCompareWith>
-    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value) const
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero() ? iteratorToZero() : end();
-
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
     }
 };
 
