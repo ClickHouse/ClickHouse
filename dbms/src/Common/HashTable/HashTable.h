@@ -445,12 +445,15 @@ protected:
 
         Derived & operator++()
         {
+            /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
             if (unlikely(ptr->isZero(*container)))
                 ptr = container->buf;
             else
                 ++ptr;
 
-            while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
+            /// Skip empty cells in the main buffer.
+            auto buf_end = container->buf + container->grower.bufSize();
+            while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
             return static_cast<Derived &>(*this);
