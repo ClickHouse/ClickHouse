@@ -237,7 +237,6 @@ For the Replacing mode, the only parameter is the name of a 'version' column. Wh
 For VersionedCollapsing mode there are two parameters: the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
 )";
 
-    if (is_extended_syntax)
         help += R"(
 You can specify a partitioning expression in the PARTITION BY clause. It is optional but highly recommended.
 A common partitioning expression is some function of the event date column e.g. PARTITION BY toYYYYMM(EventDate) will partition the table by month.
@@ -270,6 +269,7 @@ SummingMergeTree((Shows, Clicks, Cost, CostCur, ShowsSumPosition, ClicksSumPosit
 
 ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}') PARTITION BY EventDate ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
 )";
+
     help += R"(
 For further info please read the documentation: https://clickhouse.yandex/
 )";
