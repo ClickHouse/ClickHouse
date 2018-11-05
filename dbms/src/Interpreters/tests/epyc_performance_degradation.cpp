@@ -13,8 +13,13 @@ int main(int, char **)
     map[12345] = {12345, 1};
 
     for (auto it = map; it != map + size; ++it)
+    {
         if (it->first)
+        {
             std::cerr << it->first << ": " << it->second << "\n";
+            __asm__ __volatile__ ("" ::: "memory");
+        }
+    }
 
     return 0;
 }
