@@ -121,26 +121,6 @@ struct HashTableCell
 };
 
 
-/** When used as a Grower, it turns a hash table into something like a lookup table.
-  * It remains non-optimal - the cells store the keys.
-  * Also, the compiler can not completely remove the code of passing through the collision resolution chain, although it is not needed.
-  * TODO Make a proper lookup table.
-  */
-template <size_t key_bits>
-struct HashTableFixedGrower
-{
-    size_t bufSize() const               { return 1ULL << key_bits; }
-    size_t place(size_t x) const         { return x; }
-    /// You could write __builtin_unreachable(), but the compiler does not optimize everything, and it turns out less efficiently.
-    size_t next(size_t pos) const        { return pos + 1; }
-    bool overflow(size_t /*elems*/) const { return false; }
-
-    void increaseSize() { __builtin_unreachable(); }
-    void set(size_t /*num_elems*/) {}
-    void setBufSize(size_t /*buf_size_*/) {}
-};
-
-
 /** If you want to store the zero key separately - a place to store it. */
 template <bool need_zero_value_storage, typename Cell>
 struct ZeroValueStorage;
@@ -177,8 +157,7 @@ template
 <
     typename Key,
     typename Cell,
-    typename Hash,
-    typename Grower
+    typename Hash
 >
 class HashTable :
     private boost::noncopyable,
@@ -196,23 +175,10 @@ protected:
 
     size_t m_size = 0;        /// Amount of elements
     Cell * buf;               /// A piece of memory for all elements except the element with zero key.
-    Grower grower;
 
-    /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
-    template <typename ObjectToCompareWith>
-    size_t ALWAYS_INLINE findCell(const ObjectToCompareWith & x, size_t place_value) const
+    void alloc()
     {
-        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x))
-            place_value = grower.next(place_value);
-
-        return place_value;
-    }
-
-
-    void alloc(const Grower & new_grower)
-    {
-        buf = reinterpret_cast<Cell *>(calloc(new_grower.bufSize() * sizeof(Cell), 1));
-        grower = new_grower;
+        buf = reinterpret_cast<Cell *>(calloc(0x100000 * sizeof(Cell), 1));
     }
 
     void free()
@@ -251,7 +217,7 @@ protected:
                 ++ptr;
 
             /// Skip empty cells in the main buffer.
-            auto buf_end = container->buf + container->grower.bufSize();
+            auto buf_end = container->buf + 0x100000;
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -273,7 +239,7 @@ public:
     {
         if (Cell::need_zero_value_storage)
             this->zeroValue()->setZero();
-        alloc(grower);
+        alloc();
     }
 
     ~HashTable()
@@ -293,14 +259,14 @@ public:
             return end();
 
         Cell * ptr = buf;
-        auto buf_end = buf + grower.bufSize();
+        auto buf_end = buf + 0x100000;
         while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return iterator(this, ptr);
     }
 
-    iterator end()                     { return iterator(this, buf + grower.bufSize()); }
+    iterator end()                     { return iterator(this, buf + 0x100000); }
 
 
 protected:
@@ -385,7 +351,7 @@ int main(int, char **)
 {
     using namespace DB;
 
-    HashTable<UInt64, HashMapCell<UInt64, UInt64, TrivialHash>, TrivialHash, HashTableFixedGrower<16>> map;
+    HashTable<UInt64, HashMapCell<UInt64, UInt64, TrivialHash>, TrivialHash> map;
 
     map.insert({12345, 1});
 
