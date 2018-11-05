@@ -309,7 +309,7 @@ protected:
 
 
     /// If the key is zero, insert it into a special place and return true.
-    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    bool ALWAYS_INLINE emplaceIfZero(Key x)
     {
         /// If it is claimed that the zero key can not be inserted into the table.
         if (!Cell::need_zero_value_storage)
@@ -317,16 +317,11 @@ protected:
 
         if (Cell::isZero(x, *this))
         {
-            it = iteratorToZero();
             if (!this->hasZero())
             {
                 ++m_size;
                 this->setHasZero();
-                it.ptr->setHash(hash_value);
-                inserted = true;
             }
-            else
-                inserted = false;
 
             return true;
         }
@@ -336,38 +331,23 @@ protected:
 
 
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
-    void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    void ALWAYS_INLINE emplaceNonZero(Key x)
     {
-        size_t place_value = findCell(x, grower.place(hash_value));
-
-        it = iterator(this, &buf[place_value]);
+        size_t place_value = findCell(x, grower.place(x));
 
         if (!buf[place_value].isZero(*this))
-        {
-            inserted = false;
             return;
-        }
 
         new(&buf[place_value]) Cell(x, *this);
-        buf[place_value].setHash(hash_value);
-        inserted = true;
         ++m_size;
     }
 
 
 public:
-    /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
-    std::pair<iterator, bool> ALWAYS_INLINE insert(const value_type & x)
+    void insert(const value_type & x)
     {
-        std::pair<iterator, bool> res;
-
-        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, x.first))
-            emplaceNonZero(Cell::getKey(x), res.first, res.second, x.first);
-
-        if (res.second)
-            res.first.ptr->setMapped(x);
-
-        return res;
+        if (!emplaceIfZero(x.first))
+            emplaceNonZero(x.first);
     }
 };
 
