@@ -572,7 +572,8 @@ public:
             return iteratorToZero();
 
         const Cell * ptr = buf;
-        while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
+        auto buf_end = buf + grower.bufSize();
+        while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return const_iterator(this, ptr);
@@ -587,7 +588,8 @@ public:
             return iteratorToZero();
 
         Cell * ptr = buf;
-        while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
+        auto buf_end = buf + grower.bufSize();
+        while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return iterator(this, ptr);
@@ -814,9 +816,9 @@ public:
         if (this->hasZero())
             this->zeroValue()->write(wb);
 
-        for (size_t i = 0; i < grower.bufSize(); ++i)
-            if (!buf[i].isZero(*this))
-                buf[i].write(wb);
+        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
+            if (!ptr->isZero(*this))
+                ptr->write(wb);
     }
 
     void writeText(DB::WriteBuffer & wb) const
@@ -830,12 +832,12 @@ public:
             this->zeroValue()->writeText(wb);
         }
 
-        for (size_t i = 0; i < grower.bufSize(); ++i)
+        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
         {
-            if (!buf[i].isZero(*this))
+            if (!ptr->isZero(*this))
             {
                 DB::writeChar(',', wb);
-                buf[i].writeText(wb);
+                ptr->writeText(wb);
             }
         }
     }
