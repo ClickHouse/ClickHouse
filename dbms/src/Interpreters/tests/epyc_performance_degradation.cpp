@@ -1,18 +1,18 @@
 #include <iostream>
-#include <Core/Types.h>
-#include <Common/HashTable/HashMap.h>
+#include <cstdint>
 
 
 int main(int, char **)
 {
-    using namespace DB;
+    static constexpr size_t size = 0x10000;
+    using Value = std::pair<uint64_t, uint64_t>;
+    Value * map = new Value[size];
 
-    HashMap<UInt64, UInt64, TrivialHash, HashTableFixedGrower<16>> map;
+    map[12345] = {12345, 1};
 
-    map[12345] = 1;
-
-    for (auto it = map.begin(); it != map.end(); ++it)
-        std::cerr << it->first << ": " << it->second << "\n";
+    for (auto it = map; it != map + size; ++it)
+        if (it->first)
+            std::cerr << it->first << ": " << it->second << "\n";
 
     return 0;
 }
