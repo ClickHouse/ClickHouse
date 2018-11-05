@@ -352,23 +352,6 @@ protected:
         buf[place_value].setHash(hash_value);
         inserted = true;
         ++m_size;
-
-        if (unlikely(grower.overflow(m_size)))
-        {
-            try
-            {
-            }
-            catch (...)
-            {
-                /** If we have not resized successfully, then there will be problems.
-                  * There remains a key, but uninitialized mapped-value,
-                  *  which, perhaps, can not even be called a destructor.
-                  */
-                --m_size;
-                buf[place_value].setZero();
-                throw;
-            }
-        }
     }
 
 
