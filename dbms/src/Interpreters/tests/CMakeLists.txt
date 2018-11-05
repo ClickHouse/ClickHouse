@@ -52,6 +52,9 @@ add_check(expression_analyzer)
 add_executable (users users.cpp)
 target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY})
 
+add_executable (epyc_performance_degradation epyc_performance_degradation.cpp)
+target_link_libraries (epyc_performance_degradation dbms)
+
 if (OS_LINUX)
     add_executable (internal_iotop internal_iotop.cpp)
     target_link_libraries (internal_iotop dbms)
