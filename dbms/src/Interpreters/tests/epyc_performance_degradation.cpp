@@ -92,8 +92,6 @@ struct HashTableCell
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return key == key_; }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -202,9 +200,9 @@ protected:
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
     template <typename ObjectToCompareWith>
-    size_t ALWAYS_INLINE findCell(const ObjectToCompareWith & x, size_t hash_value, size_t place_value) const
+    size_t ALWAYS_INLINE findCell(const ObjectToCompareWith & x, size_t place_value) const
     {
-        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value, *this))
+        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x))
             place_value = grower.next(place_value);
 
         return place_value;
@@ -227,33 +225,6 @@ protected:
     }
 
 
-     /*
-      * Used when increasing the buffer size.
-      */
-    void reinsert(Cell & x, size_t hash_value)
-    {
-        size_t place_value = grower.place(hash_value);
-
-        /// If the element is in its place.
-        if (&x == &buf[place_value])
-            return;
-
-        /// Compute a new location, taking into account the collision resolution chain.
-        place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
-
-        /// If the item remains in its place in the old collision resolution chain.
-        if (!buf[place_value].isZero(*this))
-            return;
-
-        /// Copy to a new location and zero the old one.
-        x.setHash(hash_value);
-        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x));
-        x.setZero();
-
-        /// Then the elements that previously were in collision with this can move to the old place.
-    }
-
-
     template <typename Derived, bool is_const>
     class iterator_base
     {
@@ -269,7 +240,6 @@ protected:
         iterator_base() {}
         iterator_base(Container * container_, cell_type * ptr_) : container(container_), ptr(ptr_) {}
 
-        bool operator== (const iterator_base & rhs) const { return ptr == rhs.ptr; }
         bool operator!= (const iterator_base & rhs) const { return ptr != rhs.ptr; }
 
         Derived & operator++()
@@ -288,16 +258,7 @@ protected:
             return static_cast<Derived &>(*this);
         }
 
-        auto & operator* () const { return ptr->getValue(); }
         auto * operator->() const { return &ptr->getValue(); }
-
-        auto getPtr() const { return ptr; }
-        size_t getHash() const { return ptr->getHash(*container); }
-
-        size_t getCollisionChainLength() const
-        {
-            return container->grower.place((ptr - container->buf) - container->grower.place(getHash()));
-        }
     };
 
 
@@ -330,9 +291,6 @@ public:
     {
         if (!buf)
             return end();
-
-        if (this->hasZero())
-            return iteratorToZero();
 
         Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
@@ -380,7 +338,7 @@ protected:
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
     {
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
+        size_t place_value = findCell(x, grower.place(hash_value));
 
         it = iterator(this, &buf[place_value]);
 
@@ -472,8 +430,6 @@ struct HashMapCell
     static const Key & getKey(const value_type & value) { return value.first; }
 
     bool keyEquals(const Key & key_) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return value.first == key_; }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return value.first == key_; }
 
     void setHash(size_t /*hash_value*/) {}
     size_t getHash(const Hash & hash) const { return hash(value.first); }
