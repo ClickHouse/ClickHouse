@@ -37,9 +37,6 @@ struct HashTableCell
 
     /// Set the key value to zero.
     void setZero() { key = 0; }
-
-    /// Do the hash table need to store the zero key separately (that is, can a zero key be inserted into the hash table).
-    static constexpr bool need_zero_value_storage = true;
 };
 
 
@@ -137,8 +134,7 @@ public:
 
     HashTable()
     {
-        if (Cell::need_zero_value_storage)
-            this->zeroValue()->setZero();
+        this->zeroValue()->setZero();
         alloc();
     }
 
@@ -232,9 +228,6 @@ struct HashMapCell
 
     /// Set the key value to zero.
     void setZero() { value.first = 0; }
-
-    /// Do I need to store the zero key separately (that is, can a zero key be inserted into the hash table).
-    static constexpr bool need_zero_value_storage = true;
 
     void setMapped(const value_type & value_) { value.second = value_.second; }
 };
