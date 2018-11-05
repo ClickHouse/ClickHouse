@@ -590,67 +590,6 @@ public:
         size_t place_value = findCell(x, hash_value, grower.place(hash_value));
         return !buf[place_value].isZero(*this) ? const_iterator(this, &buf[place_value]) : end();
     }
-
-
-    bool ALWAYS_INLINE has(Key x) const
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero();
-
-        size_t hash_value = hash(x);
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this);
-    }
-
-
-    bool ALWAYS_INLINE has(Key x, size_t hash_value) const
-    {
-        if (Cell::isZero(x, *this))
-            return this->hasZero();
-
-        size_t place_value = findCell(x, hash_value, grower.place(hash_value));
-        return !buf[place_value].isZero(*this);
-    }
-
-
-    size_t size() const
-    {
-        return m_size;
-    }
-
-    bool empty() const
-    {
-        return 0 == m_size;
-    }
-
-    void clear()
-    {
-        destroyElements();
-        this->clearHasZero();
-        m_size = 0;
-
-        memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
-    }
-
-    /// After executing this function, the table can only be destroyed,
-    ///  and also you can use the methods `size`, `empty`, `begin`, `end`.
-    void clearAndShrink()
-    {
-        destroyElements();
-        this->clearHasZero();
-        m_size = 0;
-        free();
-    }
-
-    size_t getBufferSizeInBytes() const
-    {
-        return grower.bufSize() * sizeof(Cell);
-    }
-
-    size_t getBufferSizeInCells() const
-    {
-        return grower.bufSize();
-    }
 };
 
 
@@ -717,68 +656,13 @@ struct HashMapCell
 };
 
 
-template
-<
-    typename Key,
-    typename Cell,
-    typename Hash,
-    typename Grower
->
-class HashMapTable : public HashTable<Key, Cell, Hash, Grower>
-{
-public:
-    using key_type = Key;
-    using mapped_type = typename Cell::Mapped;
-    using value_type = typename Cell::value_type;
-
-    using HashTable<Key, Cell, Hash, Grower>::HashTable;
-
-    mapped_type & ALWAYS_INLINE operator[](Key x)
-    {
-        typename HashMapTable::iterator it;
-        bool inserted;
-        this->emplace(x, it, inserted);
-
-        /** It may seem that initialization is not necessary for POD-types (or __has_trivial_constructor),
-          *  since the hash table memory is initially initialized with zeros.
-          * But, in fact, an empty cell may not be initialized with zeros in the following cases:
-          * - ZeroValueStorage (it only zeros the key);
-          * - after resizing and moving a part of the cells to the new half of the hash table, the old cells also have only the key to zero.
-          *
-          * On performance, there is almost always no difference, due to the fact that it->second is usually assigned immediately
-          *  after calling `operator[]`, and since `operator[]` is inlined, the compiler removes unnecessary initialization.
-          *
-          * Sometimes due to initialization, the performance even grows. This occurs in code like `++map[key]`.
-          * When we do the initialization, for new cells, it's enough to make `store 1` right away.
-          * And if we did not initialize, then even though there was zero in the cell,
-          *  the compiler can not guess about this, and generates the `load`, `increment`, `store` code.
-          */
-        if (inserted)
-            new(&it->second) mapped_type();
-
-        return it->second;
-    }
-};
-
-
-template
-<
-    typename Key,
-    typename Mapped,
-    typename Hash,
-    typename Grower
->
-using HashMap = HashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower>;
-
-
-
 int main(int, char **)
 {
     using namespace DB;
 
-    HashMap<UInt64, UInt64, TrivialHash, HashTableFixedGrower<16>> map;
+    HashTable<UInt64, HashMapCell<UInt64, UInt64, TrivialHash>, TrivialHash, HashTableFixedGrower<16>> map;
 
-    map[12345] = 1;
+    map.insert({12345, 1});
 
     for (auto it = map.begin(); it != map.end(); ++it)
         std::cerr << it->first << ": " << it->second << "\n";
