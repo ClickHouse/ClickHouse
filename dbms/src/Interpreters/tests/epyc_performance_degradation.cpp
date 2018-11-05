@@ -304,32 +304,6 @@ public:
 
 
 protected:
-    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
-    iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
-
-
-    /// If the key is zero, insert it into a special place and return true.
-    bool ALWAYS_INLINE emplaceIfZero(Key x)
-    {
-        /// If it is claimed that the zero key can not be inserted into the table.
-        if (!Cell::need_zero_value_storage)
-            return false;
-
-        if (Cell::isZero(x, *this))
-        {
-            if (!this->hasZero())
-            {
-                ++m_size;
-                this->setHasZero();
-            }
-
-            return true;
-        }
-
-        return false;
-    }
-
-
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x)
     {
@@ -346,8 +320,7 @@ protected:
 public:
     void insert(const value_type & x)
     {
-        if (!emplaceIfZero(x.first))
-            emplaceNonZero(x.first);
+        emplaceNonZero(x.first);
     }
 };
 
