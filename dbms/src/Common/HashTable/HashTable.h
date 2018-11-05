@@ -420,7 +420,7 @@ protected:
     void destroyElements()
     {
         if (!std::is_trivially_destructible_v<Cell>)
-            for (iterator it = begin(); it != end(); ++it)
+            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
                 it.ptr->~Cell();
     }
 
@@ -579,6 +579,8 @@ public:
         return const_iterator(this, ptr);
     }
 
+    const_iterator cbegin() const { return begin(); }
+
     iterator begin()
     {
         if (!buf)
@@ -596,6 +598,7 @@ public:
     }
 
     const_iterator end() const         { return const_iterator(this, buf + grower.bufSize()); }
+    const_iterator cend() const        { return end(); }
     iterator end()                     { return iterator(this, buf + grower.bufSize()); }
 
 
