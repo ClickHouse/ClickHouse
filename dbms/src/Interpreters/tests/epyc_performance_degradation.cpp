@@ -307,12 +307,7 @@ protected:
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x)
     {
-        size_t place_value = findCell(x, grower.place(x));
-
-        if (!buf[place_value].isZero(*this))
-            return;
-
-        new(&buf[place_value]) Cell(x, *this);
+        buf[x].value.first = x;
         ++m_size;
     }
 
