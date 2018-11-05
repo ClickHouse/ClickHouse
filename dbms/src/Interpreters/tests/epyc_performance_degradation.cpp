@@ -227,7 +227,7 @@ protected:
     }
 
 
-    /** Paste into the new buffer the value that was in the old buffer.
+     /*
       * Used when increasing the buffer size.
       */
     void reinsert(Cell & x, size_t hash_value)
@@ -305,7 +305,7 @@ public:
     using key_type = Key;
     using value_type = typename Cell::value_type;
 
-    size_t hash(const Key & x) const { return x; }
+    size_t hash(const Key & x) const { return Hash::operator()(x); }
 
 
     HashTable()
@@ -331,6 +331,9 @@ public:
         if (!buf)
             return end();
 
+        if (this->hasZero())
+            return iteratorToZero();
+
         Cell * ptr = buf;
         auto buf_end = buf + grower.bufSize();
         while (ptr < buf_end && ptr->isZero(*this))
@@ -343,6 +346,36 @@ public:
 
 
 protected:
+    iterator iteratorTo(Cell * ptr)                   { return iterator(this, ptr); }
+    iterator iteratorToZero()                         { return iteratorTo(this->zeroValue()); }
+
+
+    /// If the key is zero, insert it into a special place and return true.
+    bool ALWAYS_INLINE emplaceIfZero(Key x, iterator & it, bool & inserted, size_t hash_value)
+    {
+        /// If it is claimed that the zero key can not be inserted into the table.
+        if (!Cell::need_zero_value_storage)
+            return false;
+
+        if (Cell::isZero(x, *this))
+        {
+            it = iteratorToZero();
+            if (!this->hasZero())
+            {
+                ++m_size;
+                this->setHasZero();
+                it.ptr->setHash(hash_value);
+                inserted = true;
+            }
+            else
+                inserted = false;
+
+            return true;
+        }
+
+        return false;
+    }
+
 
     /// Only for non-zero keys. Find the right place, insert the key there, if it does not already exist. Set iterator to the cell in output parameter.
     void ALWAYS_INLINE emplaceNonZero(Key x, iterator & it, bool & inserted, size_t hash_value)
@@ -361,6 +394,23 @@ protected:
         buf[place_value].setHash(hash_value);
         inserted = true;
         ++m_size;
+
+        if (unlikely(grower.overflow(m_size)))
+        {
+            try
+            {
+            }
+            catch (...)
+            {
+                /** If we have not resized successfully, then there will be problems.
+                  * There remains a key, but uninitialized mapped-value,
+                  *  which, perhaps, can not even be called a destructor.
+                  */
+                --m_size;
+                buf[place_value].setZero();
+                throw;
+            }
+        }
     }
 
 
@@ -370,8 +420,8 @@ public:
     {
         std::pair<iterator, bool> res;
 
-        size_t hash_value = hash(Cell::getKey(x));
-        emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
+        if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, x.first))
+            emplaceNonZero(Cell::getKey(x), res.first, res.second, x.first);
 
         if (res.second)
             res.first.ptr->setMapped(x);
