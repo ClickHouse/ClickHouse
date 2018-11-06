@@ -1028,25 +1028,53 @@ private:
         InterruptListener interrupt_listener;
         bool cancelled = false;
 
+        // TODO: get the poll_interval from commandline.
+        const auto receive_timeout = connection->getTimeouts().receive_timeout;
+        constexpr size_t default_poll_interval = 1000000, min_poll_interval = 5000; /// in microseconds
+        const size_t poll_interval
+            = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
+
         while (true)
         {
-            /// Has the Ctrl+C been pressed and thus the query should be cancelled?
-            /// If this is the case, inform the server about it and receive the remaining packets
-            /// to avoid losing sync.
-            if (!cancelled)
-            {
-                if (interrupt_listener.check())
-                {
-                    connection->sendCancel();
-                    cancelled = true;
-                    if (is_interactive)
-                        std::cout << "Cancelling query." << std::endl;
+            Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
-                    /// Pressing Ctrl+C twice results in shut down.
-                    interrupt_listener.unblock();
+            while (true)
+            {
+                /// Has the Ctrl+C been pressed and thus the query should be cancelled?
+                /// If this is the case, inform the server about it and receive the remaining packets
+                /// to avoid losing sync.
+                if (!cancelled)
+                {
+                    auto cancelQuery = [&] {
+                        connection->sendCancel();
+                        cancelled = true;
+                        if (is_interactive)
+                            std::cout << "Cancelling query." << std::endl;
+
+                        /// Pressing Ctrl+C twice results in shut down.
+                        interrupt_listener.unblock();
+                    };
+
+                    if (interrupt_listener.check())
+                    {
+                        cancelQuery();
+                    } else {
+                        double elapsed = watch.elapsedSeconds();
+                        if (elapsed > receive_timeout.totalSeconds())
+                        {
+                            std::cout << "Timeout exceeded while receiving data from server."
+                                      << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
+                                      << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
+
+                            cancelQuery();
+                        }
+                    }
                 }
-                else if (!connection->poll(1000000))
-                    continue;    /// If there is no new data, continue checking whether the query was cancelled after a timeout.
+
+                /// Poll for changes after a cancellation check, otherwise it never reached
+                /// because of progress updates from server.
+                if (connection->poll(poll_interval))
+                  break;
             }
 
             if (!receiveAndProcessPacket())
@@ -1634,9 +1662,12 @@ public:
         }
 
         /// Extract settings from the options.
-#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
-        if (options.count(#NAME)) \
-            context.setSetting(#NAME, options[#NAME].as<std::string>());
+#define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)                \
+        if (options.count(#NAME))                                        \
+        {                                                                \
+            context.setSetting(#NAME, options[#NAME].as<std::string>()); \
+            config().setString(#NAME, options[#NAME].as<std::string>()); \
+        }
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
