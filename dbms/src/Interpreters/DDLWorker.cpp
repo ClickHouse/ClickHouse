@@ -298,8 +298,8 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress(context.getTCPPort()) &&
-            !host.isLocalAddress(context.getTCPPort(true)))
+        auto maybe_secure_port = context.getTCPPortSecure();
+        if (!host.isLocalAddress(context.getTCPPort()) || (maybe_secure_port && !host.isLocalAddress(*maybe_secure_port)))
             continue;
 
         if (host_in_hostlist)
@@ -476,7 +476,8 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort()))
+            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort())
+                || (context.getTCPPortSecure() && isLocalAddress(address.getResolvedAddress(), *context.getTCPPortSecure())))
             {
                 if (found_via_resolving)
                 {
@@ -561,6 +562,7 @@ void DDLWorker::processTask(DDLTask & task)
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+
     if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
@@ -942,7 +944,7 @@ void DDLWorker::run()
         }
         catch (...)
         {
-            LOG_ERROR(log, "Unexpected error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+            tryLogCurrentException(log, "Unexpected error, will terminate:");
             return;
         }
     }
@@ -1055,7 +1057,7 @@ public:
                 Cluster::Address::fromString(host_id, host, port);
 
                 if (status.code != 0 && first_exception == nullptr)
-                    first_exception = std::make_unique<Exception>("There was an error on " + host + ": " + status.message, status.code);
+                    first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
 
                 ++num_hosts_finished;
 
