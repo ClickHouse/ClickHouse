@@ -300,7 +300,8 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress(context.getTCPPort()))
+        if (!host.isLocalAddress(context.getTCPPort()) &&
+            !host.isLocalAddress(context.getTCPPort(true)))
             continue;
 
         if (host_in_hostlist)
