@@ -115,7 +115,7 @@ bool ReadBufferAIO::nextImpl()
 
     /// If the end of the file is just reached, do nothing else.
     if (is_eof)
-        return true;
+        return bytes_read != 0;
 
     /// Create an asynchronous request.
     prepare();
