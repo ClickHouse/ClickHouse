@@ -190,6 +190,9 @@ private:
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
 
+    /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
+    void unifyStreams(Pipeline & pipeline);
+
     enum class Modificator
     {
         ROLLUP = 0,
