@@ -115,8 +115,8 @@ endif ()
 
 include (cmake/test_cpu.cmake)
 
-option (ARCHNATIVE "Enable -march=native compiler flag" OFF)
-if (ARCHNATIVE)
+option (ARCH_NATIVE "Enable -march=native compiler flag" OFF)
+if (ARCH_NATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 

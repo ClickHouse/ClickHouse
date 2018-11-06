@@ -1,4 +1,6 @@
-option (ENABLE_RDKAFKA "Enable kafka" ON)
+if (NOT ARCH_ARM)
+    option (ENABLE_RDKAFKA "Enable kafka" ON)
+endif ()
 
 if (ENABLE_RDKAFKA)
 
