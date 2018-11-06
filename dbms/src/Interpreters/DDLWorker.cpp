@@ -301,7 +301,8 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     for (const HostID & host : task->entry.hosts)
     {
         auto maybe_secure_port = context.getTCPPortSecure();
-        if (!host.isLocalAddress(context.getTCPPort()) || (maybe_secure_port && !host.isLocalAddress(*maybe_secure_port)))
+        bool is_local_port = maybe_secure_port ? host.isLocalAddress(*maybe_secure_port) : host.isLocalAddress(context.getTCPPort());
+        if (!is_local_port)
             continue;
 
         if (host_in_hostlist)
