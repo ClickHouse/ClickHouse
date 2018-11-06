@@ -659,7 +659,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             if (!checksums.files.count("count.txt"))
                 throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (storage.partition_expr && !checksums.files.count("partition.dat"))
+            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             if (!isEmpty())
@@ -692,7 +692,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         {
             check_file_not_empty(path + "count.txt");
 
-            if (storage.partition_expr)
+            if (storage.partition_key_expr)
                 check_file_not_empty(path + "partition.dat");
 
             for (const String & col_name : storage.minmax_idx_columns)

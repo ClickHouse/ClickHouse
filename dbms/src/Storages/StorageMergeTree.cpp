@@ -46,10 +46,10 @@ StorageMergeTree::StorageMergeTree(
     const ColumnsDescription & columns_,
     bool attach,
     Context & context_,
-    const ASTPtr & primary_key_ast_,
-    const ASTPtr & sorting_key_ast_,
     const String & date_column_name,
-    const ASTPtr & partition_expr_ast_,
+    const ASTPtr & partition_by_ast_,
+    const ASTPtr & order_by_ast_,
+    const ASTPtr & primary_key_ast_,
     const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
@@ -58,7 +58,7 @@ StorageMergeTree::StorageMergeTree(
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
-         context_, primary_key_ast_, sorting_key_ast_, date_column_name, partition_expr_ast_,
+         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sampling_expression_, merging_params_,
          settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()),
@@ -200,103 +200,75 @@ void StorageMergeTree::alter(
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
-    bool primary_key_is_modified = false;
+    ASTPtr new_order_by_ast = data.order_by_ast;
+
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-
-    bool sorting_key_is_modified = false;
-    ASTPtr new_sorting_key_ast = data.sorting_key_ast;
-
-    bool new_sorting_and_primary_keys_independent = data.sorting_and_primary_keys_independent;
+    ASTPtr primary_expr_list_for_altering_parts;
 
     for (const AlterCommand & param : params)
     {
-        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
+        if (param.type == AlterCommand::MODIFY_ORDER_BY)
         {
-            primary_key_is_modified = true;
-            new_primary_key_ast = param.primary_key;
+            if (!data.primary_key_ast)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                new_primary_key_ast = data.order_by_ast->clone();
+            }
+
+            new_order_by_ast = param.order_by;
         }
-        else if (param.type == AlterCommand::MODIFY_ORDER_BY)
+        else if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
         {
-            sorting_key_is_modified = true;
-            new_sorting_and_primary_keys_independent = true;
-            new_sorting_key_ast = param.sorting_key;
+            primary_expr_list_for_altering_parts = MergeTreeData::extractKeyExpressionList(param.primary_key);
+            if (!data.primary_key_ast)
+                new_order_by_ast = param.primary_key;
+            else
+                new_primary_key_ast = param.primary_key;
         }
     }
 
-    if (primary_key_is_modified && supportsSampling())
+    if (primary_expr_list_for_altering_parts && supportsSampling())
         throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, primary_expr_list_for_altering_parts, false))
             transactions.push_back(std::move(transaction));
     }
 
     auto table_hard_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
 
-    IDatabase::ASTModifier storage_modifier;
-    if (primary_key_is_modified || sorting_key_is_modified)
+    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
-        storage_modifier = [&] (IAST & ast)
+        auto & storage_ast = typeid_cast<ASTStorage &>(ast);
+
+        if (new_order_by_ast.get() != data.order_by_ast.get())
         {
-            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
-
-            if (primary_key_is_modified)
+            if (storage_ast.order_by)
             {
-                auto tuple = std::make_shared<ASTFunction>();
-                tuple->name = "tuple";
-                tuple->arguments = new_primary_key_ast;
-                tuple->children.push_back(tuple->arguments);
-
-                if (storage_ast.order_by)
-                {
-                    /// The table was created using the syntax with key expressions in separate clauses.
-                    if (new_sorting_and_primary_keys_independent)
-                        storage_ast.set(storage_ast.primary_key, tuple);
-                    else
-                        storage_ast.set(storage_ast.order_by, tuple);
-                }
-                else
-                {
-                    /// Primary key is in the second place in table engine description and can be represented as a tuple.
-                    /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
-                    storage_ast.engine->arguments->children.at(1) = tuple;
-                }
+                /// The table was created using the "new" syntax (with key expressions in separate clauses).
+                storage_ast.set(storage_ast.order_by, new_order_by_ast);
             }
-
-            if (sorting_key_is_modified)
+            else
             {
-                /// TODO: helper for tuple creation
-                auto tuple = std::make_shared<ASTFunction>();
-                tuple->name = "tuple";
-                tuple->arguments = new_sorting_key_ast;
-                tuple->children.push_back(tuple->arguments);
-
-                if (!storage_ast.order_by)
-                    throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
-
-                if (!storage_ast.primary_key)
-                {
-                    /// Primary and sorting key become independent after this ALTER so we have to
-                    /// save the old ORDER BY expression as the new primary key.
-                    storage_ast.set(storage_ast.primary_key, storage_ast.order_by->clone());
-                }
-
-                storage_ast.set(storage_ast.order_by, tuple);
+                /// Primary key is in the second place in table engine description and can be represented as a tuple.
+                /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
+                storage_ast.engine->arguments->children.at(1) = new_order_by_ast;
             }
-        };
-    }
+        }
+
+        if (new_primary_key_ast.get() != data.primary_key_ast.get())
+            storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+    };
 
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
     setColumns(std::move(new_columns));
 
     /// Reinitialize primary key because primary key column types might have changed.
-    if (new_sorting_and_primary_keys_independent)
-        data.setPrimaryKey(new_primary_key_ast, new_sorting_key_ast);
-    else
-        data.setPrimaryKey(nullptr, new_primary_key_ast);
+    data.setPrimaryKey(new_order_by_ast, new_primary_key_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -304,7 +276,7 @@ void StorageMergeTree::alter(
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
 
-    if (primary_key_is_modified)
+    if (primary_expr_list_for_altering_parts)
         data.loadDataParts(false);
 }
 
@@ -760,7 +732,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_key_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);

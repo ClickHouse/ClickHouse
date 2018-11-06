@@ -58,7 +58,7 @@ public:
 
     /** For MODIFY ORDER BY
      */
-    ASTPtr sorting_key;
+    ASTPtr order_by;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.

@@ -197,10 +197,10 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & path_, const String & database_name_, const String & name_,
     const ColumnsDescription & columns_,
     Context & context_,
-    const ASTPtr & primary_key_ast_,
-    const ASTPtr & sorting_key_ast_,
     const String & date_column_name,
-    const ASTPtr & partition_expr_ast_,
+    const ASTPtr & partition_by_ast_,
+    const ASTPtr & order_by_ast_,
+    const ASTPtr & primary_key_ast_,
     const ASTPtr & sampling_expression_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
@@ -212,7 +212,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     replica_name(context.getMacros()->expand(replica_name_, database_name, table_name)),
     data(database_name, table_name,
         full_path, columns_,
-        context_, primary_key_ast_, sorting_key_ast_, date_column_name, partition_expr_ast_,
+        context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
         sampling_expression_, merging_params_,
         settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
@@ -409,46 +409,44 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Note: setting columns first so that the new sorting key can use new columns.
     setColumns(std::move(new_columns));
 
-    ASTPtr new_sorting_key_ast = data.sorting_key_ast;
-    bool new_sorting_and_primary_keys_independent = data.sorting_and_primary_keys_independent;
+    ASTPtr new_primary_key_ast = data.primary_key_ast;
+    ASTPtr new_order_by_ast = data.order_by_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
     {
-        new_sorting_and_primary_keys_independent = true;
         ParserNotEmptyExpressionList parser(false);
-        new_sorting_key_ast = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+        auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+
+        auto tuple = makeASTFunction("tuple");
+        tuple->arguments->children = new_sorting_key_expr_list->children;
+        new_order_by_ast = tuple;
+
+        if (!data.primary_key_ast)
+        {
+            /// Primary and sorting key become independent after this ALTER so we have to
+            /// save the old ORDER BY expression as the new primary key.
+            new_primary_key_ast = data.order_by_ast->clone();
+        }
 
         storage_modifier = [&](IAST & ast)
         {
             auto & storage_ast = typeid_cast<ASTStorage &>(ast);
 
-            auto tuple = std::make_shared<ASTFunction>();
-            tuple->name = "tuple";
-            tuple->arguments = new_sorting_key_ast;
-            tuple->children.push_back(tuple->arguments);
-
             if (!storage_ast.order_by)
                 throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
 
-            if (!storage_ast.primary_key)
-            {
-                /// Primary and sorting key become independent after this ALTER so we have to
-                /// save the old ORDER BY expression as the new primary key.
-                storage_ast.set(storage_ast.primary_key, storage_ast.order_by->clone());
-            }
+            if (new_primary_key_ast.get() != data.primary_key_ast.get())
+                storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
             storage_ast.set(storage_ast.order_by, tuple);
         };
     }
 
+    context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), storage_modifier);
+
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    if (new_sorting_and_primary_keys_independent)
-        data.setPrimaryKey(data.primary_key_ast, new_sorting_key_ast);
-    else
-        data.setPrimaryKey(nullptr, new_sorting_key_ast);
-
-    context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), storage_modifier);
+    data.setPrimaryKey(new_order_by_ast, new_primary_key_ast);
 }
 
 
@@ -1494,7 +1492,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_key_ast, false);
+        auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false);
         if (!transaction)
             continue;
 
@@ -3025,7 +3023,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         for (const AlterCommand & param : params)
         {
             if (param.type == AlterCommand::MODIFY_ORDER_BY)
-                new_metadata.sorting_key = serializeAST(*param.sorting_key);
+                new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(param.order_by));
         }
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
