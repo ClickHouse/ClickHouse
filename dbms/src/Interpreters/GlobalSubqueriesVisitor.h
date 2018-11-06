@@ -3,6 +3,9 @@
 namespace DB
 {
 
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
+
 /// Converts GLOBAL subqueries to external tables; Puts them into the external_tables dictionary: name -> StoragePtr.
 class GlobalSubqueriesVisitor
 {
@@ -41,22 +44,22 @@ private:
     bool & has_global_subqueries;
 
     /// GLOBAL IN
-    void visit(ASTFunction * func, ASTPtr &) const
+    void visit(ASTFunction & func, ASTPtr &) const
     {
-        if (func->name == "globalIn" || func->name == "globalNotIn")
+        if (func.name == "globalIn" || func.name == "globalNotIn")
         {
-            addExternalStorage(func->arguments->children.at(1));
+            addExternalStorage(func.arguments->children.at(1));
             has_global_subqueries = true;
         }
     }
 
     /// GLOBAL JOIN
-    void visit(ASTTablesInSelectQueryElement * table_elem, ASTPtr &) const
+    void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &) const
     {
-        if (table_elem->table_join
-            && static_cast<const ASTTableJoin &>(*table_elem->table_join).locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join
+            && static_cast<const ASTTableJoin &>(*table_elem.table_join).locality == ASTTableJoin::Locality::Global)
         {
-            addExternalStorage(table_elem->table_expression);
+            addExternalStorage(table_elem.table_expression);
             has_global_subqueries = true;
         }
     }
@@ -66,7 +69,7 @@ private:
     {
         if (T * t = typeid_cast<T *>(ast.get()))
         {
-            visit(t, ast);
+            visit(*t, ast);
             return true;
         }
         return false;
