@@ -19,7 +19,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -162,7 +161,7 @@ public:
         : storage(storage_), consumer(nullptr), context(context_), max_block_size(max_block_size_)
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
-        context.setSetting("input_format_skip_unknown_fields", UInt64(1));
+        context.setSetting("input_format_skip_unknown_fields", 1u);
         if (schema.size() > 0)
             context.setSetting("format_schema", schema);
     }

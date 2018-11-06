@@ -9,7 +9,6 @@
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-//#include <iostream>
 #include <IO/WriteHelpers.h>
 
 namespace DB
