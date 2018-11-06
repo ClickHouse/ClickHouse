@@ -302,8 +302,8 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 {
     /// first should normalize query tree.
     std::unordered_map<String, ASTPtr> aliases;
-    QueryAliasesVisitor query_aliases_visitor;
-    query_aliases_visitor.visit(ast, aliases, 0);
+    QueryAliasesVisitor query_aliases_visitor(aliases);
+    query_aliases_visitor.visit(ast);
     QueryNormalizer(ast, aliases, settings, {}, {}).perform();
 
     ASTs projection_columns;
