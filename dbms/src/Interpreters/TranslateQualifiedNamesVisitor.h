@@ -2,18 +2,16 @@
 
 #include <memory>
 #include <vector>
-
 #include <Common/typeid_cast.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Core/NamesAndTypes.h>
 
 namespace DB
 {
-
-class ASTIdentifier;
-class ASTQualifiedAsterisk;
-class ASTSelectQuery;
-struct ASTTableJoin;
 
 class NamesAndTypesList;
 

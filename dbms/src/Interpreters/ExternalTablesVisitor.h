@@ -1,5 +1,10 @@
 #pragma once
 
+#include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Common/typeid_cast.h>
+
 namespace DB
 {
 

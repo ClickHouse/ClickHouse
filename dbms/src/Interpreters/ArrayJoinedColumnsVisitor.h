@@ -1,5 +1,14 @@
 #pragma once
 
+#include <Parsers/IAST.h>
+#include <Core/Names.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <DataTypes/NestedUtils.h>
+#include <Common/typeid_cast.h>
+
 namespace DB
 {
 

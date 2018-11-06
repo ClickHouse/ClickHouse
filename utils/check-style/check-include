@@ -37,13 +37,15 @@ inc="-I. \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./contrib/capnproto/c++/src \
+-I./contrib/unixodbc/include \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I${BUILD_DIR}/libs/libcommon/include \
 -I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
--I./libs/libconsistent-hashing \
+-I./libs/consistent-hashing \
+-I./libs/consistent-hashing-sumbur \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 
