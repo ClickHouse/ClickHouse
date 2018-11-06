@@ -8,6 +8,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /** Get a set of necessary columns to read from the table.
   * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.

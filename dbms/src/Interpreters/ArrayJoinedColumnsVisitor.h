@@ -3,6 +3,9 @@
 namespace DB
 {
 
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
+
 /// Fills the array_join_result_to_source: on which columns-arrays to replicate, and how to call them after that.
 class ArrayJoinedColumnsVisitor
 {
