@@ -36,7 +36,7 @@ struct AlterCommand
 
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
-    ASTPtr comment_expression;
+    String comment;
 
     /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
     String after_column;
@@ -47,9 +47,9 @@ struct AlterCommand
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
-                 const String & after_column = String{}, const ASTPtr & comment_expression = nullptr)
+                 const String & after_column = String{}, const String & comment = "")
         : type{type}, column_name{column_name}, data_type{data_type}, default_kind{default_kind},
-        default_expression{default_expression}, comment_expression(comment_expression), after_column{after_column}
+        default_expression{default_expression}, comment(comment), after_column{after_column}
     {}
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);

@@ -7,7 +7,6 @@
 namespace DB
 {
 
-// TODO: возможно тут тоже надо разобраться
 /** Query (EXISTS | SHOW CREATE) [TABLE] [db.]name [FORMAT format]
   */
 class ParserTablePropertiesQuery : public IParserBase

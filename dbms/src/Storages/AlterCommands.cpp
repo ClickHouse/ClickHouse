@@ -94,9 +94,10 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.type = COMMENT_COLUMN;
-        const auto & ast_identifier = typeid_cast<ASTIdentifier&>(*command_ast->column);
+        const auto & ast_identifier = typeid_cast<ASTIdentifier &>(*command_ast->column);
         command.column_name = ast_identifier.name;
-        command.comment_expression = command_ast->comment;
+        const auto & ast_comment = typeid_cast<ASTLiteral &>(*command_ast->comment);
+        command.comment = ast_comment.value.get<String>();
         return command;
     }
     else
@@ -249,7 +250,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     else if (type == COMMENT_COLUMN)
     {
 
-        columns_description.comments[column_name].expression = comment_expression;
+        columns_description.comments[column_name] = comment;
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

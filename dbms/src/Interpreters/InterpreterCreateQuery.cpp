@@ -220,9 +220,9 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
         }
 
-        if (col_decl.comment_expression)
+        if (!col_decl.comment.empty())
         {
-            comments.emplace(col_decl.name, ColumnComment{col_decl.comment_expression});
+            comments.emplace(col_decl.name, col_decl.comment);
         }
     }
 
@@ -351,7 +351,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto comments_it = columns.comments.find(column.name);
         if (comments_it != std::end(columns.comments))
         {
-            column_declaration->comment_expression = comments_it->second.expression->clone();
+            column_declaration->comment = comments_it->second;
         }
 
         columns_list->children.push_back(column_declaration_ptr);

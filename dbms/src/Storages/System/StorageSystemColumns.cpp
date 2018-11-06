@@ -186,9 +186,8 @@ protected:
                     }
                     else
                     {
-                        const auto & literal = typeid_cast<ASTLiteral*>(it->second.expression.get());
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(literal->value.get<String>());
+                            res_columns[res_index++]->insert(it->second);
                     }
                 }
 

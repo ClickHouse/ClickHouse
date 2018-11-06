@@ -15,7 +15,7 @@ public:
     ASTPtr type;
     String default_specifier;
     ASTPtr default_expression;
-    ASTPtr comment_expression;
+    String comment;
 
     String getID() const override { return "ColumnDeclaration_" + name; }
 
@@ -34,12 +34,6 @@ public:
         {
             res->default_expression = default_expression->clone();
             res->children.push_back(res->default_expression);
-        }
-
-        if (comment_expression)
-        {
-            res->comment_expression = comment_expression->clone();
-            res->children.push_back(res->comment_expression);
         }
 
         return res;
@@ -63,10 +57,9 @@ public:
             default_expression->formatImpl(settings, state, frame);
         }
 
-        if (comment_expression)
+        if (!comment.empty())
         {
-            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
-            comment_expression->formatImpl(settings, state, frame);
+            settings.ostr << ' ' << (settings.hilite ? hilite_none : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ' << comment;
         }
     }
 };

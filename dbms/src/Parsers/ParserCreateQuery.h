@@ -6,6 +6,7 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
@@ -175,7 +176,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     if (comment_expression)
     {
-        column_declaration->comment_expression = comment_expression;
+        auto & literal_value = typeid_cast<ASTLiteral &>(*comment_expression).value;
+        column_declaration->comment = literal_value.safeGet<String>();
         column_declaration->children.push_back(std::move(comment_expression));
     }
 
