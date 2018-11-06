@@ -1236,16 +1236,7 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        /// Unify streams in case they have different headers.
-        auto first_header = pipeline.streams.at(0)->getHeader();
-        for (size_t i = 1; i < pipeline.streams.size(); ++i)
-        {
-            auto & stream = pipeline.streams[i];
-            auto header = stream->getHeader();
-            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
-            if (!blocksHaveEqualStructure(first_header, header))
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
-        }
+        unifyStreams(pipeline);
 
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
@@ -1301,16 +1292,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
     /// If there are still several streams, then we combine them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        /// Unify streams in case they have different headers.
-        auto first_header = pipeline.streams.at(0)->getHeader();
-        for (size_t i = 1; i < pipeline.streams.size(); ++i)
-        {
-            auto & stream = pipeline.streams[i];
-            auto header = stream->getHeader();
-            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
-            if (!blocksHaveEqualStructure(first_header, header))
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
-        }
+        unifyStreams(pipeline);
 
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
@@ -1438,6 +1420,23 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets,
         SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
+}
+
+void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)
+{
+    if (pipeline.hasMoreThanOneStream())
+    {
+        /// Unify streams in case they have different headers.
+        auto first_header = pipeline.streams.at(0)->getHeader();
+        for (size_t i = 1; i < pipeline.streams.size(); ++i)
+        {
+            auto & stream = pipeline.streams[i];
+            auto header = stream->getHeader();
+            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
+            if (!blocksHaveEqualStructure(first_header, header))
+                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
+        }
+    }
 }
 
 
