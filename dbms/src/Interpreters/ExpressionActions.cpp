@@ -271,8 +271,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = sample_block.getByName(name);
-                if (column.column)
-                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -485,8 +483,6 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = block.getByName(name);
-                if (column.column)
-                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));

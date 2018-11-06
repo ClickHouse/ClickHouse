@@ -34,8 +34,8 @@ struct Estimator
     }
 
     double min_score = 0;
-    Iterator best_begin;
-    Iterator best_end;
+    Iterator best_begin {};
+    Iterator best_end {};
 };
 
 

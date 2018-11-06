@@ -69,7 +69,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {
     if (auto id = typeid_cast<const ASTIdentifier *>(node.get()))
-        return std::make_shared<ASTLiteral>(Field(id->name));
+        return std::make_shared<ASTLiteral>(id->name);
 
     return evaluateConstantExpressionAsLiteral(node, context);
 }

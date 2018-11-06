@@ -6,7 +6,6 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>

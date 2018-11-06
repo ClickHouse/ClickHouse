@@ -16,11 +16,11 @@ namespace
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
-        res_columns[2]->insert(UInt64(f.isCaseInsensitive(name)));
+        res_columns[2]->insert(f.isCaseInsensitive(name));
         if (f.isAlias(name))
             res_columns[3]->insert(f.aliasTo(name));
         else
-            res_columns[3]->insert(String{});
+            res_columns[3]->insertDefault();
     }
 }
 

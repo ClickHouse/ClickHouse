@@ -16,7 +16,6 @@
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>

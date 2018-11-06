@@ -34,6 +34,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 
 #include <Storages/IStorage.h>
@@ -146,7 +147,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
 
-    const auto & table_expression = query.table();
+    ASTPtr table_expression = getTableFunctionOrSubquery(query, 0);
 
     if (input)
     {
@@ -205,7 +206,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
             /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
-            if (typeid_cast<ASTSelectWithUnionQuery *>(table_expression.get()))
+            if (table_expression && typeid_cast<ASTSelectWithUnionQuery *>(table_expression.get()))
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1,
                     only_analyze);
@@ -236,28 +237,19 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, String & table_name)
 {
-    auto query_database = query.database();
-    auto query_table = query.table();
+    if (auto db_and_table = getDatabaseAndTable(query, 0))
+    {
+        table_name = db_and_table->table;
+        database_name = db_and_table->database;
 
-    /** If the table is not specified - use the table `system.one`.
-     *  If the database is not specified - use the current database.
-     */
-    if (query_database)
-        database_name = typeid_cast<ASTIdentifier &>(*query_database).name;
-    if (query_table)
-        table_name = typeid_cast<ASTIdentifier &>(*query_table).name;
-
-    if (!query_table)
+        /// If the database is not specified - use the current database.
+        if (database_name.empty() && !context.tryGetTable("", table_name))
+            database_name = context.getCurrentDatabase();
+    }
+    else /// If the table is not specified - use the table `system.one`.
     {
         database_name = "system";
         table_name = "one";
-    }
-    else if (!query_database)
-    {
-        if (context.tryGetTable("", table_name))
-            database_name = "";
-        else
-            database_name = context.getCurrentDatabase();
     }
 }
 
@@ -884,8 +876,12 @@ void InterpreterSelectQuery::executeFetchColumns(
         /// If we need less number of columns that subquery have - update the interpreter.
         if (required_columns.size() < source_header.columns())
         {
+            ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+            if (!subquery)
+                throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
+
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                query.table(), getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+                subquery, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
 
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
@@ -1240,6 +1236,8 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     /// If there are several streams, then we merge them into one
     if (pipeline.hasMoreThanOneStream())
     {
+        unifyStreams(pipeline);
+
         /** MergingSortedBlockInputStream reads the sources sequentially.
           * To make the data on the remote servers prepared in parallel, we wrap it in AsynchronousBlockInputStream.
           */
@@ -1294,16 +1292,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
     /// If there are still several streams, then we combine them into one
     if (pipeline.hasMoreThanOneStream())
     {
-        /// Unify streams in case they have different headers.
-        auto first_header = pipeline.streams.at(0)->getHeader();
-        for (size_t i = 1; i < pipeline.streams.size(); ++i)
-        {
-            auto & stream = pipeline.streams[i];
-            auto header = stream->getHeader();
-            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
-            if (!blocksHaveEqualStructure(first_header, header))
-                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
-        }
+        unifyStreams(pipeline);
 
         pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
@@ -1362,11 +1351,9 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
       * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
       */
 
-    auto query_table = query.table();
-    if (query_table)
+    if (auto query_table = getTableFunctionOrSubquery(query, 0))
     {
-        auto ast_union = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get());
-        if (ast_union)
+        if (auto ast_union = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
         {
             for (const auto & elem : ast_union->list_of_selects->children)
                 if (hasWithTotalsInAnySubqueryInFromClause(typeid_cast<const ASTSelectQuery &>(*elem)))
@@ -1433,6 +1420,23 @@ void InterpreterSelectQuery::executeSubqueriesInSetsAndJoins(Pipeline & pipeline
     pipeline.firstStream() = std::make_shared<CreatingSetsBlockInputStream>(
         pipeline.firstStream(), subqueries_for_sets,
         SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
+}
+
+void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline)
+{
+    if (pipeline.hasMoreThanOneStream())
+    {
+        /// Unify streams in case they have different headers.
+        auto first_header = pipeline.streams.at(0)->getHeader();
+        for (size_t i = 1; i < pipeline.streams.size(); ++i)
+        {
+            auto & stream = pipeline.streams[i];
+            auto header = stream->getHeader();
+            auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
+            if (!blocksHaveEqualStructure(first_header, header))
+                stream = std::make_shared<ConvertingBlockInputStream>(context, stream, first_header, mode);
+        }
+    }
 }
 
 

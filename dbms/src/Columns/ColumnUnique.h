@@ -62,20 +62,13 @@ public:
     UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
-    {
-        return column_holder->serializeValueIntoArena(n, arena, begin);
-    }
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         return getNestedColumn()->updateHashWithValue(n, hash);
     }
 
-    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
-    {
-        auto & column_unique = static_cast<const IColumnUnique &>(rhs);
-        return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
-    }
+    int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
@@ -299,8 +292,43 @@ size_t ColumnUnique<ColumnType>::uniqueInsertDataWithTerminatingZero(const char 
 }
 
 template <typename ColumnType>
+StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    if (is_nullable)
+    {
+        const UInt8 null_flag = 1;
+        const UInt8 not_null_flag = 0;
+
+        auto pos = arena.allocContinue(sizeof(null_flag), begin);
+        auto & flag = (n == getNullValueIndex() ? null_flag : not_null_flag);
+        memcpy(pos, &flag, sizeof(flag));
+
+        size_t nested_size = 0;
+
+        if (n == getNullValueIndex())
+            nested_size = column_holder->serializeValueIntoArena(n, arena, begin).size;
+
+        return StringRef(pos, sizeof(null_flag) + nested_size);
+    }
+
+    return column_holder->serializeValueIntoArena(n, arena, begin);
+}
+
+template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos)
 {
+    if (is_nullable)
+    {
+        UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+        pos += sizeof(val);
+
+        if (val)
+        {
+            new_pos = pos;
+            return getNullValueIndex();
+        }
+    }
+
     auto column = getRawColumnPtr();
     size_t prev_size = column->size();
     new_pos = column->deserializeAndInsertFromArena(pos);
@@ -316,6 +344,28 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
         column->popBack(1);
 
     return static_cast<size_t>(index_pos);
+}
+
+template <typename ColumnType>
+int ColumnUnique<ColumnType>::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+    if (is_nullable)
+    {
+        /// See ColumnNullable::compareAt
+        bool lval_is_null = n == getNullValueIndex();
+        bool rval_is_null = m == getNullValueIndex();
+
+        if (unlikely(lval_is_null || rval_is_null))
+        {
+            if (lval_is_null && rval_is_null)
+                return 0;
+            else
+                return lval_is_null ? nan_direction_hint : -nan_direction_hint;
+        }
+    }
+
+    auto & column_unique = static_cast<const IColumnUnique &>(rhs);
+    return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
 }
 
 template <typename IndexType>

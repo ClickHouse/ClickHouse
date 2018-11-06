@@ -1,6 +1,5 @@
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>

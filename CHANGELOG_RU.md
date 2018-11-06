@@ -1,3 +1,20 @@
+## ClickHouse release 18.14.12, 2018-11-02
+
+### Исправления ошибок:
+
+* Исправлена ошибка при join-запросе двух неименованных подзапросов. [#3505](https://github.com/yandex/ClickHouse/pull/3505)
+* Исправлена генерация пустой `WHERE`-части при запросах к внешним базам. [hotid](https://github.com/yandex/ClickHouse/pull/3477)
+* Исправлена ошибка использования неправильной настройки таймаута в ODBC-словарях. [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3511)
+
+## ClickHouse release 18.14.11, 2018-10-29
+
+### Исправления ошибок:
+
+* Исправлена ошибка `Block structure mismatch in UNION stream: different number of columns` в запросах с LIMIT. [#2156](https://github.com/yandex/ClickHouse/issues/2156)
+* Исправлены ошибки при слиянии данных в таблицах, содержащих массивы внутри Nested структур. [#3397](https://github.com/yandex/ClickHouse/pull/3397)
+* Исправлен неправильный результат запросов при выключенной настройке `merge_tree_uniform_read_distribution` (включена по умолчанию). [#3429](https://github.com/yandex/ClickHouse/pull/3429)
+* Исправлена ошибка при вставке в Distributed таблицу в формате Native. [#3411](https://github.com/yandex/ClickHouse/issues/3411)
+
 ## ClickHouse release 18.14.10, 2018-10-23
 
 * Настройка `compile_expressions` (JIT компиляция выражений) выключена по умолчанию. [#3410](https://github.com/yandex/ClickHouse/pull/3410)
