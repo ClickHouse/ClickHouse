@@ -146,7 +146,7 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_none : "");
         column->formatImpl(settings, state, frame);
         settings.ostr << " ";
-        comment->formatImpl(settings, state, frame);
+        // comment->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

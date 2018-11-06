@@ -1,4 +1,5 @@
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -10,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 #include <ext/collection_cast.h>
 #include <ext/map.h>
@@ -82,7 +84,7 @@ String ColumnsDescription::toString() const
             writeChar(' ', buf);
             writeText(column.type->getName(), buf);
 
-            const bool exist_comment = comments_it != std::end(comments) && !comments_it->second.expression;
+            const bool exist_comment = comments_it != std::end(comments);
             if (defaults_it != std::end(defaults))
             {
                 writeChar('\t', buf);
@@ -98,7 +100,7 @@ String ColumnsDescription::toString() const
             if (exist_comment)
             {
                 writeChar('\t', buf);
-                writeText(queryToString(comments_it->second.expression), buf);
+                writeText(comments_it->second, buf);
             }
 
             writeChar('\n', buf);
@@ -146,7 +148,7 @@ std::optional<ParsedDefaultInfo> parseDefaulfInfo(ReadBufferFromString & buf)
     return ParsedDefaultInfo{default_kind, std::move(default_expr)};
 }
 
-ASTPtr parseCommentExpr(ReadBufferFromString& buf)
+String parseComment(ReadBufferFromString& buf)
 {
     if (*buf.position() == '\n')
     {
@@ -154,12 +156,9 @@ ASTPtr parseCommentExpr(ReadBufferFromString& buf)
     }
 
     ParserExpression parser_expr;
-    String comment_expr_str;
-    readText(comment_expr_str, buf);
-    const char * begin = comment_expr_str.data();
-    const auto end = begin + comment_expr_str.size();
-    ASTPtr comment_expr = parseQuery(parser_expr, begin, end, "comment_expression", 0);
-    return comment_expr;
+    String comment;
+    readText(comment, buf); // This is wrong may be
+    return comment;
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)
@@ -209,10 +208,10 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
             result.defaults.emplace(column_name, ColumnDefault{default_kind, default_expr});
         }
 
-        const auto comment_expr = parseCommentExpr(buf);
-        if (comment_expr)
+        const auto comment = parseComment(buf);
+        if (!comment.empty())
         {
-            result.comments.emplace(column_name, ColumnComment{comment_expr});
+            result.comments.emplace(column_name, comment);
         }
 
         assertChar('\n', buf);
