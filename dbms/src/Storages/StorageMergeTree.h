@@ -157,14 +157,7 @@ protected:
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *
-      * sorting_key_ast - expression used for sorting data in parts;
-      * primary_key_ast - values of this expression for one row in every `index_granularity` rows
-      *     are written in the primary.idx to speed up range queries.
-      *     Primary key must be a prefix of the sorting key;
-      *     If it is nullptr, then it will be determined from sorting_key_ast.
-      *
-      * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
-          otherwise, partition_expr_ast is used as the partitioning expression;
+      * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
         const String & path_,
@@ -173,10 +166,10 @@ protected:
         const ColumnsDescription & columns_,
         bool attach,
         Context & context_,
-        const ASTPtr & primary_key_ast_,
-        const ASTPtr & sorting_key_ast_,
         const String & date_column_name,
-        const ASTPtr & partition_expr_ast_,
+        const ASTPtr & partition_by_ast_,
+        const ASTPtr & order_by_ast_,
+        const ASTPtr & primary_key_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,

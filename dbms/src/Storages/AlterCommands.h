@@ -44,7 +44,7 @@ struct AlterCommand
     ASTPtr primary_key;
 
     /// For MODIFY_ORDER_BY
-    ASTPtr sorting_key;
+    ASTPtr order_by;
 
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,

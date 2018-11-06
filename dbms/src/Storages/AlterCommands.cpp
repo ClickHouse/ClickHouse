@@ -94,7 +94,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.type = AlterCommand::MODIFY_ORDER_BY;
-        command.sorting_key = command_ast->sorting_key;
+        command.order_by = command_ast->order_by;
         return command;
     }
     else

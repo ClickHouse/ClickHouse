@@ -31,14 +31,19 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     index_granularity = data.index_granularity;
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
-    primary_key = formattedAST(data.primary_key_ast);
+
+    if (!data.primary_key_ast)
+        primary_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.order_by_ast));
+    else
+    {
+        primary_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.primary_key_ast));
+        sorting_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.order_by_ast));
+    }
+
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedAST(data.partition_expr_ast);
-
-    if (data.sorting_and_primary_keys_independent)
-        sorting_key = formattedAST(data.sorting_key_ast);
+        partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const

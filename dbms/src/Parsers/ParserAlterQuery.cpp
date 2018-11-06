@@ -188,31 +188,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_modify_primary_key.ignore(pos, expected))
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
+        if (!parser_exp_elem.parse(pos, command->primary_key, expected))
             return false;
-        ++pos;
-
-        if (!ParserNotEmptyExpressionList(false).parse(pos, command->primary_key, expected))
-            return false;
-
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
 
         command->type = ASTAlterCommand::MODIFY_PRIMARY_KEY;
     }
     else if (s_modify_order_by.ignore(pos, expected))
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
+        if (!parser_exp_elem.parse(pos, command->order_by, expected))
             return false;
-        ++pos;
-
-        if (!ParserNotEmptyExpressionList(false).parse(pos, command->sorting_key, expected))
-            return false;
-
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
 
         command->type = ASTAlterCommand::MODIFY_ORDER_BY;
     }
