@@ -17,6 +17,8 @@ struct ASTTableJoin;
 
 class NamesAndTypesList;
 
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /// It visits nodes, find columns (general identifiers and asterisks) and translate their names according to tables' names.
 class TranslateQualifiedNamesVisitor

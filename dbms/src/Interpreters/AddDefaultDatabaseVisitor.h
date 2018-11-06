@@ -13,6 +13,8 @@
 namespace DB
 {
 
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /// Visits AST nodes, add default database to tables if not set. There's different logic for DDLs and selects.
 class AddDefaultDatabaseVisitor
