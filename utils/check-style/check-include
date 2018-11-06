@@ -38,6 +38,7 @@ inc="-I. \
 -I./contrib/libpcg-random/include \
 -I./contrib/capnproto/c++/src \
 -I./contrib/unixodbc/include \
+-I./contrib/unixodbc-cmake/linux_x86_64 \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I${BUILD_DIR}/libs/libcommon/include \
@@ -51,7 +52,7 @@ inc="-I. \
 
 if [ -z $1 ]; then
     cd ${ROOT_DIR=../..}
-    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -exec sh $RUN_DIR/`basename $0` {} \; ;
+    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -print0 | xargs -0 -n1 sh $RUN_DIR/`basename $0`
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
