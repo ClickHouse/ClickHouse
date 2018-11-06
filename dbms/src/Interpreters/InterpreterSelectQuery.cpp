@@ -323,6 +323,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
                 res.prewhere_info->remove_columns_actions = std::move(actions);
             }
+
+            res.columns_to_remove_after_prewhere = std::move(columns_to_remove);
         }
         if (has_where)
             res.remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
@@ -495,7 +497,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info);
+        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info, expressions.columns_to_remove_after_prewhere);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
     }
@@ -686,7 +688,8 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 
 void InterpreterSelectQuery::executeFetchColumns(
-    QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info)
+        QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
+        const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -751,9 +754,13 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// Columns which we will get after prewhere execution.
             NamesAndTypesList additional_source_columns;
             /// Add columns which will be added by prewhere (otherwise we will remove them in project action).
+            NameSet columns_to_remove(columns_to_remove_after_prewhere.begin(), columns_to_remove_after_prewhere.end());
             for (const auto & column : prewhere_actions_result)
             {
                 if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
+                    continue;
+
+                if (columns_to_remove.count(column.name))
                     continue;
 
                 required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
