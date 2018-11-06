@@ -398,7 +398,7 @@ void TCPHandler::processOrdinaryQuery()
                 }
                 else
                 {
-                    if (state.progress.rows && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+                    if (after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
                     {
                         /// Some time passed and there is a progress.
                         after_send_progress.restart();
