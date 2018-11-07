@@ -30,6 +30,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -511,7 +512,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.to_database = current_database;
 
     if (create.select && (create.is_view || create.is_materialized_view))
-        create.select->setDatabaseIfNeeded(current_database);
+    {
+        AddDefaultDatabaseVisitor visitor(current_database);
+        visitor.visit(*create.select);
+    }
 
     Block as_select_sample;
     if (create.select && (!create.attach || !create.columns))

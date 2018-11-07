@@ -858,8 +858,8 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(const ASTPtr & query,
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
         LogAST log;
-        QueryAliasesVisitor query_aliases_visitor(log.stream());
-        query_aliases_visitor.visit(result.query, result.aliases);
+        QueryAliasesVisitor query_aliases_visitor(aliases, log.stream());
+        query_aliases_visitor.visit(query);
     }
 
     /// Common subexpression elimination. Rewrite rules.
