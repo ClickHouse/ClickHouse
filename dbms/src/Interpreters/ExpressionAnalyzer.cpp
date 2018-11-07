@@ -134,7 +134,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     query = syntax_analyzer_result.query;
     storage = syntax_analyzer_result.storage;
     source_columns = syntax_analyzer_result.source_columns;
-    aliases = syntax_analyzer_result.aliases;
     array_join_result_to_source = syntax_analyzer_result.array_join_result_to_source;
     array_join_alias_to_name = syntax_analyzer_result.array_join_alias_to_name;
     array_join_name_to_alias = syntax_analyzer_result.array_join_name_to_alias;
@@ -359,7 +358,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 {
                     NamesAndTypesList temp_columns = source_columns;
                     temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                    for (const auto & joined_column : analyzed_join.columns_added_by_join)
+                    for (const auto & joined_column : columns_added_by_join)
                         temp_columns.push_back(joined_column.name_and_type);
                     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
                     getRootActions(func->arguments->children.at(0), true, temp_actions);
@@ -589,14 +588,17 @@ bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool on
 
 void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only_types) const
 {
+    NamesAndTypesList columns_added_by_join_list;
+    for (const auto & joined_column : columns_added_by_join)
+        columns_added_by_join_list.push_back(joined_column.name_and_type);
+
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzed_join.key_names_left,
-                                                    analyzed_join.getColumnsAddedByJoin()));
+        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzed_join.key_names_left, columns_added_by_join_list));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
                 actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzed_join.key_names_left,
-                                                            analyzed_join.getColumnsAddedByJoin()));
+                                                            columns_added_by_join_list));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -1088,7 +1090,7 @@ void ExpressionAnalyzer::collectUsedColumns()
       * (Do not assume that they are required for reading from the "left" table).
       */
     NameSet available_joined_columns;
-    for (const auto & joined_column : analyzed_join.columns_added_by_join)
+    for (const auto & joined_column : analyzed_join.available_joined_columns)
         available_joined_columns.insert(joined_column.name_and_type.name);
 
     NameSet required_joined_columns;
@@ -1103,18 +1105,19 @@ void ExpressionAnalyzer::collectUsedColumns()
     RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, available_joined_columns, required_joined_columns);
     columns_visitor.visit(query);
 
-    for (auto it = analyzed_join.columns_added_by_join.begin(); it != analyzed_join.columns_added_by_join.end();)
+    columns_added_by_join = analyzed_join.available_joined_columns;
+    for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
     {
         if (required_joined_columns.count(it->name_and_type.name))
             ++it;
         else
-            analyzed_join.columns_added_by_join.erase(it++);
+            columns_added_by_join.erase(it++);
     }
 
     NameSet source_columns_set;
     for (const auto & type_name : source_columns)
         source_columns_set.insert(type_name.name);
-    analyzed_join.createJoinedBlockActions(source_columns_set, select_query, context);
+    analyzed_join.createJoinedBlockActions(source_columns_set, columns_added_by_join, select_query, context);
 
     /// Some columns from right join key may be used in query. This columns will be appended to block during join.
     for (const auto & right_key_name : analyzed_join.key_names_right)

@@ -14,6 +14,7 @@ namespace DB
 {
 
 void AnalyzedJoin::createJoinedBlockActions(const NameSet & source_columns,
+                                            const JoinedColumnsList & columns_added_by_join,
                                             const ASTSelectQuery * select_query_with_join,
                                             const Context & context)
 {
@@ -59,15 +60,6 @@ void AnalyzedJoin::createJoinedBlockActions(const NameSet & source_columns,
     for (auto & column : columns_added_by_join)
         if (!sample.has(column.name_and_type.name))
             required_columns_from_joined_table.insert(column.name_and_type.name);
-}
-
-NamesAndTypesList AnalyzedJoin::getColumnsAddedByJoin() const
-{
-    NamesAndTypesList result;
-    for (const auto & joined_column : columns_added_by_join)
-        result.push_back(joined_column.name_and_type);
-
-    return result;
 }
 
 const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(

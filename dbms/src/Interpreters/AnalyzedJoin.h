@@ -61,24 +61,23 @@ struct AnalyzedJoin
     NameSet required_columns_from_joined_table;
 
     /// Columns which will be added to block, possible including some columns from right join key.
-    JoinedColumnsList columns_added_by_join;
+    JoinedColumnsList available_joined_columns;
     /// Such columns will be copied from left join keys during join.
     NameSet columns_added_by_join_from_right_keys;
     /// Actions which need to be calculated on joined block.
     ExpressionActionsPtr joined_block_actions;
 
     void createJoinedBlockActions(const NameSet & source_columns,
+                                  const JoinedColumnsList & columns_added_by_join, // Subset of available_joined_columns
                                   const ASTSelectQuery * select_query_with_join,
                                   const Context & context);
-
-    NamesAndTypesList getColumnsAddedByJoin() const;
 
     const JoinedColumnsList & getColumnsFromJoinedTable(const NameSet & source_columns,
                                                         const Context & context,
                                                         const ASTSelectQuery * select_query_with_join);
 };
 
-class ASTTableExpression;
+struct ASTTableExpression;
 NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context);
 
 }
