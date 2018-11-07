@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <optional>
 
 #include <Common/config.h>
 #include <common/MultiVersion.h>
