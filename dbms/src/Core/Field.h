@@ -585,7 +585,7 @@ template <> struct NearestFieldType<UInt16>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt32>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt64>  { using Type = UInt64; };
 #ifdef __APPLE__
-template <> struct NearestFieldType<time_t>  { using Type = UInt64; }; // long unsigned int
+template <> struct NearestFieldType<time_t>  { using Type = UInt64; };
 #endif
 template <> struct NearestFieldType<DayNum>  { using Type = UInt64; };
 template <> struct NearestFieldType<UInt128> { using Type = UInt128; };
