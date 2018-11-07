@@ -132,6 +132,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     auto syntax_analyzer_result = SyntaxAnalyzer()
             .analyze(query, context, storage, source_columns, required_result_columns_, subquery_depth);
     query = syntax_analyzer_result.query;
+    storage = syntax_analyzer_result.storage;
     source_columns = syntax_analyzer_result.source_columns;
     aliases = syntax_analyzer_result.aliases;
     array_join_result_to_source = syntax_analyzer_result.array_join_result_to_source;
@@ -139,7 +140,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     array_join_name_to_alias = syntax_analyzer_result.array_join_name_to_alias;
     analyzed_join = syntax_analyzer_result.analyzed_join;
     rewrite_subqueries = syntax_analyzer_result.rewrite_subqueries;
-    storage = syntax_analyzer_result.storage;
 
     select_query = typeid_cast<ASTSelectQuery *>(query.get());
 
