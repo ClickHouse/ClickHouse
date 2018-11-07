@@ -205,8 +205,8 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
         LogAST log;
-        QueryAliasesVisitor query_aliases_visitor(log.stream());
-        query_aliases_visitor.visit(query, aliases);
+        QueryAliasesVisitor query_aliases_visitor(aliases, log.stream());
+        query_aliases_visitor.visit(query);
     }
 
     /// Common subexpression elimination. Rewrite rules.
