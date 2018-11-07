@@ -56,9 +56,6 @@ struct ExpressionAnalyzerData
 
     bool has_global_subqueries = false;
 
-    using Aliases = std::unordered_map<String, ASTPtr>;
-    Aliases aliases;
-
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;
@@ -231,6 +228,7 @@ private:
     bool do_global; /// Do I need to prepare for execution global subqueries when analyzing the query.
 
     AnalyzedJoin analyzed_join;
+    JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),

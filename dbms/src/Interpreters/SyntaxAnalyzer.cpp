@@ -61,10 +61,16 @@ void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
     visitor.visit(query);
 }
 
-void normalizeTree(SyntaxAnalyzerResult & result, const Names & source_columns, const NameSet & source_columns_set,
-                   const Context & context, const ASTSelectQuery * select_query, bool asterisk_left_columns_only)
+void normalizeTree(
+    SyntaxAnalyzerResult & result,
+    const Names & source_columns,
+    const NameSet & source_columns_set,
+    const StoragePtr & storage,
+    const Context & context,
+    const ASTSelectQuery * select_query,
+    bool asterisk_left_columns_only)
 {
-    Names all_columns_name(source_columns.begin(), source_columns.end());
+    Names all_columns_name = storage ? storage->getColumns().ordinary.getNames() : source_columns;
 
     if (!asterisk_left_columns_only)
     {
@@ -494,7 +500,8 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void getArrayJoinedColumns(SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query, const NameSet & source_columns)
+void getArrayJoinedColumns(SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
+                           const Names & source_columns, const NameSet & source_columns_set)
 {
     if (select_query && select_query->array_join_expression_list())
     {
@@ -532,7 +539,7 @@ void getArrayJoinedColumns(SyntaxAnalyzerResult & result, const ASTSelectQuery *
             String result_name = expr->getAliasOrColumnName();
 
             /// This is an array.
-            if (!typeid_cast<ASTIdentifier *>(expr.get()) || source_columns.count(source_name))
+            if (!typeid_cast<ASTIdentifier *>(expr.get()) || source_columns_set.count(source_name))
             {
                 result.array_join_result_to_source[result_name] = source_name;
             }
@@ -778,7 +785,7 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
             bool make_nullable = settings.join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left ||
                                                              table_join.kind == ASTTableJoin::Kind::Full);
             auto type = make_nullable ? makeNullable(column_type) : column_type;
-            analyzed_join.columns_added_by_join.emplace_back(NameAndTypePair(column_name, std::move(type)), original_name);
+            analyzed_join.available_joined_columns.emplace_back(NameAndTypePair(column_name, std::move(type)), original_name);
         }
     }
 }
@@ -858,12 +865,13 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(const ASTPtr & query,
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
         LogAST log;
-        QueryAliasesVisitor query_aliases_visitor(aliases, log.stream());
+        QueryAliasesVisitor query_aliases_visitor(result.aliases, log.stream());
         query_aliases_visitor.visit(query);
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    normalizeTree(result, source_columns_list, source_columns_set, context, select_query, settings.asterisk_left_columns_only != 0);
+    normalizeTree(result, source_columns_list, source_columns_set, storage,
+                  context, select_query, settings.asterisk_left_columns_only != 0);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -890,7 +898,7 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(const ASTPtr & query,
     optimizeUsing(select_query);
 
     /// array_join_alias_to_name, array_join_result_to_source.
-    getArrayJoinedColumns(result, select_query, source_columns_set);
+    getArrayJoinedColumns(result, select_query, source_columns_list, source_columns_set);
 
     /// Push the predicate expression down to the subqueries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
