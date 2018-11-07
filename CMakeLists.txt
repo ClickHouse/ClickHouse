@@ -155,6 +155,7 @@ if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
 endif ()
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package (Threads)
 
 include (cmake/test_compiler.cmake)
 
