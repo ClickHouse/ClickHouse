@@ -832,10 +832,9 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(const ASTPtr & query,
                                              const Names & required_result_columns,
                                              size_t subquery_depth) const
 {
-
     SyntaxAnalyzerResult result;
     result.storage = storage;
-    result.query = query->clone();
+    result.query = query; // ->clone();
     auto * select_query = typeid_cast<ASTSelectQuery *>(result.query.get());
     result.source_columns = collectSourceColumns(std::move(source_columns), select_query, context, result.storage);
 
