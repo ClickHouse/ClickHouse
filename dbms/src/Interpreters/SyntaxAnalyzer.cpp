@@ -103,8 +103,6 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
 
 SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
     const ASTPtr & query,
-    const Context & context,
-    const StoragePtr & storage,
     NamesAndTypesList source_columns,
     const Names & required_result_columns,
     size_t subquery_depth) const
@@ -140,7 +138,7 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    normalizeTree(result, source_columns_list, source_columns_set, storage,
+    normalizeTree(result, source_columns_list, source_columns_set, result.storage,
                   context, select_query, settings.asterisk_left_columns_only != 0);
 
     /// Remove unneeded columns according to 'required_result_columns'.

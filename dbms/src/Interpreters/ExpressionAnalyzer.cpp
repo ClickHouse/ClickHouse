@@ -77,43 +77,10 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
-    extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int UNKNOWN_IDENTIFIER;
-    extern const int CYCLIC_ALIASES;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int INCORRECT_ELEMENT_OF_SET;
-    extern const int ALIAS_REQUIRED;
-    extern const int EMPTY_NESTED_TABLE;
-    extern const int DUPLICATE_COLUMN;
-    extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int ILLEGAL_AGGREGATION;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int TOO_DEEP_AST;
-    extern const int TOO_BIG_AST;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
-    extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int EXPECTED_ALL_OR_ANY;
 }
-
-
-//namespace
-//{
-//
-//void removeDuplicateColumns(NamesAndTypesList & columns)
-//{
-//    std::set<String> names;
-//    for (auto it = columns.begin(); it != columns.end();)
-//    {
-//        if (names.emplace(it->name).second)
-//            ++it;
-//        else
-//            columns.erase(it++);
-//    }
-//}
-//
-//}
 
 
 ExpressionAnalyzer::ExpressionAnalyzer(
@@ -129,8 +96,8 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     query(query_), context(context_), settings(context.getSettings()), storage(storage_),
     subquery_depth(subquery_depth_), do_global(do_global_)
 {
-    auto syntax_analyzer_result = SyntaxAnalyzer()
-            .analyze(query, context, storage, source_columns, required_result_columns_, subquery_depth);
+    auto syntax_analyzer_result = SyntaxAnalyzer(context, storage)
+            .analyze(query, source_columns, required_result_columns_, subquery_depth);
     query = syntax_analyzer_result.query;
     storage = syntax_analyzer_result.storage;
     source_columns = syntax_analyzer_result.source_columns;
@@ -141,8 +108,6 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     rewrite_subqueries = syntax_analyzer_result.rewrite_subqueries;
 
     select_query = typeid_cast<ASTSelectQuery *>(query.get());
-
-    // removeDuplicateColumns(source_columns);
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
