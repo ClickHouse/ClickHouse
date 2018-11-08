@@ -37,15 +37,30 @@ struct SyntaxAnalyzerResult
     bool rewrite_subqueries = false;
 };
 
+/// AST syntax analysis.
+/// Optimises AST tree and collect information for further expression analysis.
+/// Result AST has the following invariants:
+///  * all aliases are substituted
+///  * qualified names are translated
+///  * scalar subqueries are executed replaced with constants
+///  * unneeded columns are removed from SELECT clause
+///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
+/// Motivation:
+///  * group most of the AST-changing operations in single place
+///  * avoid AST rewriting in ExpressionAnalyzer
+///  * decompose ExpressionAnalyzer
 class SyntaxAnalyzer
 {
 public:
+    SyntaxAnalyzer(const Context & context, const StoragePtr & storage) : context(context), storage(storage) {}
+
     SyntaxAnalyzerResult analyze(const ASTPtr & query,
-                                 const Context & context,
-                                 const StoragePtr & storage,
                                  NamesAndTypesList source_columns,
                                  const Names & required_result_columns = {},
                                  size_t subquery_depth = 0) const;
+
+    const Context & context;
+    StoragePtr storage;
 };
 
 }
