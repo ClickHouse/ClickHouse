@@ -269,7 +269,8 @@ public:
 
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
+        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result,
+        const Context & context, const NamesAndTypesList & all_columns);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,

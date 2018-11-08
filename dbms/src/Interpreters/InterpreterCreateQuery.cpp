@@ -26,6 +26,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -223,7 +224,9 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!defaulted_columns.empty())
     {
-        const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, columns}.getActions(true);
+        auto source_columns = columns;
+        auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, source_columns);
+        const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context, source_columns).getActions(true);
         const auto block = actions->getSampleBlock();
 
         for (auto action : actions->getActions())

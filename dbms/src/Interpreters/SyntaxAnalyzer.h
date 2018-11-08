@@ -10,11 +10,7 @@ using StoragePtr = std::shared_ptr<IStorage>;
 
 struct SyntaxAnalyzerResult
 {
-    ASTPtr query;
-
     StoragePtr storage;
-
-    NamesAndTypesList source_columns;
 
     /// Note: used only in tests.
     using Aliases = std::unordered_map<String, ASTPtr>;
@@ -26,9 +22,11 @@ struct SyntaxAnalyzerResult
 
     /// For the ARRAY JOIN section, mapping from the alias to the full column name.
     /// For example, for `ARRAY JOIN [1,2] AS b` "b" -> "array(1,2)" will enter here.
+    /// Note: not used further.
     NameToNameMap array_join_alias_to_name;
 
     /// The backward mapping for array_join_alias_to_name.
+    /// Note: not used further.
     NameToNameMap array_join_name_to_alias;
 
     AnalyzedJoin analyzed_join;
@@ -36,6 +34,8 @@ struct SyntaxAnalyzerResult
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 };
+
+using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /// AST syntax analysis.
 /// Optimises AST tree and collect information for further expression analysis.
@@ -52,12 +52,13 @@ struct SyntaxAnalyzerResult
 class SyntaxAnalyzer
 {
 public:
-    SyntaxAnalyzer(const Context & context, const StoragePtr & storage) : context(context), storage(storage) {}
+    SyntaxAnalyzer(const Context & context, StoragePtr storage) : context(context), storage(std::move(storage)) {}
 
-    SyntaxAnalyzerResult analyze(const ASTPtr & query,
-                                 NamesAndTypesList source_columns,
-                                 const Names & required_result_columns = {},
-                                 size_t subquery_depth = 0) const;
+    SyntaxAnalyzerResultPtr analyze(
+        ASTPtr & query,
+        NamesAndTypesList & source_columns,
+        const Names & required_result_columns = {},
+        size_t subquery_depth = 0) const;
 
     const Context & context;
     StoragePtr storage;

@@ -43,7 +43,8 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         : primary_key_columns{ext::collection_cast<std::unordered_set>(data.getPrimarySortColumns())},
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
-        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, context, data.getColumns().getAllPhysical())},
+        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result,
+                                                                 context, data.getColumns().getAllPhysical())},
         prepared_sets(query_info.sets),
         log{log}
 {

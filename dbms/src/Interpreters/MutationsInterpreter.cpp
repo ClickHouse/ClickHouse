@@ -1,4 +1,5 @@
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -195,7 +196,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             const ColumnDefault & col_default = kv.second;
             if (col_default.kind == ColumnDefaultKind::Materialized)
             {
-                ExpressionAnalyzer analyzer(col_default.expression->clone(), context, nullptr, all_columns);
+                NamesAndTypesList source_columns = all_columns;
+                auto query = col_default.expression->clone();
+                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
+                ExpressionAnalyzer analyzer(query, syntax_result, context, source_columns);
                 for (const String & dependency : analyzer.getRequiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
@@ -301,7 +305,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, context, nullptr, all_columns);
+        NamesAndTypesList source_columns = all_columns;
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(all_asts, source_columns);
+        stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context, all_columns);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 
