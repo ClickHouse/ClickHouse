@@ -5,7 +5,7 @@
 namespace DB
 {
 
-bool linuxCapability(decltype(CAP_NET_ADMIN) cap);
+bool hasLinuxCapability(decltype(CAP_NET_ADMIN) cap);
 
 }
 

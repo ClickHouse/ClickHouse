@@ -6,7 +6,7 @@
 
 #if defined(__linux__)
 
-#include "linuxCapability.h"
+#include "hasLinuxCapability.h"
 #include <common/unaligned.h>
 
 #include <errno.h>
@@ -186,7 +186,7 @@ UInt16 getFamilyIdImpl(int fd)
 
 bool checkPermissionsImpl()
 {
-    static bool res = linuxCapability(CAP_NET_ADMIN);
+    static bool res = hasLinuxCapability(CAP_NET_ADMIN);
     if (!res)
         return false;
 

@@ -1,4 +1,4 @@
-#include "linuxCapability.h"
+#include "hasLinuxCapability.h"
 
 #if defined(__linux__)
 
@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-bool linuxCapabilityImpl(decltype(CAP_NET_ADMIN) cap)
+bool hasLinuxCapabilityImpl(decltype(CAP_NET_ADMIN) cap)
 {
     /// See man getcap.
     __user_cap_header_struct request{};
@@ -42,9 +42,9 @@ bool linuxCapabilityImpl(decltype(CAP_NET_ADMIN) cap)
 
 }
 
-bool linuxCapability(decltype(CAP_NET_ADMIN) cap)
+bool hasLinuxCapability(decltype(CAP_NET_ADMIN) cap)
 {
-    static bool res = linuxCapabilityImpl(cap);
+    static bool res = hasLinuxCapabilityImpl(cap);
     return res;
 }
 

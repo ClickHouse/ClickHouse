@@ -43,7 +43,7 @@
 #include "TCPHandlerFactory.h"
 
 #if defined(__linux__)
-#include <Common/linuxCapability.h>
+#include <Common/hasLinuxCapability.h>
 #include <sys/mman.h>
 #endif
 
@@ -602,7 +602,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(__linux__)
         if (config().getBool("binary_mlock", true))
         {
-            if (linuxCapability(CAP_IPC_LOCK))
+            if (hasLinuxCapability(CAP_IPC_LOCK))
             {
                 if (!mlockall(MCL_CURRENT))
                     LOG_WARNING(log, "mlockall failed: " + errnoToString());
