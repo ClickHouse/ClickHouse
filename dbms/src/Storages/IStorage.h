@@ -349,6 +349,9 @@ public:
     /// Returns primary expression for storage or nullptr if there is no.
     virtual ASTPtr getPrimaryExpression() const { return nullptr; }
 
+    /// Returns partition expression for storage or nullptr if there is no.
+    virtual ASTPtr getPartitionExpression() const {return nullptr; }
+
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
 
