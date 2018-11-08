@@ -35,7 +35,7 @@ struct TestEntry
     {
         ASTPtr ast = parse(query);
 
-        auto res =  SyntaxAnalyzer().analyze(ast, context, {}, source_columns, required_result_columns);
+        auto res =  SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
 
         if (!checkAliases(res))
         {
