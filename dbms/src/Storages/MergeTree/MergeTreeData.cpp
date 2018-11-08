@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -226,11 +227,13 @@ void MergeTreeData::initPrimaryKey()
     primary_sort_columns.clear();
     addSortColumns(primary_sort_columns, primary_expr_ast);
 
-    primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
-
     {
+        auto source_columns = getColumns().getAllPhysical();
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(primary_expr_ast, source_columns);
+        primary_expr = ExpressionAnalyzer(primary_expr_ast, syntax_result, context, source_columns).getActions(false);
+
         ExpressionActionsPtr projected_expr =
-            ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
+                ExpressionAnalyzer(primary_expr_ast, syntax_result, context, source_columns).getActions(true);
         primary_key_sample = projected_expr->getSampleBlock();
     }
 
@@ -245,10 +248,12 @@ void MergeTreeData::initPrimaryKey()
     if (secondary_sort_expr_ast)
     {
         addSortColumns(sort_columns, secondary_sort_expr_ast);
-        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
+        NamesAndTypesList source_columns = getColumns().getAllPhysical();
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(secondary_sort_expr_ast, source_columns);
+        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, syntax_result, context, source_columns).getActions(false);
 
         ExpressionActionsPtr projected_expr =
-            ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
+            ExpressionAnalyzer(secondary_sort_expr_ast, syntax_result, context, source_columns).getActions(true);
         auto secondary_key_sample = projected_expr->getSampleBlock();
 
         checkKeyExpression(*secondary_sort_expr, secondary_key_sample, "Secondary");
@@ -261,7 +266,12 @@ void MergeTreeData::initPartitionKey()
     if (!partition_expr_ast || partition_expr_ast->children.empty())
         return;
 
-    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
+    {
+        NamesAndTypesList source_columns = getColumns().getAllPhysical();
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_expr_ast, source_columns);
+        partition_expr = ExpressionAnalyzer(partition_expr_ast, syntax_result, context, source_columns).getActions(false);
+    }
+
     for (const ASTPtr & ast : partition_expr_ast->children)
     {
         String col_name = ast->getColumnName();
@@ -1147,7 +1157,10 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// TODO: Check the order of secondary sorting key columns.
     if (new_primary_key.get() != primary_expr_ast.get())
     {
-        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, new_columns).getActions(true);
+        NamesAndTypesList source_columns = new_columns;
+        ASTPtr query = new_primary_key;
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
+        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(query, syntax_result, context, source_columns).getActions(true);
         Block new_primary_key_sample = new_primary_expr->getSampleBlock();
         size_t new_key_size = new_primary_key_sample.columns();
 

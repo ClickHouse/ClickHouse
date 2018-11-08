@@ -10,6 +10,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -458,7 +459,8 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
             NameAndTypePair virtual_column = getColumn("_table");
             source_columns.insert(source_columns.end(), virtual_column);
-            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, context, {}, source_columns}.getActions(false, false);
+            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(where_expression, source_columns);
+            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context, source_columns}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
             for (const auto required_column : required_columns)

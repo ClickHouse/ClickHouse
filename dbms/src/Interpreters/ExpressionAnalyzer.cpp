@@ -82,32 +82,29 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
+/// From SyntaxAnalyzer.cpp
+extern void removeDuplicateColumns(NamesAndTypesList & columns);
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
+    const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
-    const StoragePtr & storage_,
     const NamesAndTypesList & source_columns_,
     const Names & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
     const SubqueriesForSets & subqueries_for_sets_)
-    : ExpressionAnalyzerData(source_columns_, required_result_columns_, subqueries_for_sets_),
-    query(query_), context(context_), settings(context.getSettings()), storage(storage_),
-    subquery_depth(subquery_depth_), do_global(do_global_)
+    : ExpressionAnalyzerData(source_columns_, required_result_columns_, subqueries_for_sets_)
+    , query(query_), context(context_), settings(context.getSettings())
+    , subquery_depth(subquery_depth_), do_global(do_global_)
+    , syntax(syntax_analyzer_result_), analyzed_join(syntax->analyzed_join)
 {
-    auto syntax_analyzer_result = SyntaxAnalyzer(context, storage)
-            .analyze(query, source_columns, required_result_columns_, subquery_depth);
-    query = syntax_analyzer_result.query;
-    storage = syntax_analyzer_result.storage;
-    source_columns = syntax_analyzer_result.source_columns;
-    array_join_result_to_source = syntax_analyzer_result.array_join_result_to_source;
-    array_join_alias_to_name = syntax_analyzer_result.array_join_alias_to_name;
-    array_join_name_to_alias = syntax_analyzer_result.array_join_name_to_alias;
-    analyzed_join = syntax_analyzer_result.analyzed_join;
-    rewrite_subqueries = syntax_analyzer_result.rewrite_subqueries;
+    storage = syntax->storage;
+    rewrite_subqueries = syntax->rewrite_subqueries;
 
     select_query = typeid_cast<ASTSelectQuery *>(query.get());
+
+    removeDuplicateColumns(source_columns);
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
@@ -521,7 +518,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
 {
     NameSet result_columns;
-    for (const auto & result_source : array_join_result_to_source)
+    for (const auto & result_source : syntax->array_join_result_to_source)
     {
         /// Assign new names to columns, if needed.
         if (result_source.first != result_source.second)
@@ -696,10 +693,18 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
 
     Names additional_required_mergetree_columns;
     if (sampling_expression)
-        additional_required_mergetree_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
+    {
+        NamesAndTypesList columns;
+        auto ast = sampling_expression;
+        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, columns);
+        additional_required_mergetree_columns = ExpressionAnalyzer(ast, syntax_result, context, columns).getRequiredSourceColumns();
+    }
     if (primary_expression)
     {
-        auto required_primary_columns = ExpressionAnalyzer(primary_expression, context, storage).getRequiredSourceColumns();
+        NamesAndTypesList columns;
+        auto ast = primary_expression;
+        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, columns);
+        auto required_primary_columns = ExpressionAnalyzer(ast, syntax_result, context, columns).getRequiredSourceColumns();
         additional_required_mergetree_columns.insert(additional_required_mergetree_columns.end(),
                                                      required_primary_columns.begin(), required_primary_columns.end());
     }
@@ -1089,7 +1094,7 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
     NameSet array_join_sources;
-    for (const auto & result_source : array_join_result_to_source)
+    for (const auto & result_source : syntax->array_join_result_to_source)
         array_join_sources.insert(result_source.second);
 
     for (const auto & column_name_type : source_columns)

@@ -7,6 +7,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -26,8 +27,11 @@ namespace ErrorCodes
 
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
-    ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(
-        node, context, nullptr, NamesAndTypesList{{ "_dummy", std::make_shared<DataTypeUInt8>() }}, Names()).getConstActions();
+    NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
+    auto query = node->clone();
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns, {});
+    ExpressionActionsPtr expr_for_constant_folding
+            = ExpressionAnalyzer(node, syntax_result, context, source_columns).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.
     Block block_with_constants{{ ColumnConst::create(ColumnUInt8::create(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy" }};

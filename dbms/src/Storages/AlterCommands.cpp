@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTIdentifier.h>
@@ -320,7 +321,10 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             for (const auto & default_column : defaults)
             {
                 const auto & default_expression = default_column.second.expression;
-                const auto actions = ExpressionAnalyzer{default_expression, context, {}, all_columns}.getActions(true);
+                NamesAndTypesList source_columns = all_columns;
+                ASTPtr query = default_expression;
+                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
+                const auto actions = ExpressionAnalyzer(query, syntax_result, context, all_columns).getActions(true);
                 const auto required_columns = actions->getRequiredColumns();
 
                 if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
@@ -376,7 +380,9 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
         defaulted_columns.emplace_back(NameAndTypePair{column_name, column_type_ptr}, nullptr);
     }
 
-    const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, all_columns}.getActions(true);
+    ASTPtr query = default_expr_list;
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+    const auto actions = ExpressionAnalyzer(query, syntax_result, context, all_columns).getActions(true);
     const auto block = actions->getSampleBlock();
 
     /// set deduced types, modify default expression if necessary
