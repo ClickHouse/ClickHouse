@@ -1425,23 +1425,13 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
-bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types,
-                                        const ASTPtr & sampling_expression, const ASTPtr & primary_expression)
+bool ExpressionAnalyzer::appendPrewhere(
+    ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns)
 {
     assertSelect();
 
     if (!select_query->prewhere_expression)
         return false;
-
-    Names additional_required_mergetree_columns;
-    if (sampling_expression)
-        additional_required_mergetree_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
-    if (primary_expression)
-    {
-        auto required_primary_columns = ExpressionAnalyzer(primary_expression, context, storage).getRequiredSourceColumns();
-        additional_required_mergetree_columns.insert(additional_required_mergetree_columns.end(),
-                                                     required_primary_columns.begin(), required_primary_columns.end());
-    }
 
     initChain(chain, source_columns);
     auto & step = chain.getLastStep();
@@ -1460,7 +1450,7 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
 
         /// Add required columns to required output in order not to remove them after prewhere execution.
         /// TODO: add sampling and final execution to common chain.
-        for (const auto & column : additional_required_mergetree_columns)
+        for (const auto & column : additional_required_columns)
         {
             if (required_source_columns.count(column))
             {

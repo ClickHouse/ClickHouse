@@ -343,11 +343,11 @@ public:
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
 
-    /// Returns sampling expression for storage or nullptr if there is no.
-    virtual ASTPtr getSamplingExpression() const { return nullptr; }
+    /// Returns additional columns that need to be read for sampling to work.
+    virtual Names getColumnsRequiredForSampling() const { return {}; }
 
-    /// Returns primary expression for storage or nullptr if there is no.
-    virtual ASTPtr getPrimaryExpression() const { return nullptr; }
+    /// Returns additional columns that need to be read for FINAL to work.
+    virtual Names getColumnsRequiredForFinal() const { return {}; }
 
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;

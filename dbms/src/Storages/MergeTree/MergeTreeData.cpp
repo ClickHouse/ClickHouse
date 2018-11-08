@@ -116,9 +116,16 @@ MergeTreeData::MergeTreeData(
 
     setPrimaryKey(order_by_ast_, primary_key_ast_);
 
-    if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
-        && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
-        throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+    if (sampling_expression)
+    {
+        if (!primary_key_sample.has(sampling_expression->getColumnName())
+            && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
+            throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+
+        columns_required_for_sampling = ExpressionAnalyzer(
+            sampling_expression, context, nullptr, getColumns().getAllPhysical())
+            .getRequiredSourceColumns();
+    }
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
