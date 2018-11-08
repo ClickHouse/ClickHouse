@@ -63,6 +63,16 @@ StorageBuffer::StorageBuffer(const std::string & name_, const ColumnsDescription
 {
 }
 
+StorageBuffer::~StorageBuffer()
+{
+    // Should not happen if shutdown was called
+    if (flush_thread.joinable())
+    {
+        shutdown_event.set();
+        flush_thread.join();
+    }
+}
+
 
 /// Reads from one buffer (from one block) under its mutex.
 class BufferBlockInputStream : public IProfilingBlockInputStream
@@ -103,16 +113,29 @@ private:
 };
 
 
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context) const
+{
+    if (!no_destination)
+    {
+        auto destination = context.getTable(destination_database, destination_table);
+
+        if (destination.get() == this)
+            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+        return destination->getQueryProcessingStage(context);
+    }
+
+    return QueryProcessingStage::FetchColumns;
+}
+
 BlockInputStreams StorageBuffer::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     BlockInputStreams streams_from_dst;
 
     if (!no_destination)
@@ -135,7 +158,7 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, {}, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, stream, processed_stage).execute().in;
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -178,7 +201,7 @@ static void appendBlock(const Block & from, Block & to)
         try
         {
             /// Avoid "memory limit exceeded" exceptions during rollback.
-            TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+            auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {
@@ -262,7 +285,7 @@ public:
 
         for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
         {
-            std::unique_lock<std::mutex> lock(storage.buffers[shard_num].mutex, std::try_to_lock_t());
+            std::unique_lock<std::mutex> lock(storage.buffers[shard_num].mutex, std::try_to_lock);
 
             if (lock.owns_lock())
             {
@@ -280,14 +303,16 @@ public:
 
         /// If you still can not lock anything at once, then we'll wait on mutex.
         if (!least_busy_buffer)
-            insertIntoBuffer(block, storage.buffers[start_shard_num], std::unique_lock<std::mutex>(storage.buffers[start_shard_num].mutex));
-        else
-            insertIntoBuffer(block, *least_busy_buffer, std::move(least_busy_lock));
+        {
+            least_busy_buffer = &storage.buffers[start_shard_num];
+            least_busy_lock = std::unique_lock<std::mutex>(least_busy_buffer->mutex);
+        }
+        insertIntoBuffer(block, *least_busy_buffer);
     }
 private:
     StorageBuffer & storage;
 
-    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer, std::unique_lock<std::mutex> && lock)
+    void insertIntoBuffer(const Block & block, StorageBuffer::Buffer & buffer)
     {
         time_t current_time = time(nullptr);
 
@@ -305,9 +330,7 @@ private:
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            lock.unlock();
-            storage.flushBuffer(buffer, true);
-            lock.lock();
+            storage.flushBuffer(buffer, true, true /* locked */);
         }
 
         if (!buffer.first_write_time)
@@ -444,7 +467,7 @@ void StorageBuffer::flushAllBuffers(const bool check_thresholds)
 }
 
 
-void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
+void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
@@ -453,7 +476,9 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds)
     size_t bytes = 0;
     time_t time_passed = 0;
 
-    std::lock_guard<std::mutex> lock(buffer.mutex);
+    std::unique_lock<std::mutex> lock(buffer.mutex, std::defer_lock);
+    if (!locked)
+        lock.lock();
 
     block_to_write = buffer.data.cloneEmpty();
 
@@ -570,13 +595,17 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(columns_intersection.size());
     for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 
+    Block block_to_write;
+    for (const auto & name : columns_intersection)
+        block_to_write.insert(block.getByName(name));
+
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
-    block_io.out->write(block);
+    block_io.out->write(block_to_write);
     block_io.out->writeSuffix();
 }
 

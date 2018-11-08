@@ -244,6 +244,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             query->attach = attach;
             query->if_not_exists = if_not_exists;
+            query->cluster = cluster_str;
 
             if (database)
                 query->database = typeid_cast<ASTIdentifier &>(*database).name;
@@ -390,7 +391,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_view = is_view;
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
-    query->is_temporary = is_temporary;
+    query->temporary = is_temporary;
 
     if (database)
         query->database = typeid_cast<ASTIdentifier &>(*database).name;

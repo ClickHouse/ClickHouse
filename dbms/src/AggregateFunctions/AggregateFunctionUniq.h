@@ -337,12 +337,10 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */
-template <typename Data, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, argument_is_tuple>>
+template <typename Data, bool is_exact, bool argument_is_tuple>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>
 {
 private:
-    static constexpr bool is_exact = std::is_same_v<Data, AggregateFunctionUniqExactData<String>>;
-
     size_t num_args = 0;
 
 public:
@@ -363,7 +361,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
+        this->data(place).set.insert(typename Data::Set::value_type(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

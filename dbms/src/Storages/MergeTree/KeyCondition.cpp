@@ -3,10 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -14,6 +10,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -269,13 +266,13 @@ KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
     const NamesAndTypesList & all_columns,
-    const SortDescription & sort_descr_,
+    const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_)
-    : sort_descr(sort_descr_), key_expr(key_expr_), prepared_sets(query_info.sets)
+    : key_expr(key_expr_), prepared_sets(query_info.sets)
 {
-    for (size_t i = 0; i < sort_descr.size(); ++i)
+    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
-        std::string name = sort_descr[i].column_name;
+        std::string name = key_column_names[i];
         if (!key_columns.count(name))
             key_columns[name] = i;
     }
@@ -429,17 +426,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         const auto & action = a.argument_names;
         if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
         {
-            if (!a.function->hasInformationAboutMonotonicity())
+            if (!a.function_base->hasInformationAboutMonotonicity())
                 return false;
 
             // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             // Apply the next transformation step
             DataTypePtr new_type;
-            applyFunction(a.function, out_type, out_value, new_type, out_value);
+            applyFunction(a.function_base, out_type, out_value, new_type, out_value);
             if (!new_type)
                 return false;
 
@@ -484,14 +481,17 @@ void KeyCondition::getKeyTuplePositionMapping(
 }
 
 
-/// Try to prepare KeyTuplePositionMapping for tuples from IN expression.
-bool KeyCondition::isTupleIndexable(
+bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & node,
     const Context & context,
     RPNElement & out,
     const SetPtr & prepared_set,
     size_t & out_key_column_num)
 {
+    /// The index can be prepared if the elements of the set were saved in advance.
+    if (!prepared_set->hasExplicitSetElements())
+        return false;
+
     out_key_column_num = 0;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
 
@@ -523,8 +523,7 @@ bool KeyCondition::isTupleIndexable(
     if (indexes_mapping.empty())
         return false;
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(
-        prepared_set->getSetElements(), std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
     return true;
 }
@@ -636,13 +635,13 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
-        size_t key_column_num;        /// Number of a key column (inside sort_descr array)
+        size_t key_column_num;        /// Number of a key column (inside key_column_names array)
         MonotonicFunctionsChain chain;
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
         if (prepared_sets.count(args[1]->range)
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
+            && tryPrepareSetIndex(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
         {
             key_arg_pos = 0;
             is_set_const = true;
@@ -710,7 +709,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (key_expr_type->isNumber() && const_type->isNumber()); /// Numbers are accurately compared without cast.
+            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);

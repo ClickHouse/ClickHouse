@@ -47,7 +47,7 @@ BlockIO InterpreterRenameQuery::execute()
             databases.emplace(elem.to.database);
         }
 
-        return executeDDLQueryOnCluster(query_ptr, context, databases);
+        return executeDDLQueryOnCluster(query_ptr, context, std::move(databases));
     }
 
     String path = context.getPath();
@@ -90,18 +90,10 @@ BlockIO InterpreterRenameQuery::execute()
         unique_tables_from.emplace(from);
 
         if (!table_guards.count(from))
-            table_guards.emplace(from,
-                context.getDDLGuard(
-                    from.database_name,
-                    from.table_name,
-                    "Table " + from.database_name + "." + from.table_name + " is being renamed right now"));
+            table_guards.emplace(from, context.getDDLGuard(from.database_name, from.table_name));
 
         if (!table_guards.count(to))
-            table_guards.emplace(to,
-                context.getDDLGuard(
-                    to.database_name,
-                    to.table_name,
-                    "Some table right now is being renamed to " + to.database_name + "." + to.table_name));
+            table_guards.emplace(to, context.getDDLGuard(to.database_name, to.table_name));
     }
 
     std::vector<TableFullWriteLock> locks;

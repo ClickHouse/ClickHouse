@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -16,6 +17,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int INCORRECT_DATA;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
@@ -40,7 +43,9 @@ static bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
-        || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
+        || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+        || code == ErrorCodes::CANNOT_READ_ALL_DATA
+        || code == ErrorCodes::INCORRECT_DATA;
 }
 
 
@@ -142,6 +147,18 @@ Block BlockInputStreamFromRowInputStream::readImpl()
     if (!delayed_defaults.empty())
         out_block.delayed_defaults = std::move(delayed_defaults);
     return out_block;
+}
+
+
+void BlockInputStreamFromRowInputStream::readSuffix()
+{
+    if (allow_errors_num > 0 || allow_errors_ratio > 0)
+    {
+        Logger * log = &Logger::get("BlockInputStreamFromRowInputStream");
+        LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
+    }
+
+    row_input->readSuffix();
 }
 
 }

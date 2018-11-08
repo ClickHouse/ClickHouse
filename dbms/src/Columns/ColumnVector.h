@@ -118,14 +118,15 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 
 
 /** A template for columns that use a simple array to store.
-  */
+ */
 template <typename T>
 class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
 {
-private:
-    friend class COWPtrHelper<IColumn, ColumnVector<T>>;
+    static_assert(!IsDecimalNumber<T>);
 
-    using Self = ColumnVector<T>;
+private:
+    using Self = ColumnVector;
+    friend class COWPtrHelper<IColumn, Self>;
 
     struct less;
     struct greater;
@@ -192,7 +193,7 @@ public:
         return data.allocated_bytes();
     }
 
-    void insert(const T value)
+    void insertValue(const T value)
     {
         data.push_back(value);
     }
@@ -216,12 +217,12 @@ public:
 
     Field operator[](size_t n) const override
     {
-        return typename NearestFieldType<T>::Type(data[n]);
+        return data[n];
     }
 
     void get(size_t n, Field & res) const override
     {
-        res = typename NearestFieldType<T>::Type(data[n]);
+        res = (*this)[n];
     }
 
     UInt64 get64(size_t n) const override;
@@ -251,6 +252,11 @@ public:
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
@@ -295,5 +301,23 @@ protected:
     Container data;
 };
 
+template <typename T>
+template <typename Type>
+ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    size_t size = indexes.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    auto res = this->create(limit);
+    typename Self::Container & res_data = res->getData();
+    for (size_t i = 0; i < limit; ++i)
+        res_data[i] = data[indexes[i]];
+
+    return res;
+}
 
 }

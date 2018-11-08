@@ -124,10 +124,9 @@ static Strings getAllGraphiteSections(const AbstractConfiguration & config)
 
 } // namespace
 
-StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         {"config_name", std::make_shared<DataTypeString>()},
         {"regexp",      std::make_shared<DataTypeString>()},
         {"function",    std::make_shared<DataTypeString>()},
@@ -135,23 +134,12 @@ StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
         {"precision",   std::make_shared<DataTypeUInt64>()},
         {"priority",    std::make_shared<DataTypeUInt16>()},
         {"is_default",  std::make_shared<DataTypeUInt8>()},
-    }));
+    };
 }
 
 
-BlockInputStreams StorageSystemGraphite::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     const auto & config = context.getConfigRef();
 
     Strings sections = getAllGraphiteSections(config);
@@ -162,18 +150,16 @@ BlockInputStreams StorageSystemGraphite::read(
         {
             for (const auto & ret : pattern.retentions)
             {
-                res_columns[0]->insert(Field(section));
-                res_columns[1]->insert(Field(pattern.regexp));
-                res_columns[2]->insert(Field(pattern.function));
-                res_columns[3]->insert(nearestFieldType(ret.age));
-                res_columns[4]->insert(nearestFieldType(ret.precision));
-                res_columns[5]->insert(nearestFieldType(pattern.priority));
-                res_columns[6]->insert(nearestFieldType(pattern.is_default));
+                res_columns[0]->insert(section);
+                res_columns[1]->insert(pattern.regexp);
+                res_columns[2]->insert(pattern.function);
+                res_columns[3]->insert(ret.age);
+                res_columns[4]->insert(ret.precision);
+                res_columns[5]->insert(pattern.priority);
+                res_columns[6]->insert(pattern.is_default);
             }
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

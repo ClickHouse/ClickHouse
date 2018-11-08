@@ -3,6 +3,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/config.h>
+#include <Poco/Version.h>
 #if USE_POCO_NETSSL
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>
@@ -38,24 +39,6 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-
-void initSSL()
-{
-    // http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
-#if USE_POCO_NETSSL
-    struct Initializer
-    {
-        Initializer()
-        {
-            Poco::Net::initializeSSL();
-        }
-    };
-
-    static Initializer initializer;
-#endif
-}
-
-
 std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
 {
     bool is_ssl = static_cast<bool>(uri.getScheme() == "https");
@@ -76,7 +59,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & 
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
     session->setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 #else
-    session->setTimeout(timeouts.connection_timeout);
+    session->setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
 #endif
 
     return session;

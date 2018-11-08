@@ -28,6 +28,8 @@ void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageODBC(StorageFactory & factory);
 #endif
 
+void registerStorageJDBC(StorageFactory & factory);
+
 #if USE_MYSQL
 void registerStorageMySQL(StorageFactory & factory);
 #endif
@@ -61,6 +63,8 @@ void registerStorages()
     #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerStorageODBC(factory);
     #endif
+    registerStorageJDBC(factory);
+
 
     #if USE_MYSQL
     registerStorageMySQL(factory);

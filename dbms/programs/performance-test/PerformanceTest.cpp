@@ -21,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
 #include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
@@ -30,6 +31,11 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
 #include <Common/InterruptListener.h>
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with
@@ -521,11 +527,12 @@ public:
         std::string name;
         UInt64 version_major;
         UInt64 version_minor;
+        UInt64 version_patch;
         UInt64 version_revision;
-        connection.getServerVersion(name, version_major, version_minor, version_revision);
+        connection.getServerVersion(name, version_major, version_minor, version_patch, version_revision);
 
         std::stringstream ss;
-        ss << version_major << "." << version_minor << "." << version_revision;
+        ss << version_major << "." << version_minor << "." << version_patch;
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
@@ -1152,11 +1159,8 @@ private:
 
         StringToVector::iterator substitutions_first = substitutions.begin();
         StringToVector::iterator substitutions_last = substitutions.end();
-        --substitutions_last;
 
-        std::map<String, String> substitutions_map;
-
-        runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries, substitutions_map);
+        runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries);
 
         return queries;
     }
@@ -1166,44 +1170,37 @@ private:
     void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
         StringToVector::iterator substitutions_right,
         const String & template_query,
-        std::vector<String> & queries,
-        const StringKeyValue & template_substitutions_map = StringKeyValue())
+        std::vector<String> & queries)
     {
-        String name = substitutions_left->first;
-        std::vector<String> values = substitutions_left->second;
+        if (substitutions_left == substitutions_right)
+        {
+            queries.push_back(template_query); /// completely substituted query
+            return;
+        }
 
-        for (const String & value : values)
+        String substitution_mask = "{" + substitutions_left->first + "}";
+
+        if (template_query.find(substitution_mask) == String::npos) /// nothing to substitute here
+        {
+            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, template_query, queries);
+            return;
+        }
+
+        for (const String & value : substitutions_left->second)
         {
             /// Copy query string for each unique permutation
             Query query = template_query;
-            StringKeyValue substitutions_map = template_substitutions_map;
             size_t substr_pos = 0;
 
             while (substr_pos != String::npos)
             {
-                substr_pos = query.find("{" + name + "}");
+                substr_pos = query.find(substitution_mask);
 
                 if (substr_pos != String::npos)
-                {
-                    query.replace(substr_pos, 1 + name.length() + 1, value);
-                }
+                    query.replace(substr_pos, substitution_mask.length(), value);
             }
 
-            substitutions_map[name] = value;
-
-            /// If we've reached the end of substitution chain
-            if (substitutions_left == substitutions_right)
-            {
-                queries.push_back(query);
-                substitutions_maps.push_back(substitutions_map);
-            }
-            else
-            {
-                StringToVector::iterator next_it = substitutions_left;
-                ++next_it;
-
-                runThroughAllOptionsAndPush(next_it, substitutions_right, query, queries, substitutions_map);
-            }
+            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, query, queries);
         }
     }
 
@@ -1386,6 +1383,7 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
     }
 }
 
+
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
@@ -1481,6 +1479,8 @@ try
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
     auto timeouts = DB::ConnectionTimeouts::getTCPTimeoutsWithoutFailover(DB::Settings());
+
+    DB::UseSSL use_ssl;
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),

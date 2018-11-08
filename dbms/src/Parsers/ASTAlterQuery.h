@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -33,6 +33,7 @@ public:
         FREEZE_PARTITION,
 
         DELETE,
+        UPDATE,
 
         NO_TYPE,
     };
@@ -59,8 +60,11 @@ public:
      */
     ASTPtr partition;
 
-    /// For DELETE WHERE: the predicate that filters the rows to delete.
+    /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
     ASTPtr predicate;
+
+    /// A list of expressions of the form `column = expr` for the UPDATE command.
+    ASTPtr update_assignments;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -109,19 +113,19 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-class ASTAlterQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    String database;
-    String table;
-
     ASTAlterCommandList * command_list = nullptr;
 
     String getID() const override;
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        return removeOnCluster<ASTAlterQuery>(clone(), new_database);
+    }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

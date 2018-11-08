@@ -183,7 +183,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             secondary_sort_expr->execute(block);
     }
 
-    SortDescription sort_descr = data.getSortDescription();
+    Names sort_columns = data.getSortColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(block.getPositionByName(sort_columns[i]), 1, 1);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
@@ -192,9 +198,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     IColumn::Permutation perm;
     if (data.hasPrimaryKey())
     {
-        if (!isAlreadySorted(block, sort_descr))
+        if (!isAlreadySorted(block, sort_description))
         {
-            stableGetPermutation(block, sort_descr, perm);
+            stableGetPermutation(block, sort_description, perm);
             perm_ptr = &perm;
         }
         else

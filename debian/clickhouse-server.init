@@ -156,12 +156,12 @@ start()
     EXIT_STATUS=0
 
     echo -n "Start $PROGRAM service: "
-    ulimit -n 262144
 
     if is_running; then
         echo -n "already running "
         EXIT_STATUS=1
     else
+        ulimit -n 262144
         mkdir -p $CLICKHOUSE_PIDDIR
         chown -R $CLICKHOUSE_USER:$CLICKHOUSE_GROUP $CLICKHOUSE_PIDDIR
         initdb
@@ -328,12 +328,14 @@ status()
 {
     if is_running; then
         echo "$PROGRAM service is running"
+        exit 0
     else
         if is_cron_disabled; then
             echo "$PROGRAM service is stopped";
         else
             echo "$PROGRAM: process unexpectedly terminated"
         fi
+        exit 3
     fi
 }
 
@@ -342,7 +344,6 @@ status()
 case "$1" in
 status)
     status
-    exit 0
     ;;
 esac
 

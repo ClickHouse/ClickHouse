@@ -61,7 +61,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeFloat64>(arg))
+            if (!WhichDataType(arg).isFloat64())
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -213,7 +213,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeFloat64>(arg))
+            if (!WhichDataType(arg).isFloat64())
             {
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
@@ -293,7 +293,7 @@ private:
                 const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses, ellipses_count, start_index);
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, UInt64(res));
+                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, res);
             }
             else
             {

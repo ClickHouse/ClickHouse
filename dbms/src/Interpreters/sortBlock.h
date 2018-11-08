@@ -29,4 +29,8 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
   */
 bool isAlreadySorted(const Block & block, const SortDescription & description);
 
+using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
+
+ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description);
+
 }

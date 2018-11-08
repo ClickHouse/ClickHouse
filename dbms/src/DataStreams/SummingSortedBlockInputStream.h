@@ -2,6 +2,7 @@
 
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/AlignedBuffer.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -69,25 +70,32 @@ private:
     /// Stores aggregation function, state, and columns to be used as function arguments
     struct AggregateDescription
     {
+        /// An aggregate function 'sumWithOverflow' or 'sumMap' for summing.
         AggregateFunctionPtr function;
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;
         MutableColumnPtr merged_column;
-        std::vector<char> state;
+        AlignedBuffer state;
         bool created = false;
+
+        /// In case when column has type AggregateFunction: use the aggregate function from itself instead of 'function' above.
+        bool is_agg_func_type = false;
 
         void init(const char * function_name, const DataTypes & argument_types)
         {
             function = AggregateFunctionFactory::instance().get(function_name, argument_types);
             add_function = function->getAddressOfAddFunction();
-            state.resize(function->sizeOfData());
+            state.reset(function->sizeOfData(), function->alignOfData());
         }
 
         void createState()
         {
             if (created)
                 return;
-            function->create(state.data());
+            if (is_agg_func_type)
+                merged_column->insertDefault();
+            else
+                function->create(state.data());
             created = true;
         }
 
@@ -95,7 +103,8 @@ private:
         {
             if (!created)
                 return;
-            function->destroy(state.data());
+            if (!is_agg_func_type)
+                function->destroy(state.data());
             created = false;
         }
 
@@ -126,7 +135,6 @@ private:
     Row current_row;
     bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
-    bool output_is_non_empty = false;   /// Have we given out at least one row as a result.
     size_t merged_rows = 0;             /// Number of rows merged into current result block
 
     /** We support two different cursors - with Collation and without.
@@ -135,8 +143,7 @@ private:
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
-    /// If force_insertion=true, then the row will be inserted even if it is "zero"
-    void insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion);
+    void insertCurrentRowIfNeeded(MutableColumns & merged_columns);
 
     /// Returns true if merge result is not empty
     bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);

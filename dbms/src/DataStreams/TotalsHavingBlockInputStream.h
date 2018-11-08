@@ -1,11 +1,13 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Common/Arena.h>
 
 
 namespace DB
 {
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
 
@@ -24,7 +26,7 @@ public:
     TotalsHavingBlockInputStream(
         const BlockInputStreamPtr & input_,
         bool overflow_row_, const ExpressionActionsPtr & expression_,
-        const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_);
+        const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_, bool final_);
 
     String getName() const override { return "TotalsHaving"; }
 
@@ -41,6 +43,7 @@ private:
     String filter_column_name;
     TotalsMode totals_mode;
     double auto_include_threshold;
+    bool final;
     size_t passed_keys = 0;
     size_t total_keys = 0;
 

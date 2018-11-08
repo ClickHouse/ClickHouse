@@ -6,7 +6,6 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -78,6 +77,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_UPDATE_COLUMN;
 }
 
 
@@ -159,8 +159,9 @@ MergeTreeData::MergeTreeData(
     Poco::File(full_path + "detached").createDirectory();
 
     String version_file_path = full_path + "format_version.txt";
-    // When data path not exists, ignore the format_version check
-    if (!attach || !path_exists)
+    auto version_file_exists = Poco::File(version_file_path).exists();
+    // When data path or file not exists, ignore the format_version check
+    if (!attach || !path_exists || !version_file_exists)
     {
         format_version = min_format_version;
         WriteBufferFromFile buf(version_file_path);
@@ -192,7 +193,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
         if (action.type == ExpressionAction::APPLY_FUNCTION)
         {
-            IFunctionBase & func = *action.function;
+            IFunctionBase & func = *action.function_base;
             if (!func.isDeterministic())
                 throw Exception(key_name + " key cannot contain non-deterministic functions, "
                     "but contains function " + func.getName(),
@@ -214,19 +215,16 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 void MergeTreeData::initPrimaryKey()
 {
-    auto addSortDescription = [](SortDescription & descr, const ASTPtr & expr_ast)
+    auto addSortColumns = [](Names & out, const ASTPtr & expr_ast)
     {
-        descr.reserve(descr.size() + expr_ast->children.size());
+        out.reserve(out.size() + expr_ast->children.size());
         for (const ASTPtr & ast : expr_ast->children)
-        {
-            String name = ast->getColumnName();
-            descr.emplace_back(name, 1, 1);
-        }
+            out.emplace_back(ast->getColumnName());
     };
 
     /// Initialize description of sorting for primary key.
-    primary_sort_descr.clear();
-    addSortDescription(primary_sort_descr, primary_expr_ast);
+    primary_sort_columns.clear();
+    addSortColumns(primary_sort_columns, primary_expr_ast);
 
     primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
 
@@ -243,10 +241,10 @@ void MergeTreeData::initPrimaryKey()
     for (size_t i = 0; i < primary_key_size; ++i)
         primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
 
-    sort_descr = primary_sort_descr;
+    sort_columns = primary_sort_columns;
     if (secondary_sort_expr_ast)
     {
-        addSortDescription(sort_descr, secondary_sort_expr_ast);
+        addSortColumns(sort_columns, secondary_sort_expr_ast);
         secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
 
         ExpressionActionsPtr projected_expr =
@@ -274,12 +272,11 @@ void MergeTreeData::initPartitionKey()
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
         minmax_idx_column_types.emplace_back(column.type);
-        minmax_idx_sort_descr.emplace_back(column.name, 1, 1);
     }
 
     /// Try to find the date column in columns used by the partition key (a common case).
@@ -428,7 +425,7 @@ Int64 MergeTreeData::getMaxBlockNumber()
 
     Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
-        max_block_num = std::max(max_block_num, part->info.max_block);
+        max_block_num = std::max({max_block_num, part->info.max_block, part->info.mutation});
 
     return max_block_num;
 }
@@ -999,7 +996,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 /// Need to modify column type.
                 if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
+                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
 
                 out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
@@ -1211,7 +1208,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         MarkRanges ranges{MarkRange(0, part->marks_count)};
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
-            false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+            false, nullptr, false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
             part->bytes_on_disk,
@@ -1225,7 +1222,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
           *  will have old name of shared offsets for arrays.
           */
-        MergedColumnOnlyOutputStream out(*this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */);
+        IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
+        MergedColumnOnlyOutputStream out(
+            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */, unused_written_offsets);
 
         in.readPrefix();
         out.writePrefix();
@@ -1439,9 +1438,13 @@ void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
 
 
 void MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part, SimpleIncrement * increment, MergeTreeData::Transaction * out_transaction,
+    MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction,
     std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts)
 {
+    if (out_transaction && &out_transaction->data != this)
+        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
+
     part->assertState({DataPartState::Temporary});
 
     MergeTreePartInfo part_info = part->info;
@@ -1503,7 +1506,6 @@ void MergeTreeData::renameTempPartAndReplace(
 
     if (out_transaction)
     {
-        out_transaction->data = this;
         out_transaction->precommitted_parts.insert(part);
     }
     else
@@ -1530,9 +1532,9 @@ void MergeTreeData::renameTempPartAndReplace(
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
 {
-    if (out_transaction && out_transaction->data && out_transaction->data != this)
-    throw Exception("The same MergeTreeData::Transaction cannot be used for different tables",
-        ErrorCodes::LOGICAL_ERROR);
+    if (out_transaction && &out_transaction->data != this)
+        throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
 
     DataPartsVector covered_parts;
     {
@@ -1746,6 +1748,42 @@ restore_covered)
 }
 
 
+void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
+{
+    DataPartPtr part_to_delete;
+    {
+        std::lock_guard<std::mutex> lock_parts(data_parts_mutex);
+
+        LOG_TRACE(log, "Trying to immediately remove part " << part->getNameWithState());
+
+        auto it = data_parts_by_info.find(part->info);
+        if (it == data_parts_by_info.end() || (*it).get() != part.get())
+            throw Exception("Part " + part->name + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+
+        part.reset();
+
+        if (!((*it)->state == DataPartState::Outdated && it->unique()))
+            return;
+
+        modifyPartState(it, DataPartState::Deleting);
+        part_to_delete = *it;
+    }
+
+    try
+    {
+        part_to_delete->remove();
+    }
+    catch (...)
+    {
+        rollbackDeletingParts({part_to_delete});
+        throw;
+    }
+
+    removePartsFinally({part_to_delete});
+    LOG_TRACE(log, "Removed part " << part_to_delete->name);
+}
+
+
 size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
     size_t res = 0;
@@ -1784,6 +1822,21 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
     }
 
     return res;
+}
+
+
+std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
+{
+    std::lock_guard lock(data_parts_mutex);
+
+    std::optional<Int64> result;
+    for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (!result || *result > part->info.getDataVersion())
+            result = part->info.getDataVersion();
+    }
+
+    return result;
 }
 
 
@@ -1854,12 +1907,16 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     return nullptr;
 }
 
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
+{
+    DataPartsLock data_parts_lock(data_parts_mutex);
+    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+}
+
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-
-    DataPartsLock data_parts_lock(data_parts_mutex);
-    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+    return getActiveContainingPart(part_info);
 }
 
 
@@ -2227,9 +2284,9 @@ void MergeTreeData::Transaction::rollback()
         for (const auto & part : precommitted_parts)
             ss << " " << part->relative_path;
         ss << ".";
-        LOG_DEBUG(data->log, "Undoing transaction." << ss.str());
+        LOG_DEBUG(data.log, "Undoing transaction." << ss.str());
 
-        data->removePartsFromWorkingSet(
+        data.removePartsFromWorkingSet(
             DataPartsVector(precommitted_parts.begin(), precommitted_parts.end()),
             /* clear_without_timeout = */ true);
     }
@@ -2243,21 +2300,21 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
     if (!isEmpty())
     {
-        auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data->lockParts();
+        auto parts_lock = acquired_parts_lock ? MergeTreeData::DataPartsLock() : data.lockParts();
         auto owing_parts_lock = acquired_parts_lock ? acquired_parts_lock : &parts_lock;
 
         auto current_time = time(nullptr);
         for (const DataPartPtr & part : precommitted_parts)
         {
             DataPartPtr covering_part;
-            DataPartsVector covered_parts = data->getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
+            DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, *owing_parts_lock);
             if (covering_part)
             {
-                LOG_WARNING(data->log, "Tried to commit obsolete part " << part->name
+                LOG_WARNING(data.log, "Tried to commit obsolete part " << part->name
                     << " covered by " << covering_part->getNameWithState());
 
                 part->remove_time.store(0, std::memory_order_relaxed); /// The part will be removed without waiting for old_parts_lifetime seconds.
-                data->modifyPartState(part, DataPartState::Outdated);
+                data.modifyPartState(part, DataPartState::Outdated);
             }
             else
             {
@@ -2265,12 +2322,12 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 for (const DataPartPtr & covered_part : covered_parts)
                 {
                     covered_part->remove_time.store(current_time, std::memory_order_relaxed);
-                    data->modifyPartState(covered_part, DataPartState::Outdated);
-                    data->removePartContributionToColumnSizes(covered_part);
+                    data.modifyPartState(covered_part, DataPartState::Outdated);
+                    data.removePartContributionToColumnSizes(covered_part);
                 }
 
-                data->modifyPartState(part, DataPartState::Committed);
-                data->addPartContributionToColumnSizes(part);
+                data.modifyPartState(part, DataPartState::Committed);
+                data.addPartContributionToColumnSizes(part);
             }
         }
     }
@@ -2282,14 +2339,14 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
 bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
-    String column_name = node->getColumnName();
+    const String column_name = node->getColumnName();
 
-    for (const auto & column : primary_sort_descr)
-        if (column_name == column.column_name)
+    for (const auto & name : primary_sort_columns)
+        if (column_name == name)
             return true;
 
-    for (const auto & column : minmax_idx_sort_descr)
-        if (column_name == column.column_name)
+    for (const auto & name : minmax_idx_columns)
+        if (column_name == name)
             return true;
 
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
@@ -2357,12 +2414,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
                                                                       const String & tmp_part_prefix,
                                                                       const MergeTreePartInfo & dst_part_info)
 {
-    String dst_part_name;
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
-        else
-            dst_part_name = dst_part_info.getPartName();
-
+    String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     Poco::Path dst_part_absolute_path = Poco::Path(full_path + tmp_dst_part_name).absolute();

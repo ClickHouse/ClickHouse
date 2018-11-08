@@ -74,7 +74,7 @@ bool check(const T x) { return x == 0; }
 template <typename T>
 void set(T & x) { x = 0; }
 
-};
+}
 
 
 /** Compile-time interface for cell of the hash table.
@@ -108,6 +108,7 @@ struct HashTableCell
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return key == key_; }
     bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return key == key_; }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -268,7 +269,7 @@ protected:
     friend class TwoLevelHashTable;
 
     using HashValue = size_t;
-    using Self = HashTable<Key, Cell, Hash, Grower, Allocator>;
+    using Self = HashTable;
     using cell_type = Cell;
 
     size_t m_size = 0;        /// Amount of elements
@@ -280,9 +281,10 @@ protected:
 #endif
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
-    size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
+    template <typename ObjectToCompareWith>
+    size_t ALWAYS_INLINE findCell(const ObjectToCompareWith & x, size_t hash_value, size_t place_value) const
     {
-        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value))
+        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value, *this))
         {
             place_value = grower.next(place_value);
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -418,7 +420,7 @@ protected:
     void destroyElements()
     {
         if (!std::is_trivially_destructible_v<Cell>)
-            for (iterator it = begin(); it != end(); ++it)
+            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
                 it.ptr->~Cell();
     }
 
@@ -443,12 +445,15 @@ protected:
 
         Derived & operator++()
         {
+            /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
             if (unlikely(ptr->isZero(*container)))
                 ptr = container->buf;
             else
                 ++ptr;
 
-            while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
+            /// Skip empty cells in the main buffer.
+            auto buf_end = container->buf + container->grower.bufSize();
+            while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
             return static_cast<Derived &>(*this);
@@ -567,11 +572,14 @@ public:
             return iteratorToZero();
 
         const Cell * ptr = buf;
-        while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
+        auto buf_end = buf + grower.bufSize();
+        while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return const_iterator(this, ptr);
     }
+
+    const_iterator cbegin() const { return begin(); }
 
     iterator begin()
     {
@@ -582,13 +590,15 @@ public:
             return iteratorToZero();
 
         Cell * ptr = buf;
-        while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
+        auto buf_end = buf + grower.bufSize();
+        while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return iterator(this, ptr);
     }
 
     const_iterator end() const         { return const_iterator(this, buf + grower.bufSize()); }
+    const_iterator cend() const        { return end(); }
     iterator end()                     { return iterator(this, buf + grower.bufSize()); }
 
 
@@ -734,7 +744,8 @@ public:
     }
 
 
-    iterator ALWAYS_INLINE find(Key x)
+    template <typename ObjectToCompareWith>
+    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -745,7 +756,8 @@ public:
     }
 
 
-    const_iterator ALWAYS_INLINE find(Key x) const
+    template <typename ObjectToCompareWith>
+    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -756,7 +768,8 @@ public:
     }
 
 
-    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
+    template <typename ObjectToCompareWith>
+    iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -766,7 +779,8 @@ public:
     }
 
 
-    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
+    template <typename ObjectToCompareWith>
+    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -805,9 +819,9 @@ public:
         if (this->hasZero())
             this->zeroValue()->write(wb);
 
-        for (size_t i = 0; i < grower.bufSize(); ++i)
-            if (!buf[i].isZero(*this))
-                buf[i].write(wb);
+        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
+            if (!ptr->isZero(*this))
+                ptr->write(wb);
     }
 
     void writeText(DB::WriteBuffer & wb) const
@@ -821,12 +835,12 @@ public:
             this->zeroValue()->writeText(wb);
         }
 
-        for (size_t i = 0; i < grower.bufSize(); ++i)
+        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
         {
-            if (!buf[i].isZero(*this))
+            if (!ptr->isZero(*this))
             {
                 DB::writeChar(',', wb);
-                buf[i].writeText(wb);
+                ptr->writeText(wb);
             }
         }
     }

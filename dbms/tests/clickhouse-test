@@ -73,7 +73,7 @@ def main(args):
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
 
-    # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
+    # Keep same default values as in queries/shell_config.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
@@ -81,9 +81,13 @@ def main(args):
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
-    # TODO ! use clickhouse-extract-from-config here:
+    # Force to print server warnings in stderr
+    # Shell scripts could change logging level
+    server_logs_level = "warning"
+    os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
+
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = commands.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -93,7 +97,7 @@ def main(args):
             args.zookeeper = False
 
     if args.shard is None:
-        code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
         if out:
             args.shard = True
         else:
@@ -126,7 +130,7 @@ def main(args):
             failures = 0
             failures_chain = 0
             if 'stateful' in suite and not is_data_present():
-                print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
+                print("Won't run stateful tests because test data wasn't loaded.")
                 continue
 
             # Reverse sort order: we want run newest test first.
@@ -152,13 +156,13 @@ def main(args):
                     break
 
                 case_file = os.path.join(suite_dir, case)
-                if os.path.isfile(case_file) and (case.endswith('.sh') or case.endswith('.py') or case.endswith('.sql')):
-                    (name, ext) = os.path.splitext(case)
+                (name, ext) = os.path.splitext(case)
+
+                if os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py'):
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
-
-                        print "{0:70}".format(name + ": "),
+                        print "{0:72}".format(name + ": "),
                         sys.stdout.flush()
 
                         if args.skip and any(s in name for s in args.skip):
@@ -195,9 +199,9 @@ def main(args):
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                                 if ext == '.sql':
-                                    command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
+                                    command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
                                 else:
-                                    command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
+                                    command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 
                                 proc = Popen(command, shell = True)
                                 start_time = datetime.now()
@@ -238,7 +242,7 @@ def main(args):
                                             stderr_element = et.Element("system-err")
                                             stderr_element.text = et.CDATA(stderr)
                                             report_testcase.append(stderr_element)
-                                            print(stderr)
+                                            print(stderr.encode('utf-8'))
 
                                         if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                             SERVER_DIED = True
@@ -328,6 +332,7 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', help = 'Path to tmp dir')
     parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
     parser.add_argument('-c', '--client', help = 'Client program')
+    parser.add_argument('--extract_from_config', help = 'extract-from-config program')
     parser.add_argument('--configclient', help = 'Client config (if you use not default ports)')
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help = 'Preprocessed server config')
     parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
@@ -362,12 +367,21 @@ if __name__ == '__main__':
         args.tmp = args.queries
 
     if args.client is None:
-        args.client = args.binary + '-client'
+        if os.access(args.binary + '-client', os.X_OK):
+            args.client = args.binary + '-client'
+        else:
+            args.client = args.binary + ' client'
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
         if os.getenv("CLICKHOUSE_HOST"):
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
         if os.getenv("CLICKHOUSE_PORT_TCP"):
             args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+
+    if args.extract_from_config is None:
+        if os.access(args.binary + '-extract-from-config', os.X_OK):
+            args.extract_from_config = args.binary + '-extract-from-config'
+        else:
+            args.extract_from_config = args.binary + ' extract-from-config'
 
     main(args)

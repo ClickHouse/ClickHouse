@@ -17,4 +17,4 @@ include/libcpuid/recog_amd.h
 include/libcpuid/recog_intel.h
 )
 
-target_include_directories (cpuid PUBLIC include)
+target_include_directories (cpuid SYSTEM PUBLIC include)

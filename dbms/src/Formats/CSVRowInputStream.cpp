@@ -83,16 +83,16 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 }
 
 
-static void skipRow(ReadBuffer & istr, const char delimiter, size_t num_columns)
+static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & settings, size_t num_columns)
 {
     String tmp;
     for (size_t i = 0; i < num_columns; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        readCSVString(tmp, istr, delimiter);
+        readCSVString(tmp, istr, settings);
         skipWhitespacesAndTabs(istr);
 
-        skipDelimiter(istr, delimiter, i + 1 == num_columns);
+        skipDelimiter(istr, settings.delimiter, i + 1 == num_columns);
     }
 }
 
@@ -107,7 +107,7 @@ void CSVRowInputStream::readPrefix()
     String tmp;
 
     if (with_names)
-        skipRow(istr, format_settings.csv.delimiter, num_columns);
+        skipRow(istr, format_settings.csv, num_columns);
 }
 
 
@@ -227,7 +227,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         if (curr_position < prev_position)
             throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-        if (data_types[i]->isNumber() || data_types[i]->isDateOrDateTime())
+        if (isNumber(data_types[i]) || isDateOrDateTime(data_types[i]))
         {
             /// An empty string instead of a value.
             if (curr_position == prev_position)

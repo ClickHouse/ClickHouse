@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Columns/FilterDescription.h>
-#include <ext/range.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnNothing.h>
+#include <ext/range.h>
 
 #if __SSE2__
 #include <emmintrin.h>
+#include <DataTypes/DataTypeNothing.h>
 #endif
 
 namespace DB
@@ -364,13 +366,13 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
 
 MergeTreeRangeReader::MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader, size_t index_granularity,
-        MergeTreeRangeReader * prev_reader, ExpressionActionsPtr prewhere_actions,
+        MergeTreeReader * merge_tree_reader, size_t index_granularity, MergeTreeRangeReader * prev_reader,
+        ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
         const String * prewhere_column_name, const Names * ordered_names,
         bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain)
         : index_granularity(index_granularity), merge_tree_reader(merge_tree_reader)
         , prev_reader(prev_reader), prewhere_column_name(prewhere_column_name)
-        , ordered_names(ordered_names), prewhere_actions(std::move(prewhere_actions))
+        , ordered_names(ordered_names), alias_actions(alias_actions), prewhere_actions(std::move(prewhere_actions))
         , always_reorder(always_reorder), remove_prewhere_column(remove_prewhere_column)
         , last_reader_in_chain(last_reader_in_chain), is_initialized(true)
 {
@@ -407,6 +409,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     ReadResult read_result;
     size_t prev_bytes = 0;
+    bool should_reorder = false;
 
     if (prev_reader)
     {
@@ -414,29 +417,42 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         prev_bytes = read_result.block.bytes();
         Block block = continueReadingChain(read_result);
 
-        bool should_reorder = false;
         bool should_evaluate_missing_defaults = false;
         if (block)
         {
             /// block.rows() <= read_result.block. We must filter block before adding columns to read_result.block
 
             /// Fill missing columns before filtering because some arrays from Nested may have empty data.
-            merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults);
+            merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults, block.rows());
 
             if (read_result.getFilter())
                 filterBlock(block, read_result.getFilter()->getData());
-
-            for (auto i : ext::range(0, block.columns()))
-                read_result.block.insert(std::move(block.getByPosition(i)));
         }
+        else
+        {
+            size_t num_rows = read_result.block.rows();
+            if (!read_result.block)
+            {
+                if (auto * filter = read_result.getFilter())
+                    num_rows = countBytesInFilter(filter->getData()); /// All columns were removed and filter is not always true.
+                else if (read_result.totalRowsPerGranule())
+                    num_rows = read_result.numReadRows();   /// All columns were removed and filter is always true.
+                /// else filter is always false.
+            }
+
+            /// If block is empty, we still may need to add missing columns.
+            /// In that case use number of rows in result block and don't filter block.
+            if (num_rows)
+                merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults, num_rows);
+        }
+
+        for (auto i : ext::range(0, block.columns()))
+            read_result.block.insert(std::move(block.getByPosition(i)));
 
         if (read_result.block)
         {
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
-
-            if (should_reorder || always_reorder || block.columns())
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names);
         }
     }
     else
@@ -444,15 +460,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result = startReadingChain(max_rows, ranges);
         if (read_result.block)
         {
-            bool should_reorder;
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(read_result.block, should_reorder, should_evaluate_missing_defaults);
+            merge_tree_reader->fillMissingColumns(read_result.block, should_reorder, should_evaluate_missing_defaults,
+                                                  read_result.block.rows());
 
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
-
-            if (should_reorder || always_reorder)
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names);
         }
     }
 
@@ -462,6 +475,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     read_result.addNumBytesRead(read_result.block.bytes() - prev_bytes);
 
     executePrewhereActionsAndFilterColumns(read_result);
+
+    if (last_reader_in_chain && (should_reorder || always_reorder))
+        merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
+
     return read_result;
 }
 
@@ -569,6 +586,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (!prewhere_actions)
         return;
 
+    if (alias_actions)
+        alias_actions->execute(result.block);
+
     prewhere_actions->execute(result.block);
     auto & prewhere_column = result.block.getByName(*prewhere_column_name);
     size_t prev_rows = result.block.rows();
@@ -611,23 +631,25 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (!result.block)
         return;
 
+    auto getNumRows = [&]()
+    {
+        /// If block has single column, it's filter. We need to count bytes in it in order to get the number of rows.
+        if (result.block.columns() > 1)
+            return result.block.rows();
+        else if (result.getFilter())
+            return countBytesInFilter(result.getFilter()->getData());
+        else
+            return prev_rows;
+    };
+
     if (remove_prewhere_column)
         result.block.erase(*prewhere_column_name);
     else
-    {
-        /// Calculate the number of rows in block in order to create const column.
-        size_t rows = result.block.rows();
-        /// If block has single column, it's filter. We need to count bytes in it in order to get the number of rows.
-        if (result.block.columns() == 1)
-        {
-            if (result.getFilter())
-                rows = countBytesInFilter(result.getFilter()->getData());
-            else
-                rows = prev_rows;
-        }
+        prewhere_column.column = prewhere_column.type->createColumnConst(getNumRows(), 1u);
 
-        prewhere_column.column = prewhere_column.type->createColumnConst(rows, UInt64(1));
-    }
+    /// If block is empty, create column in order to store rows number.
+    if (last_reader_in_chain && result.block.columns() == 0)
+        result.block.insert({ColumnNothing::create(getNumRows()), std::make_shared<DataTypeNothing>(), "_nothing"});
 }
 
 }

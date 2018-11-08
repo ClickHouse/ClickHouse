@@ -29,18 +29,6 @@ ASTPtr ASTDropQuery::clone() const
     return res;
 }
 
-ASTPtr ASTDropQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
-{
-    auto query_ptr = clone();
-    auto & query = static_cast<ASTDropQuery &>(*query_ptr);
-
-    query.cluster.clear();
-    if (query.database.empty())
-        query.database = new_database;
-
-    return query_ptr;
-}
-
 void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "");
@@ -52,6 +40,9 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << "TRUNCATE ";
     else
         throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
+
+    if (temporary)
+        settings.ostr << "TEMPORARY ";
 
     settings.ostr << ((table.empty() && !database.empty()) ? "DATABASE " : "TABLE ");
 

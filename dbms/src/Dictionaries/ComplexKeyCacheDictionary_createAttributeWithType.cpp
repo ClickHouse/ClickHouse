@@ -64,6 +64,21 @@ ComplexKeyCacheDictionary::Attribute ComplexKeyCacheDictionary::createAttributeW
             std::get<ContainerPtrType<Float64>>(attr.arrays) = std::make_unique<ContainerType<Float64>>(size);
             bytes_allocated += size * sizeof(Float64);
             break;
+        case AttributeUnderlyingType::Decimal32:
+            std::get<Decimal32>(attr.null_values) = null_value.get<Decimal32>();
+            std::get<ContainerPtrType<Decimal32>>(attr.arrays) = std::make_unique<ContainerType<Decimal32>>(size);
+            bytes_allocated += size * sizeof(Decimal32);
+            break;
+        case AttributeUnderlyingType::Decimal64:
+            std::get<Decimal64>(attr.null_values) = null_value.get<Decimal64>();
+            std::get<ContainerPtrType<Decimal64>>(attr.arrays) = std::make_unique<ContainerType<Decimal64>>(size);
+            bytes_allocated += size * sizeof(Decimal64);
+            break;
+        case AttributeUnderlyingType::Decimal128:
+            std::get<Decimal128>(attr.null_values) = null_value.get<Decimal128>();
+            std::get<ContainerPtrType<Decimal128>>(attr.arrays) = std::make_unique<ContainerType<Decimal128>>(size);
+            bytes_allocated += size * sizeof(Decimal128);
+            break;
         case AttributeUnderlyingType::String:
             std::get<String>(attr.null_values) = null_value.get<String>();
             std::get<ContainerPtrType<StringRef>>(attr.arrays) = std::make_unique<ContainerType<StringRef>>(size);

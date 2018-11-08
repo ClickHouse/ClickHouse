@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/SortDescription.h>
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -178,7 +177,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction() {}
+        Transaction(MergeTreeData & data_) : data(data_) {}
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -202,14 +201,10 @@ public:
     private:
         friend class MergeTreeData;
 
-        MergeTreeData * data = nullptr;
+        MergeTreeData & data;
         DataParts precommitted_parts;
 
-        void clear()
-        {
-            data = nullptr;
-            precommitted_parts.clear();
-        }
+        void clear() { precommitted_parts.clear(); }
     };
 
     /// An object that stores the names of temporary files created in the part directory during ALTER of its
@@ -334,6 +329,8 @@ public:
             return NameAndTypePair("_part", std::make_shared<DataTypeString>());
         if (column_name == "_part_index")
             return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
+        if (column_name == "_partition_id")
+            return NameAndTypePair("_partition_id", std::make_shared<DataTypeString>());
         if (column_name == "_sample_factor")
             return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
@@ -345,6 +342,7 @@ public:
         return getColumns().hasPhysical(column_name)
             || column_name == "_part"
             || column_name == "_part_index"
+            || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
 
@@ -371,6 +369,7 @@ public:
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
 
     /// Returns all parts in specified partition
@@ -385,9 +384,13 @@ public:
 
     size_t getMaxPartsCountForPartition() const;
 
+    /// Get min value of part->info.getDataVersion() for all active parts.
+    /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
+    std::optional<Int64> getMinPartDataVersion() const;
+
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
-    void delayInsertOrThrowIfNeeded(Poco::Event *until = nullptr) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;
     void throwInsertIfNeeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
@@ -431,6 +434,9 @@ public:
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
+    /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
+    void tryRemovePartImmediately(DataPartPtr && part);
+
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
     DataPartsVector grabOldParts();
@@ -444,7 +450,7 @@ public:
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
 
-    /// Deleate all directories which names begin with "tmp"
+    /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 
@@ -475,16 +481,16 @@ public:
         bool skip_sanity_checks);
 
     /// Should be called if part data is suspected to be corrupted.
-    void reportBrokenPart(const String & name)
+    void reportBrokenPart(const String & name) const
     {
         broken_part_callback(name);
     }
 
-    bool hasPrimaryKey() const { return !primary_sort_descr.empty(); }
+    bool hasPrimaryKey() const { return !primary_sort_columns.empty(); }
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
     ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
-    SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
-    SortDescription getSortDescription() const { return sort_descr; }
+    Names getPrimarySortColumns() const { return primary_sort_columns; }
+    Names getSortColumns() const { return sort_columns; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
@@ -555,7 +561,6 @@ public:
     Names minmax_idx_columns;
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
-    SortDescription minmax_idx_sort_descr; /// For use with KeyCondition.
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -576,10 +581,10 @@ private:
     ExpressionActionsPtr primary_expr;
     /// Additional expression for sorting (of rows with the same primary keys).
     ExpressionActionsPtr secondary_sort_expr;
-    /// Sort description for primary key. Is the prefix of sort_descr.
-    SortDescription primary_sort_descr;
-    /// Sort description for primary key + secondary sorting columns.
-    SortDescription sort_descr;
+    /// Names of columns for primary key. Is the prefix of sort_columns.
+    Names primary_sort_columns;
+    /// Names of columns for primary key + secondary sorting columns.
+    Names sort_columns;
 
     String database_name;
     String table_name;

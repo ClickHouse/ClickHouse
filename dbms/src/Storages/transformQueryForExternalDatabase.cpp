@@ -1,29 +1,54 @@
+#include <sstream>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 
 namespace DB
 {
+
+static void replaceConstFunction(IAST & node, const Context & context, const NamesAndTypesList & all_columns)
+{
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
+        auto child = node.children[i];
+        if (ASTExpressionList * exp_list = typeid_cast<ASTExpressionList *>(&*child))
+            replaceConstFunction(*exp_list, context, all_columns);
+
+        if (ASTFunction * function = typeid_cast<ASTFunction *>(&*child))
+        {
+            auto result_block = KeyCondition::getBlockWithConstants(function->ptr(), context, all_columns);
+            if (!result_block.has(child->getColumnName()))
+                return;
+
+            auto result_column = result_block.getByName(child->getColumnName()).column;
+
+            node.children[i] = std::make_shared<ASTLiteral>((*result_column)[0]);
+        }
+    }
+}
 
 static bool isCompatible(const IAST & node)
 {
     if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&node))
     {
         String name = function->name;
-
         if (!(name == "and"
             || name == "or"
             || name == "not"
             || name == "equals"
             || name == "notEquals"
+            || name == "like"
+            || name == "notLike"
+            || name == "in"
             || name == "greater"
             || name == "less"
             || name == "lessOrEquals"
@@ -57,11 +82,13 @@ static bool isCompatible(const IAST & node)
 String transformQueryForExternalDatabase(
     const IAST & query,
     const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
     const Context & context)
 {
-    ExpressionAnalyzer analyzer(query.clone(), context, {}, available_columns);
+    auto clone_query = query.clone();
+    ExpressionAnalyzer analyzer(clone_query, context, {}, available_columns);
     const Names & used_columns = analyzer.getRequiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
@@ -80,9 +107,10 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    const ASTPtr & original_where = typeid_cast<const ASTSelectQuery &>(query).where_expression;
+    ASTPtr & original_where = typeid_cast<ASTSelectQuery &>(*clone_query).where_expression;
     if (original_where)
     {
+        replaceConstFunction(*original_where, context, available_columns);
         if (isCompatible(*original_where))
         {
             select->where_expression = original_where;
@@ -91,21 +119,35 @@ String transformQueryForExternalDatabase(
         {
             if (function->name == "and")
             {
+                bool compatible_found = false;
                 auto new_function_and = std::make_shared<ASTFunction>();
                 auto new_function_and_arguments = std::make_shared<ASTExpressionList>();
                 new_function_and->arguments = new_function_and_arguments;
                 new_function_and->children.push_back(new_function_and_arguments);
 
                 for (const auto & elem : function->arguments->children)
+                {
                     if (isCompatible(*elem))
+                    {
                         new_function_and_arguments->children.push_back(elem);
+                        compatible_found = true;
+                    }
+                }
 
-                select->where_expression = std::move(new_function_and);
+                if (compatible_found)
+                     select->where_expression = std::move(new_function_and);
             }
         }
     }
 
-    return queryToString(select);
+    std::stringstream out;
+    IAST::FormatSettings settings(out, true);
+    settings.always_quote_identifiers = true;
+    settings.identifier_quoting_style = identifier_quoting_style;
+
+    select->format(settings);
+
+    return out.str();
 }
 
 }

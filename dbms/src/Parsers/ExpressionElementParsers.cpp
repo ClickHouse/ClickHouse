@@ -1,6 +1,8 @@
 #include <errno.h>
 #include <cstdlib>
 
+#include <Poco/String.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -231,10 +233,21 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         && contents_begin[8] >= '0' && contents_begin[8] <= '9'
         && contents_begin[9] >= '0' && contents_begin[9] <= '9')
     {
-        std::string contents(contents_begin, contents_end - contents_begin);
-        throw Exception("Argument of function toDate is unquoted: toDate(" + contents + "), must be: toDate('" + contents + "')"
+        std::string contents_str(contents_begin, contents_end - contents_begin);
+        throw Exception("Argument of function toDate is unquoted: toDate(" + contents_str + "), must be: toDate('" + contents_str + "')"
             , ErrorCodes::SYNTAX_ERROR);
     }
+
+    /// Temporary compatibility fix for Yandex.Metrika.
+    /// When we have a query with
+    ///  cast(x, 'Type')
+    /// when cast is not in uppercase and when expression is written as a function, not as operator like cast(x AS Type)
+    /// and newer ClickHouse server (1.1.54388) interacts with older ClickHouse server (1.1.54381) in distributed query,
+    /// then exception was thrown.
+
+    auto & identifier_concrete = typeid_cast<ASTIdentifier &>(*identifier);
+    if (Poco::toLower(identifier_concrete.name) == "cast")
+        identifier_concrete.name = "CAST";
 
     /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
     if (pos->type == TokenType::OpeningRoundBracket)
@@ -495,7 +508,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         readQuotedStringWithSQLStyle(s, in);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
         expected.add(pos, "string literal");
         return false;

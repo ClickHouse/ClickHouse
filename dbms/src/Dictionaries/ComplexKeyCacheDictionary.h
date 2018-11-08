@@ -6,6 +6,7 @@
 #include <tuple>
 #include <vector>
 #include <shared_mutex>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/HashMap.h>
@@ -128,11 +129,14 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
 /// In all functions below, key_columns must be full (non-constant) columns.
 /// See the requirement in IDataType.h for text-serialization functions.
 #define DECLARE(TYPE) \
     void get##TYPE(   \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<TYPE> & out) const;
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -144,6 +148,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
@@ -153,7 +160,7 @@ public:
         const Columns & key_columns,                   \
         const DataTypes & key_types,                   \
         const PaddedPODArray<TYPE> & def,              \
-        PaddedPODArray<TYPE> & out) const;
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -165,6 +172,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(const std::string & attribute_name,
@@ -178,7 +188,7 @@ public:
         const Columns & key_columns,                   \
         const DataTypes & key_types,                   \
         const TYPE def,                                \
-        PaddedPODArray<TYPE> & out) const;
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -190,6 +200,9 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(const std::string & attribute_name,
@@ -247,7 +260,9 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<UInt8, UInt16, UInt32, UInt64, UInt128, Int8, Int16, Int32, Int64, Float32, Float64, String> null_values;
+        std::tuple<UInt8, UInt16, UInt32, UInt64, UInt128, Int8, Int16, Int32, Int64,
+            Decimal32, Decimal64, Decimal128,
+            Float32, Float64, String> null_values;
         std::tuple<ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
             ContainerPtrType<UInt32>,
@@ -257,6 +272,9 @@ private:
             ContainerPtrType<Int16>,
             ContainerPtrType<Int32>,
             ContainerPtrType<Int64>,
+            ContainerPtrType<Decimal32>,
+            ContainerPtrType<Decimal64>,
+            ContainerPtrType<Decimal128>,
             ContainerPtrType<Float32>,
             ContainerPtrType<Float64>,
             ContainerPtrType<StringRef>>
@@ -288,6 +306,9 @@ private:
         DISPATCH(Int64)
         DISPATCH(Float32)
         DISPATCH(Float64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
 #undef DISPATCH
         else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
     }

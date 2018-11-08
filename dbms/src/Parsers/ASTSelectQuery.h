@@ -28,6 +28,8 @@ public:
     ASTPtr where_expression;
     ASTPtr group_expression_list;
     bool group_by_with_totals = false;
+    bool group_by_with_rollup = false;
+    bool group_by_with_cube = false;
     ASTPtr having_expression;
     ASTPtr order_expression_list;
     ASTPtr limit_by_value;
@@ -37,19 +39,20 @@ public:
     ASTPtr settings;
 
     /// Compatibility with old parser of tables list. TODO remove
-    ASTPtr database() const;
-    ASTPtr table() const;
     ASTPtr sample_size() const;
     ASTPtr sample_offset() const;
     ASTPtr array_join_expression_list() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool array_join_is_left() const;
     bool final() const;
-    void setDatabaseIfNeeded(const String & database_name);
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
+    void addTableFunction(ASTPtr & table_function_ptr);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
+
+
+ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name);
 
 }

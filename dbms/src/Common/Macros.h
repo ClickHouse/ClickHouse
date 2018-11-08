@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/Names.h>
+
 #include <map>
 
 
@@ -27,9 +28,13 @@ public:
     Macros(const Poco::Util::AbstractConfiguration & config, const String & key);
 
     /** Replace the substring of the form {macro_name} with the value for macro_name, obtained from the config file.
+      * If {database} and {table} macros aren`t defined explicitly, expand them as database_name and table_name respectively.
       * level - the level of recursion.
       */
-    String expand(const String & s, size_t level = 0) const;
+    String expand(const String & s, size_t level = 0, const String & database_name = "", const String & table_name = "") const;
+
+    String expand(const String & s, const String & database_name, const String & table_name) const;
+
 
     /** Apply expand for the list.
       */

@@ -133,6 +133,14 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::UPDATE)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "UPDATE " << (settings.hilite ? hilite_none : "");
+        update_assignments->formatImpl(settings, state, frame);
+
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
+        predicate->formatImpl(settings, state, frame);
+    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -177,18 +185,6 @@ ASTPtr ASTAlterQuery::clone() const
         res->set(res->command_list, command_list->clone());
 
     return res;
-}
-
-ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
-{
-    auto query_ptr = clone();
-    auto & query = static_cast<ASTAlterQuery &>(*query_ptr);
-
-    query.cluster.clear();
-    if (query.database.empty())
-        query.database = new_database;
-
-    return query_ptr;
 }
 
 void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -19,7 +19,7 @@ namespace DB
   * This is unit of data processing.
   * Also contains metadata - data types of columns and their names
   *  (either original names from a table, or generated names during temporary calculations).
-  * Allows to insert, remove columns in arbitary position, to change order of columns.
+  * Allows to insert, remove columns in arbitrary position, to change order of columns.
   */
 
 class Context;
@@ -110,12 +110,13 @@ public:
     Columns getColumns() const;
     void setColumns(const Columns & columns);
     Block cloneWithColumns(const Columns & columns) const;
+    Block cloneWithoutColumns() const;
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
-    MutableColumns mutateColumns() const;
+    MutableColumns mutateColumns();
 
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);
