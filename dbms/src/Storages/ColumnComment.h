@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Core/Types.h>
+
 #include <string>
 #include <unordered_map>
-
-#include <Parsers/IAST.h>
 
 namespace DB
 {
