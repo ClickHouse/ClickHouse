@@ -3,6 +3,7 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 
 namespace DB
 {
@@ -55,9 +56,6 @@ struct ExpressionAnalyzerData
 
     bool has_global_subqueries = false;
 
-    using Aliases = std::unordered_map<String, ASTPtr>;
-    Aliases aliases;
-
     /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
     /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
     NameToNameMap array_join_result_to_source;
@@ -74,6 +72,19 @@ struct ExpressionAnalyzerData
 
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
+
+    /// Columns will be added to block by join.
+    JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
+
+    /// Actions which need to be calculated on joined block.
+    ExpressionActionsPtr joined_block_actions;
+
+    /// Columns which will be used in query from joined table. Duplicate names are qualified.
+    NameSet required_columns_from_joined_table;
+
+    /// Such columns will be copied from left join keys during join.
+    /// Example: select right from tab1 join tab2 on left + 1 = right
+    NameSet columns_added_by_join_from_right_keys;
 
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
@@ -229,70 +240,7 @@ private:
     size_t subquery_depth;
     bool do_global; /// Do I need to prepare for execution global subqueries when analyzing the query.
 
-    struct AnalyzedJoin
-    {
-
-        /// NOTE: So far, only one JOIN per query is supported.
-
-        /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
-          * The join is made by column k.
-          * During the JOIN,
-          *  - in the "right" table, it will be available by alias `k`, since `Project` action for the subquery was executed.
-          *  - in the "left" table, it will be accessible by the name `expr(x)`, since `Project` action has not been executed yet.
-          * You must remember both of these options.
-          *
-          * Query of the form `SELECT ... from t1 ANY LEFT JOIN (SELECT ... from t2) ON expr(t1 columns) = expr(t2 columns)`
-          *     to the subquery will be added expression `expr(t2 columns)`.
-          * It's possible to use name `expr(t2 columns)`.
-          */
-        Names key_names_left;
-        Names key_names_right; /// Duplicating names are qualified.
-        ASTs key_asts_left;
-        ASTs key_asts_right;
-
-        struct JoinedColumn
-        {
-            /// Column will be joined to block.
-            NameAndTypePair name_and_type;
-            /// original column name from joined source.
-            String original_name;
-
-            JoinedColumn(const NameAndTypePair & name_and_type_, const String & original_name_)
-                    : name_and_type(name_and_type_), original_name(original_name_) {}
-
-            bool operator==(const JoinedColumn & o) const
-            {
-                return name_and_type == o.name_and_type && original_name == o.original_name;
-            }
-        };
-
-        using JoinedColumnsList = std::list<JoinedColumn>;
-
-        /// All columns which can be read from joined table. Duplicating names are qualified.
-        JoinedColumnsList columns_from_joined_table;
-        /// Columns which will be used in query to the joined query. Duplicating names are qualified.
-        NameSet required_columns_from_joined_table;
-
-        /// Columns which will be added to block, possible including some columns from right join key.
-        JoinedColumnsList columns_added_by_join;
-        /// Such columns will be copied from left join keys during join.
-        NameSet columns_added_by_join_from_right_keys;
-        /// Actions which need to be calculated on joined block.
-        ExpressionActionsPtr joined_block_actions;
-
-        void createJoinedBlockActions(const NamesAndTypesList & source_columns,
-                                      const ASTSelectQuery * select_query_with_join,
-                                      const Context & context);
-
-        NamesAndTypesList getColumnsAddedByJoin() const;
-
-        const JoinedColumnsList & getColumnsFromJoinedTable(const NamesAndTypesList & source_columns,
-                                                            const Context & context,
-                                                            const ASTSelectQuery * select_query_with_join);
-    };
-
     AnalyzedJoin analyzed_join;
-
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
@@ -300,45 +248,9 @@ private:
       */
     void collectUsedColumns();
 
-    /** Find the columns that are obtained by JOIN.
-      */
-    void collectJoinedColumns(NameSet & joined_columns);
-    /// Parse JOIN ON expression and collect ASTs for joined columns.
-    void collectJoinedColumnsFromJoinOnExpr();
-
-    /** For star nodes(`*`), expand them to a list of all columns.
-      * For literal nodes, substitute aliases.
-      */
-    void normalizeTree();
-
-    ///    Eliminates injective function calls and constant expressions from group by statement
-    void optimizeGroupBy();
-
-    /// Remove duplicate items from ORDER BY.
-    void optimizeOrderBy();
-
-    void optimizeLimitBy();
-
-    /// Remove duplicated columns from USING(...).
-    void optimizeUsing();
-
-    /// remove Function_if AST if condition is constant
-    void optimizeIfWithConstantCondition();
-    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
-    bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
-
-    /// Replacing scalar subqueries with constant values.
-    void executeScalarSubqueries();
-
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
-      * create a temporary table of type Memory and store it in the external_tables dictionary.
-      */
-    void addExternalStorage(ASTPtr & subquery_or_table_name);
-
-    void getArrayJoinedColumns();
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
@@ -374,17 +286,6 @@ private:
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
     void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
-
-    /** Translate qualified names such as db.table.column, table.column, table_alias.column
-      *  to unqualified names. This is done in a poor transitional way:
-      *  only one ("main") table is supported. Ambiguity is not detected or resolved.
-      */
-    void translateQualifiedNames();
-
-    /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
-      * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
-      */
-    void removeUnneededColumnsFromSelectClause();
 
     bool isRemoteStorage() const;
 };
