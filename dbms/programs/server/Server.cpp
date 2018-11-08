@@ -42,6 +42,11 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 
+#if defined(__linux__)
+#include <Common/linuxCapability.h>
+#include <sys/mman.h>
+#endif
+
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
@@ -593,6 +598,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+#if defined(__linux__)
+        if (config().getBool("binary_mlock", true))
+        {
+            if (linuxCapability(CAP_IPC_LOCK))
+            {
+                if (!mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "mlockall failed: " + errnoToString());
+            }
+            else
+            {
+                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                      " It could happen due to incorrect ClickHouse package installation."
+                      " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                      " Note that it will not work on 'nosuid' mounted filesystems.");
+
+            }
+        }
+#endif
 
         main_config_reloader->start();
         users_config_reloader->start();
