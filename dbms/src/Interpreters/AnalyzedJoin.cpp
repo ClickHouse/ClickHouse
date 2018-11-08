@@ -13,18 +13,20 @@
 namespace DB
 {
 
-void AnalyzedJoin::createJoinedBlockActions(const NameSet & source_columns,
-                                            const JoinedColumnsList & columns_added_by_join,
-                                            const ASTSelectQuery * select_query_with_join,
-                                            const Context & context)
+ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
+    const NameSet & source_columns,
+    const JoinedColumnsList & columns_added_by_join,
+    const ASTSelectQuery * select_query_with_join,
+    const Context & context,
+    NameSet & required_columns_from_joined_table) const
 {
     if (!select_query_with_join)
-        return;
+        return nullptr;
 
     const ASTTablesInSelectQueryElement * join = select_query_with_join->join();
 
     if (!join)
-        return;
+        return nullptr;
 
     const auto & join_params = static_cast<const ASTTableJoin &>(*join->table_join);
 
@@ -41,13 +43,12 @@ void AnalyzedJoin::createJoinedBlockActions(const NameSet & source_columns,
         required_columns_set.insert(joined_column.name_and_type.name);
     Names required_columns(required_columns_set.begin(), required_columns_set.end());
 
-    const auto & columns_from_joined_table = getColumnsFromJoinedTable(source_columns, context, select_query_with_join);
     NamesAndTypesList source_column_names;
     for (auto & column : columns_from_joined_table)
         source_column_names.emplace_back(column.name_and_type);
 
     ExpressionAnalyzer analyzer(expression_list, context, nullptr, source_column_names, required_columns);
-    joined_block_actions = analyzer.getActions(false);
+    auto joined_block_actions = analyzer.getActions(false);
 
     auto required_action_columns = joined_block_actions->getRequiredColumns();
     required_columns_from_joined_table.insert(required_action_columns.begin(), required_action_columns.end());
@@ -60,6 +61,8 @@ void AnalyzedJoin::createJoinedBlockActions(const NameSet & source_columns,
     for (auto & column : columns_added_by_join)
         if (!sample.has(column.name_and_type.name))
             required_columns_from_joined_table.insert(column.name_and_type.name);
+
+    return joined_block_actions;
 }
 
 const JoinedColumnsList & AnalyzedJoin::getColumnsFromJoinedTable(
