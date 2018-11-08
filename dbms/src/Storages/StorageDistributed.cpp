@@ -145,7 +145,7 @@ static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_k
 {
     ASTPtr query = sharding_key;
     auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, columns);
-    return ExpressionAnalyzer(query, syntax_result, context, columns).getActions(project);
+    return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
 StorageDistributed::StorageDistributed(

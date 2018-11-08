@@ -104,20 +104,21 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     ASTPtr & query,
-    NamesAndTypesList & source_columns,
+    const NamesAndTypesList & source_columns_,
     const Names & required_result_columns,
     size_t subquery_depth) const
 {
     SyntaxAnalyzerResult result;
     result.storage = storage;
+    result.source_columns = source_columns_;
     auto * select_query = typeid_cast<ASTSelectQuery *>(query.get());
-    collectSourceColumns(source_columns, select_query, context, result.storage);
+    collectSourceColumns(result.source_columns, select_query, context, result.storage);
 
     const auto & settings = context.getSettingsRef();
 
     Names source_columns_list;
-    source_columns_list.reserve(source_columns.size());
-    for (const auto & type_name : source_columns)
+    source_columns_list.reserve(result.source_columns.size());
+    for (const auto & type_name : result.source_columns)
         source_columns_list.emplace_back(type_name.name);
     NameSet source_columns_set(source_columns_list.begin(), source_columns_list.end());
 

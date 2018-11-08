@@ -89,12 +89,12 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
-    const NamesAndTypesList & source_columns_,
+    const NamesAndTypesList & additional_source_columns,
     const Names & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
     const SubqueriesForSets & subqueries_for_sets_)
-    : ExpressionAnalyzerData(source_columns_, required_result_columns_, subqueries_for_sets_)
+    : ExpressionAnalyzerData(syntax_analyzer_result_->source_columns, required_result_columns_, subqueries_for_sets_)
     , query(query_), context(context_), settings(context.getSettings())
     , subquery_depth(subquery_depth_), do_global(do_global_)
     , syntax(syntax_analyzer_result_), analyzed_join(syntax->analyzed_join)
@@ -104,7 +104,11 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     select_query = typeid_cast<ASTSelectQuery *>(query.get());
 
-    removeDuplicateColumns(source_columns);
+    if (!additional_source_columns.empty())
+    {
+        source_columns.insert(source_columns.end(), additional_source_columns.begin(), additional_source_columns.end());
+        removeDuplicateColumns(source_columns);
+    }
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
@@ -694,17 +698,15 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
     Names additional_required_mergetree_columns;
     if (sampling_expression)
     {
-        NamesAndTypesList columns;
         auto ast = sampling_expression;
-        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, columns);
-        additional_required_mergetree_columns = ExpressionAnalyzer(ast, syntax_result, context, columns).getRequiredSourceColumns();
+        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, {});
+        additional_required_mergetree_columns = ExpressionAnalyzer(ast, syntax_result, context).getRequiredSourceColumns();
     }
     if (primary_expression)
     {
-        NamesAndTypesList columns;
         auto ast = primary_expression;
-        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, columns);
-        auto required_primary_columns = ExpressionAnalyzer(ast, syntax_result, context, columns).getRequiredSourceColumns();
+        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, {});
+        auto required_primary_columns = ExpressionAnalyzer(ast, syntax_result, context).getRequiredSourceColumns();
         additional_required_mergetree_columns.insert(additional_required_mergetree_columns.end(),
                                                      required_primary_columns.begin(), required_primary_columns.end());
     }

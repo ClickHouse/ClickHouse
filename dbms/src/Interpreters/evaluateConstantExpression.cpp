@@ -28,10 +28,9 @@ namespace ErrorCodes
 std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(const ASTPtr & node, const Context & context)
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
-    auto query = node->clone();
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns, {});
-    ExpressionActionsPtr expr_for_constant_folding
-            = ExpressionAnalyzer(node, syntax_result, context, source_columns).getConstActions();
+    auto ast = node->clone();
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.
     Block block_with_constants{{ ColumnConst::create(ColumnUInt8::create(1, 0), 1), std::make_shared<DataTypeUInt8>(), "_dummy" }};

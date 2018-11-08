@@ -141,7 +141,7 @@ public:
         const ASTPtr & query_,
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
-        const NamesAndTypesList & source_columns_,
+        const NamesAndTypesList & additional_source_columns = {},
         const Names & required_result_columns_ = {},
         size_t subquery_depth_ = 0,
         bool do_global_ = false,

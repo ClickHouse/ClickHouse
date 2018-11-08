@@ -49,7 +49,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
 
     ASTPtr query = expression_list;
     auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_column_names, required_columns);
-    ExpressionAnalyzer analyzer(query, syntax_result, context, source_column_names, required_columns);
+    ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns);
     auto joined_block_actions = analyzer.getActions(false);
 
     auto required_action_columns = joined_block_actions->getRequiredColumns();

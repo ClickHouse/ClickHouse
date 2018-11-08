@@ -49,7 +49,7 @@ void evaluateMissingDefaults(Block & block,
         available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
 
     auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, available_columns);
-    ExpressionAnalyzer{default_expr_list, syntax_result, context, available_columns}.getActions(true)->execute(copy_block);
+    ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(copy_block);
 
     /// move evaluated columns to the original block, materializing them at the same time
     size_t pos = 0;

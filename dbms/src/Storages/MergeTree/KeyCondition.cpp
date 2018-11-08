@@ -248,15 +248,14 @@ bool FieldWithInfinity::operator==(const FieldWithInfinity & other) const
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result,
-    const Context & context, const NamesAndTypesList & all_columns)
+    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context, all_columns).getConstActions();
+    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
 
     expr_for_constant_folding->execute(result);
 
@@ -267,7 +266,6 @@ Block KeyCondition::getBlockWithConstants(
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
-    const NamesAndTypesList & all_columns,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_)
     : key_expr(key_expr_), prepared_sets(query_info.sets)
@@ -282,8 +280,7 @@ KeyCondition::KeyCondition(
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
-    Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result,
-                                                       context, all_columns);
+    Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);

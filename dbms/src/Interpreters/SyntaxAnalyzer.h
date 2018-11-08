@@ -12,6 +12,8 @@ struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
 
+    NamesAndTypesList source_columns;
+
     /// Note: used only in tests.
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
@@ -56,7 +58,7 @@ public:
 
     SyntaxAnalyzerResultPtr analyze(
         ASTPtr & query,
-        NamesAndTypesList & source_columns,
+        const NamesAndTypesList & source_columns_,
         const Names & required_result_columns = {},
         size_t subquery_depth = 0) const;
 
