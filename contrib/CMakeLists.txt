@@ -164,6 +164,8 @@ if (USE_INTERNAL_LLVM_LIBRARY)
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
+    set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
+    set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     add_subdirectory (llvm/llvm)
 endif ()
 
