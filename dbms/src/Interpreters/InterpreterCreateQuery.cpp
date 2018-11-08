@@ -6,6 +6,7 @@
 #include <Poco/FileStream.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -220,9 +221,10 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
         }
 
-        if (!col_decl.comment.empty())
+        if (col_decl.comment)
         {
-            comments.emplace(col_decl.name, col_decl.comment);
+            auto comment_literal = typeid_cast<ASTLiteral &>(*col_decl.comment);
+            comments.emplace(col_decl.name, comment_literal.value.get<String>());
         }
     }
 
@@ -351,7 +353,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto comments_it = columns.comments.find(column.name);
         if (comments_it != std::end(columns.comments))
         {
-            column_declaration->comment = comments_it->second;
+            column_declaration->comment = std::make_shared<ASTLiteral>(Field(comments_it->second));
         }
 
         columns_list->children.push_back(column_declaration_ptr);

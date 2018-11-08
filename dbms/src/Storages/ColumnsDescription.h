@@ -24,7 +24,7 @@ struct ColumnsDescription
         NamesAndTypesList ordinary_,
         NamesAndTypesList materialized_,
         NamesAndTypesList aliases_,
-        ColumnDefaults defaults_,
+        ColumnDefaults defaults_ = {},
         ColumnComments comments_ = {})
         : ordinary(std::move(ordinary_))
         , materialized(std::move(materialized_))

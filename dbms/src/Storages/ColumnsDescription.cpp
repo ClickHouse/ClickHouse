@@ -100,7 +100,7 @@ String ColumnsDescription::toString() const
             if (exist_comment)
             {
                 writeChar('\t', buf);
-                writeText(comments_it->second, buf);
+                writeText(queryToString(ASTLiteral(Field(comments_it->second))), buf);
             }
 
             writeChar('\n', buf);
@@ -120,7 +120,7 @@ struct ParsedDefaultInfo
     ASTPtr default_expr_str;
 };
 
-std::optional<ParsedDefaultInfo> parseDefaulfInfo(ReadBufferFromString & buf)
+std::optional<ParsedDefaultInfo> parseDefaultInfo(ReadBufferFromString & buf)
 {
     if (*buf.position() == '\n')
     {
@@ -142,9 +142,7 @@ std::optional<ParsedDefaultInfo> parseDefaulfInfo(ReadBufferFromString & buf)
     ParserExpression expr_parser;
     String default_expr_str;
     readText(default_expr_str, buf);
-    const char * begin = default_expr_str.data();
-    const auto end = begin + default_expr_str.size();
-    ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default_expression", 0);
+    ASTPtr default_expr = parseQuery(expr_parser, default_expr_str, "default_expression", 0);
     return ParsedDefaultInfo{default_kind, std::move(default_expr)};
 }
 
@@ -156,9 +154,10 @@ String parseComment(ReadBufferFromString& buf)
     }
 
     ParserExpression parser_expr;
-    String comment;
-    readText(comment, buf); // This is wrong may be
-    return comment;
+    String comment_expr_str;
+    readText(comment_expr_str, buf); // This is wrong may be
+    ASTPtr comment_expr = parseQuery(parser_expr, comment_expr_str, "comment expression", 0);
+    return typeid_cast<ASTLiteral &>(*comment_expr).value.get<String>();
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)
@@ -193,7 +192,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
 
         assertChar('\t', buf);
 
-        const auto default_info = parseDefaulfInfo(buf);
+        const auto default_info = parseDefaultInfo(buf);
         if (default_info)
         {
             const auto & default_kind = default_info->default_kind;
