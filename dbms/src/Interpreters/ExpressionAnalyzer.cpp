@@ -659,7 +659,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     if (!subquery_for_set.join)
     {
         JoinPtr join = std::make_shared<Join>(
-            analyzed_join.key_names_left, analyzed_join.key_names_right, analyzed_join.columns_added_by_join_from_right_keys,
+            analyzed_join.key_names_left, analyzed_join.key_names_right, columns_added_by_join_from_right_keys,
             settings.join_use_nulls, settings.size_limits_for_join,
             join_params.kind, join_params.strictness);
 
@@ -1114,16 +1114,13 @@ void ExpressionAnalyzer::collectUsedColumns()
             columns_added_by_join.erase(it++);
     }
 
-    NameSet source_columns_set;
-    for (const auto & type_name : source_columns)
-        source_columns_set.insert(type_name.name);
     joined_block_actions = analyzed_join.createJoinedBlockActions(
-            source_columns_set, columns_added_by_join, select_query, context, required_columns_from_joined_table);
+            columns_added_by_join, select_query, context, required_columns_from_joined_table);
 
     /// Some columns from right join key may be used in query. This columns will be appended to block during join.
     for (const auto & right_key_name : analyzed_join.key_names_right)
         if (required_joined_columns.count(right_key_name))
-            analyzed_join.columns_added_by_join_from_right_keys.insert(right_key_name);
+            columns_added_by_join_from_right_keys.insert(right_key_name);
 
     /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
     NameSet array_join_sources;

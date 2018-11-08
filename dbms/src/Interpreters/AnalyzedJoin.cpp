@@ -14,7 +14,6 @@ namespace DB
 {
 
 ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
-    const NameSet & source_columns,
     const JoinedColumnsList & columns_added_by_join,
     const ASTSelectQuery * select_query_with_join,
     const Context & context,

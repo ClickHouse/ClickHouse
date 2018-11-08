@@ -62,7 +62,6 @@ struct AnalyzedJoin
     JoinedColumnsList available_joined_columns;
 
     ExpressionActionsPtr createJoinedBlockActions(
-        const NameSet & source_columns,
         const JoinedColumnsList & columns_added_by_join, /// Subset of available_joined_columns.
         const ASTSelectQuery * select_query_with_join,
         const Context & context,
