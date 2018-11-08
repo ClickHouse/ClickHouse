@@ -53,7 +53,7 @@ For a description of request parameters, see [request description](../../query_l
 - `ORDER BY` — Primary key.
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounerID, EventDate, intHash32(UserID))`.
+If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md#table_engines-custom_partitioning_key).
 

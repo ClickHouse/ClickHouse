@@ -293,7 +293,7 @@ private:
                 const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses, ellipses_count, start_index);
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, UInt64(res));
+                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, res);
             }
             else
             {

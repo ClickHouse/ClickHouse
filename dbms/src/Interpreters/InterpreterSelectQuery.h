@@ -150,6 +150,9 @@ private:
         /// Columns from the SELECT list, before renaming them to aliases.
         Names selected_columns;
 
+        /// Columns will be removed after prewhere actions execution.
+        Names columns_to_remove_after_prewhere;
+
         /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
         bool first_stage = false;
         /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -171,7 +174,8 @@ private:
     /// dry_run - don't read from table, use empty header block instead.
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info);
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
+                             const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -189,6 +193,9 @@ private:
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+
+    /// If pipeline has several streams with different headers, add ConvertingBlockInputStream to first header.
+    void unifyStreams(Pipeline & pipeline);
 
     enum class Modificator
     {

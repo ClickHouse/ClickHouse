@@ -23,9 +23,9 @@ void StorageSystemMetrics::fillData(MutableColumns & res_columns, const Context 
     {
         Int64 value = CurrentMetrics::values[i].load(std::memory_order_relaxed);
 
-        res_columns[0]->insert(String(CurrentMetrics::getName(CurrentMetrics::Metric(i))));
+        res_columns[0]->insert(CurrentMetrics::getName(CurrentMetrics::Metric(i)));
         res_columns[1]->insert(value);
-        res_columns[2]->insert(String(CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i))));
+        res_columns[2]->insert(CurrentMetrics::getDocumentation(CurrentMetrics::Metric(i)));
     }
 }
 

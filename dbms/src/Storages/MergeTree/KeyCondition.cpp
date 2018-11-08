@@ -10,6 +10,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB

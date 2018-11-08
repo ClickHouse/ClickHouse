@@ -1,3 +1,11 @@
+## ClickHouse release 18.14.12, 2018-11-02
+
+### Исправления ошибок:
+
+* Исправлена ошибка при join-запросе двух неименованных подзапросов. [#3505](https://github.com/yandex/ClickHouse/pull/3505)
+* Исправлена генерация пустой `WHERE`-части при запросах к внешним базам. [hotid](https://github.com/yandex/ClickHouse/pull/3477)
+* Исправлена ошибка использования неправильной настройки таймаута в ODBC-словарях. [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3511)
+
 ## ClickHouse release 18.14.11, 2018-10-29
 
 ### Исправления ошибок:

@@ -30,6 +30,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
@@ -211,7 +212,7 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
 
                 default_expr_list->children.emplace_back(setAlias(
                     makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                        std::make_shared<ASTLiteral>(Field(data_type_ptr->getName()))), final_column_name));
+                        std::make_shared<ASTLiteral>(data_type_ptr->getName())), final_column_name));
                 default_expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
             }
             else
@@ -511,7 +512,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.to_database = current_database;
 
     if (create.select && (create.is_view || create.is_materialized_view))
-        create.select->setDatabaseIfNeeded(current_database);
+    {
+        AddDefaultDatabaseVisitor visitor(current_database);
+        visitor.visit(*create.select);
+    }
 
     Block as_select_sample;
     if (create.select && (!create.attach || !create.columns))

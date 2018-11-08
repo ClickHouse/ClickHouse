@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 
@@ -843,7 +844,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     auto function = std::make_shared<ASTFunction>();
     auto arguments = std::make_shared<ASTExpressionList>();
     auto sign = std::make_shared<ASTIdentifier>(data.merging_params.sign_column);
-    auto one = std::make_shared<ASTLiteral>(Field(static_cast<Int64>(1)));
+    auto one = std::make_shared<ASTLiteral>(1);
 
     function->name = "equals";
     function->arguments = arguments;

@@ -568,8 +568,8 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            auto database_table = getDatabaseAndTableNameFromIdentifier(*identifier);
-            StoragePtr table = context.tryGetTable(database_table.first, database_table.second);
+            DatabaseAndTableWithAlias database_table(*identifier);
+            StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
             if (table)
             {

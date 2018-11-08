@@ -103,7 +103,7 @@ struct TimeSlotsImpl
         Array & result)
     {
         for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + duration) / TIME_SLOT_SIZE; ++value)
-            result.push_back(static_cast<UInt64>(value * TIME_SLOT_SIZE));
+            result.push_back(value * TIME_SLOT_SIZE);
     }
 };
 
