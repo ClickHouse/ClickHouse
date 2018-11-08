@@ -265,10 +265,8 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
                                                     Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                                     bool concat_streams)
 {
-    SelectQueryInfo modified_query_info;
-    modified_query_info.sets = query_info.sets;
+    SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
-    modified_query_info.prewhere_info = query_info.prewhere_info;
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage ? storage->getTableName() : "");
 
@@ -460,7 +458,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
             NameAndTypePair virtual_column = getColumn("_table");
             source_columns.insert(source_columns.end(), virtual_column);
             auto syntax_result = SyntaxAnalyzer(context, {}).analyze(where_expression, source_columns);
-            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context, source_columns}.getActions(false, false);
+            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
             for (const auto required_column : required_columns)

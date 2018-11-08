@@ -194,10 +194,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
 
-    NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
-    for (const auto & name : virt_column_names)
-        available_real_and_virtual_columns.emplace_back(data.getColumn(name));
-
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
@@ -214,9 +210,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Settings & settings = context.getSettingsRef();
     Names primary_sort_columns = data.getPrimarySortColumns();
 
-    KeyCondition key_condition(
-        query_info, context, available_real_and_virtual_columns,
-        primary_sort_columns, data.getPrimaryExpression());
+    KeyCondition key_condition(query_info, context, primary_sort_columns, data.getPrimaryExpression());
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -232,9 +226,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     std::optional<KeyCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
-        minmax_idx_condition.emplace(
-            query_info, context, available_real_and_virtual_columns,
-            data.minmax_idx_columns, data.minmax_idx_expr);
+        minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
 
         if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
         {
@@ -495,10 +487,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                 filter_function->children.push_back(filter_function->arguments);
             }
 
-            NamesAndTypesList source_columns = available_real_columns;
             ASTPtr query = filter_function;
-            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
-            filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context, source_columns).getActions(false);
+            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, available_real_columns);
+            filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
             /// Add columns needed for `sampling_expression` to `column_names_to_read`.
             std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -857,9 +848,8 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(one);
 
     ASTPtr query = function;
-    NamesAndTypesList source_columns =  data.getColumns().getAllPhysical();
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
-    out_expression = ExpressionAnalyzer(query, syntax_result, context, source_columns).getActions(false);
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, data.getColumns().getAllPhysical());
+    out_expression = ExpressionAnalyzer(query, syntax_result, context).getActions(false);
     out_column = function->getColumnName();
 }
 

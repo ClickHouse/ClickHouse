@@ -321,10 +321,9 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             for (const auto & default_column : defaults)
             {
                 const auto & default_expression = default_column.second.expression;
-                NamesAndTypesList source_columns = all_columns;
                 ASTPtr query = default_expression;
-                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
-                const auto actions = ExpressionAnalyzer(query, syntax_result, context, all_columns).getActions(true);
+                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                 const auto required_columns = actions->getRequiredColumns();
 
                 if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
@@ -382,7 +381,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
 
     ASTPtr query = default_expr_list;
     auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
-    const auto actions = ExpressionAnalyzer(query, syntax_result, context, all_columns).getActions(true);
+    const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
     const auto block = actions->getSampleBlock();
 
     /// set deduced types, modify default expression if necessary
