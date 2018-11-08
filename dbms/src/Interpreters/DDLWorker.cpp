@@ -300,7 +300,9 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress(context.getTCPPort()))
+        auto maybe_secure_port = context.getTCPPortSecure();
+        bool is_local_port = maybe_secure_port ? host.isLocalAddress(*maybe_secure_port) : host.isLocalAddress(context.getTCPPort());
+        if (!is_local_port)
             continue;
 
         if (host_in_hostlist)
@@ -477,7 +479,8 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort()))
+            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort())
+                || (context.getTCPPortSecure() && isLocalAddress(address.getResolvedAddress(), *context.getTCPPortSecure())))
             {
                 if (found_via_resolving)
                 {
@@ -562,6 +565,7 @@ void DDLWorker::processTask(DDLTask & task)
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+
     if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
@@ -943,7 +947,7 @@ void DDLWorker::run()
         }
         catch (...)
         {
-            LOG_ERROR(log, "Unexpected error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+            tryLogCurrentException(log, "Unexpected error, will terminate:");
             return;
         }
     }
@@ -1056,16 +1060,16 @@ public:
                 Cluster::Address::fromString(host_id, host, port);
 
                 if (status.code != 0 && first_exception == nullptr)
-                    first_exception = std::make_unique<Exception>("There was an error on " + host + ": " + status.message, status.code);
+                    first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
 
                 ++num_hosts_finished;
 
                 columns[0]->insert(host);
-                columns[1]->insert(static_cast<UInt64>(port));
-                columns[2]->insert(static_cast<Int64>(status.code));
+                columns[1]->insert(port);
+                columns[2]->insert(status.code);
                 columns[3]->insert(status.message);
-                columns[4]->insert(static_cast<UInt64>(waiting_hosts.size() - num_hosts_finished));
-                columns[5]->insert(static_cast<UInt64>(current_active_hosts.size()));
+                columns[4]->insert(waiting_hosts.size() - num_hosts_finished);
+                columns[5]->insert(current_active_hosts.size());
             }
             res = sample.cloneWithColumns(std::move(columns));
         }
@@ -1208,7 +1212,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (use_local_default_db)
     {
         AddDefaultDatabaseVisitor visitor(current_database);
-        visitor.visit(query_ptr);
+        visitor.visitDDL(query_ptr);
     }
 
     DDLLogEntry entry;

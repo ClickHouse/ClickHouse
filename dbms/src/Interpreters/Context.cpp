@@ -1427,6 +1427,15 @@ UInt16 Context::getTCPPort() const
     return config.getInt("tcp_port");
 }
 
+std::optional<UInt16> Context::getTCPPortSecure() const
+{
+    auto lock = getLock();
+
+    auto & config = getConfigRef();
+    if (config.has("tcp_port_secure"))
+        return config.getInt("tcp_port_secure");
+    return {};
+}
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {

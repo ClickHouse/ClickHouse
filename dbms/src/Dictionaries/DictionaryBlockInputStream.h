@@ -464,7 +464,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(cons
     auto column_vector = ColumnVector<UInt64>::create();
     column_vector->getData().reserve(ids_to_fill.size());
     for (UInt64 id : ids_to_fill)
-        column_vector->insert(id);
+        column_vector->insertValue(id);
     return column_vector;
 }
 

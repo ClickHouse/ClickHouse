@@ -46,13 +46,13 @@ Field convertNodeToField(capnp::DynamicValue::Reader value)
         case capnp::DynamicValue::VOID:
             return Field();
         case capnp::DynamicValue::BOOL:
-            return UInt64(value.as<bool>() ? 1 : 0);
+            return value.as<bool>() ? 1u : 0u;
         case capnp::DynamicValue::INT:
-            return Int64((value.as<int64_t>()));
+            return value.as<int64_t>();
         case capnp::DynamicValue::UINT:
-            return UInt64(value.as<uint64_t>());
+            return value.as<uint64_t>();
         case capnp::DynamicValue::FLOAT:
-            return Float64(value.as<double>());
+            return value.as<double>();
         case capnp::DynamicValue::TEXT:
         {
             auto arr = value.as<capnp::Text>();
@@ -73,7 +73,7 @@ Field convertNodeToField(capnp::DynamicValue::Reader value)
             return res;
         }
         case capnp::DynamicValue::ENUM:
-            return UInt64(value.as<capnp::DynamicEnum>().getRaw());
+            return value.as<capnp::DynamicEnum>().getRaw();
         case capnp::DynamicValue::STRUCT:
         {
             auto structValue = value.as<capnp::DynamicStruct>();
