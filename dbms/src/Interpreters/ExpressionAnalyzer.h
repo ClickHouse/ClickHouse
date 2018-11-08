@@ -86,9 +86,8 @@ public:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     /// remove_filter is set in ExpressionActionsChain::finalize();
-    /// sampling_expression and primary_expression are needed in order to not remove columns are used in it.
-    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types,
-                        const ASTPtr & sampling_expression, const ASTPtr & primary_expression);
+    /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);

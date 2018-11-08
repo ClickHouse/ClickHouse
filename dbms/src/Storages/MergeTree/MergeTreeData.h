@@ -509,6 +509,9 @@ public:
     ExpressionActionsPtr getSortingKeyExpression() const { return sorting_key_expr; }
     Names getSortingKeyColumns() const { return sorting_key_columns; }
 
+    Names getColumnsRequiredForSampling() const { return columns_required_for_sampling; }
+    Names getColumnsRequiredForFinal() const { return sorting_key_expr->getRequiredColumns(); }
+
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
 
@@ -603,6 +606,8 @@ private:
     ExpressionActionsPtr primary_key_expr;
     /// Names of columns for primary key.
     Names primary_key_columns;
+
+    Names columns_required_for_sampling;
 
     String database_name;
     String table_name;
