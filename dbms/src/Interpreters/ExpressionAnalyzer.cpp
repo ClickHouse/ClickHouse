@@ -681,7 +681,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
             Names original_columns;
             for (const auto & column : analyzed_join.columns_from_joined_table)
-                if (analyzed_join.required_columns_from_joined_table.count(column.name_and_type.name))
+                if (required_columns_from_joined_table.count(column.name_and_type.name))
                     original_columns.emplace_back(column.original_name);
 
             auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
@@ -692,7 +692,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
         /// Alias duplicating columns as qualified.
         for (const auto & column : analyzed_join.columns_from_joined_table)
-            if (analyzed_join.required_columns_from_joined_table.count(column.name_and_type.name))
+            if (required_columns_from_joined_table.count(column.name_and_type.name))
                 subquery_for_set.joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
 
         auto sample_block = subquery_for_set.source->getHeader();
@@ -708,12 +708,12 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             }
         }
 
-        analyzed_join.joined_block_actions->execute(sample_block);
+        joined_block_actions->execute(sample_block);
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_set.join = join;
         subquery_for_set.join->setSampleBlock(sample_block);
-        subquery_for_set.joined_block_actions = analyzed_join.joined_block_actions;
+        subquery_for_set.joined_block_actions = joined_block_actions;
     }
 
     addJoinAction(step.actions, false);
@@ -1117,7 +1117,8 @@ void ExpressionAnalyzer::collectUsedColumns()
     NameSet source_columns_set;
     for (const auto & type_name : source_columns)
         source_columns_set.insert(type_name.name);
-    analyzed_join.createJoinedBlockActions(source_columns_set, columns_added_by_join, select_query, context);
+    joined_block_actions = analyzed_join.createJoinedBlockActions(
+            source_columns_set, columns_added_by_join, select_query, context, required_columns_from_joined_table);
 
     /// Some columns from right join key may be used in query. This columns will be appended to block during join.
     for (const auto & right_key_name : analyzed_join.key_names_right)

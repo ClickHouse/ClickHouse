@@ -73,6 +73,19 @@ struct ExpressionAnalyzerData
     /// Predicate optimizer overrides the sub queries
     bool rewrite_subqueries = false;
 
+    /// Columns will be added to block by join.
+    JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
+
+    /// Actions which need to be calculated on joined block.
+    ExpressionActionsPtr joined_block_actions;
+
+    /// Columns which will be used in query from joined table. Duplicate names are qualified.
+    NameSet required_columns_from_joined_table;
+
+    /// Such columns will be copied from left join keys during join.
+    /// Example: select right from tab1 join tab2 on left + 1 = right
+    NameSet columns_added_by_join_from_right_keys;
+
 protected:
     ExpressionAnalyzerData(const NamesAndTypesList & source_columns_,
                            const Names & required_result_columns_,
@@ -228,7 +241,6 @@ private:
     bool do_global; /// Do I need to prepare for execution global subqueries when analyzing the query.
 
     AnalyzedJoin analyzed_join;
-    JoinedColumnsList columns_added_by_join;  /// Subset of analyzed_join.available_joined_columns
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
@@ -236,45 +248,9 @@ private:
       */
     void collectUsedColumns();
 
-    /** Find the columns that are obtained by JOIN.
-      */
-    void collectJoinedColumns(NameSet & joined_columns);
-    /// Parse JOIN ON expression and collect ASTs for joined columns.
-    void collectJoinedColumnsFromJoinOnExpr();
-
-    /** For star nodes(`*`), expand them to a list of all columns.
-      * For literal nodes, substitute aliases.
-      */
-    void normalizeTree();
-
-    ///    Eliminates injective function calls and constant expressions from group by statement
-    void optimizeGroupBy();
-
-    /// Remove duplicate items from ORDER BY.
-    void optimizeOrderBy();
-
-    void optimizeLimitBy();
-
-    /// Remove duplicated columns from USING(...).
-    void optimizeUsing();
-
-    /// remove Function_if AST if condition is constant
-    void optimizeIfWithConstantCondition();
-    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
-    bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
-
-    /// Replacing scalar subqueries with constant values.
-    void executeScalarSubqueries();
-
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
-      * create a temporary table of type Memory and store it in the external_tables dictionary.
-      */
-    void addExternalStorage(ASTPtr & subquery_or_table_name);
-
-    void getArrayJoinedColumns();
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
@@ -310,17 +286,6 @@ private:
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
     void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
-
-    /** Translate qualified names such as db.table.column, table.column, table_alias.column
-      *  to unqualified names. This is done in a poor transitional way:
-      *  only one ("main") table is supported. Ambiguity is not detected or resolved.
-      */
-    void translateQualifiedNames();
-
-    /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
-      * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
-      */
-    void removeUnneededColumnsFromSelectClause();
 
     bool isRemoteStorage() const;
 };
