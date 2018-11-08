@@ -45,6 +45,7 @@ std::string errnoToString(int code, int e)
     }
     return "errno: " + toString(e) + ", strerror: " + std::string(buf);
 #else
+    (void)code;
     return "errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf)));
 #endif
 }
