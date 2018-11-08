@@ -339,7 +339,7 @@ void MergeTreeDataPart::remove() const
     {
         from_dir.renameTo(to);
     }
-    catch (const Poco::FileNotFoundException & e)
+    catch (const Poco::FileNotFoundException &)
     {
         LOG_ERROR(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
@@ -448,7 +448,7 @@ void MergeTreeDataPart::loadIndex()
             .getSize() / MERGE_TREE_MARK_SIZE;
     }
 
-    size_t key_size = storage.primary_sort_descr.size();
+    size_t key_size = storage.primary_sort_columns.size();
 
     if (key_size)
     {
@@ -586,12 +586,13 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 
     for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
     {
+        IDataType::SubstreamPath path;
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
             Poco::File bin_file(getFullPath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin");
             if (bin_file.exists())
                 column_to_size[name_type.name] += bin_file.getSize();
-        }, {});
+        }, path);
     }
 }
 
@@ -630,25 +631,26 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
     if (!checksums.empty())
     {
-        if (!storage.primary_sort_descr.empty() && !checksums.files.count("primary.idx"))
+        if (!storage.primary_sort_columns.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
         {
             for (const NameAndTypePair & name_type : columns)
             {
+                IDataType::SubstreamPath stream_path;
                 name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                     String mrk_file_name = file_name + ".mrk";
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
-                        throw Exception("No " + mrk_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                     if (!checksums.files.count(bin_file_name))
-                        throw Exception("No " + bin_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
-                }, {});
+                }, stream_path);
             }
         }
 
@@ -683,7 +685,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.primary_sort_descr.empty())
+        if (!storage.primary_sort_columns.empty())
             check_file_not_empty(path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -721,7 +723,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
                         throw Exception("Part " + path + " is broken: marks have different sizes.",
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
                 }
-            }, {});
+            });
         }
     }
 }

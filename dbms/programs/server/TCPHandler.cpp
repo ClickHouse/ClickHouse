@@ -1,37 +1,37 @@
 #include <iomanip>
-
+#include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <daemon/OwnSplitChannel.h>
 
 #include <Common/ClickHouseRevision.h>
-
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
-
+#include <Common/ClickHouseRevision.h>
+#include <Common/Stopwatch.h>
+#include <Common/NetException.h>
+#include <Common/setThreadName.h>
+#include <Common/config_version.h>
 #include <IO/Progress.h>
-
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/CompressionSettings.h>
-
 #include <IO/copyData.h>
-
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/TablesStatus.h>
-
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-
-#include <Common/ExternalTable.h>
+#include <Core/ExternalTable.h>
 
 #include "TCPHandler.h"
-
-#include <Common/NetException.h>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -52,6 +52,8 @@ namespace ErrorCodes
 
 void TCPHandler::runImpl()
 {
+    setThreadName("TCPHandler");
+
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);
 
@@ -91,7 +93,7 @@ void TCPHandler::runImpl()
         try
         {
             /// We try to send error information to the client.
-            sendException(e);
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -106,7 +108,7 @@ void TCPHandler::runImpl()
             Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
-            sendException(e);
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
 
@@ -119,6 +121,9 @@ void TCPHandler::runImpl()
 
     while (1)
     {
+        /// Restore context of request.
+        query_context = connection_context;
+
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
         while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
             ;
@@ -130,17 +135,19 @@ void TCPHandler::runImpl()
         Stopwatch watch;
         state.reset();
 
+        /// Initialized later.
+        std::optional<CurrentThread::QueryScope> query_scope;
+
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
         std::unique_ptr<Exception> exception;
         bool network_error = false;
 
+        bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
+
         try
         {
-            /// Restore context of request.
-            query_context = connection_context;
-
             /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
             SCOPE_EXIT({state.timeout_setter.reset();});
 
@@ -150,13 +157,32 @@ void TCPHandler::runImpl()
             if (!receivePacket())
                 continue;
 
-            /// Get blocks of temporary tables
-            readData(global_settings);
+            query_scope.emplace(query_context);
 
-            /// Reset the input stream, as we received an empty block while receiving external table data.
-            /// So, the stream has been marked as cancelled and we can't read from it anymore.
-            state.block_in.reset();
-            state.maybe_compressed_in.reset();  /// For more accurate accounting by MemoryTracker.
+            send_exception_with_stack_trace = query_context.getSettingsRef().calculate_text_stack_trace;
+
+            /// Should we send internal logs to client?
+            if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
+                && query_context.getSettingsRef().send_logs_level.value != "none")
+            {
+                state.logs_queue = std::make_shared<InternalTextLogsQueue>();
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().send_logs_level.value);
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
+            }
+
+            query_context.setExternalTablesInitializer([&global_settings, this] (Context & context)
+            {
+                if (&context != &query_context)
+                    throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
+
+                /// Get blocks of temporary tables
+                readData(global_settings);
+
+                /// Reset the input stream, as we received an empty block while receiving external table data.
+                /// So, the stream has been marked as cancelled and we can't read from it anymore.
+                state.block_in.reset();
+                state.maybe_compressed_in.reset();  /// For more accurate accounting by MemoryTracker.
+            });
 
             /// Processing Query
             state.io = executeQuery(state.query, query_context, false, state.stage);
@@ -173,8 +199,13 @@ void TCPHandler::runImpl()
             else
                 processOrdinaryQuery();
 
+            /// Do it before sending end of stream, to have a chance to show log message in client.
+            query_scope->logPeakMemoryUsage();
+
+            sendLogs();
             sendEndOfStream();
 
+            query_scope.reset();
             state.reset();
         }
         catch (const Exception & e)
@@ -219,7 +250,20 @@ void TCPHandler::runImpl()
         try
         {
             if (exception)
-                sendException(*exception);
+            {
+                try
+                {
+                    /// Try to send logs to client, but it could be risky too
+                    /// Assume that we can't break output here
+                    sendLogs();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Can't send logs to client");
+                }
+
+                sendException(*exception, send_exception_with_stack_trace);
+            }
         }
         catch (...)
         {
@@ -230,6 +274,7 @@ void TCPHandler::runImpl()
 
         try
         {
+            query_scope.reset();
             state.reset();
         }
         catch (...)
@@ -262,12 +307,14 @@ void TCPHandler::readData(const Settings & global_settings)
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
 
-    while (1)
+    sendLogs();
+
+    while (true)
     {
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (1)
+        while (true)
         {
             if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
                 break;
@@ -299,6 +346,8 @@ void TCPHandler::readData(const Settings & global_settings)
         /// We accept and process data. And if they are over, then we leave.
         if (!receivePacket())
             break;
+
+        sendLogs();
     }
 }
 
@@ -356,6 +405,8 @@ void TCPHandler::processOrdinaryQuery()
                         sendProgress();
                     }
 
+                    sendLogs();
+
                     if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
                     {
                         /// There is the following result block.
@@ -378,6 +429,7 @@ void TCPHandler::processOrdinaryQuery()
                 sendExtremes();
                 sendProfileInfo();
                 sendProgress();
+                sendLogs();
             }
 
             sendData(block);
@@ -503,6 +555,7 @@ void TCPHandler::receiveHello()
     readStringBinary(client_name, *in);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_revision, *in);
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
@@ -511,7 +564,8 @@ void TCPHandler::receiveHello()
     LOG_DEBUG(log, "Connected " << client_name
         << " version " << client_version_major
         << "." << client_version_minor
-        << "." << client_revision
+        << "." << client_version_patch
+        << ", revision: " << client_revision
         << (!default_database.empty() ? ", database: " + default_database : "")
         << (!user.empty() ? ", user: " + user : "")
         << ".");
@@ -528,13 +582,11 @@ void TCPHandler::sendHello()
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     writeVarUInt(ClickHouseRevision::get(), *out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-    {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
-    }
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-    {
         writeStringBinary(server_display_name, *out);
-    }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+        writeVarUInt(DBMS_VERSION_PATCH, *out);
     out->next();
 }
 
@@ -607,6 +659,7 @@ void TCPHandler::receiveQuery()
             client_info.client_name = client_name;
             client_info.client_version_major = client_version_major;
             client_info.client_version_minor = client_version_minor;
+            client_info.client_version_patch = client_version_patch;
             client_info.client_revision = client_revision;
         }
 
@@ -701,14 +754,29 @@ void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
-        if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                *out, CompressionSettings(query_context.getSettingsRef()));
-        else
-            state.maybe_compressed_out = out;
+        if (!state.maybe_compressed_out)
+        {
+            if (state.compression == Protocol::Compression::Enable)
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                    *out, CompressionSettings(query_context.getSettingsRef()));
+            else
+                state.maybe_compressed_out = out;
+        }
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
+            client_revision,
+            block.cloneEmpty());
+    }
+}
+
+void TCPHandler::initLogsBlockOutput(const Block & block)
+{
+    if (!state.logs_block_out)
+    {
+        /// Use uncompressed stream since log blocks usually contain only one row
+        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
+            *out,
             client_revision,
             block.cloneEmpty());
     }
@@ -754,6 +822,7 @@ void TCPHandler::sendData(const Block & block)
     initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
+    /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
 
     state.block_out->write(block);
@@ -762,10 +831,23 @@ void TCPHandler::sendData(const Block & block)
 }
 
 
-void TCPHandler::sendException(const Exception & e)
+void TCPHandler::sendLogData(const Block & block)
+{
+    initLogsBlockOutput(block);
+
+    writeVarUInt(Protocol::Server::Log, *out);
+    /// Send log tag (empty tag is the default tag)
+    writeStringBinary("", *out);
+
+    state.logs_block_out->write(block);
+    out->next();
+}
+
+
+void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     writeVarUInt(Protocol::Server::Exception, *out);
-    writeException(e, *out);
+    writeException(e, *out, with_stack_trace);
     out->next();
 }
 
@@ -790,6 +872,37 @@ void TCPHandler::sendProgress()
     auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_revision);
     out->next();
+}
+
+
+void TCPHandler::sendLogs()
+{
+    if (!state.logs_queue)
+        return;
+
+    MutableColumns logs_columns;
+    MutableColumns curr_logs_columns;
+    size_t rows = 0;
+
+    for (; state.logs_queue->tryPop(curr_logs_columns); ++rows)
+    {
+        if (rows == 0)
+        {
+            logs_columns = std::move(curr_logs_columns);
+        }
+        else
+        {
+            for (size_t j = 0; j < logs_columns.size(); ++j)
+                logs_columns[j]->insertRangeFrom(*curr_logs_columns[j], 0, curr_logs_columns[j]->size());
+        }
+    }
+
+    if (rows > 0)
+    {
+        Block block = InternalTextLogsQueue::getSampleBlock();
+        block.setColumns(std::move(logs_columns));
+        sendLogData(block);
+    }
 }
 
 

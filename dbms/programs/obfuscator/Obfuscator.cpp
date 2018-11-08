@@ -58,13 +58,13 @@ It is designed to retain the following properties of data:
 
 Most of the properties above are viable for performance testing:
 - reading data, filtering, aggregation and sorting will work at almost the same speed
-  as on original data due to saved cardinalities, magnitudes, compression ratios, etc.
+    as on original data due to saved cardinalities, magnitudes, compression ratios, etc.
 
 It works in deterministic fashion: you define a seed value and transform is totally determined by input data and by seed.
 Some transforms are one to one and could be reversed, so you need to have large enough seed and keep it in secret.
 
 It use some cryptographic primitives to transform data, but from the cryptographic point of view,
-  it doesn't do anything properly and you should never consider the result as secure, unless you have other reasons for it.
+    it doesn't do anything properly and you should never consider the result as secure, unless you have other reasons for it.
 
 It may retain some data you don't want to publish.
 
@@ -74,7 +74,7 @@ So, the user will be able to count exact ratio of mobile traffic.
 
 Another example, suppose you have some private data in your table, like user email and you don't want to publish any single email address.
 If your table is large enough and contain multiple different emails and there is no email that have very high frequency than all others,
-  it will perfectly anonymize all data. But if you have small amount of different values in a column, it can possibly reproduce some of them.
+    it will perfectly anonymize all data. But if you have small amount of different values in a column, it can possibly reproduce some of them.
 And you should take care and look at exact algorithm, how this tool works, and probably fine tune some of it command line parameters.
 
 This tool works fine only with reasonable amount of data (at least 1000s of rows).
@@ -500,7 +500,7 @@ private:
         return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
-    /// By the way, we don't have to use actual Unicode numbers. We use just arbitary bijective mapping.
+    /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
     CodePoint readCodePoint(const char *& pos, const char * end)
     {
         size_t length = UTF8::seqLength(*pos);
@@ -862,9 +862,9 @@ class ModelFactory
 public:
     ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
     {
-        if (data_type.isInteger())
+        if (isInteger(data_type))
         {
-            if (data_type.isUnsignedInteger())
+            if (isUnsignedInteger(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
             else
                 return std::make_unique<SignedIntegerModel>(seed);
@@ -954,7 +954,7 @@ try
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitary string), must be random string with at least 10 bytes length")
+        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length")
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")

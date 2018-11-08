@@ -30,7 +30,7 @@ bool LogicalExpressionsOptimizer::OrWithExpression::operator<(const OrWithExpres
     return std::tie(this->or_function, this->expression) < std::tie(rhs.or_function, rhs.expression);
 }
 
-LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, const Settings & settings_)
+LogicalExpressionsOptimizer::LogicalExpressionsOptimizer(ASTSelectQuery * select_query_, ExtractedSettings && settings_)
     : select_query(select_query_), settings(settings_)
 {
 }
@@ -228,10 +228,17 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
     ASTPtr value_list = std::make_shared<ASTExpressionList>();
+    const char * min_range_first = nullptr;
+    const char * max_range_second = nullptr;
     for (const auto function : equality_functions)
     {
         const auto & operands = getFunctionOperands(function);
         value_list->children.push_back(operands[1]);
+        /// Get range min/max from all literals x1...xN, which will be used as tuple_functions' range
+        if (min_range_first == nullptr || min_range_first > operands[1]->range.first)
+            min_range_first = operands[1]->range.first;
+        if (max_range_second == nullptr || max_range_second < operands[1]->range.second)
+            max_range_second = operands[1]->range.second;
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
@@ -253,6 +260,7 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     auto tuple_function = std::make_shared<ASTFunction>();
     tuple_function->name = "tuple";
+    tuple_function->range = StringRange(min_range_first, max_range_second);
     tuple_function->arguments = value_list;
     tuple_function->children.push_back(tuple_function->arguments);
 
@@ -357,11 +365,10 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
             for (auto & parent : parents)
             {
-                parent->children.push_back(operands[0]);
-                auto first_erased = std::remove_if(parent->children.begin(), parent->children.end(),
-                    [or_function](const ASTPtr & ptr) { return ptr.get() == or_function; });
-
-                parent->children.erase(first_erased, parent->children.end());
+                // The order of children matters if or is children of some function, e.g. minus
+                std::replace_if(parent->children.begin(), parent->children.end(),
+                                [or_function](const ASTPtr & ptr) { return ptr.get() == or_function; },
+                                operands[0] );
             }
 
             /// If the OR node was the root of the WHERE, PREWHERE, or HAVING expression, then update this root.

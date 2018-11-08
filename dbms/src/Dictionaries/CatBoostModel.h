@@ -80,7 +80,7 @@ private:
     std::chrono::time_point<std::chrono::system_clock> creation_time;
     std::exception_ptr creation_exception;
 
-    void init(const std::string & lib_path);
+    void init();
 };
 
 }

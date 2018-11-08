@@ -41,12 +41,13 @@ private:
     void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
 
     /* Action for state machine for traversing nested structures. */
+    using BlockPositionList = std::vector<size_t>;
     struct Action
     {
-      enum Type { POP, PUSH, READ };
-      Type type;
-      capnp::StructSchema::Field field = {};
-      size_t column = 0;
+        enum Type { POP, PUSH, READ };
+        Type type;
+        capnp::StructSchema::Field field = {};
+        BlockPositionList columns = {};
     };
 
     // Wrapper for classes that could throw in destructor
@@ -54,10 +55,10 @@ private:
     template <typename T>
     struct DestructorCatcher
     {
-      T impl;
-      template <typename ... Arg>
-      DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
-      ~DestructorCatcher() noexcept try { } catch (...) { }
+        T impl;
+        template <typename ... Arg>
+        DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
+        ~DestructorCatcher() noexcept try { } catch (...) { return; }
     };
     using SchemaParser = DestructorCatcher<capnp::SchemaParser>;
 

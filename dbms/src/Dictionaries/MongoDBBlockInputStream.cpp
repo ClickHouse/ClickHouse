@@ -5,18 +5,16 @@
 #include <string>
 #include <sstream>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/MongoDB/Connection.h>
-    #include <Poco/MongoDB/Cursor.h>
-    #include <Poco/MongoDB/Element.h>
-    #include <Poco/MongoDB/ObjectId.h>
-#pragma GCC diagnostic pop
+#include <Poco/MongoDB/Connection.h>
+#include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Element.h>
+#include <Poco/MongoDB/ObjectId.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -59,8 +57,8 @@ namespace
             case Poco::MongoDB::ElementTraits<Int32>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
                 break;
-            case Poco::MongoDB::ElementTraits<Int64>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int64> &>(value).value());
+            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
@@ -138,6 +136,18 @@ namespace
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
+            case ValueType::UUID:
+            {
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                {
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
+                }
+                else
+                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) +
+                              " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                break;
+            }
         }
     }
 
@@ -170,13 +180,22 @@ Block MongoDBBlockInputStream::readImpl()
 
             for (const auto idx : ext::range(0, size))
             {
-                const auto & name = description.names[idx];
+                const auto & name = description.sample_block.getByPosition(idx).name;
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
-                    insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                    insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
                 else
-                    insertValue(*columns[idx], description.types[idx], *value, name);
+                {
+                    if (description.types[idx].second)
+                    {
+                        ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                        insertValue(column_nullable.getNestedColumn(), description.types[idx].first, *value, name);
+                        column_nullable.getNullMapData().emplace_back(0);
+                    }
+                    else
+                        insertValue(*columns[idx], description.types[idx].first, *value, name);
+                }
             }
         }
 

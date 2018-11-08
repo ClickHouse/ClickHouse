@@ -21,8 +21,6 @@ public:
     ASTPtr clone() const override
     {
         const auto res = std::make_shared<ASTColumnDeclaration>(*this);
-        ASTPtr ptr{res};
-
         res->children.clear();
 
         if (type)
@@ -37,7 +35,7 @@ public:
             res->children.push_back(res->default_expression);
         }
 
-        return ptr;
+        return res;
     }
 
 protected:

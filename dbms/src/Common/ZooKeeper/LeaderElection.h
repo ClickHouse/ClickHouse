@@ -6,12 +6,11 @@
 #include <memory>
 #include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace ProfileEvents
 {
-    extern const Event ObsoleteEphemeralNode;
     extern const Event LeaderElectionAcquiredLeadership;
 }
 
@@ -85,8 +84,7 @@ private:
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-        task->activate();
-        task->schedule();
+        task->activateAndSchedule();
     }
 
     void releaseNode()
@@ -123,7 +121,7 @@ private:
         {
             DB::tryLogCurrentException(log);
 
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            if (e.code == Coordination::ZSESSIONEXPIRED)
                 return;
         }
         catch (...)

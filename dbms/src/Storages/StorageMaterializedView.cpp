@@ -2,16 +2,15 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
-
-#include <Storages/VirtualColumnFactory.h>
 
 #include <Common/typeid_cast.h>
 
@@ -29,23 +28,26 @@ namespace ErrorCodes
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
-    auto query_table = query.table();
+    auto db_and_table = getDatabaseAndTable(query, 0);
+    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
 
-    if (!query_table)
+    if (!db_and_table && !subquery)
         return;
 
-    if (auto ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
+    if (db_and_table)
     {
-        auto query_database = query.database();
+        select_table_name = db_and_table->table;
 
-        if (!query_database)
-            query.setDatabaseIfNeeded(select_database_name);
-
-        select_table_name = ast_id->name;
-        select_database_name = query_database ? typeid_cast<const ASTIdentifier &>(*query_database).name : select_database_name;
-
+        if (db_and_table->database.empty())
+        {
+            db_and_table->database = select_database_name;
+            AddDefaultDatabaseVisitor visitor(select_database_name);
+            visitor.visit(query);
+        }
+        else
+            select_database_name = db_and_table->database;
     }
-    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(subquery.get()))
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
@@ -66,12 +68,11 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (query.prewhere_expression || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    auto query_table = query.table();
-
-    if (!query_table)
+    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    if (!subquery)
         return;
 
-    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
+    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(subquery.get()))
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
@@ -170,11 +171,16 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
     return getTargetTable()->hasColumn(column_name);
 }
 
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
+{
+    return getTargetTable()->getQueryProcessingStage(context);
+}
+
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -257,6 +263,12 @@ void StorageMaterializedView::freezePartition(const ASTPtr & partition, const St
     getTargetTable()->freezePartition(partition, with_name, context);
 }
 
+void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->mutate(commands, context);
+}
+
 void StorageMaterializedView::shutdown()
 {
     /// Make sure the dependency is removed after DETACH TABLE
@@ -282,19 +294,31 @@ String StorageMaterializedView::getDataPath() const
     return {};
 }
 
-bool StorageMaterializedView::checkTableCanBeDropped() const
+void StorageMaterializedView::checkTableCanBeDropped() const
 {
     /// Don't drop the target table if it was created manually via 'TO inner_table' statement
     if (!has_inner_table)
-        return true;
+        return;
 
     auto target_table = tryGetTargetTable();
     if (!target_table)
-        return true;
+        return;
 
-    return target_table->checkTableCanBeDropped();
+    target_table->checkTableCanBeDropped();
 }
 
+void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkPartitionCanBeDropped(partition);
+}
 
 void registerStorageMaterializedView(StorageFactory & factory)
 {

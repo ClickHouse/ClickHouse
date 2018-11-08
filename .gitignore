@@ -10,12 +10,14 @@
 *.logrt
 
 /build
-/docs/en_single_page/
-/docs/ru_single_page/
-/docs/venv/
-/docs/build/
+/build_*
+/docs/build
+/docs/edit
+/docs/tools/venv/
 /docs/en/development/build/
 /docs/ru/development/build/
+/docs/en/single.md
+/docs/ru/single.md
 
 # callgrind files
 callgrind.out.*
@@ -177,7 +179,6 @@ utils/zookeeper-create-entry-to-download-part/zookeeper-create-entry-to-download
 utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 dbms/src/Storages/tests/remove_symlink_directory
-dbms/tests/queries/1_stateful
 debian/control
 debian/copyright
 debian/tmp/
@@ -240,3 +241,9 @@ node_modules
 public
 website/docs
 website/presentations
+website/package-lock.json
+.DS_Store
+*/.DS_Store
+
+# Ignore files for locally disabled tests
+/dbms/tests/queries/**/*.disabled

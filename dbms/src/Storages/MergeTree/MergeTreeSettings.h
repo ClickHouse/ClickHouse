@@ -63,9 +63,12 @@ struct MergeTreeSettings
      *  duplicating INSERTs during that period of time. */                                                    \
     M(SettingUInt64, replicated_deduplication_window_seconds, 7 * 24 * 60 * 60) /** one week */               \
                                                                                                               \
+    /** How many records may be in log, if there is inactive replica  */                                      \
+    M(SettingUInt64, max_replicated_logs_to_keep, 10000)                                                      \
+                                                                                                              \
     /** Keep about this number of last records in ZooKeeper log, even if they are obsolete.                   \
      *  It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning. */             \
-    M(SettingUInt64, replicated_logs_to_keep, 100)                                                            \
+    M(SettingUInt64, min_replicated_logs_to_keep, 100)                                                        \
                                                                                                               \
     /** After specified amount of time passed after replication log entry creation                            \
      *  and sum size of parts is greater than threshold,                                                      \
@@ -139,7 +142,14 @@ struct MergeTreeSettings
       *  instead of ordinary ones (dozens KB).                                                                \
       * Before enabling check that all replicas support new format.                                           \
       */                                                                                                      \
-    M(SettingBool, use_minimalistic_checksums_in_zookeeper, false)
+    M(SettingBool, use_minimalistic_checksums_in_zookeeper, true)                                             \
+                                                                                                              \
+    /** How many records about mutations that are done to keep.                                               \
+     *  If zero, then keep all of them */                                                                     \
+    M(SettingUInt64, finished_mutations_to_keep, 100)                                                         \
+                                                                                                              \
+    /** Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled) */                                 \
+    M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \

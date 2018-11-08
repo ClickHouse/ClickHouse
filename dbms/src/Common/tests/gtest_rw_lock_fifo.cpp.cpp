@@ -1,7 +1,8 @@
-#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <gtest/gtest.h>
-#pragma GCC diagnostic pop
 
 #include <Common/RWLockFIFO.h>
 #include <Common/Stopwatch.h>
@@ -32,7 +33,7 @@ TEST(Common, RWLockFIFO_1)
 
     auto func = [&] (size_t threads, int round)
     {
-        for (int  i = 0; i < cycles; ++i)
+        for (int i = 0; i < cycles; ++i)
         {
             auto type = (std::uniform_int_distribution<>(0, 9)(gen) >= round) ? RWLockFIFO::Read : RWLockFIFO::Write;
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));

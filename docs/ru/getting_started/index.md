@@ -2,15 +2,19 @@
 
 ## Системные требования
 
-Система некроссплатформенная. Требуется ОС Linux Ubuntu не более старая, чем Precise (12.04); архитектура x86_64 с поддержкой набора инструкций SSE 4.2.
+Для установки из официального репозитория требуется ОС Linux; архитектура x86_64 с поддержкой набора инструкций SSE 4.2.
+
 Для проверки наличия SSE 4.2, выполните:
 
 ```bash
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-Рекомендуется использовать Ubuntu Trusty или Ubuntu Xenial или Ubuntu Precise.
-Терминал должен работать в кодировке UTF-8 (как по умолчанию в Ubuntu).
+Рекомендуется использовать Ubuntu или Debian. Терминал должен работать в кодировке UTF-8.
+
+Для rpm-based систем вы можете использовать 3rd-party пакеты: https://packagecloud.io/altinity/clickhouse либо установить debian пакеты.
+
+ClickHouse также работает на FreeBSD и Mac OS X; может быть собран для процессоров x86_64 без поддержки SSE 4.2, и для процессоров AArch64.
 
 ## Установка
 
@@ -20,7 +24,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
 
-```text
+```
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
@@ -47,14 +51,14 @@ ClickHouse содержит настройки ограничения досту
 Вы можете собрать пакеты и установить их.
 Также вы можете использовать программы без установки пакетов.
 
-```text
+```
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
 Для сервера создаёте директории с данными, например:
 
-```text
+```
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```
@@ -132,3 +136,5 @@ SELECT 1
 **Поздравляем, система работает!**
 
 Для дальнейших экспериментов можно попробовать загрузить из тестовых наборов данных.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/) <!--hide-->

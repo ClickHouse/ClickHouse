@@ -1,0 +1,14 @@
+<yandex>
+  <profiles>
+    <default>
+        <max_query_size from_env="MAX_QUERY_SIZE" />
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</yandex>

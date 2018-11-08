@@ -29,7 +29,7 @@ protected:
     friend class iterator;
     friend class Reader;
 
-    using Self = SmallTable<Key, Cell, capacity>;
+    using Self = SmallTable;
     using cell_type = Cell;
 
     size_t m_size = 0;        /// Amount of elements.

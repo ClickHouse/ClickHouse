@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -17,10 +16,10 @@ namespace DB
 {
 
 
-StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string & name_)
-    : name(name_)
+
+NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         /// Table properties.
         { "database",                std::make_shared<DataTypeString>() },
         { "table",                   std::make_shared<DataTypeString>() },
@@ -43,26 +42,23 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
         { "num_postponed",           std::make_shared<DataTypeUInt32>() },
         { "postpone_reason",         std::make_shared<DataTypeString>() },
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>() },
-    }));
+    };
 }
 
 
-BlockInputStreams StorageSystemReplicationQueue::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
-        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                replicated_tables[db.first][iterator->name()] = iterator->table();
+    {
+        if (context.hasDatabaseAccessRights(db.first))
+        {
+            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+                if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+                    replicated_tables[db.first][iterator->name()] = iterator->table();
+        }
+    }
+
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
@@ -90,7 +86,7 @@ BlockInputStreams StorageSystemReplicationQueue::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, filtered_block, context);
 
         if (!filtered_block.rows())
-            return BlockInputStreams();
+            return;
 
         col_database_to_filter = filtered_block.getByName("database").column;
         col_table_to_filter = filtered_block.getByName("table").column;
@@ -98,8 +94,6 @@ BlockInputStreams StorageSystemReplicationQueue::read(
 
     StorageReplicatedMergeTree::LogEntriesData queue;
     String replica_name;
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     for (size_t i = 0, tables_size = col_database_to_filter->size(); i < tables_size; ++i)
     {
@@ -121,27 +115,24 @@ BlockInputStreams StorageSystemReplicationQueue::read(
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
             res_columns[col_num++]->insert(replica_name);
-            res_columns[col_num++]->insert(UInt64(j));
+            res_columns[col_num++]->insert(j);
             res_columns[col_num++]->insert(entry.znode_name);
             res_columns[col_num++]->insert(entry.typeToString());
-            res_columns[col_num++]->insert(UInt64(entry.create_time));
-            res_columns[col_num++]->insert(UInt64(entry.quorum));
+            res_columns[col_num++]->insert(entry.create_time);
+            res_columns[col_num++]->insert(entry.quorum);
             res_columns[col_num++]->insert(entry.source_replica);
             res_columns[col_num++]->insert(entry.new_part_name);
             res_columns[col_num++]->insert(parts_to_merge);
-            res_columns[col_num++]->insert(UInt64(entry.detach));
-            res_columns[col_num++]->insert(UInt64(entry.currently_executing));
-            res_columns[col_num++]->insert(UInt64(entry.num_tries));
+            res_columns[col_num++]->insert(entry.detach);
+            res_columns[col_num++]->insert(entry.currently_executing);
+            res_columns[col_num++]->insert(entry.num_tries);
             res_columns[col_num++]->insert(entry.exception ? getExceptionMessage(entry.exception, false) : "");
             res_columns[col_num++]->insert(UInt64(entry.last_attempt_time));
-            res_columns[col_num++]->insert(UInt64(entry.num_postponed));
+            res_columns[col_num++]->insert(entry.num_postponed);
             res_columns[col_num++]->insert(entry.postpone_reason);
             res_columns[col_num++]->insert(UInt64(entry.last_postpone_time));
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
-
 
 }

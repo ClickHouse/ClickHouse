@@ -10,7 +10,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -189,6 +188,7 @@ public:
     String toString() const;
 };
 
+
 /// Class that extends arbitrary objects with infinities, like +-inf for floats
 class FieldWithInfinity
 {
@@ -216,6 +216,7 @@ private:
     FieldWithInfinity(const Type type_);
 };
 
+
 /** Condition on the index.
   *
   * Consists of the conditions for the key belonging to all possible ranges or sets,
@@ -232,7 +233,7 @@ public:
         const SelectQueryInfo & query_info,
         const Context & context,
         const NamesAndTypesList & all_columns,
-        const SortDescription & sort_descr,
+        const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
     /// Whether the condition is feasible in the key range.
@@ -324,8 +325,8 @@ private:
 
 public:
     static const AtomMap atom_map;
-private:
 
+private:
     bool mayBeTrueInRange(
         size_t used_key_size,
         const Field * left_key,
@@ -370,7 +371,10 @@ private:
         const size_t tuple_index,
         size_t & out_key_column_num);
 
-    bool isTupleIndexable(
+    /// If it's possible to make an RPNElement
+    /// that will filter values (possibly tuples) by the content of 'prepared_set',
+    /// do it and return true.
+    bool tryPrepareSetIndex(
         const ASTPtr & node,
         const Context & context,
         RPNElement & out,
@@ -379,7 +383,6 @@ private:
 
     RPN rpn;
 
-    SortDescription sort_descr;
     ColumnIndices key_columns;
     ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;

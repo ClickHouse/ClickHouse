@@ -2,20 +2,17 @@
 #if USE_POCO_MONGODB
 #include <Poco/Util/AbstractConfiguration.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/MongoDB/Connection.h>
-    #include <Poco/MongoDB/Database.h>
-    #include <Poco/MongoDB/Cursor.h>
-    #include <Poco/MongoDB/Array.h>
-    #include <Poco/MongoDB/ObjectId.h>
-#pragma GCC diagnostic pop
+#include <Poco/MongoDB/Connection.h>
+#include <Poco/MongoDB/Database.h>
+#include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Array.h>
+#include <Poco/MongoDB/ObjectId.h>
 
 #include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
-// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string& value);
+// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
@@ -253,6 +250,9 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                 case AttributeUnderlyingType::Int16:
                 case AttributeUnderlyingType::Int32:
                 case AttributeUnderlyingType::Int64:
+                case AttributeUnderlyingType::Decimal32:
+                case AttributeUnderlyingType::Decimal64:
+                case AttributeUnderlyingType::Decimal128:
                     key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
                     break;
 

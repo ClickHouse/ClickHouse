@@ -7,6 +7,7 @@
 #include <Poco/NumberParser.h>
 #include <arpa/inet.h>
 #include <atomic>
+#include <optional>
 
 
 namespace DB
@@ -79,6 +80,10 @@ struct DNSResolver::Impl
 {
     SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
 
+    /// Cached server host name
+    std::mutex mutex;
+    std::optional<String> host_name;
+
     /// If disabled, will not make cache lookups, will resolve addresses manually on each call
     std::atomic<bool> disable_cache{false};
 };
@@ -108,11 +113,27 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, U
 void DNSResolver::dropCache()
 {
     impl->cache_host.drop();
+
+    std::unique_lock lock(impl->mutex);
+    impl->host_name.reset();
 }
 
 void DNSResolver::setDisableCacheFlag(bool is_disabled)
 {
     impl->disable_cache = is_disabled;
+}
+
+String DNSResolver::getHostName()
+{
+    if (impl->disable_cache)
+        return Poco::Net::DNS::hostName();
+
+    std::unique_lock lock(impl->mutex);
+
+    if (!impl->host_name.has_value())
+        impl->host_name.emplace(Poco::Net::DNS::hostName());
+
+    return *impl->host_name;
 }
 
 DNSResolver::~DNSResolver() = default;

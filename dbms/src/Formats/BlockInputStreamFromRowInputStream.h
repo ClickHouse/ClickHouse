@@ -25,7 +25,7 @@ public:
         const FormatSettings & settings);
 
     void readPrefix() override { row_input->readPrefix(); }
-    void readSuffix() override { row_input->readSuffix(); }
+    void readSuffix() override;
 
     String getName() const override { return "BlockInputStreamFromRowInputStream"; }
 

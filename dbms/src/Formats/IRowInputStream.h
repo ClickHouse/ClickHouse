@@ -13,11 +13,9 @@ namespace DB
 /// A way to set some extentions to read and return extra information too.
 struct RowReadExtention
 {
-    using BitMask = std::vector<bool>;
-
     /// IRowInputStream.extendedRead() output value.
     /// Contains true for columns that actually read from the source and false for defaults
-    BitMask read_columns;
+    std::vector<UInt8> read_columns;
 };
 
 /** Interface of stream, that allows to read data by rows.

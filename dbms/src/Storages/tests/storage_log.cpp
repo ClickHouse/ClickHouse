@@ -26,8 +26,7 @@ try
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
     names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
-    StoragePtr table = StorageLog::create(
-        "./", "test", ColumnsDescription{names_and_types}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create("./", "test", ColumnsDescription{names_and_types}, 1048576);
     table->startup();
 
     /// write into it
@@ -74,7 +73,7 @@ try
         column_names.push_back("a");
         column_names.push_back("b");
 
-        QueryProcessingStage::Enum stage;
+        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
 
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
 

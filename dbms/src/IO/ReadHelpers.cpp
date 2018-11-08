@@ -2,12 +2,18 @@
 #include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
 #include <common/find_first_symbols.h>
 #include <stdlib.h>
+#include <Common/memcpySmall.h>
+
+#if __SSE2__
+    #include <emmintrin.h>
+#endif
 
 namespace DB
 {
@@ -17,6 +23,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
 }
 
@@ -58,7 +66,12 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
     parseHex(&src36[24], dst16 + 2, 6);
 }
 
-static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
+UInt128 stringToUUID(const String & str)
+{
+    return parseFromString<UUID>(str);
+}
+
+void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
     out <<  "Cannot parse input: expected " << escape << s;
@@ -107,15 +120,6 @@ void assertString(const char * s, ReadBuffer & buf)
         throwAtAssertionFailed(s, buf);
 }
 
-void assertChar(char symbol, ReadBuffer & buf)
-{
-    if (buf.eof() || *buf.position() != symbol)
-    {
-        char err[2] = {symbol, '\0'};
-        throwAtAssertionFailed(err, buf);
-    }
-    ++buf.position();
-}
 
 void assertEOF(ReadBuffer & buf)
 {
@@ -155,27 +159,29 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 
 
 template <typename T>
-static void appendToStringOrVector(T & s, const char * begin, const char * end)
+static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
-    s.append(begin, end - begin);
+    s.append(rb.position(), end - rb.position());
 }
 
 template <>
-inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, const char * begin, const char * end)
+inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
-    s.insert(begin, end);    /// TODO memcpySmall
+    if (rb.isPadded())
+        s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
+    else
+        s.insert(rb.position(), end);
 }
-
 
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
-        buf.position() += next_pos - buf.position();    /// Code looks complicated, because "buf.position() = next_pos" doens't work due to const-ness.
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
 
         if (buf.hasPendingData())
             return;
@@ -196,10 +202,8 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        size_t bytes = buf.buffer().end() - buf.position();
-
-        appendToStringOrVector(s, buf.position(), buf.position() + bytes);
-        buf.position() += bytes;
+        appendToStringOrVector(s, buf, buf.buffer().end());
+        buf.position() = buf.buffer().end();
 
         if (buf.hasPendingData())
             return;
@@ -252,9 +256,9 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message, int code)
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throw Exception(message, code);
         return ReturnType(false);
     };
@@ -367,10 +371,10 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
-        buf.position() += next_pos - buf.position();    /// Code looks complicated, because "buf.position() = next_pos" doens't work due to const-ness.
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
 
         if (!buf.hasPendingData())
             continue;
@@ -409,10 +413,10 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
-        buf.position() += next_pos - buf.position();
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
 
         if (!buf.hasPendingData())
             continue;
@@ -500,31 +504,32 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    char maybe_quote = *buf.position();
+    const char delimiter = settings.delimiter;
+    const char maybe_quote = *buf.position();
 
     /// Emptiness and not even in quotation marks.
     if (maybe_quote == delimiter)
         return;
 
-    if (maybe_quote == '\'' || maybe_quote == '"')
+    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
         ++buf.position();
 
         /// The quoted case. We are looking for the next quotation mark.
         while (!buf.eof())
         {
-            const char * next_pos = reinterpret_cast<const char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
+            char * next_pos = reinterpret_cast<char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
 
             if (nullptr == next_pos)
                 next_pos = buf.buffer().end();
 
-            appendToStringOrVector(s, buf.position(), next_pos);
-            buf.position() += next_pos - buf.position();
+            appendToStringOrVector(s, buf, next_pos);
+            buf.position() = next_pos;
 
             if (!buf.hasPendingData())
                 continue;
@@ -549,13 +554,34 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
         /// Unquoted case. Look for delimiter or \r or \n.
         while (!buf.eof())
         {
-            const char * next_pos = buf.position();
-            while (next_pos < buf.buffer().end()
-                && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')    /// NOTE You can make a SIMD version.
-                ++next_pos;
+            char * next_pos = buf.position();
 
-            appendToStringOrVector(s, buf.position(), next_pos);
-            buf.position() += next_pos - buf.position();
+            [&]()
+            {
+#if __SSE2__
+                auto rc = _mm_set1_epi8('\r');
+                auto nc = _mm_set1_epi8('\n');
+                auto dc = _mm_set1_epi8(delimiter);
+                for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
+                {
+                    __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
+                    auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
+                    uint16_t bit_mask = _mm_movemask_epi8(eq);
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctz(bit_mask);
+                        return;
+                    }
+                }
+#endif
+                while (next_pos < buf.buffer().end()
+                    && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
+                    ++next_pos;
+            }();
+
+
+            appendToStringOrVector(s, buf, next_pos);
+            buf.position() = next_pos;
 
             if (!buf.hasPendingData())
                 continue;
@@ -575,13 +601,13 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
     }
 }
 
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
+void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    readCSVStringInto(s, buf, delimiter);
+    readCSVStringInto(s, buf, settings);
 }
 
-template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
+template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
@@ -589,9 +615,9 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message, int code)
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throw Exception(message, code);
         return ReturnType(false);
     };
@@ -602,10 +628,10 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
+        char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
-        buf.position() += next_pos - buf.position();
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
 
         if (!buf.hasPendingData())
             continue;
@@ -632,40 +658,80 @@ void readJSONString(String & s, ReadBuffer & buf)
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
 
-void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+template <typename ReturnType>
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 {
-    char chars_year[4];
-    readPODBinary(chars_year, buf);
-    UInt16 year = (chars_year[0] - '0') * 1000 + (chars_year[1] - '0') * 100 + (chars_year[2] - '0') * 10 + (chars_year[3] - '0');
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    buf.ignore();
-
-    char chars_month[2];
-    readPODBinary(chars_month, buf);
-    UInt8 month = chars_month[0] - '0';
-    if (isNumericASCII(chars_month[1]))
+    auto error = []
     {
-        month = month * 10 + chars_month[1] - '0';
-        buf.ignore();
-    }
+        if constexpr (throw_exception)
+            throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
+        return ReturnType(false);
+    };
 
-    char char_day;
-    readChar(char_day, buf);
-    UInt8 day = char_day - '0';
-    if (!buf.eof() && isNumericASCII(*buf.position()))
+    auto ignore_delimiter = [&]
     {
-        day = day * 10 + *buf.position() - '0';
-        ++buf.position();
-    }
+        if (!buf.eof())
+        {
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
+    auto append_digit = [&](auto & x)
+    {
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            x = x * 10 + (*buf.position() - '0');
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
+    UInt16 year = 0;
+    if (!append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year))
+        return error();
+
+    if (!ignore_delimiter())
+        return error();
+
+    UInt8 month = 0;
+    if (!append_digit(month))
+        return error();
+    append_digit(month);
+
+    if (!ignore_delimiter())
+        return error();
+
+    UInt8 day = 0;
+    if (!append_digit(day))
+        return error();
+    append_digit(day);
 
     date = LocalDate(year, month, day);
+    return ReturnType(true);
 }
 
+template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
+template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+
+template <typename ReturnType>
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
     static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
 
@@ -688,7 +754,11 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
         if (remaining_size != size)
         {
             s_pos[size] = 0;
-            throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+
+            if constexpr (throw_exception)
+                throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+            else
+                return false;
         }
 
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -705,14 +775,35 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
             datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
     }
     else
-        datetime = parse<time_t>(s, s_pos - s);
+    {
+        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
+        if (s_pos - s >= 5 && s_pos - s <= 10)
+        {
+            /// Not very efficient.
+            datetime = 0;
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                datetime = datetime * 10 + *digit_pos - '0';
+        }
+        else
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+            else
+                return false;
+        }
+    }
+
+    return ReturnType(true);
 }
 
+template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
-void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
+
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 {
     if (buf.eof())
-        throw Exception("Unexpected EOF for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullSink sink;
@@ -725,7 +816,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
 
         double v;
         if (!tryReadFloatText(v, buf))
-            throw Exception("Expected a number field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            throw Exception("Expected a number field for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     }
     else if (*buf.position() == 'n') /// skip null
     {
@@ -752,7 +843,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
 
         while (true)
         {
-            skipJSONFieldPlain(buf, name_of_filed);
+            skipJSONField(buf, name_of_field);
             skipWhitespaceIfAny(buf);
 
             if (!buf.eof() && *buf.position() == ',')
@@ -766,16 +857,50 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
                 break;
             }
             else
-                throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
         }
     }
-    else if (*buf.position() == '{') /// fail on objects
+    else if (*buf.position() == '{') /// skip whole object
     {
-        throw Exception("Unexpected nested field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+
+        while (!buf.eof() && *buf.position() != '}')
+        {
+            // field name
+            if (*buf.position() == '"')
+            {
+                NullSink sink;
+                readJSONStringInto(sink, buf);
+            }
+            else
+                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+
+            // ':'
+            skipWhitespaceIfAny(buf);
+            if (buf.eof() || !(*buf.position() == ':'))
+                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            ++buf.position();
+            skipWhitespaceIfAny(buf);
+
+            skipJSONField(buf, name_of_field);
+            skipWhitespaceIfAny(buf);
+
+            // optional ','
+            if (!buf.eof() && *buf.position() == ',')
+            {
+                ++buf.position();
+                skipWhitespaceIfAny(buf);
+            }
+        }
+
+        if (buf.eof())
+            throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        ++buf.position();
     }
     else
     {
-        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     }
 }
 
@@ -802,8 +927,10 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     if (name != "DB::Exception")
         out << name << ". ";
 
-    out << message
-        << ". Stack trace:\n\n" << stack_trace;
+    out << message << ".";
+
+    if (!stack_trace.empty())
+        out << " Stack trace:\n\n" << stack_trace;
 
     if (has_nested)
     {
@@ -827,8 +954,8 @@ void skipToNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
-        buf.position() += next_pos - buf.position();
+        char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
 
         if (!buf.hasPendingData())
             continue;
@@ -846,8 +973,8 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        const char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
-        buf.position() += next_pos - buf.position();
+        char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+        buf.position() = next_pos;
 
         if (!buf.hasPendingData())
             continue;

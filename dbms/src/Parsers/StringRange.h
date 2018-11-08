@@ -67,5 +67,5 @@ struct StringRangePointersEqualTo
     }
 };
 
-};
+}
 

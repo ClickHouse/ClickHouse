@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -108,6 +109,8 @@ private:
 
     /// Don't execute new queries after timelimit or SIGINT or exception
     std::atomic<bool> shutdown{false};
+
+    std::atomic<size_t> queries_executed{0};
 
     struct Stats
     {
@@ -237,10 +240,12 @@ private:
             size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
             if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
+            {
+                shutdown = true;
                 break;
+            }
         }
 
-        shutdown = true;
         pool.wait();
         info_total.watch.stop();
 
@@ -273,11 +278,12 @@ private:
                 {
                     extracted = queue.tryPop(query, 100);
 
-                    if (shutdown)
+                    if (shutdown || (max_iterations && queries_executed == max_iterations))
                         return;
                 }
 
                 execute(connection, query);
+                ++queries_executed;
             }
         }
         catch (...)
@@ -403,6 +409,10 @@ public:
 }
 
 
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
@@ -414,20 +424,20 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         boost::program_options::options_description desc("Allowed options");
         desc.add_options()
-            ("help",                                                                 "produce help message")
-            ("concurrency,c",    value<unsigned>()->default_value(1),                 "number of parallel queries")
-            ("delay,d",         value<double>()->default_value(1),                     "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",            value<std::string>()->default_value("complete"),     "request query processing up to specified stage")
-            ("iterations,i",    value<size_t>()->default_value(0),                    "amount of queries to be executed")
-            ("timelimit,t",        value<double>()->default_value(0.),                 "stop launch of queries after specified time limit")
-            ("randomize,r",        value<bool>()->default_value(false),                "randomize order of execution")
-            ("json",            value<std::string>()->default_value(""),            "write final report to specified file in JSON format")
-            ("host,h",            value<std::string>()->default_value("localhost"),     "")
-            ("port",             value<UInt16>()->default_value(9000),                 "")
-            ("user",             value<std::string>()->default_value("default"),        "")
-            ("password",        value<std::string>()->default_value(""),             "")
-            ("database",        value<std::string>()->default_value("default"),     "")
-            ("stacktrace",                                                            "print stack traces of exceptions")
+            ("help",                                                            "produce help message")
+            ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
+            ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage")
+            ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
+            ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
+            ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
+            ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
+            ("host,h",        value<std::string>()->default_value("localhost"), "")
+            ("port",          value<UInt16>()->default_value(9000),             "")
+            ("user",          value<std::string>()->default_value("default"),   "")
+            ("password",      value<std::string>()->default_value(""),          "")
+            ("database",      value<std::string>()->default_value("default"),   "")
+            ("stacktrace",                                                      "print stack traces of exceptions")
 
         #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -454,6 +464,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             settings.set(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
         #undef EXTRACT_SETTING
+
+        UseSSL use_ssl;
 
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),

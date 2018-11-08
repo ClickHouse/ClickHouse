@@ -52,7 +52,7 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
     field = String();
     String & s = get<String &>(field);
     s.resize(n);
-    istr.readStrict(&s[0], n);
+    istr.readStrict(s.data(), n);
 }
 
 
@@ -88,7 +88,8 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
+    if (limit)
+        ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
 }
 
 
@@ -102,7 +103,7 @@ void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
 
     if (read_bytes % n != 0)
-        throw Exception("Cannot read all data of type FixedString",
+        throw Exception("Cannot read all data of type FixedString. Bytes read:" + toString(read_bytes) + ". String size:" + toString(n) + ".",
             ErrorCodes::CANNOT_READ_ALL_DATA);
 
     data.resize(initial_size + read_bytes);
@@ -168,10 +169,10 @@ void DataTypeFixedString::deserializeTextQuoted(IColumn & column, ReadBuffer & i
 }
 
 
-void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeFixedString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const char * pos = reinterpret_cast<const char *>(&static_cast<const ColumnFixedString &>(column).getChars()[n * row_num]);
-    writeJSONString(pos, pos + n, ostr);
+    writeJSONString(pos, pos + n, ostr, settings);
 }
 
 
@@ -197,7 +198,7 @@ void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_nu
 
 void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr, delimiter = settings.csv.delimiter](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr, delimiter); });
+    read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr, csv); });
 }
 
 
@@ -231,7 +232,7 @@ void registerDataTypeFixedString(DataTypeFactory & factory)
     factory.registerDataType("FixedString", create);
 
     /// Compatibility alias.
-    factory.registerDataType("BINARY", create, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BINARY", "FixedString", DataTypeFactory::CaseInsensitive);
 }
 
 }

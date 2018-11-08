@@ -9,13 +9,12 @@ int main(int argc, char ** argv) { return 0; }
 #include <iostream>
 #include <iomanip>
 #include <vector>
-#include <Poco/NumberParser.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
 #include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadHelpers.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -134,12 +133,12 @@ int mainImpl(int argc, char ** argv)
 {
     const char * file_name = 0;
     int mode = MODE_READ;
-    size_t min_offset = 0;
-    size_t max_offset = 0;
-    size_t block_size = 0;
-    size_t buffers_count = 0;
-    size_t threads_count = 0;
-    size_t count = 0;
+    UInt64 min_offset = 0;
+    UInt64 max_offset = 0;
+    UInt64 block_size = 0;
+    UInt64 buffers_count = 0;
+    UInt64 threads_count = 0;
+    UInt64 count = 0;
 
     if (argc != 9)
     {
@@ -150,12 +149,12 @@ int mainImpl(int argc, char ** argv)
     file_name = argv[1];
     if (argv[2][0] == 'w')
         mode = MODE_WRITE;
-    min_offset = Poco::NumberParser::parseUnsigned64(argv[3]);
-    max_offset = Poco::NumberParser::parseUnsigned64(argv[4]);
-    block_size = Poco::NumberParser::parseUnsigned64(argv[5]);
-    threads_count = Poco::NumberParser::parseUnsigned(argv[6]);
-    buffers_count = Poco::NumberParser::parseUnsigned(argv[7]);
-    count = Poco::NumberParser::parseUnsigned(argv[8]);
+    min_offset = DB::parse<UInt64>(argv[3]);
+    max_offset = DB::parse<UInt64>(argv[4]);
+    block_size = DB::parse<UInt64>(argv[5]);
+    threads_count = DB::parse<UInt64>(argv[6]);
+    buffers_count = DB::parse<UInt64>(argv[7]);
+    count = DB::parse<UInt64>(argv[8]);
 
     int fd = open(file_name, ((mode == MODE_READ) ? O_RDONLY : O_WRONLY) | O_DIRECT);
     if (-1 == fd)

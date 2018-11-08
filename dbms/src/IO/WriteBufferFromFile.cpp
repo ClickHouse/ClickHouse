@@ -11,7 +11,6 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event FileOpenFailed;
 }
 
 namespace DB
@@ -42,22 +41,16 @@ WriteBufferFromFile::WriteBufferFromFile(
         flags = flags & ~O_DIRECT;
 #endif
 
-    fd = open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
+    fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
 
     if (-1 == fd)
-    {
-        ProfileEvents::increment(ProfileEvents::FileOpenFailed);
         throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-    }
 
 #ifdef __APPLE__
     if (o_direct)
     {
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-        {
-            ProfileEvents::increment(ProfileEvents::FileOpenFailed);
             throwFromErrno("Cannot set F_NOCACHE on file " + file_name, ErrorCodes::CANNOT_OPEN_FILE);
-        }
     }
 #endif
 }

@@ -19,7 +19,6 @@ if [ -z $tcp_port_secure ]; then
     cat $CURDIR/00505_secure.reference
 else
 
-    CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:="${CLICKHOUSE_BINARY}-client"}
     if [[ $CLICKHOUSE_CLIENT != *"--port"* ]]; then
         CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
 

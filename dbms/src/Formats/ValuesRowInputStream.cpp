@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -29,7 +30,7 @@ namespace ErrorCodes
 
 
 ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings)
-    : istr(istr_), header(header_), context(context_), format_settings(format_settings)
+    : istr(istr_), header(header_), context(std::make_unique<Context>(context_)), format_settings(format_settings)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
@@ -112,12 +113,12 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
 
                 istr.position() = const_cast<char *>(token_iterator->begin);
 
-                std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, context);
+                std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
                 Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
+                /// Check that we are indeed allowed to insert a NULL.
                 if (value.isNull())
                 {
-                    /// Check that we are indeed allowed to insert a NULL.
                     if (!type.isNullable())
                         throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
                             + ", that is out of range of type " + type.getName()

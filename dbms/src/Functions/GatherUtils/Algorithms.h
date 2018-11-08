@@ -79,7 +79,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 {
     for (size_t i = 0; i < slice.size; ++i)
     {
-        Field field = static_cast<typename NearestFieldType<T>::Type>(slice.data[i]);
+        Field field = T(slice.data[i]);
         sink.elements.insert(field);
     }
     sink.current_offset += slice.size;
@@ -105,7 +105,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 
     if (slice.size == 1) /// Always true for ValueSlice.
         sink.null_map[sink.current_offset] = 0;
-    else
+    else if (slice.size)
         memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
 
     writeSlice(slice, static_cast<ArraySink &>(sink));
@@ -147,7 +147,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, NumericArr
 template <typename T>
 inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, GenericArraySink & sink)
 {
-    Field field = static_cast<typename NearestFieldType<T>::Type>(slice.value);
+    Field field = T(slice.value);
     sink.elements.insert(field);
     ++sink.current_offset;
 }
@@ -367,7 +367,7 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
-    const UInt8 * cond_pos = &condition[0];
+    const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
     while (cond_pos < cond_end)

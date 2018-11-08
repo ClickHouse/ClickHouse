@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 
 /** ColumnConst contains another column with single element,
-  *  but looks like a column with arbitary amount of same elements.
+  *  but looks like a column with arbitrary amount of same elements.
   */
 class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 {
@@ -35,6 +35,8 @@ public:
     {
         return convertToFullColumn();
     }
+
+    ColumnPtr removeLowCardinality() const;
 
     std::string getName() const override
     {
@@ -153,6 +155,7 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     size_t byteSize() const override

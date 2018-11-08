@@ -3,6 +3,7 @@
 #include <string>
 #include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 
 
 namespace DB
@@ -17,28 +18,20 @@ class WriteBuffer;
 struct ExternalQueryBuilder
 {
     const DictionaryStructure & dict_struct;
-    const std::string & db;
-    const std::string & table;
+    std::string db;
+    std::string table;
+    std::string schema;
     const std::string & where;
 
-    /// Method to quote identifiers.
-    /// NOTE There could be differences in escaping rules inside quotes. Escaping rules may not match that required by specific external DBMS.
-    enum QuotingStyle
-    {
-        None,           /// Write as-is, without quotes.
-        Backticks,      /// `mysql` style
-        DoubleQuotes    /// "postgres" style
-    };
-
-    QuotingStyle quoting_style;
+    IdentifierQuotingStyle quoting_style;
 
 
     ExternalQueryBuilder(
-        const DictionaryStructure & dict_struct,
-        const std::string & db,
-        const std::string & table,
-        const std::string & where,
-        QuotingStyle quoting_style);
+        const DictionaryStructure & dict_struct_,
+        const std::string & db_,
+        const std::string & table_,
+        const std::string & where_,
+        IdentifierQuotingStyle quoting_style_);
 
     /** Generate a query to load all data. */
     std::string composeLoadAllQuery() const;

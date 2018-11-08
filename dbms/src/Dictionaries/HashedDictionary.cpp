@@ -110,7 +110,7 @@ void HashedDictionary::isInConstantVector(
 
 
 #define DECLARE(TYPE)\
-void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
+void HashedDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -133,6 +133,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
@@ -151,7 +154,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
 #define DECLARE(TYPE)\
 void HashedDictionary::get##TYPE(\
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
-    PaddedPODArray<TYPE> & out) const\
+    ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -172,6 +175,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void HashedDictionary::getString(
@@ -189,7 +195,7 @@ void HashedDictionary::getString(
 
 #define DECLARE(TYPE)\
 void HashedDictionary::get##TYPE(\
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, PaddedPODArray<TYPE> & out) const\
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -210,6 +216,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void HashedDictionary::getString(
@@ -243,6 +252,10 @@ void HashedDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8
         case AttributeUnderlyingType::Float32: has<Float32>(attribute, ids, out); break;
         case AttributeUnderlyingType::Float64: has<Float64>(attribute, ids, out); break;
         case AttributeUnderlyingType::String: has<StringRef>(attribute, ids, out); break;
+
+        case AttributeUnderlyingType::Decimal32: has<Decimal32>(attribute, ids, out); break;
+        case AttributeUnderlyingType::Decimal64: has<Decimal64>(attribute, ids, out); break;
+        case AttributeUnderlyingType::Decimal128: has<Decimal128>(attribute, ids, out); break;
     }
 }
 
@@ -258,7 +271,7 @@ void HashedDictionary::createAttributes()
 
         if (attribute.hierarchical)
         {
-            hierarchical_attribute = &attributes.back();
+            hierarchical_attribute = & attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
@@ -266,15 +279,15 @@ void HashedDictionary::createAttributes()
     }
 }
 
-void HashedDictionary::blockToAttributes(const Block &block)
+void HashedDictionary::blockToAttributes(const Block & block)
 {
     const auto & id_column = *block.safeGetByPosition(0).column;
     element_count += id_column.size();
 
-    for (const auto attribute_idx : ext::range(0, attributes.size()))
+    for (const size_t attribute_idx : ext::range(0, attributes.size()))
     {
-        const auto &attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-        auto &attribute = attributes[attribute_idx];
+        const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+        auto & attribute = attributes[attribute_idx];
 
         for (const auto row_idx : ext::range(0, id_column.size()))
             setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
@@ -307,7 +320,7 @@ void HashedDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
             const auto &update_id_column = *block.safeGetByPosition(0).column;
@@ -398,6 +411,11 @@ void HashedDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::Int64: addAttributeSize<Int64>(attribute); break;
             case AttributeUnderlyingType::Float32: addAttributeSize<Float32>(attribute); break;
             case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
+
+            case AttributeUnderlyingType::Decimal32: addAttributeSize<Decimal32>(attribute); break;
+            case AttributeUnderlyingType::Decimal64: addAttributeSize<Decimal64>(attribute); break;
+            case AttributeUnderlyingType::Decimal128: addAttributeSize<Decimal128>(attribute); break;
+
             case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
@@ -433,6 +451,11 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
         case AttributeUnderlyingType::Int64: createAttributeImpl<Int64>(attr, null_value); break;
         case AttributeUnderlyingType::Float32: createAttributeImpl<Float32>(attr, null_value); break;
         case AttributeUnderlyingType::Float64: createAttributeImpl<Float64>(attr, null_value); break;
+
+        case AttributeUnderlyingType::Decimal32: createAttributeImpl<Decimal32>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal64: createAttributeImpl<Decimal64>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal128: createAttributeImpl<Decimal128>(attr, null_value); break;
+
         case AttributeUnderlyingType::String:
         {
             std::get<String>(attr.null_values) = null_value.get<String>();
@@ -468,6 +491,9 @@ void HashedDictionary::getItemsNumber(
     DISPATCH(Int64)
     DISPATCH(Float32)
     DISPATCH(Float64)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
 #undef DISPATCH
     else
         throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
@@ -515,6 +541,11 @@ void HashedDictionary::setAttributeValue(Attribute & attribute, const Key id, co
         case AttributeUnderlyingType::Int64: setAttributeValueImpl<Int64>(attribute, id, value.get<Int64>()); break;
         case AttributeUnderlyingType::Float32: setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>()); break;
         case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
+
+        case AttributeUnderlyingType::Decimal32: setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal32>()); break;
+        case AttributeUnderlyingType::Decimal64: setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal64>()); break;
+        case AttributeUnderlyingType::Decimal128: setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>()); break;
+
         case AttributeUnderlyingType::String:
         {
             auto & map = *std::get<CollectionPtrType<StringRef>>(attribute.maps);
@@ -578,6 +609,10 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
         case AttributeUnderlyingType::Float32: return getIds<Float32>(attribute);
         case AttributeUnderlyingType::Float64: return getIds<Float64>(attribute);
         case AttributeUnderlyingType::String: return getIds<StringRef>(attribute);
+
+        case AttributeUnderlyingType::Decimal32: return getIds<Decimal32>(attribute);
+        case AttributeUnderlyingType::Decimal64: return getIds<Decimal64>(attribute);
+        case AttributeUnderlyingType::Decimal128: return getIds<Decimal128>(attribute);
     }
     return PaddedPODArray<Key>();
 }

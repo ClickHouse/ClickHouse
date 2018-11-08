@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
 #include <ext/scope_guard.h>
 #include <pcg_random.hpp>

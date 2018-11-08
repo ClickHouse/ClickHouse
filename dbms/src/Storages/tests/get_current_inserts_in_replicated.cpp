@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
 #include <ext/scope_guard.h>
 #include <pcg_random.hpp>
@@ -37,24 +37,24 @@ try
     Stopwatch total;
     Stopwatch stage;
     /// Load current inserts
-    std::unordered_set<String> abandonable_lock_holders;
+    std::unordered_set<String> lock_holder_paths;
     for (const String & entry : zookeeper->getChildren(zookeeper_path + "/temp"))
     {
         if (startsWith(entry, "abandonable_lock-"))
-            abandonable_lock_holders.insert(zookeeper_path + "/temp/" + entry);
+            lock_holder_paths.insert(zookeeper_path + "/temp/" + entry);
     }
-    std::cerr << "Stage 1 (get lock holders): " << abandonable_lock_holders.size()
+    std::cerr << "Stage 1 (get lock holders): " << lock_holder_paths.size()
               << " lock holders, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
     stage.restart();
 
-    if (!abandonable_lock_holders.empty())
+    if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
         std::cerr << "Stage 2 (get partitions): " << partitions.size()
                   << " partitions, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
         stage.restart();
 
-        std::vector<std::future<zkutil::ListResponse>> lock_futures;
+        std::vector<std::future<Coordination::ListResponse>> lock_futures;
         for (const String & partition : partitions)
             lock_futures.push_back(zookeeper->asyncGetChildren(zookeeper_path + "/block_numbers/" + partition));
 
@@ -63,7 +63,7 @@ try
             String partition;
             Int64 number;
             String zk_path;
-            std::future<zkutil::GetResponse> contents_future;
+            std::future<Coordination::GetResponse> contents_future;
         };
 
         std::vector<BlockInfo> block_infos;
@@ -85,8 +85,8 @@ try
         size_t total_count = 0;
         for (BlockInfo & block : block_infos)
         {
-            zkutil::GetResponse resp = block.contents_future.get();
-            if (!resp.error && abandonable_lock_holders.count(resp.data))
+            Coordination::GetResponse resp = block.contents_future.get();
+            if (!resp.error && lock_holder_paths.count(resp.data))
             {
                 ++total_count;
                 current_inserts[block.partition].insert(block.number);

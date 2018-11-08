@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -8,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
@@ -26,6 +28,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 using namespace GatherUtils;
 
 /** Selection function by condition: if(cond, then, else).
@@ -37,61 +45,104 @@ using namespace GatherUtils;
 template <typename A, typename B, typename ResultType>
 struct NumIfImpl
 {
-    static void vector_vector(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
+    using ArrayCond = PaddedPODArray<UInt8>;
+    using ArrayA = PaddedPODArray<A>;
+    using ArrayB = PaddedPODArray<B>;
+    using ColVecResult = ColumnVector<ResultType>;
+
+    static void vector_vector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
-        auto col_res = ColumnVector<ResultType>::create();
-        typename ColumnVector<ResultType>::Container & res = col_res->getData();
-        res.resize(size);
+        auto col_res = ColVecResult::create(size);
+        typename ColVecResult::Container & res = col_res->getData();
+
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void vector_constant(
-        const PaddedPODArray<UInt8> & cond,
-        const PaddedPODArray<A> & a, B b,
-        Block & block,
-        size_t result)
+    static void vector_constant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
-        auto col_res = ColumnVector<ResultType>::create();
-        typename ColumnVector<ResultType>::Container & res = col_res->getData();
-        res.resize(size);
+        auto col_res = ColVecResult::create(size);
+        typename ColVecResult::Container & res = col_res->getData();
+
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constant_vector(
-        const PaddedPODArray<UInt8> & cond,
-        A a, const PaddedPODArray<B> & b,
-        Block & block,
-        size_t result)
+    static void constant_vector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
-        auto col_res = ColumnVector<ResultType>::create();
-        typename ColumnVector<ResultType>::Container & res = col_res->getData();
-        res.resize(size);
+        auto col_res = ColVecResult::create(size);
+        typename ColVecResult::Container & res = col_res->getData();
+
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constant_constant(
-        const PaddedPODArray<UInt8> & cond,
-        A a, B b,
-        Block & block,
-        size_t result)
+    static void constant_constant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
-        auto col_res = ColumnVector<ResultType>::create();
-        typename ColumnVector<ResultType>::Container & res = col_res->getData();
-        res.resize(size);
+        auto col_res = ColVecResult::create(size);
+        typename ColVecResult::Container & res = col_res->getData();
+
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
+        block.getByPosition(result).column = std::move(col_res);
+    }
+};
+
+template <typename A, typename B, typename R>
+struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
+{
+    using ResultType = Decimal<R>;
+    using ArrayCond = PaddedPODArray<UInt8>;
+    using ArrayA = DecimalPaddedPODArray<Decimal<A>>;
+    using ArrayB = DecimalPaddedPODArray<Decimal<B>>;
+    using ColVecResult = ColumnDecimal<ResultType>;
+
+    static void vector_vector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
+    {
+        size_t size = cond.size();
+        auto col_res = ColVecResult::create(size, scale);
+        typename ColVecResult::Container & res = col_res->getData();
+
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b[i]);
+        block.getByPosition(result).column = std::move(col_res);
+    }
+
+    static void vector_constant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32 scale)
+    {
+        size_t size = cond.size();
+        auto col_res = ColVecResult::create(size, scale);
+        typename ColVecResult::Container & res = col_res->getData();
+
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a[i]) : static_cast<ResultType>(b);
+        block.getByPosition(result).column = std::move(col_res);
+    }
+
+    static void constant_vector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
+    {
+        size_t size = cond.size();
+        auto col_res = ColVecResult::create(size, scale);
+        typename ColVecResult::Container & res = col_res->getData();
+
+        for (size_t i = 0; i < size; ++i)
+            res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b[i]);
+        block.getByPosition(result).column = std::move(col_res);
+    }
+
+    static void constant_constant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32 scale)
+    {
+        size_t size = cond.size();
+        auto col_res = ColVecResult::create(size, scale);
+        typename ColVecResult::Container & res = col_res->getData();
+
         for (size_t i = 0; i < size; ++i)
             res[i] = cond[i] ? static_cast<ResultType>(a) : static_cast<ResultType>(b);
         block.getByPosition(result).column = std::move(col_res);
@@ -122,7 +173,7 @@ public:
     bool isCompilableImpl(const DataTypes & types) const override
     {
         for (const auto & type : types)
-            if (!removeNullable(type)->isValueRepresentedByNumber())
+            if (!isCompilableType(removeNullable(type)))
                 return false;
         return true;
     }
@@ -180,30 +231,55 @@ public:
 
 private:
     template <typename T0, typename T1>
+    static constexpr bool allow_arrays =
+        !IsDecimalNumber<T0> && !IsDecimalNumber<T1> &&
+        !std::is_same_v<T0, UInt128> && !std::is_same_v<T1, UInt128>;
+
+    template <typename T0, typename T1>
+    static UInt32 decimalScale(Block & block [[maybe_unused]], const ColumnNumbers & arguments [[maybe_unused]])
+    {
+        if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
+        {
+            UInt32 left_scale = getDecimalScale(*block.getByPosition(arguments[1]).type);
+            UInt32 right_scale = getDecimalScale(*block.getByPosition(arguments[2]).type);
+            if (left_scale != right_scale)
+                throw Exception("Conditional functions with different Decimal scales", ErrorCodes::NOT_IMPLEMENTED);
+            return left_scale;
+        }
+        else
+            return std::numeric_limits<UInt32>::max();
+    }
+
+    template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeRightType(
         const ColumnUInt8 * cond_col,
         Block & block,
         const ColumnNumbers & arguments,
         size_t result,
-        const ColumnVector<T0> * col_left)
+        const ColVecT0 * col_left)
     {
-        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
-        const ColumnConst * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
-
-        if (!col_right_vec && !col_right_const)
-            return false;
-
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-        if (col_right_vec)
-            NumIfImpl<T0, T1, ResultType>::vector_vector(cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result);
-        else
-            NumIfImpl<T0, T1, ResultType>::vector_constant(cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), block, result);
+        const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+        UInt32 scale = decimalScale<T0, T1>(block, arguments);
 
-        return true;
+        if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        {
+            NumIfImpl<T0, T1, ResultType>::vector_vector(
+                cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result, scale);
+            return true;
+        }
+        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        {
+            NumIfImpl<T0, T1, ResultType>::vector_constant(
+                cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), block, result, scale);
+            return true;
+        }
+
+        return false;
     }
 
-    template <typename T0, typename T1>
+    template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeConstRightType(
         const ColumnUInt8 * cond_col,
         Block & block,
@@ -211,23 +287,28 @@ private:
         size_t result,
         const ColumnConst * col_left)
     {
-        const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
-        const ColumnConst * col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[2]).column.get());
-
-        if (!col_right_vec && !col_right_const)
-            return false;
-
         using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-        if (col_right_vec)
-            NumIfImpl<T0, T1, ResultType>::constant_vector(cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result);
-        else
-            NumIfImpl<T0, T1, ResultType>::constant_constant(cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result);
+        const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+        UInt32 scale = decimalScale<T0, T1>(block, arguments);
 
-        return true;
+        if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        {
+            NumIfImpl<T0, T1, ResultType>::constant_vector(
+                cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result, scale);
+            return true;
+        }
+        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        {
+            NumIfImpl<T0, T1, ResultType>::constant_constant(
+                cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result, scale);
+            return true;
+        }
+
+        return false;
     }
 
-    template <typename T0, typename T1>
+    template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] Block & block,
@@ -238,22 +319,15 @@ private:
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
-        else
+        else if constexpr (allow_arrays<T0, T1>)
         {
-            const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
-
-            const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
-            const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
-
-            if (!col_right_array && !col_right_const_array)
-                return false;
-
             using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-            if (col_right_array)
-            {
-                const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
+            const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
 
+            if (auto col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
+            {
+                const ColVecT1 * col_right_vec = checkAndGetColumn<ColVecT1>(&col_right_array->getData());
                 if (!col_right_vec)
                     return false;
 
@@ -266,11 +340,12 @@ private:
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
+                return true;
             }
-            else
+            else if (auto col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped))
             {
                 const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
-                if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
+                if (!checkColumn<ColVecT1>(&col_right_const_array_data->getData()))
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
@@ -282,13 +357,14 @@ private:
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
+                return true;
             }
-
-            return true;
         }
+
+        return false;
     }
 
-    template <typename T0, typename T1>
+    template <typename T0, typename T1, typename ColVecT0, typename ColVecT1>
     bool executeConstRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] Block & block,
@@ -299,21 +375,15 @@ private:
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
-        else
+        else if constexpr (allow_arrays<T0, T1>)
         {
-            const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
-
-            const ColumnArray * col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped);
-            const ColumnConst * col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped);
-
-            if (!col_right_array && !col_right_const_array)
-                return false;
-
             using ResultType = typename NumberTraits::ResultOfIf<T0, T1>::Type;
 
-            if (col_right_array)
+            const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
+
+            if (auto col_right_array = checkAndGetColumn<ColumnArray>(col_right_untyped))
             {
-                const ColumnVector<T1> * col_right_vec = checkAndGetColumn<ColumnVector<T1>>(&col_right_array->getData());
+                const ColVecT1 * col_right_vec = checkAndGetColumn<ColVecT1>(&col_right_array->getData());
 
                 if (!col_right_vec)
                     return false;
@@ -327,11 +397,12 @@ private:
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
+                return true;
             }
-            else
+            else if (auto col_right_const_array = checkAndGetColumnConst<ColumnArray>(col_right_untyped))
             {
                 const ColumnArray * col_right_const_array_data = checkAndGetColumn<ColumnArray>(&col_right_const_array->getDataColumn());
-                if (!checkColumn<ColumnVector<T1>>(&col_right_const_array_data->getData()))
+                if (!checkColumn<ColVecT1>(&col_right_const_array_data->getData()))
                     return false;
 
                 auto res = block.getByPosition(result).type->createColumn();
@@ -343,112 +414,62 @@ private:
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
+                return true;
             }
-
-            return true;
-        }
-    }
-
-    template <typename T0>
-    bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
-    {
-        const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
-
-        const ColumnVector<T0> * col_left = nullptr;
-        const ColumnConst * col_const_left = nullptr;
-        const ColumnArray * col_arr_left = nullptr;
-        const ColumnVector<T0> * col_arr_left_elems = nullptr;
-        const ColumnConst * col_const_arr_left = nullptr;
-
-        col_left = checkAndGetColumn<ColumnVector<T0>>(col_left_untyped);
-        if (!col_left)
-        {
-            col_const_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped);
-            if (!col_const_left)
-            {
-                col_arr_left = checkAndGetColumn<ColumnArray>(col_left_untyped);
-
-                if (col_arr_left)
-                    col_arr_left_elems = checkAndGetColumn<ColumnVector<T0>>(&col_arr_left->getData());
-                else
-                    col_const_arr_left = checkAndGetColumnConst<ColumnArray>(col_left_untyped);
-            }
-        }
-
-        if (col_left)
-        {
-            if (   executeRightType<T0, UInt8>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, UInt16>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, UInt32>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, UInt64>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, Int8>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, Int16>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, Int32>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, Int64>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, Float32>(cond_col, block, arguments, result, col_left)
-                || executeRightType<T0, Float64>(cond_col, block, arguments, result, col_left))
-                return true;
-            else
-                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
-                    + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-        else if (col_const_left)
-        {
-            if (   executeConstRightType<T0, UInt8>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, UInt16>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, UInt32>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, UInt64>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, Int8>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, Int16>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, Int32>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, Int64>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, Float32>(cond_col, block, arguments, result, col_const_left)
-                || executeConstRightType<T0, Float64>(cond_col, block, arguments, result, col_const_left))
-                return true;
-            else
-                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
-                    + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-        else if (col_arr_left && col_arr_left_elems)
-        {
-            if (   executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
-                || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, input_rows_count))
-                return true;
-            else
-                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
-                    + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-        else if (col_const_arr_left && checkColumn<ColumnVector<T0>>(&static_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
-        {
-            if (   executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
-                || executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count))
-                return true;
-            else
-                throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
-                    + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
         }
 
         return false;
+    }
+
+    template <typename T0, typename T1>
+    bool executeTyped(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    {
+        using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
+        using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
+
+        const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
+
+        bool left_ok = false;
+        bool right_ok = false;
+
+        if (auto col_left = checkAndGetColumn<ColVecT0>(col_left_untyped))
+        {
+            left_ok = true;
+            right_ok = executeRightType<T0, T1, ColVecT0, ColVecT1>(cond_col, block, arguments, result, col_left);
+        }
+        else if (auto col_const_left = checkAndGetColumnConst<ColVecT0>(col_left_untyped))
+        {
+            left_ok = true;
+            right_ok = executeConstRightType<T0, T1, ColVecT0, ColVecT1>(cond_col, block, arguments, result, col_const_left);
+        }
+        else if (auto col_arr_left = checkAndGetColumn<ColumnArray>(col_left_untyped))
+        {
+            if (auto col_arr_left_elems = checkAndGetColumn<ColVecT0>(&col_arr_left->getData()))
+            {
+                left_ok = true;
+                right_ok = executeRightTypeArray<T0, T1, ColVecT0, ColVecT1>(
+                    cond_col, block, arguments, result, col_arr_left, input_rows_count);
+            }
+        }
+        else if (auto col_const_arr_left = checkAndGetColumnConst<ColumnArray>(col_left_untyped))
+        {
+            if (checkColumn<ColVecT0>(&static_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
+            {
+                left_ok = true;
+                right_ok = executeConstRightTypeArray<T0, T1, ColVecT0, ColVecT1>(
+                    cond_col, block, arguments, result, col_const_arr_left, input_rows_count);
+            }
+        }
+
+        if (!left_ok)
+            return false;
+
+        ColumnWithTypeAndName & right_column_typed = block.getByPosition(arguments[2]);
+        if (!right_ok)
+            throw Exception("Illegal column " + right_column_typed.column->getName() + " of third argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        return true;
     }
 
     bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
@@ -895,7 +916,7 @@ public:
             return makeNullable(getReturnTypeImpl({
                 removeNullable(arguments[0]), arguments[1], arguments[2]}));
 
-        if (!checkDataType<DataTypeUInt8>(arguments[0].get()))
+        if (!WhichDataType(arguments[0]).isUInt8())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -933,29 +954,41 @@ public:
             }
         }
 
-        if (cond_col)
-        {
-            if (!( executeLeftType<UInt8>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<UInt16>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<UInt32>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<UInt64>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<Int8>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<Int16>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<Int32>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<Int64>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<Float32>(cond_col, block, arguments, result, input_rows_count)
-                || executeLeftType<Float64>(cond_col, block, arguments, result, input_rows_count)
-                || executeString(cond_col, block, arguments, result)
-                || executeGenericArray(cond_col, block, arguments, result)
-                || executeTuple(block, arguments, result, input_rows_count)))
-                throw Exception("Illegal columns " + arg_then.column->getName()
-                    + " and " + arg_else.column->getName()
-                    + " of second (then) and third (else) arguments of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-        else
+        if (!cond_col)
             throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
                 + ". Must be ColumnUInt8 or ColumnConstUInt8.",
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        auto call = [&](const auto & types) -> bool
+        {
+            using Types = std::decay_t<decltype(types)>;
+            using T0 = typename Types::LeftType;
+            using T1 = typename Types::RightType;
+
+            if constexpr ((IsDecimalNumber<T0> && IsDecimalNumber<T1>) || (!IsDecimalNumber<T0> && !IsDecimalNumber<T1>))
+                return executeTyped<T0, T1>(cond_col, block, arguments, result, input_rows_count);
+            else
+                throw Exception("Conditional function with Decimal and non Decimal", ErrorCodes::NOT_IMPLEMENTED);
+        };
+
+        TypeIndex left_id = arg_then.type->getTypeId();
+        TypeIndex right_id = arg_else.type->getTypeId();
+
+        if (auto left_array = checkAndGetDataType<DataTypeArray>(arg_then.type.get()))
+            left_id = left_array->getNestedType()->getTypeId();
+
+        if (auto rigth_array = checkAndGetDataType<DataTypeArray>(arg_else.type.get()))
+            right_id = rigth_array->getNestedType()->getTypeId();
+
+        bool executed_with_nums = callOnBasicTypes<true, true, true, true>(left_id, right_id, call);
+
+        if (!( executed_with_nums
+            || executeTyped<UInt128, UInt128>(cond_col, block, arguments, result, input_rows_count)
+            || executeString(cond_col, block, arguments, result)
+            || executeGenericArray(cond_col, block, arguments, result)
+            || executeTuple(block, arguments, result, input_rows_count)))
+            throw Exception("Illegal columns " + arg_then.column->getName() + " and " + arg_else.column->getName()
+                + " of second (then) and third (else) arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };

@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Common/typeid_cast.h>
 
@@ -26,7 +27,7 @@ BlockIO InterpreterAlterQuery::execute()
     auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
 
     if (!alter.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {alter.table});
+        return executeDDLQueryOnCluster(query_ptr, context, {alter.database});
 
     const String & table_name = alter.table;
     String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
@@ -49,7 +50,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        mutation_commands.validate(*table, context);
+        MutationsInterpreter(table, mutation_commands, context).validate();
         table->mutate(mutation_commands, context);
     }
 
@@ -59,6 +60,7 @@ BlockIO InterpreterAlterQuery::execute()
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
+                table->checkPartitionCanBeDropped(command.partition);
                 table->dropPartition(query_ptr, command.partition, command.detach, context);
                 break;
 
@@ -68,6 +70,7 @@ BlockIO InterpreterAlterQuery::execute()
 
             case PartitionCommand::REPLACE_PARTITION:
                 {
+                    table->checkPartitionCanBeDropped(command.partition);
                     String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
                     auto from_storage = context.getTable(from_database, command.from_table);
                     table->replacePartitionFrom(from_storage, command.partition, command.replace, context);

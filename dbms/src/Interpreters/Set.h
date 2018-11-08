@@ -18,21 +18,22 @@ namespace DB
 struct Range;
 class FieldWithInfinity;
 
-using SetElements = std::vector<std::vector<Field>>;
-using SetElementsPtr = std::unique_ptr<SetElements>;
-
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
+
 
 /** Data structure for implementation of IN expression.
   */
 class Set
 {
 public:
-    Set(const SizeLimits & limits) :
-        log(&Logger::get("Set")),
-        limits(limits),
-        set_elements(std::make_unique<SetElements>())
+    /// 'fill_set_elements': in addition to hash table
+    /// (that is useful only for checking that some value is in the set and may not store the original values),
+    /// store all set elements in explicit form.
+    /// This is needed for subsequent use for index.
+    Set(const SizeLimits & limits, bool fill_set_elements)
+        : log(&Logger::get("Set")),
+        limits(limits), fill_set_elements(fill_set_elements)
     {
     }
 
@@ -46,7 +47,7 @@ public:
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
       * 'fill_set_elements' - if true, fill vector of elements. For primary key to work.
       */
-    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool fill_set_elements);
+    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
 
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
@@ -54,7 +55,7 @@ public:
     void setHeader(const Block & header);
 
     /// Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Block & block, bool fill_set_elements);
+    bool insertFromBlock(const Block & block);
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
@@ -66,7 +67,8 @@ public:
 
     const DataTypes & getDataTypes() const { return data_types; }
 
-    SetElements & getSetElements() { return *set_elements.get(); }
+    bool hasExplicitSetElements() const { return fill_set_elements; }
+    const Columns & getSetElements() const { return set_elements; }
 
 private:
     size_t keys_size = 0;
@@ -99,6 +101,9 @@ private:
     /// Limitations on the maximum size of the set
     SizeLimits limits;
 
+    /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
+    bool fill_set_elements;
+
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -106,9 +111,9 @@ private:
         bool negative,
         const PaddedPODArray<UInt8> * null_map) const;
 
-    /// Vector of elements of `Set`.
+    /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    SetElementsPtr set_elements;
+    Columns set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -123,15 +128,17 @@ private:
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
-        ConstNullMapPtr null_map);
+        ConstNullMapPtr null_map,
+        ColumnUInt8::Container * out_filter);
 
-    template <typename Method, bool has_null_map>
+    template <typename Method, bool has_null_map, bool build_filter>
     void insertFromBlockImplCase(
         Method & method,
         const ColumnRawPtrs & key_columns,
         size_t rows,
         SetVariants & variants,
-        ConstNullMapPtr null_map);
+        ConstNullMapPtr null_map,
+        ColumnUInt8::Container * out_filter);
 
     template <typename Method>
     void executeImpl(
@@ -156,6 +163,7 @@ using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
+
 class IFunction;
 using FunctionPtr = std::shared_ptr<IFunction>;
 
@@ -164,8 +172,7 @@ class MergeTreeSetIndex
 {
 public:
     /** Mapping for tuple positions from Set::set_elements to
-      * position of pk index and data type of this pk column
-      * and functions chain applied to this column.
+      * position of pk index and functions chain applied to this column.
       */
     struct KeyTuplePositionMapping
     {
@@ -174,16 +181,14 @@ public:
         std::vector<FunctionBasePtr> functions;
     };
 
-    MergeTreeSetIndex(const SetElements & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+    MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
 
-    size_t size() const { return ordered_set.size(); }
+    size_t size() const { return ordered_set.at(0)->size(); }
 
     BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
-    using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
-    OrderedTuples ordered_set;
-
+    Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
 };
 
