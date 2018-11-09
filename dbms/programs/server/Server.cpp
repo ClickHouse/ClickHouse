@@ -599,13 +599,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
         for (auto & server : servers)
             server->start();
 
+        const auto memory_amount = getMemoryAmount();
+
 #if defined(__linux__)
-        if (config().getBool("binary_mlock", true))
+        if (config().getBool("binary_mlock",
+#if NDEBUG
+            memory_amount > 8000000000 ? true : false // Dont mlock if we have less than 8G ram
+#else
+            false
+#endif
+        ))
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
                 if (!mlockall(MCL_CURRENT))
                     LOG_WARNING(log, "mlockall failed: " + errnoToString());
+                else
+                    LOG_TRACE(log, "Binary mlock'ed");
             }
             else
             {
@@ -623,7 +633,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
                 << " threads = " <<  std::thread::hardware_concurrency() << ".";

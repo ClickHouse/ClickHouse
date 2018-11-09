@@ -83,7 +83,7 @@ sub file_read ($) {
     return $ret;
 }
 
-our ($query, $query_select, $expression_cast, $expression, $type, $type_cast, $functions, $table_functions);
+our ($query, $query_select, $expression_cast, $expression, $type, $type_cast, $functions, $table_functions, $select_parts);
 $type_cast = {map { $_ => $_ } qw(DateTime Date String)};
 $type = {%$type_cast, (map { $_ => $_ } qw(Int8 Int16 Int32 Int64 UInt8 UInt16 UInt32 UInt64 Float32 Float64))};
 $type->{"Nullable($_)"} = "Nullable($_)" for values %$type;
@@ -115,6 +115,9 @@ $expression_cast = {
 $expression = {
     %$expression_cast,
 };
+$select_parts = {
+    #'FROM' => sub { my ($state) = @_;      },
+};
 $query_select = {
     'SELECT' => sub { my ($state) = @_; return 'SELECT ' . list_of($state, {max => 5}, $expression) },
     'SELECT function()' => sub { my ($state) = @_; return 'SELECT ' . one($state, $expression->{'function()'}) },
@@ -123,6 +126,7 @@ $query_select = {
         return 'SELECT * FROM ' . one_of($state, $table_functions) . '(' . list_of($state, {min => 0, max => 3}, $expression) . ')';
     },
 };
+
 
 $query = {%$query_select};
 
