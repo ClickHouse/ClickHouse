@@ -9,12 +9,41 @@
 namespace DB
 {
 
+enum class TypeOfPresenceInTableDeclaration : int32_t
+{
+    InPrimaryKey = 1<<0,
+    InOrderKey = 1<<1,
+    InPartitionKey = 1<<2,
+    InSamplingKey = 1<<3,
+};
+
+
+class ColumnPresenceInTableDeclaration
+{
+public:
+    bool Get(TypeOfPresenceInTableDeclaration type)
+    {
+        return static_cast<bool>(presenceMask & static_cast<int32_t>(type));
+    }
+
+    void Set(TypeOfPresenceInTableDeclaration type)
+    {
+        presenceMask &= static_cast<int32_t>(type);
+    }
+
+private:
+    int32_t presenceMask;
+};
+
+using ColumnPresencesInTableDeclaration = std::unordered_map<String, ColumnPresenceInTableDeclaration>;
+
 struct ColumnsDescription
 {
     NamesAndTypesList ordinary;
     NamesAndTypesList materialized;
     NamesAndTypesList aliases;
     ColumnDefaults defaults;
+    ColumnPresencesInTableDeclaration presences;
 
     ColumnsDescription() = default;
 
