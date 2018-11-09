@@ -36,6 +36,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
+        { "is_in_primary_key", std::make_shared<DataTypeUInt8>()},
+        { "is_in_order_key", std::make_shared<DataTypeUInt8>()},
+        { "is_in_partition_key", std::make_shared<DataTypeUInt8>()},
+        { "is_in_sample_key", std::make_shared<DataTypeUInt8>()},
     }));
 }
 
@@ -80,6 +84,7 @@ protected:
 
             NamesAndTypesList columns;
             ColumnDefaults column_defaults;
+            ColumnPresencesInTableDeclaration column_presences;
             MergeTreeData::ColumnSizeByName column_sizes;
 
             {
@@ -105,6 +110,7 @@ protected:
 
                 columns = storage->getColumns().getAll();
                 column_defaults = storage->getColumns().defaults;
+                column_presences = storage->getColumns().presences;
 
                 /** Info about sizes of columns for tables of MergeTree family.
                 * NOTE: It is possible to add getter for this info to IStorage interface.
@@ -171,6 +177,33 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(it->second.marks);
                     }
+                }
+
+                {
+                    const auto it = column_presences.find(column.name);
+                    if (it == std::end(column_presences))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InPrimaryKey));
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InOrderKey));
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InPartitionKey));
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InSamplingKey));
+                    }
+
                 }
 
                 ++rows_count;
