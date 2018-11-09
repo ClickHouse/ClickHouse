@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/typeid_cast.h>
 #include <Parsers/DumpASTNode.h>
 #include <unordered_map>
 

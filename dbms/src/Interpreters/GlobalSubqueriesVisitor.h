@@ -75,6 +75,9 @@ private:
         return false;
     }
 
+    /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
+      * create a temporary table of type Memory and store it in the external_tables dictionary.
+      */
     void addExternalStorage(ASTPtr & subquery_or_table_name_or_table_expression) const
     {
         /// With nondistributed queries, creating temporary tables does not make sense.
