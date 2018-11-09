@@ -70,7 +70,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     if (!ast_create_query.columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns, context);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(ast_create_query, context);
 
     return
     {
