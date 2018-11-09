@@ -50,7 +50,7 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & partition_by_ast_,
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
-    const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
+    const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -59,7 +59,7 @@ StorageMergeTree::StorageMergeTree(
     data(database_name, table_name,
          full_path, columns_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-         sampling_expression_, merging_params_,
+         sample_by_ast_, merging_params_,
          settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))

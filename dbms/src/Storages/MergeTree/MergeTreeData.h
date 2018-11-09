@@ -305,7 +305,7 @@ public:
                   const ASTPtr & partition_by_ast_,
                   const ASTPtr & order_by_ast_,
                   const ASTPtr & primary_key_ast_,
-                  const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
+                  const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
                   bool require_part_metadata_,
@@ -315,7 +315,6 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
-    bool supportsSampling() const { return sampling_expression != nullptr; }
     bool supportsPrewhere() const { return true; }
 
     bool supportsFinal() const
@@ -502,15 +501,13 @@ public:
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
-    ExpressionActionsPtr getPrimaryKeyExpression() const { return primary_key_expr; }
-    Names getPrimaryKeyColumns() const { return primary_key_columns; }
-
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
-    ExpressionActionsPtr getSortingKeyExpression() const { return sorting_key_expr; }
-    Names getSortingKeyColumns() const { return sorting_key_columns; }
 
-    Names getColumnsRequiredForSampling() const { return columns_required_for_sampling; }
     Names getColumnsRequiredForFinal() const { return sorting_key_expr->getRequiredColumns(); }
+
+    bool supportsSampling() const { return sample_by_ast != nullptr; }
+    ASTPtr getSamplingExpression() const { return sample_by_ast; }
+    Names getColumnsRequiredForSampling() const { return columns_required_for_sampling; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
@@ -560,21 +557,10 @@ public:
     MergeTreeDataFormatVersion format_version;
 
     Context & context;
-    const ASTPtr sampling_expression;
-    const size_t index_granularity;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
 
-    const MergeTreeSettings settings;
-
-    ASTPtr order_by_ast;
-    ASTPtr primary_key_ast;
-
-    Block primary_key_sample;
-    DataTypes primary_key_data_types;
-
-    ASTPtr partition_by_ast;
     ExpressionActionsPtr partition_key_expr;
     Block partition_key_sample;
 
@@ -582,6 +568,22 @@ public:
     Names minmax_idx_columns;
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
+
+    /// Names of columns for primary key + secondary sorting columns.
+    Names sorting_key_columns;
+    ExpressionActionsPtr sorting_key_expr;
+
+    /// Names of columns for primary key.
+    Names primary_key_columns;
+    ExpressionActionsPtr primary_key_expr;
+    Block primary_key_sample;
+    DataTypes primary_key_data_types;
+
+    String sampling_expr_column_name;
+    Names columns_required_for_sampling;
+
+    const size_t index_granularity;
+    const MergeTreeSettings settings;
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -592,22 +594,17 @@ public:
 private:
     friend struct MergeTreeDataPart;
     friend class StorageMergeTree;
-    friend class ReplicatedMergeTreeAlterThread;
-    friend class MergeTreeDataMergerMutator;
-    friend class StorageMergeTree;
     friend class StorageReplicatedMergeTree;
+    friend class MergeTreeDataMergerMutator;
+    friend class ReplicatedMergeTreeAlterThread;
+    friend struct ReplicatedMergeTreeTableMetadata;
+
+    ASTPtr partition_by_ast;
+    ASTPtr order_by_ast;
+    ASTPtr primary_key_ast;
+    const ASTPtr sample_by_ast;
 
     bool require_part_metadata;
-
-    ExpressionActionsPtr sorting_key_expr;
-    /// Names of columns for primary key + secondary sorting columns.
-    Names sorting_key_columns;
-
-    ExpressionActionsPtr primary_key_expr;
-    /// Names of columns for primary key.
-    Names primary_key_columns;
-
-    Names columns_required_for_sampling;
 
     String database_name;
     String table_name;

@@ -90,7 +90,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & partition_by_ast_,
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
-    const ASTPtr & sampling_expression_,
+    const ASTPtr & sample_by_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -98,11 +98,11 @@ MergeTreeData::MergeTreeData(
     BrokenPartCallback broken_part_callback_)
     : ITableDeclaration{columns_},
     context(context_),
-    sampling_expression(sampling_expression_),
-    index_granularity(settings_.index_granularity),
     merging_params(merging_params_),
+    index_granularity(settings_.index_granularity),
     settings(settings_),
     partition_by_ast(partition_by_ast_),
+    sample_by_ast(sample_by_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_),
@@ -116,14 +116,16 @@ MergeTreeData::MergeTreeData(
 
     setPrimaryKey(order_by_ast_, primary_key_ast_);
 
-    if (sampling_expression)
+    if (sample_by_ast)
     {
-        if (!primary_key_sample.has(sampling_expression->getColumnName())
+        sampling_expr_column_name = sample_by_ast->getColumnName();
+
+        if (!primary_key_sample.has(sampling_expr_column_name)
             && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
         columns_required_for_sampling = ExpressionAnalyzer(
-            sampling_expression, context, nullptr, getColumns().getAllPhysical())
+            sample_by_ast, context, nullptr, getColumns().getAllPhysical())
             .getRequiredSourceColumns();
     }
 
@@ -943,7 +945,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         for (const String & col : sorting_key_expr->getRequiredColumns())
             columns_alter_metadata_only.insert(col);
 
-        /// We don't process sampling_expression separately because it must be among the primary key columns
+        /// We don't process sample_by_ast separately because it must be among the primary key columns
         /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
     }
 
