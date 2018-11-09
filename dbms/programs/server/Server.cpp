@@ -344,6 +344,42 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->initializeSystemLogs();
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
     attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+
+
+    const auto memory_amount = getMemoryAmount();
+    /// mlock before data loaded
+    {
+#if defined(__linux__)
+        if (config().getBool("binary_mlock",
+#if NDEBUG
+            memory_amount > 8000000000 ? true : false // Dont mlock if we have less than 8G ram
+#else
+            false
+#endif
+        ))
+        {
+            if (hasLinuxCapability(CAP_IPC_LOCK))
+            {
+                if (!mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString());
+                else
+                    LOG_TRACE(log, "Binary mlock'ed");
+            }
+            else
+            {
+                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                      " It could happen due to incorrect ClickHouse package installation."
+                      " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                      " Note that it will not work on 'nosuid' mounted filesystems.");
+
+            }
+        }
+#endif
+    }
+
+
+
+
     /// Then, load remaining databases
     loadMetadata(*global_context);
     LOG_DEBUG(log, "Loaded metadata.");
@@ -598,35 +634,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
-
-        const auto memory_amount = getMemoryAmount();
-
-#if defined(__linux__)
-        if (config().getBool("binary_mlock",
-#if NDEBUG
-            memory_amount > 8000000000 ? true : false // Dont mlock if we have less than 8G ram
-#else
-            false
-#endif
-        ))
-        {
-            if (hasLinuxCapability(CAP_IPC_LOCK))
-            {
-                if (!mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "Failed mlockall: " + errnoToString());
-                else
-                    LOG_TRACE(log, "Binary mlock'ed");
-            }
-            else
-            {
-                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                      " It could happen due to incorrect ClickHouse package installation."
-                      " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
-                      " Note that it will not work on 'nosuid' mounted filesystems.");
-
-            }
-        }
-#endif
 
         main_config_reloader->start();
         users_config_reloader->start();
