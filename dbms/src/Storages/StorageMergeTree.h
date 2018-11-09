@@ -98,6 +98,10 @@ public:
 
     ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
 
+    ASTPtr getPartitionExpression() const override { return data.partition_expr_ast; }
+
+    ASTPtr getSecondaryExpression() const override { return data.secondary_sort_expr_ast; }
+
 private:
     String path;
     String database_name;
