@@ -84,7 +84,7 @@ protected:
 
             NamesAndTypesList columns;
             ColumnDefaults column_defaults;
-            ColumnPresencesInTableDeclaration column_presences;
+            ColumnPresences column_presences;
             MergeTreeData::ColumnSizeByName column_sizes;
 
             {
@@ -195,13 +195,13 @@ protected:
                     else
                     {
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InPrimaryKey));
+                            res_columns[res_index++]->insert(it->second.Get(PresenceType::InPrimaryKey));
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InOrderKey));
+                            res_columns[res_index++]->insert(it->second.Get(PresenceType::InOrderKey));
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InPartitionKey));
+                            res_columns[res_index++]->insert(it->second.Get(PresenceType::InPartitionKey));
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second.Get(TypeOfPresenceInTableDeclaration::InSamplingKey));
+                            res_columns[res_index++]->insert(it->second.Get(PresenceType::InSamplingKey));
                     }
 
                 }

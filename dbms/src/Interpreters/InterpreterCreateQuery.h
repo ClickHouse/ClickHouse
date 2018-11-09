@@ -45,7 +45,7 @@ public:
     }
 
     /// Obtain information about columns, their types and default values, for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
+    static ColumnsDescription getColumnsDescription(const ASTCreateQuery & columns, const Context & context);
     /// Check that column types are allowed for usage in table according to settings.
     static void checkSupportedTypes(const ColumnsDescription & columns, const Context & context);
 

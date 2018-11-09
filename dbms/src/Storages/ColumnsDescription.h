@@ -9,7 +9,7 @@
 namespace DB
 {
 
-enum class TypeOfPresenceInTableDeclaration : int32_t
+enum class PresenceType : int32_t
 {
     InPrimaryKey = 1<<0,
     InOrderKey = 1<<1,
@@ -18,24 +18,25 @@ enum class TypeOfPresenceInTableDeclaration : int32_t
 };
 
 
-class ColumnPresenceInTableDeclaration
+// TODO: не очень классное название
+class ColumnPresence
 {
 public:
-    bool Get(TypeOfPresenceInTableDeclaration type)
+    bool Get(PresenceType type)
     {
         return static_cast<bool>(presenceMask & static_cast<int32_t>(type));
     }
 
-    void Set(TypeOfPresenceInTableDeclaration type)
+    void Set(PresenceType type)
     {
-        presenceMask &= static_cast<int32_t>(type);
+        presenceMask |= static_cast<int32_t>(type);
     }
 
 private:
-    int32_t presenceMask;
+    int32_t presenceMask = 0;
 };
 
-using ColumnPresencesInTableDeclaration = std::unordered_map<String, ColumnPresenceInTableDeclaration>;
+using ColumnPresences = std::unordered_map<String, ColumnPresence>;
 
 struct ColumnsDescription
 {
@@ -43,7 +44,7 @@ struct ColumnsDescription
     NamesAndTypesList materialized;
     NamesAndTypesList aliases;
     ColumnDefaults defaults;
-    ColumnPresencesInTableDeclaration presences;
+    ColumnPresences presences;
 
     ColumnsDescription() = default;
 
