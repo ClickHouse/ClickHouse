@@ -549,7 +549,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr partition_by_ast;
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
-    ASTPtr sampling_expression;
+    ASTPtr sample_by_ast;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
     if (is_extended_storage_def)
@@ -568,7 +568,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             primary_key_ast = args.storage_def->primary_key->ptr();
 
         if (args.storage_def->sample_by)
-            sampling_expression = args.storage_def->sample_by->ptr();
+            sample_by_ast = args.storage_def->sample_by->ptr();
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
@@ -577,7 +577,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If there is an expression for sampling. MergeTree(date, [sample_key], primary_key, index_granularity)
         if (engine_args.size() == 4)
         {
-            sampling_expression = engine_args[1];
+            sample_by_ast = engine_args[1];
             engine_args.erase(engine_args.begin() + 1);
         }
 
@@ -606,13 +606,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sampling_expression, merging_params, storage_settings,
+            sample_by_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.data_path, args.database_name, args.table_name, args.columns, args.attach,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sampling_expression, merging_params, storage_settings,
+            sample_by_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }
 

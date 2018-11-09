@@ -176,9 +176,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     /// If we need to calculate some columns to sort.
     if (data.hasSortingKey())
-        data.getSortingKeyExpression()->execute(block);
+        data.sorting_key_expr->execute(block);
 
-    Names sort_columns = data.getSortingKeyColumns();
+    Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
