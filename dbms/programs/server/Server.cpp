@@ -613,7 +613,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
                 if (!mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "mlockall failed: " + errnoToString());
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString());
                 else
                     LOG_TRACE(log, "Binary mlock'ed");
             }
