@@ -49,8 +49,8 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 using Aliases = std::unordered_map<String, ASTPtr>;
 
 /// Add columns from storage to source_columns list.
-void collectSourceColumns(NamesAndTypesList & source_columns, ASTSelectQuery * select_query,
-                          const Context & context, StoragePtr & storage);
+void collectSourceColumns(ASTSelectQuery * select_query, const Context & context,
+                          StoragePtr & storage, NamesAndTypesList & source_columns);
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to unqualified names.
 void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
@@ -112,7 +112,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     result.storage = storage;
     result.source_columns = source_columns_;
     auto * select_query = typeid_cast<ASTSelectQuery *>(query.get());
-    collectSourceColumns(result.source_columns, select_query, context, result.storage);
+    collectSourceColumns(select_query, context, result.storage, result.source_columns);
 
     const auto & settings = context.getSettingsRef();
 
@@ -192,8 +192,8 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
 namespace
 {
 
-void collectSourceColumns(NamesAndTypesList & source_columns, ASTSelectQuery * select_query,
-                          const Context & context, StoragePtr & storage)
+void collectSourceColumns(ASTSelectQuery * select_query, const Context & context,
+                          StoragePtr & storage, NamesAndTypesList & source_columns)
 {
     if (!storage && select_query)
     {
