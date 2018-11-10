@@ -55,7 +55,7 @@ arrayConcat(arrays)
 
 **Parameters**
 
-- `arrays` – Comma-separated arrays.
+- `arrays` – arbitrary number of arguments of type Array.
 
 **Example**
 
