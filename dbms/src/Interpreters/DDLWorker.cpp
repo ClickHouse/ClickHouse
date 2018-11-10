@@ -882,8 +882,12 @@ void DDLWorker::run()
             catch (const Coordination::Exception & e)
             {
                 if (!Coordination::isHardwareError(e.code))
-                    throw;
+                    throw;  /// A logical error.
+
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                /// Avoid busy loop when ZooKeeper is not available.
+                ::sleep(1);
             }
         }
         catch (...)
