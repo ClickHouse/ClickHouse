@@ -353,7 +353,7 @@ public:
     virtual ASTPtr getPartitionExpression() const { return nullptr; }
 
     /// Returns secondary expression for storage or nullptr if there is no.
-    virtual ASTPtr getSecondaryExpression() const { return nullptr; }
+    virtual ASTPtr getOrderExpression() const { return nullptr; }
 
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
