@@ -10,7 +10,7 @@
 #include <ext/size.h>
 #include <atomic>
 #include <vector>
-#include <tuple>
+#include <variant>
 
 
 namespace DB
@@ -152,14 +152,14 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<
+        std::variant<
             UInt8, UInt16, UInt32, UInt64,
             UInt128,
             Int8, Int16, Int32, Int64,
             Decimal32, Decimal64, Decimal128,
             Float32, Float64,
             StringRef> null_values;
-        std::tuple<
+        std::variant<
             ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
             ContainerPtrType<UInt128>,
             ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
