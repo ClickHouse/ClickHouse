@@ -100,7 +100,7 @@ public:
 
     ASTPtr getPartitionExpression() const override { return data.partition_expr_ast; }
 
-    ASTPtr getSecondaryExpression() const override { return data.secondary_sort_expr_ast; }
+    ASTPtr getOrderExpression() const override { return data.secondary_sort_expr_ast; }
 
 private:
     String path;

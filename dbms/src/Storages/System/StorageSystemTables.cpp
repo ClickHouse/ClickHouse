@@ -41,6 +41,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"create_table_query", std::make_shared<DataTypeString>()},
         {"engine_full", std::make_shared<DataTypeString>()},
         {"primary_key", std::make_shared<DataTypeString>()},
+        {"order_key", std::make_shared<DataTypeString>()},
         {"partition_key", std::make_shared<DataTypeString>()},
         {"sample_key", std::make_shared<DataTypeString>()},
     }));
@@ -156,6 +157,9 @@ protected:
 
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -256,6 +260,14 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if ((expression_ptr = table_it->getPrimaryExpression()))
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if ((expression_ptr = table_it->getOrderExpression()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
