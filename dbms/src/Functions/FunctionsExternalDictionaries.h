@@ -538,11 +538,17 @@ private:
         if (const auto default_col = checkAndGetColumn<ColumnString>(default_col_untyped))
         {
             /// const ids, vector defaults
-            /// @todo avoid materialization
-            const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getValue<UInt64>());
-            auto out = ColumnString::create();
-            dictionary->getString(attr_name, ids, default_col, out.get());
-            block.getByPosition(result).column = std::move(out);
+            const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
+            PaddedPODArray<UInt8> flags(1);
+            dictionary->has(ids, flags);
+            if (flags.front())
+            {
+                auto out = ColumnString::create();
+                dictionary->getString(attr_name, ids, String(), out.get());
+                block.getByPosition(result).column = DataTypeString().createColumnConst(id_col->size(), out->getDataAt(0).toString());
+            }
+            else
+                block.getByPosition(result).column = block.getByPosition(arguments[3]).column; // reuse the default column
         }
         else if (const auto default_col = checkAndGetColumnConstStringOrFixedString(default_col_untyped))
         {
@@ -1033,14 +1039,17 @@ private:
         if (const auto default_col = checkAndGetColumn<ColumnVector<Type>>(default_col_untyped))
         {
             /// const ids, vector defaults
-            /// @todo avoid materialization
-            const PaddedPODArray<UInt64> ids(id_col->size(), id_col->getValue<UInt64>());
-
-            auto out = ColumnVector<Type>::create(id_col->size());
-            auto & data = out->getData();
-            const auto & defs = default_col->getData();
-            DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, defs, data);
-            block.getByPosition(result).column = std::move(out);
+            const PaddedPODArray<UInt64> ids(1, id_col->getValue<UInt64>());
+            PaddedPODArray<UInt8> flags(1);
+            dictionary->has(ids, flags);
+            if (flags.front())
+            {
+                PaddedPODArray<Type> data(1);
+                DictGetTraits<DataType>::getOrDefault(dictionary, attr_name, ids, Type(), data);
+                block.getByPosition(result).column = DataTypeNumber<Type>().createColumnConst(id_col->size(), toField(data.front()));
+            }
+            else
+                block.getByPosition(result).column = block.getByPosition(arguments[3]).column; // reuse the default column
         }
         else if (const auto default_col = checkAndGetColumnConst<ColumnVector<Type>>(default_col_untyped))
         {
