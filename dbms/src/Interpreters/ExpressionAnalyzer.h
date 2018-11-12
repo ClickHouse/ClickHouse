@@ -34,7 +34,7 @@ class ASTSelectQuery;
 struct SyntaxAnalyzerResult;
 using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
-/// ExpressionAnalyzers sources, intermediates and results. It splits data and logic, allows to test them separately.
+/// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 /// If you are not writing a test you probably don't need it. Use ExpressionAnalyzer itself.
 struct ExpressionAnalyzerData
 {
