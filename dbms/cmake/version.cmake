@@ -1,5 +1,5 @@
 # This strings autochanged from release_lib.sh:
-set(VERSION_REVISION 54409 CACHE STRING "")
+set(VERSION_REVISION 54410 CACHE STRING "") # changed manually for tests
 set(VERSION_MAJOR 18 CACHE STRING "")
 set(VERSION_MINOR 14 CACHE STRING "")
 set(VERSION_PATCH 9 CACHE STRING "")

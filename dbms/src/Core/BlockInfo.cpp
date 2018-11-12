@@ -60,14 +60,14 @@ void BlockInfo::read(ReadBuffer & in)
 
 void BlockDelayedDefaults::setBit(size_t column_idx, size_t row_idx)
 {
-    BitMask & mask = columns_defaults[column_idx];
+    RowsBitMask & mask = columns_defaults[column_idx];
     mask.resize(row_idx + 1);
     mask[row_idx] = true;
 }
 
-const BlockDelayedDefaults::BitMask & BlockDelayedDefaults::getColumnBitmask(size_t column_idx) const
+const BlockDelayedDefaults::RowsBitMask & BlockDelayedDefaults::getDefaultsBitmask(size_t column_idx) const
 {
-    static BitMask none;
+    static RowsBitMask none;
     auto it = columns_defaults.find(column_idx);
     if (it != columns_defaults.end())
         return it->second;

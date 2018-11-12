@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
-    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -53,7 +52,6 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 {
     size_t num_columns = sample.columns();
     MutableColumns columns = sample.cloneEmptyColumns();
-    BlockDelayedDefaults delayed_defaults;
 
     try
     {
@@ -62,19 +60,8 @@ Block BlockInputStreamFromRowInputStream::readImpl()
             try
             {
                 ++total_rows;
-                RowReadExtention info;
-                if (!row_input->extendedRead(columns, info))
+                if (!row_input->read(columns))
                     break;
-
-                for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
-                {
-                    if (!info.read_columns[column_idx]) {
-                        size_t column_size = columns[column_idx]->size();
-                        if (column_size == 0)
-                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-                        delayed_defaults.setBit(column_idx, column_size - 1);
-                    }
-                }
             }
             catch (Exception & e)
             {
@@ -143,10 +130,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
     if (columns.empty() || columns[0]->empty())
         return {};
 
-    auto out_block = sample.cloneWithColumns(std::move(columns));
-    if (!delayed_defaults.empty())
-        out_block.delayed_defaults = std::move(delayed_defaults);
-    return out_block;
+    return sample.cloneWithColumns(std::move(columns));
 }
 
 

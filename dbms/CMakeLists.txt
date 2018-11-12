@@ -240,6 +240,7 @@ if (USE_CAPNP)
     if (NOT USE_INTERNAL_CAPNP_LIBRARY)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
     endif ()
+    set (PROTO_LIB clickhouse_proto)
 endif ()
 
 if (USE_RDKAFKA)

@@ -1,11 +1,14 @@
 #pragma once
-
+#if USE_CAPNP
 
 namespace DB
 {
     class Context;
-    struct ColumnWithTypeAndName;
+    class Block;
+    struct TableMetadata;
 
-    ColumnWithTypeAndName storeContext(Context & context);
-    void loadContext(const ColumnWithTypeAndName & proto_column, Context & context);
+    Block storeTableMetadata(const TableMetadata & table_meta);
+    void loadTableMetadata(const Block & block, TableMetadata & table_meta);
 }
+
+#endif
