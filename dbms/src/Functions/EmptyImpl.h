@@ -1,3 +1,4 @@
+#pragma once
 #include <cstring>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
