@@ -30,8 +30,8 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
-
 #include <Proto/protoHelpers.h>
+#include <Storages/TableMetadata.h>
 
 #include "TCPHandler.h"
 
