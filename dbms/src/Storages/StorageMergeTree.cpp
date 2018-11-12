@@ -815,6 +815,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & pa
 
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, const Context & context)
 {
+    // TODO: should get some locks to prevent race with 'alter … modify column'
+
     String partition_id;
 
     if (part)
@@ -869,6 +871,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
+    auto lock = lockStructure(false, __PRETTY_FUNCTION__);
     data.freezePartition(partition, with_name, context);
 }
 

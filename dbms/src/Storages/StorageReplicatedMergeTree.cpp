@@ -3279,6 +3279,15 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         }
     }
 
+    /// Do freeze of all parts local-only after all other operations.
+    for (const AlterCommand & param : params)
+    {
+        if (param.type == AlterCommand::FREEZE_ALL)
+        {
+            data.freezeAll(param.with_name, context);
+        }
+    }
+
     LOG_DEBUG(log, "ALTER finished");
 }
 
@@ -3427,6 +3436,8 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 
 void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
+    // TODO: should get some locks to prevent race with 'alter … modify column'
+
     assertNotReadonly();
 
     String partition_id;
@@ -4156,6 +4167,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
 void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
+    auto lock = lockStructure(false, __PRETTY_FUNCTION__);
     data.freezePartition(partition, with_name, context);
 }
 
