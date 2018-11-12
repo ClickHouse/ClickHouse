@@ -526,6 +526,7 @@ void MergeTreeDataPart::loadChecksums(bool require)
         assertEOF(file);
 }
 
+/// TODO alesap
 void MergeTreeDataPart::loadRowsCount()
 {
     if (marks_count == 0)

@@ -15,7 +15,8 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-constexpr auto MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto MARKS_FILE_EXTENSION_WITH_FIXED_GRANULARITY = ".mrk";
+constexpr auto MARKS_FILE_EXTENSION_WITH_ADAPTIVE_INDEX_GRANULARITY = ".mrk2";
 
 }
 
@@ -55,10 +56,14 @@ void IMergedBlockOutputStream::addStreams(
         if (column_streams.count(stream_name))
             return;
 
+        std::string marks_file_extension = MARKS_FILE_EXTENSION_WITH_FIXED_GRANULARITY;
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+            marks_file_extension = MARKS_FILE_EXTENSION_WITH_ADAPTIVE_INDEX_GRANULARITY;
+
         column_streams[stream_name] = std::make_unique<ColumnStream>(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
-            path + stream_name, MARKS_FILE_EXTENSION,
+            path + stream_name, marks_file_extension,
             max_compress_block_size,
             compression_settings,
             estimated_size,
@@ -89,6 +94,15 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
     };
 }
 
+size_t IMergedBlockOutputStream::getBlockIndexGranularity(const Block & block) const
+{
+    if (storage.index_granularity_bytes == 0 || storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+        return storage.index_granularity;
+
+    size_t blockSize = block.allocatedBytes();
+    return std::max(blockSize / storage.index_granularity_bytes, 1);
+}
+
 
 void IMergedBlockOutputStream::writeData(
     const String & name,
@@ -96,7 +110,8 @@ void IMergedBlockOutputStream::writeData(
     const IColumn & column,
     WrittenOffsetColumns & offset_columns,
     bool skip_offsets,
-    IDataType::SerializeBinaryBulkStatePtr & serialization_state)
+    IDataType::SerializeBinaryBulkStatePtr & serialization_state,
+    size_t index_granularity)
 {
     auto & settings = storage.context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -115,7 +130,7 @@ void IMergedBlockOutputStream::writeData(
             limit = index_offset;
         else
         {
-            limit = storage.index_granularity;
+            limit = index_granularity;
 
             /// Write marks.
             type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
@@ -138,6 +153,8 @@ void IMergedBlockOutputStream::writeData(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
+                if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+                    writeIntBinary(index_granularity, stream.marks);
             }, serialize_settings.path);
         }
 
@@ -394,6 +411,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
+    size_t current_block_index_granularity = getBlockIndexGranularity(block);
 
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     WrittenOffsetColumns offset_columns;
@@ -451,18 +469,18 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             if (primary_columns_name_to_position.end() != primary_column_it)
             {
                 auto & primary_column = *primary_columns[primary_column_it->second].column;
-                writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i]);
+                writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i], current_block_index_granularity);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                writeData(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i]);
+                writeData(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i], current_block_index_granularity);
             }
         }
         else
         {
-            writeData(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i]);
+            writeData(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_block_index_granularity);
         }
     }
 
@@ -478,7 +496,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+        for (size_t i = index_offset; i < rows; i += current_block_index_granularity)
         {
             if (storage.hasPrimaryKey())
             {
@@ -494,8 +512,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         }
     }
 
-    size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
-    index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
+    size_t written_for_last_mark = (current_block_index_granularity - index_offset + rows) % current_block_index_granularity;
+    index_offset = (current_block_index_granularity - written_for_last_mark) % current_block_index_granularity;
 }
 
 
@@ -537,17 +555,18 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         initialized = true;
     }
 
+    size_t current_block_index_granularity = getBlockIndexGranularity(block);
     size_t rows = block.rows();
 
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i]);
+        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_block_index_granularity);
     }
 
-    size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
-    index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
+    size_t written_for_last_mark = (current_block_index_granularity - index_offset + rows) % current_block_index_granularity;
+    index_offset = (current_block_index_granularity - written_for_last_mark) % current_block_index_granularity;
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()

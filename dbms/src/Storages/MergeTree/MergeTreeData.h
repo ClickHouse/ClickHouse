@@ -542,6 +542,7 @@ public:
     Context & context;
     const ASTPtr sampling_expression;
     const size_t index_granularity;
+    const size_t index_granularity_bytes;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
