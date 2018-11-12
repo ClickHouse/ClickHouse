@@ -1,5 +1,4 @@
 tar-ignore
-tar-ignore="dev/*"
 tar-ignore="build/*"
 tar-ignore="build_*/*"
 tar-ignore="contrib/poco/openssl/*"
