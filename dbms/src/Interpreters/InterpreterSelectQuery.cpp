@@ -184,8 +184,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
 
+    syntax_analyzer_result = SyntaxAnalyzer(context, storage)
+            .analyze(query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, context, storage, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
 
     if (!only_analyze)
     {
@@ -460,6 +462,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         {
             SelectQueryInfo query_info;
             query_info.query = query_ptr;
+            query_info.syntax_analyzer_result = syntax_analyzer_result;
             query_info.sets = query_analyzer->getPreparedSets();
 
             /// Try transferring some condition from WHERE to PREWHERE if enabled and viable
@@ -768,7 +771,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
             auto additional_source_columns_set = ext::map<NameSet>(additional_source_columns, [] (const auto & it) { return it.name; });
 
-            alias_actions = ExpressionAnalyzer(required_columns_expr_list, context, storage, additional_source_columns).getActions(true);
+            ASTPtr query = required_columns_expr_list;
+            auto syntax_result = SyntaxAnalyzer(context, storage).analyze(query, additional_source_columns);
+            alias_actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
@@ -804,7 +809,9 @@ void InterpreterSelectQuery::executeFetchColumns(
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
-                prewhere_info->alias_actions = ExpressionAnalyzer(required_prewhere_columns_expr_list, context, storage).getActions(true, false);
+                prewhere_info->alias_actions =
+                    ExpressionAnalyzer(required_prewhere_columns_expr_list, syntax_analyzer_result, context)
+                    .getActions(true, false);
 
                 /// Add columns required by alias actions.
                 auto required_aliased_columns = prewhere_info->alias_actions->getRequiredColumns();
@@ -909,6 +916,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
+        query_info.syntax_analyzer_result = syntax_analyzer_result;
         query_info.sets = query_analyzer->getPreparedSets();
         query_info.prewhere_info = prewhere_info;
 

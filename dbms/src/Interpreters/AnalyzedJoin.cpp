@@ -1,5 +1,6 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
@@ -46,7 +47,9 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
     for (auto & column : columns_from_joined_table)
         source_column_names.emplace_back(column.name_and_type);
 
-    ExpressionAnalyzer analyzer(expression_list, context, nullptr, source_column_names, required_columns);
+    ASTPtr query = expression_list;
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_column_names, required_columns);
+    ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns);
     auto joined_block_actions = analyzer.getActions(false);
 
     auto required_action_columns = joined_block_actions->getRequiredColumns();

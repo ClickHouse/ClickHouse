@@ -82,32 +82,33 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
+/// From SyntaxAnalyzer.cpp
+extern void removeDuplicateColumns(NamesAndTypesList & columns);
 
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
+    const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
-    const StoragePtr & storage_,
-    const NamesAndTypesList & source_columns_,
+    const NamesAndTypesList & additional_source_columns,
     const Names & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
     const SubqueriesForSets & subqueries_for_sets_)
-    : ExpressionAnalyzerData(source_columns_, required_result_columns_, subqueries_for_sets_),
-    query(query_), context(context_), settings(context.getSettings()), storage(storage_),
-    subquery_depth(subquery_depth_), do_global(do_global_)
+    : ExpressionAnalyzerData(syntax_analyzer_result_->source_columns, required_result_columns_, subqueries_for_sets_)
+    , query(query_), context(context_), settings(context.getSettings())
+    , subquery_depth(subquery_depth_), do_global(do_global_)
+    , syntax(syntax_analyzer_result_)
 {
-    auto syntax_analyzer_result = SyntaxAnalyzer(context, storage)
-            .analyze(query, source_columns, required_result_columns_, subquery_depth);
-    query = syntax_analyzer_result.query;
-    storage = syntax_analyzer_result.storage;
-    source_columns = syntax_analyzer_result.source_columns;
-    array_join_result_to_source = syntax_analyzer_result.array_join_result_to_source;
-    array_join_alias_to_name = syntax_analyzer_result.array_join_alias_to_name;
-    array_join_name_to_alias = syntax_analyzer_result.array_join_name_to_alias;
-    analyzed_join = syntax_analyzer_result.analyzed_join;
-    rewrite_subqueries = syntax_analyzer_result.rewrite_subqueries;
+    storage = syntax->storage;
+    rewrite_subqueries = syntax->rewrite_subqueries;
 
     select_query = typeid_cast<ASTSelectQuery *>(query.get());
+
+    if (!additional_source_columns.empty())
+    {
+        source_columns.insert(source_columns.end(), additional_source_columns.begin(), additional_source_columns.end());
+        removeDuplicateColumns(source_columns);
+    }
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
@@ -162,7 +163,7 @@ void ExpressionAnalyzer::analyzeAggregation()
             if (table_join.using_expression_list)
                 getRootActions(table_join.using_expression_list, true, temp_actions);
             if (table_join.on_expression)
-                for (const auto & key_ast : analyzed_join.key_asts_left)
+                for (const auto & key_ast : analyzedJoin().key_asts_left)
                     getRootActions(key_ast, true, temp_actions);
 
             addJoinAction(temp_actions, true);
@@ -416,7 +417,7 @@ void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join,
         actions_visitor.visit(table_join.using_expression_list);
     else if (table_join.on_expression)
     {
-        for (const auto & ast : analyzed_join.key_asts_left)
+        for (const auto & ast : analyzedJoin().key_asts_left)
             actions_visitor.visit(ast);
     }
 
@@ -521,7 +522,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
 {
     NameSet result_columns;
-    for (const auto & result_source : array_join_result_to_source)
+    for (const auto & result_source : syntax->array_join_result_to_source)
     {
         /// Assign new names to columns, if needed.
         if (result_source.first != result_source.second)
@@ -558,11 +559,11 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
         columns_added_by_join_list.push_back(joined_column.name_and_type);
 
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzed_join.key_names_left, columns_added_by_join_list));
+        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left, columns_added_by_join_list));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
-                actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzed_join.key_names_left,
+                actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzedJoin().key_names_left,
                                                             columns_added_by_join_list));
 }
 
@@ -624,7 +625,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     if (!subquery_for_set.join)
     {
         JoinPtr join = std::make_shared<Join>(
-            analyzed_join.key_names_left, analyzed_join.key_names_right, columns_added_by_join_from_right_keys,
+            analyzedJoin().key_names_left, analyzedJoin().key_names_right, columns_added_by_join_from_right_keys,
             settings.join_use_nulls, settings.size_limits_for_join,
             join_params.kind, join_params.strictness);
 
@@ -645,7 +646,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
                 table = table_to_join.database_and_table_name;
 
             Names original_columns;
-            for (const auto & column : analyzed_join.columns_from_joined_table)
+            for (const auto & column : analyzedJoin().columns_from_joined_table)
                 if (required_columns_from_joined_table.count(column.name_and_type.name))
                     original_columns.emplace_back(column.original_name);
 
@@ -656,7 +657,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         }
 
         /// Alias duplicating columns as qualified.
-        for (const auto & column : analyzed_join.columns_from_joined_table)
+        for (const auto & column : analyzedJoin().columns_from_joined_table)
             if (required_columns_from_joined_table.count(column.name_and_type.name))
                 subquery_for_set.joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
 
@@ -696,10 +697,16 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
 
     Names additional_required_mergetree_columns;
     if (sampling_expression)
-        additional_required_mergetree_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
+    {
+        auto ast = sampling_expression;
+        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, {});
+        additional_required_mergetree_columns = ExpressionAnalyzer(ast, syntax_result, context).getRequiredSourceColumns();
+    }
     if (primary_expression)
     {
-        auto required_primary_columns = ExpressionAnalyzer(primary_expression, context, storage).getRequiredSourceColumns();
+        auto ast = primary_expression;
+        auto syntax_result = SyntaxAnalyzer(context, storage).analyze(ast, {});
+        auto required_primary_columns = ExpressionAnalyzer(ast, syntax_result, context).getRequiredSourceColumns();
         additional_required_mergetree_columns.insert(additional_required_mergetree_columns.end(),
                                                      required_primary_columns.begin(), required_primary_columns.end());
     }
@@ -1055,12 +1062,12 @@ void ExpressionAnalyzer::collectUsedColumns()
       * (Do not assume that they are required for reading from the "left" table).
       */
     NameSet available_joined_columns;
-    for (const auto & joined_column : analyzed_join.available_joined_columns)
+    for (const auto & joined_column : analyzedJoin().available_joined_columns)
         available_joined_columns.insert(joined_column.name_and_type.name);
 
     NameSet required_joined_columns;
 
-    for (const auto & left_key_ast : analyzed_join.key_asts_left)
+    for (const auto & left_key_ast : analyzedJoin().key_asts_left)
     {
         NameSet empty;
         RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, empty, required_joined_columns);
@@ -1070,7 +1077,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, available_joined_columns, required_joined_columns);
     columns_visitor.visit(query);
 
-    columns_added_by_join = analyzed_join.available_joined_columns;
+    columns_added_by_join = analyzedJoin().available_joined_columns;
     for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
     {
         if (required_joined_columns.count(it->name_and_type.name))
@@ -1079,17 +1086,17 @@ void ExpressionAnalyzer::collectUsedColumns()
             columns_added_by_join.erase(it++);
     }
 
-    joined_block_actions = analyzed_join.createJoinedBlockActions(
+    joined_block_actions = analyzedJoin().createJoinedBlockActions(
             columns_added_by_join, select_query, context, required_columns_from_joined_table);
 
     /// Some columns from right join key may be used in query. This columns will be appended to block during join.
-    for (const auto & right_key_name : analyzed_join.key_names_right)
+    for (const auto & right_key_name : analyzedJoin().key_names_right)
         if (required_joined_columns.count(right_key_name))
             columns_added_by_join_from_right_keys.insert(right_key_name);
 
     /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
     NameSet array_join_sources;
-    for (const auto & result_source : array_join_result_to_source)
+    for (const auto & result_source : syntax->array_join_result_to_source)
         array_join_sources.insert(result_source.second);
 
     for (const auto & column_name_type : source_columns)
