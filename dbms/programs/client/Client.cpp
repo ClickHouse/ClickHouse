@@ -1129,7 +1129,7 @@ private:
 #if USE_CAPNP
                     loadTableMetadata(packet.block, table_meta);
 #endif
-                    return receiveSampleBlock(packet.block, table_meta);
+                    return receiveSampleBlock(out, table_meta);
 
                 case Protocol::Server::Exception:
                     onException(*packet.exception);
