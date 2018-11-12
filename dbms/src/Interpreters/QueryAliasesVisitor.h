@@ -3,6 +3,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/DumpASTNode.h>
 #include <unordered_map>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

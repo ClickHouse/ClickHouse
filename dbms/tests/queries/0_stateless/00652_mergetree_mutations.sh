@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations(d, x, s) VALUES \
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE nonexistent = 0" 2>/dev/null || echo "Query should fail 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
 # TODO: Queries involving alias columns are not supported yet and should fail on submission.
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE a = 0" 2>/dev/null || echo "Query involving aliases should fail on submission"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations UPDATE s = s || '' WHERE a = 0" 2>/dev/null || echo "Query involving aliases should fail on submission"
 
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE x % 2 = 1"
