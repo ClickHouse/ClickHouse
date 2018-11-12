@@ -65,7 +65,7 @@ public:
 
         if (comment)
         {
-            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT " << (settings.hilite ? hilite_none : "") << ' ';
+            settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
             comment->formatImpl(settings, state, frame);
         }
     }

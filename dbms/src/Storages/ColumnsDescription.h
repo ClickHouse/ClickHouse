@@ -2,13 +2,14 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
-#include <Storages/ColumnComment.h>
 #include <Storages/ColumnDefault.h>
 #include <Core/Block.h>
 
 
 namespace DB
 {
+
+using ColumnComments = std::unordered_map<std::string, String>;
 
 struct ColumnsDescription
 {
@@ -24,8 +25,8 @@ struct ColumnsDescription
         NamesAndTypesList ordinary_,
         NamesAndTypesList materialized_,
         NamesAndTypesList aliases_,
-        ColumnDefaults defaults_ = {},
-        ColumnComments comments_ = {})
+        ColumnDefaults defaults_,
+        ColumnComments comments_)
         : ordinary(std::move(ordinary_))
         , materialized(std::move(materialized_))
         , aliases(std::move(aliases_))
