@@ -280,6 +280,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 throw Exception("Column " + getColumnName() + " is not under aggregate function and not in GROUP BY.",
                     ErrorCodes::NOT_AN_AGGREGATE);
 
+            /// Special check for WITH statement alias. Add alias action to be able to use this alias.
             if (identifier->prefer_alias_to_column_name && !identifier->alias.empty())
                 actions_stack.addAction(ExpressionAction::addAliases({{identifier->name, identifier->alias}}));
         }
