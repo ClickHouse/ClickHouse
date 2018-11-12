@@ -31,6 +31,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
 
+#include <Proto/protoHelpers.h>
+
 #include "TCPHandler.h"
 
 
@@ -358,6 +360,20 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       *  client receive exception before sending data.
       */
     state.io.out->writePrefix();
+
+#if USE_CAPNP
+    /// Send table metadata (column defaults)
+    if (client_revision >= DBMS_MIN_REVISION_WITH_PROTO_METADATA &&
+        query_context.getSettingsRef().insert_sample_with_metadata)
+    {
+        TableMetadata table_meta(query_context.getCurrentDatabase(), query_context.getCurrentTable());
+        if (table_meta.loadFromContext(query_context) && table_meta.hasDefaults())
+        {
+            Block meta_block = storeTableMetadata(table_meta);
+            sendMetadata(meta_block);
+        }
+    }
+#endif
 
     /// Send block to the client - table structure.
     Block block = state.io.out->getHeader();
@@ -840,6 +856,19 @@ void TCPHandler::sendLogData(const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
+    out->next();
+}
+
+
+void TCPHandler::sendMetadata(const Block & block)
+{
+    initBlockOutput(block);
+
+    writeVarUInt(Protocol::Server::CapnProto, *out);
+    writeStringBinary("", *out);
+
+    state.block_out->write(block);
+    state.maybe_compressed_out->next();
     out->next();
 }
 

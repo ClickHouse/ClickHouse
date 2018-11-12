@@ -62,6 +62,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Proto/protoHelpers.h>
+#include <Storages/TableMetadata.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -894,11 +895,12 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        TableMetadata table_meta(parsed_insert_query.database, parsed_insert_query.table);
+        if (receiveSampleBlock(sample, table_meta))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
+            sendData(sample, table_meta);
             receiveEndOfQuery();
         }
     }
@@ -936,7 +938,7 @@ private:
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const TableMetadata & table_meta)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -947,42 +949,34 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, table_meta);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, table_meta);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const TableMetadata & table_meta)
     {
         String current_format = insert_format;
-        ColumnDefaults column_defaults;
 
         /// Data format can be specified in the INSERT query.
         if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*parsed_query))
-        {
             if (!insert->format.empty())
                 current_format = insert->format;
-
-            if (context.isTableExist(insert->database, insert->table))
-            {
-                StoragePtr table = context.getTable(insert->database, insert->table);
-                if (table)
-                    column_defaults = table->getColumns().defaults;
-            }
-        }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        BlockInputStreamPtr defs_block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
-        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(defs_block_input);
+        const ColumnDefaults & column_defaults = table_meta.column_defaults;
+        if (!column_defaults.empty())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
         async_block_input->readPrefix();
 
@@ -1119,7 +1113,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, TableMetadata & table_meta)
     {
         while (true)
         {
@@ -1130,6 +1124,12 @@ private:
                 case Protocol::Server::Data:
                     out = packet.block;
                     return true;
+
+                case Protocol::Server::CapnProto:
+#if USE_CAPNP
+                    loadTableMetadata(packet.block, table_meta);
+#endif
+                    return receiveSampleBlock(packet.block, table_meta);
 
                 case Protocol::Server::Exception:
                     onException(*packet.exception);
@@ -1169,10 +1169,6 @@ private:
                 case Protocol::Server::Log:
                     onLogData(packet.block);
                     break;
-
-                case Protocol::Server::CapnProto:
-                    loadContext(packet.block.getColumnsWithTypeAndName()[0], context);
-                    return receiveSampleBlock(packet.block);
 
                 default:
                     throw NetException("Unexpected packet from server (expected Exception, EndOfStream or Log, got "

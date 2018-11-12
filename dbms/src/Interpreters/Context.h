@@ -118,6 +118,7 @@ private:
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
+    String current_table;
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
@@ -228,8 +229,10 @@ public:
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table) const;
 
     String getCurrentDatabase() const;
+    String getCurrentTable() const;
     String getCurrentQueryId() const;
     void setCurrentDatabase(const String & name);
+    void setCurrentTable(const String & database, const String & table);
     void setCurrentQueryId(const String & query_id);
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.

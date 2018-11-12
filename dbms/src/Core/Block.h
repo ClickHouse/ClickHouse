@@ -35,6 +35,8 @@ private:
 
 public:
     BlockInfo info;
+    /// Input stream could use delayed_defaults to add addition info at which rows it have inserted default values.
+    /// Such values would be replaced later by column defaults in AddingDefaultsBlockInputStream (if any).
     BlockDelayedDefaults delayed_defaults;
 
     Block() = default;

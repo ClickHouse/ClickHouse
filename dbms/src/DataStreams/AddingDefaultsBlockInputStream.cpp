@@ -43,12 +43,15 @@ Block AddingDefaultsBlockInputStream::readImpl()
 
     Block evaluate_block{res};
     for (const auto & column : column_defaults)
-        evaluate_block.erase(column.first);
+    {
+        /// column_defaults contain aliases that could be ommited in evaluate_block
+        if (evaluate_block.has(column.first))
+            evaluate_block.erase(column.first);
+    }
 
     evaluateMissingDefaultsUnsafe(evaluate_block, header.getNamesAndTypesList(), column_defaults, context);
 
-    ColumnsWithTypeAndName mixed_columns;
-    mixed_columns.reserve(std::min(column_defaults.size(), delayed_defaults.size()));
+    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
     for (const ColumnWithTypeAndName & column_def : evaluate_block)
     {
@@ -63,26 +66,39 @@ Block AddingDefaultsBlockInputStream::readImpl()
         if (column_read.column->size() != column_def.column->size())
             throw Exception("Mismach column sizes while adding defaults", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        const BlockDelayedDefaults::BitMask & mask = delayed_defaults.getColumnBitmask(block_column_position);
-        MutableColumnPtr column_mixed = column_read.column->cloneEmpty();
-
-        for (size_t row_idx = 0; row_idx < column_read.column->size(); ++row_idx)
+        const auto & defaults_mask = delayed_defaults.getDefaultsBitmask(block_column_position);
+        if (!defaults_mask.empty())
         {
-            if (mask[row_idx])
-                column_mixed->insertFrom(*column_def.column, row_idx);
-            else
-                column_mixed->insertFrom(*column_read.column, row_idx);
-        }
+            MutableColumnPtr column_mixed = column_read.column->cloneEmpty();
 
-        ColumnWithTypeAndName mix = column_read.cloneEmpty();
-        mix.column = std::move(column_mixed);
-        mixed_columns.emplace_back(std::move(mix));
+            for (size_t row_idx = 0; row_idx < column_read.column->size(); ++row_idx)
+            {
+                if (row_idx < defaults_mask.size() && defaults_mask[row_idx])
+                {
+                    if (column_def.column->isColumnConst())
+                        column_mixed->insert((*column_def.column)[row_idx]);
+                    else
+                        column_mixed->insertFrom(*column_def.column, row_idx);
+                }
+                else
+                    column_mixed->insertFrom(*column_read.column, row_idx);
+            }
+
+            mixed_columns.emplace(std::make_pair(block_column_position, std::move(column_mixed)));
+        }
     }
 
-    for (auto & column : mixed_columns)
+    if (!mixed_columns.empty())
     {
-        res.erase(column.name);
-        res.insert(std::move(column));
+        /// replace columns saving block structure
+        MutableColumns mutation = res.mutateColumns();
+        for (size_t position = 0; position < mutation.size(); ++position)
+        {
+            auto it = mixed_columns.find(position);
+            if (it != mixed_columns.end())
+                mutation[position] = std::move(it->second);
+        }
+        res.setColumns(std::move(mutation));
     }
 
     return res;
