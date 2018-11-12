@@ -3,6 +3,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
 #include <IO/CachedCompressedReadBuffer.h>
+#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
@@ -162,9 +163,10 @@ MergeTreeReader::Stream::Stream(
     MarkCache * mark_cache_, bool save_marks_in_cache_,
     UncompressedCache * uncompressed_cache,
     size_t aio_threshold, size_t max_read_buffer_size,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+    MergeTreeDataFormatVersion format_version_)
     : path_prefix(path_prefix_), extension(extension_), marks_count(marks_count_)
-    , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
+    , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_), format_version(format_version_)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range = 0;
@@ -263,6 +265,8 @@ const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
 void MergeTreeReader::Stream::loadMarks()
 {
     std::string path = path_prefix + ".mrk";
+    if (format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+        path += "2";
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
@@ -270,7 +274,11 @@ void MergeTreeReader::Stream::loadMarks()
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(path).getSize();
-        size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
+        size_t expected_file_size;
+        if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+            expected_file_size = (sizeof(MarkInCompressedFile) - sizeof(size_t)) * marks_count;
+        else
+            expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
                 "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
@@ -375,7 +383,7 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
         streams.emplace(stream_name, std::make_unique<Stream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type, storage.format_version));
     };
 
     IDataType::SubstreamPath path;

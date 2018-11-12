@@ -63,7 +63,8 @@ private:
             MarkCache * mark_cache, bool save_marks_in_cache,
             UncompressedCache * uncompressed_cache,
             size_t aio_threshold, size_t max_read_buffer_size,
-            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
+            MergeTreeDataFormatVersion format_version_);
 
         void seekToMark(size_t index);
         void seekToStart();
@@ -87,6 +88,7 @@ private:
         bool save_marks_in_cache;
         MarkCache::MappedPtr marks;
 
+        MergeTreeDataFormatVersion format_version;
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
     };
