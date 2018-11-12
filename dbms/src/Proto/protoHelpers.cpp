@@ -147,7 +147,7 @@ namespace ErrorCodes
         ColumnWithTypeAndName proto_column;
         proto_column.name = tableMetaColumnName();
         proto_column.type = std::make_shared<DataTypeUInt8>();
-        proto_column.column = std::move(storeTableMeta(table_meta));
+        proto_column.column = storeTableMeta(table_meta);
 
         Block block;
         block.insert(std::move(proto_column));
