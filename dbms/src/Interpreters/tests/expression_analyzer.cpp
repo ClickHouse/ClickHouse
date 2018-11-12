@@ -37,7 +37,7 @@ struct TestEntry
 
         auto res =  SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
 
-        if (!checkAliases(res))
+        if (!checkAliases(*res))
         {
             collectWithAnalysers(context, ast);
             return false;
