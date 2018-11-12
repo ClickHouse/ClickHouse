@@ -20,6 +20,8 @@ class ASTSelectQuery;
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 
+struct SyntaxAnalyzerResult;
+using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
@@ -218,6 +220,8 @@ private:
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth = 0;
+    NamesAndTypesList source_columns;
+    SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.

@@ -49,8 +49,8 @@ using LogAST = DebugASTLog<false>; /// set to true to enable logs
 using Aliases = std::unordered_map<String, ASTPtr>;
 
 /// Add columns from storage to source_columns list.
-NamesAndTypesList collectSourceColumns(NamesAndTypesList source_columns, ASTSelectQuery * select_query,
-                                       const Context & context, StoragePtr & storage);
+void collectSourceColumns(ASTSelectQuery * select_query, const Context & context,
+                          StoragePtr & storage, NamesAndTypesList & source_columns);
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to unqualified names.
 void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
@@ -58,20 +58,21 @@ void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
 
 /// For star nodes(`*`), expand them to a list of all columns. For literal nodes, substitute aliases.
 void normalizeTree(
-        SyntaxAnalyzerResult & result,
-        const Names & source_columns,
-        const NameSet & source_columns_set,
-        const StoragePtr & storage,
-        const Context & context,
-        const ASTSelectQuery * select_query,
-        bool asterisk_left_columns_only);
+    ASTPtr & query,
+    SyntaxAnalyzerResult & result,
+    const Names & source_columns,
+    const NameSet & source_columns_set,
+    const StoragePtr & storage,
+    const Context & context,
+    const ASTSelectQuery * select_query,
+    bool asterisk_left_columns_only);
 
 /// Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns);
 
 /// Replacing scalar subqueries with constant values.
-void executeScalarSubqueries(SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
+void executeScalarSubqueries(ASTPtr & query, const ASTSelectQuery * select_query,
                              const Context & context, size_t subquery_depth);
 
 /// Remove Function_if AST if condition is constant.
@@ -89,7 +90,7 @@ void optimizeLimitBy(const ASTSelectQuery * select_query);
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query);
 
-void getArrayJoinedColumns(SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
+void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set);
 
 /// Parse JOIN ON expression and collect ASTs for joined columns.
@@ -101,17 +102,17 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
                           const NameSet & source_columns, const Context & context);
 }
 
-SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
-    const ASTPtr & query,
-    NamesAndTypesList source_columns,
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
+    ASTPtr & query,
+    const NamesAndTypesList & source_columns_,
     const Names & required_result_columns,
     size_t subquery_depth) const
 {
     SyntaxAnalyzerResult result;
     result.storage = storage;
-    result.query = query; // ->clone();
-    auto * select_query = typeid_cast<ASTSelectQuery *>(result.query.get());
-    result.source_columns = collectSourceColumns(std::move(source_columns), select_query, context, result.storage);
+    result.source_columns = source_columns_;
+    auto * select_query = typeid_cast<ASTSelectQuery *>(query.get());
+    collectSourceColumns(select_query, context, result.storage, result.source_columns);
 
     const auto & settings = context.getSettingsRef();
 
@@ -121,7 +122,7 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
         source_columns_list.emplace_back(type_name.name);
     NameSet source_columns_set(source_columns_list.begin(), source_columns_list.end());
 
-    translateQualifiedNames(result.query, select_query, source_columns_set, context);
+    translateQualifiedNames(query, select_query, source_columns_set, context);
 
     /// Depending on the user's profile, check for the execution rights
     /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
@@ -138,7 +139,7 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    normalizeTree(result, source_columns_list, source_columns_set, result.storage,
+    normalizeTree(query, result, source_columns_list, source_columns_set, result.storage,
                   context, select_query, settings.asterisk_left_columns_only != 0);
 
     /// Remove unneeded columns according to 'required_result_columns'.
@@ -148,10 +149,10 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
     removeUnneededColumnsFromSelectClause(select_query, required_result_columns);
 
     /// Executing scalar subqueries - replacing them with constant values.
-    executeScalarSubqueries(result, select_query, context, subquery_depth);
+    executeScalarSubqueries(query, select_query, context, subquery_depth);
 
     /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
-    optimizeIfWithConstantCondition(result.query, result.aliases);
+    optimizeIfWithConstantCondition(query, result.aliases);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, source_columns_set, context);
@@ -166,19 +167,15 @@ SyntaxAnalyzerResult SyntaxAnalyzer::analyze(
     optimizeUsing(select_query);
 
     /// array_join_alias_to_name, array_join_result_to_source.
-    getArrayJoinedColumns(result, select_query, source_columns_list, source_columns_set);
+    getArrayJoinedColumns(query, result, select_query, source_columns_list, source_columns_set);
 
     /// Push the predicate expression down to the subqueries.
     result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
     collectJoinedColumns(result.analyzed_join, select_query, source_columns_set, context);
 
-    return result;
+    return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
-
-
-namespace
-{
 
 void removeDuplicateColumns(NamesAndTypesList & columns)
 {
@@ -192,8 +189,11 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
     }
 }
 
-NamesAndTypesList collectSourceColumns(NamesAndTypesList source_columns, ASTSelectQuery * select_query,
-                                       const Context & context, StoragePtr & storage)
+namespace
+{
+
+void collectSourceColumns(ASTSelectQuery * select_query, const Context & context,
+                          StoragePtr & storage, NamesAndTypesList & source_columns)
 {
     if (!storage && select_query)
     {
@@ -217,7 +217,6 @@ NamesAndTypesList collectSourceColumns(NamesAndTypesList source_columns, ASTSele
     }
 
     removeDuplicateColumns(source_columns);
-    return source_columns;
 }
 
 void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
@@ -234,6 +233,7 @@ void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
 }
 
 void normalizeTree(
+    ASTPtr & query,
     SyntaxAnalyzerResult & result,
     const Names & source_columns,
     const NameSet & source_columns_set,
@@ -280,7 +280,7 @@ void normalizeTree(
     }
 
     auto & settings = context.getSettingsRef();
-    QueryNormalizer(result.query, result.aliases, settings, all_columns_name, table_names_and_column_names).perform();
+    QueryNormalizer(query, result.aliases, settings, all_columns_name, table_names_and_column_names).perform();
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -334,7 +334,7 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
     elements = std::move(new_elements);
 }
 
-void executeScalarSubqueries(SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
+void executeScalarSubqueries(ASTPtr & query, const ASTSelectQuery * select_query,
                              const Context & context, size_t subquery_depth)
 {
     LogAST log;
@@ -342,11 +342,11 @@ void executeScalarSubqueries(SyntaxAnalyzerResult & result, const ASTSelectQuery
     if (!select_query)
     {
         ExecuteScalarSubqueriesVisitor visitor(context, subquery_depth, log.stream());
-        visitor.visit(result.query);
+        visitor.visit(query);
     }
     else
     {
-        for (auto & child : result.query->children)
+        for (auto & child : query->children)
         {
             /// Do not go to FROM, JOIN, UNION.
             if (!typeid_cast<const ASTTableExpression *>(child.get())
@@ -672,7 +672,7 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void getArrayJoinedColumns(SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
+void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set)
 {
     if (select_query && select_query->array_join_expression_list())
@@ -699,7 +699,7 @@ void getArrayJoinedColumns(SyntaxAnalyzerResult & result, const ASTSelectQuery *
             ArrayJoinedColumnsVisitor visitor(result.array_join_name_to_alias,
                                               result.array_join_alias_to_name,
                                               result.array_join_result_to_source);
-            visitor.visit(result.query);
+            visitor.visit(query);
         }
 
         /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
