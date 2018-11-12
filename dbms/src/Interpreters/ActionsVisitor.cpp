@@ -49,9 +49,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// defined in ExpressionAnalyser.cpp
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-
+NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+{
+    return std::find_if(cols.begin(), cols.end(),
+                        [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
+}
 
 void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
                      const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
