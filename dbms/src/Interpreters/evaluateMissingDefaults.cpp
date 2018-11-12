@@ -90,7 +90,8 @@ void evaluateMissingDefaultsUnsafe(Block & block,
     for (size_t i = 0, size = block.columns(); i < size; ++i)
         available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
 
-    ExpressionAnalyzer{default_expr_list, context, {}, available_columns}.getActions(true)->execute(block);
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, available_columns);
+    ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
 }
 
 }
