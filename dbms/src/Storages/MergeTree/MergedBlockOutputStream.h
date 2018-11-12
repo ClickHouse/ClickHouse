@@ -72,7 +72,9 @@ protected:
 
     /// Write data of one column.
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenOffsetColumns & offset_columns,
-                   bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
+                   bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state, size_t index_granularity);
+
+    size_t getBlockIndexGranularity(const Block & block) const;
 
     MergeTreeData & storage;
 

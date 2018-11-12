@@ -100,6 +100,7 @@ MergeTreeData::MergeTreeData(
     context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
+    index_granularity_bytes(settings_.index_granularity_bytes),
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),
@@ -113,6 +114,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
+    std::cerr << "LOADING PART\n";
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
@@ -121,11 +123,11 @@ MergeTreeData::MergeTreeData(
 
     initPrimaryKey();
 
+    size_t min_format_version(0);
     if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
         && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-    MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
     {
         try
@@ -146,11 +148,15 @@ MergeTreeData::MergeTreeData(
             e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name + "`)");
             throw;
         }
+        format_version = 0;
     }
     else
     {
+        if (settings_.index_granularity_bytes != 0)
+            min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY;
+        else
+            min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
         initPartitionKey();
-        min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
     auto path_exists = Poco::File(full_path).exists();
@@ -179,9 +185,19 @@ MergeTreeData::MergeTreeData(
         format_version = 0;
 
     if (format_version < min_format_version)
-        throw Exception(
-            "MergeTree data format version on disk doesn't support custom partitioning",
-            ErrorCodes::METADATA_MISMATCH);
+    {
+        if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
+            throw Exception(
+                "MergeTree data format version on disk doesn't support custom partitioning",
+                ErrorCodes::METADATA_MISMATCH);
+        else if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY.toUnderType())
+            throw Exception(
+                "MergeTree data format version on disk doesn't support adaptive index granularity",
+                ErrorCodes::METADATA_MISMATCH);
+
+
+    }
+
 }
 
 
