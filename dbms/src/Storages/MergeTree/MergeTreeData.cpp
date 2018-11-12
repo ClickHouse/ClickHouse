@@ -114,7 +114,6 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    std::cerr << "LOADING PART\n";
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 

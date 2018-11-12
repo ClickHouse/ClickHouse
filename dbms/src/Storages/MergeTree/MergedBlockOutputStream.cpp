@@ -119,6 +119,7 @@ void IMergedBlockOutputStream::writeData(
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
 
+    std::cerr << "Index granularity:" << index_granularity << std::endl;
     size_t size = column.size();
     size_t prev_mark = 0;
     while (prev_mark < size)
@@ -153,8 +154,11 @@ void IMergedBlockOutputStream::writeData(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
-                if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+                std::cerr << "Format version:" << storage.format_version << std::endl;
+                if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY) {
+                    std::cerr << "Writing index granularity:" << index_granularity << std::endl;
                     writeIntBinary(index_granularity, stream.marks);
+                }
             }, serialize_settings.path);
         }
 

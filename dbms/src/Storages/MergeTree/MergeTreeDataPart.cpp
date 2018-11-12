@@ -23,7 +23,10 @@
 
 #include <common/logger_useful.h>
 
-#define MERGE_TREE_MARK_SIZE (2 * sizeof(UInt64))
+namespace {
+    constexpr auto MERGE_TREE_MARK_SIZE_FIXED_INDEX_GRANULARITY = 2 * sizeof(UInt64);
+    constexpr auto MERGE_TREE_MARK_SIZE_ADAPTIVE_INDEX_GRANULARITY = 3 * sizeof(UInt64);
+}
 
 
 namespace DB
@@ -195,10 +198,12 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 
     for (const auto & column : columns)
     {
+        std::cerr << "Searching for column:" << column.name << std::endl;
         if (!hasColumnFiles(column.name))
             continue;
 
         const auto size = getColumnSize(column.name, *column.type).data_compressed;
+        std::cerr << "Column size:" <<size<<std::endl;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -444,8 +449,13 @@ void MergeTreeDataPart::loadIndex()
         if (columns.empty())
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        marks_count = Poco::File(getFullPath() + escapeForFileName(columns.front().name) + ".mrk")
-            .getSize() / MERGE_TREE_MARK_SIZE;
+        if (storage.format_version < MERGE_TREE_MARK_SIZE_ADAPTIVE_INDEX_GRANULARITY)
+            marks_count = Poco::File(getFullPath() + escapeForFileName(columns.front().name) + ".mrk")
+                .getSize() / MERGE_TREE_MARK_SIZE_FIXED_INDEX_GRANULARITY;
+        else
+            marks_count = Poco::File(getFullPath() + escapeForFileName(columns.front().name) + ".mrk2")
+                .getSize() / MERGE_TREE_MARK_SIZE_ADAPTIVE_INDEX_GRANULARITY;
+
     }
 
     size_t key_size = storage.primary_sort_columns.size();
