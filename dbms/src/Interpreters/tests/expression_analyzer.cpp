@@ -8,7 +8,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 
 #include <Analyzers/CollectAliases.h>
 #include <Analyzers/ExecuteTableFunctions.h>
@@ -35,11 +35,9 @@ struct TestEntry
     {
         ASTPtr ast = parse(query);
 
-        ExpressionAnalyzer analyzer(ast, context, {}, source_columns, required_result_columns);
+        auto res =  SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
 
-        const ExpressionAnalyzerData & data = analyzer.getAnalyzedData();
-
-        if (!checkAliases(data))
+        if (!checkAliases(*res))
         {
             collectWithAnalysers(context, ast);
             return false;
@@ -49,9 +47,9 @@ struct TestEntry
     }
 
 private:
-    bool checkAliases(const ExpressionAnalyzerData & data)
+    bool checkAliases(const SyntaxAnalyzerResult & res)
     {
-        for (const auto & alias : data.aliases)
+        for (const auto & alias : res.aliases)
         {
             const String & alias_name = alias.first;
             if (expected_aliases.count(alias_name) == 0 ||

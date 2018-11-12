@@ -48,8 +48,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
-find_package (Threads)
-
 add_subdirectory (src)
 
 set(dbms_headers)
