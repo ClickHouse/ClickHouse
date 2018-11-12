@@ -143,7 +143,7 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_identifier : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_none : "");
         column->formatImpl(settings, state, frame);
         settings.ostr << " " << (settings.hilite ? hilite_none : "");
         comment->formatImpl(settings, state, frame);

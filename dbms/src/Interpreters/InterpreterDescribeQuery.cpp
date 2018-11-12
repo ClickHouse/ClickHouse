@@ -45,7 +45,6 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
-    // TODO: may be it unneeded
     col.name = "comment_expression";
     block.insert(col);
 
