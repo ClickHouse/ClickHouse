@@ -133,14 +133,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
     const auto memory_amount = getMemoryAmount();
     { /// After full config loaded
 #if defined(__linux__)
-        if (config().getBool("binary_mlock",
+        if (config().getBool("mlock_executable",
+            false // TODO: uncomment after tests:
+/*
 #if NDEBUG
-            memory_amount > 8000000000
-                ? false // Change me to true in future
-                : false // Dont mlock if we have less than 8G ram
+            memory_amount > 16000000000
+                ? true // Change me to true in future
+                : false // Dont mlock if we have less than 16G ram
 #else
             false
 #endif
+*/
         ))
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
