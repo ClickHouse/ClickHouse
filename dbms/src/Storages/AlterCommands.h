@@ -56,7 +56,7 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(ColumnsDescription & columns_description) const;
+    void apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast = nullptr, ASTPtr * primary_key_ast = nullptr) const;
 
 };
 
@@ -66,7 +66,7 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description) const;
+    void apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast = nullptr, ASTPtr * primary_key_ast = nullptr) const;
 
     void validate(const IStorage & table, const Context & context);
 };

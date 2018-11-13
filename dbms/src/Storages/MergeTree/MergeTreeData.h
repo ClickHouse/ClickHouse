@@ -561,6 +561,7 @@ public:
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;
 
+    bool is_custom_partitioned = false;
     ExpressionActionsPtr partition_key_expr;
     Block partition_key_sample;
 
@@ -707,7 +708,7 @@ private:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setPrimaryKey(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast);
+    void setPrimaryKeyAndColumns(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check = false);
 
     void initPartitionKey();
 

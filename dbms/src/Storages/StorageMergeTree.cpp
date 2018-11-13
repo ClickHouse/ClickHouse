@@ -196,43 +196,25 @@ void StorageMergeTree::alter(
     data.checkAlter(params);
 
     auto new_columns = data.getColumns();
-    params.apply(new_columns);
-
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-
     ASTPtr new_order_by_ast = data.order_by_ast;
-
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    ASTPtr primary_expr_list_for_altering_parts;
+    params.apply(new_columns, &new_order_by_ast, &new_primary_key_ast);
 
+    ASTPtr primary_expr_list_for_altering_parts;
     for (const AlterCommand & param : params)
     {
-        if (param.type == AlterCommand::MODIFY_ORDER_BY)
+        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
         {
-            if (!data.primary_key_ast)
-            {
-                /// Primary and sorting key become independent after this ALTER so we have to
-                /// save the old ORDER BY expression as the new primary key.
-                new_primary_key_ast = data.order_by_ast->clone();
-            }
+            if (supportsSampling())
+                throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
 
-            new_order_by_ast = param.order_by;
-        }
-        else if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-        {
             primary_expr_list_for_altering_parts = MergeTreeData::extractKeyExpressionList(param.primary_key);
-            if (!data.primary_key_ast)
-                new_order_by_ast = param.primary_key;
-            else
-                new_primary_key_ast = param.primary_key;
         }
     }
 
-    if (primary_expr_list_for_altering_parts && supportsSampling())
-        throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
-
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
         if (auto transaction = data.alterDataPart(part, columns_for_parts, primary_expr_list_for_altering_parts, false))
@@ -265,10 +247,9 @@ void StorageMergeTree::alter(
     };
 
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
-    setColumns(std::move(new_columns));
 
     /// Reinitialize primary key because primary key column types might have changed.
-    data.setPrimaryKey(new_order_by_ast, new_primary_key_ast);
+    data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
 
     for (auto & transaction : transactions)
         transaction->commit();
