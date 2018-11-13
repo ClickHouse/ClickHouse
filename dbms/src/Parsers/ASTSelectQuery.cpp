@@ -4,10 +4,8 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/typeid_cast.h>
-#include "ASTSelectWithUnionQuery.h"
 
 
 namespace DB
@@ -308,44 +306,6 @@ bool ASTSelectQuery::array_join_is_left() const
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
     return getFirstTableJoin(*this);
-}
-
-
-void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
-{
-    if (!tables)
-        return;
-
-    ASTTablesInSelectQuery & tables_in_select_query = static_cast<ASTTablesInSelectQuery &>(*tables);
-
-    for (auto & child : tables_in_select_query.children)
-    {
-        const auto & tables_element = static_cast<ASTTablesInSelectQueryElement &>(*child);
-        if (tables_element.table_expression)
-        {
-            const auto table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
-
-            if (!table_expression->database_and_table_name && !table_expression->subquery)
-                continue;
-
-            if (table_expression->subquery)
-            {
-                const auto subquery = static_cast<const ASTSubquery *>(table_expression->subquery.get());
-                const auto select_with_union_query = static_cast<ASTSelectWithUnionQuery *>(subquery->children[0].get());
-                select_with_union_query->setDatabaseIfNeeded(database_name);
-            }
-            else if (table_expression->database_and_table_name->children.empty())
-            {
-                const ASTIdentifier & identifier = static_cast<const ASTIdentifier &>(*table_expression->database_and_table_name);
-
-                table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, identifier.name);
-            }
-            else if (table_expression->database_and_table_name->children.size() != 2)
-            {
-                throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-    }
 }
 
 

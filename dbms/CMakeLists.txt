@@ -48,8 +48,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
-find_package (Threads)
-
 add_subdirectory (src)
 
 set(dbms_headers)
@@ -263,6 +261,10 @@ if (NOT USE_INTERNAL_LZ4_LIBRARY)
 endif ()
 if (NOT USE_INTERNAL_ZSTD_LIBRARY)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
+if (USE_JEMALLOC)
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Core/Field.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB

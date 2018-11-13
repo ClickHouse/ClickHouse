@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/StringRange.h>
-
 #include <Interpreters/ExpressionActions.h>
 
 
