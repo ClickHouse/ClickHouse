@@ -201,7 +201,7 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(it->second.Get(PresenceType::InPartitionKey));
                         if (columns_mask[src_index++])
-                            res_columns[res_index++]->insert(it->second.Get(PresenceType::InSamplingKey));
+                            res_columns[res_index++]->insert(it->second.Get(PresenceType::InSampleKey));
                     }
 
                 }
