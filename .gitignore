@@ -10,6 +10,7 @@
 *.logrt
 
 /build
+/build_*
 /docs/build
 /docs/edit
 /docs/tools/venv/
@@ -243,3 +244,6 @@ website/presentations
 website/package-lock.json
 .DS_Store
 */.DS_Store
+
+# Ignore files for locally disabled tests
+/dbms/tests/queries/**/*.disabled

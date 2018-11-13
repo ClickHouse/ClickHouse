@@ -33,6 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -204,9 +205,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         res = interpreter->execute();
 
-        /// Delayed initialization of query streams (required for KILL QUERY purposes)
         if (process_list_entry)
-            (*process_list_entry)->setQueryStreams(res);
+        {
+            /// Query was killed before execution
+            if ((*process_list_entry)->isKilled())
+                throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
+                    ErrorCodes::QUERY_WAS_CANCELLED);
+            else
+                (*process_list_entry)->setQueryStreams(res);
+        }
 
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;

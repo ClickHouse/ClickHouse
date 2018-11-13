@@ -817,7 +817,7 @@ struct AggregationMethodKeysFixed
                 size_t bucket = i / 8;
                 size_t offset = i % 8;
                 UInt8 val = (reinterpret_cast<const UInt8 *>(&value.first)[bucket] >> offset) & 1;
-                null_map->insert(val);
+                null_map->insertValue(val);
                 is_null = val == 1;
             }
             else

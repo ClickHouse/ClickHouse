@@ -1475,9 +1475,9 @@ void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_src,
     Arena * arena) const
 {
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
-        decltype(it) res_it;
+        typename Table::iterator res_it;
         bool inserted;
         table_dst.emplace(it->first, res_it, inserted, it.getHash());
 
@@ -1512,9 +1512,9 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
-        decltype(it) res_it = table_dst.find(it->first, it.getHash());
+        typename Table::iterator res_it = table_dst.find(it->first, it.getHash());
 
         AggregateDataPtr res_data = table_dst.end() == res_it
             ? overflows

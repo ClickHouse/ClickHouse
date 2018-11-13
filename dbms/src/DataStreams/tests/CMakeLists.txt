@@ -11,3 +11,6 @@ target_link_libraries (union_stream2 dbms)
 
 add_executable (collapsing_sorted_stream collapsing_sorted_stream.cpp ${SRCS})
 target_link_libraries (collapsing_sorted_stream dbms)
+
+add_executable (finish_sorting_stream finish_sorting_stream.cpp ${SRCS})
+target_link_libraries (finish_sorting_stream dbms)

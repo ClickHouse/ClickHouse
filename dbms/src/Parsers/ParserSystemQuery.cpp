@@ -1,8 +1,6 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>

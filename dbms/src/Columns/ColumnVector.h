@@ -193,7 +193,7 @@ public:
         return data.allocated_bytes();
     }
 
-    void insert(const T value)
+    void insertValue(const T value)
     {
         data.push_back(value);
     }
@@ -217,7 +217,7 @@ public:
 
     Field operator[](size_t n) const override
     {
-        return typename NearestFieldType<T>::Type(data[n]);
+        return data[n];
     }
 
     void get(size_t n, Field & res) const override

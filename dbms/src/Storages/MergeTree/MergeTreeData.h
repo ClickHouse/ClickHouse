@@ -602,7 +602,7 @@ private:
     ASTPtr partition_by_ast;
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
-    const ASTPtr sample_by_ast;
+    ASTPtr sample_by_ast;
 
     bool require_part_metadata;
 

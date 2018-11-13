@@ -16,7 +16,7 @@ namespace DB
 static constexpr auto and_function_name = "and";
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
-    ASTSelectQuery * ast_select_, const Settings & settings_, const Context & context_)
+    ASTSelectQuery * ast_select_, ExtractedSettings && settings_, const Context & context_)
         : ast_select(ast_select_), settings(settings_), context(context_)
 {
 }
@@ -44,11 +44,8 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     /// split predicate with `and`
     PredicateExpressions outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
 
-    std::vector<ASTTableExpression *> tables_expression = getSelectTablesExpression(ast_select);
-    std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases;
-    for (const auto & table_expression : tables_expression)
-        database_and_table_with_aliases.emplace_back(
-            getTableNameWithAliasFromTableExpression(*table_expression, context.getCurrentDatabase()));
+    std::vector<DatabaseAndTableWithAlias> database_and_table_with_aliases =
+        getDatabaseAndTables(*ast_select, context.getCurrentDatabase());
 
     bool is_rewrite_subquery = false;
     for (const auto & outer_predicate : outer_predicate_expressions)
@@ -261,15 +258,14 @@ bool PredicateExpressionsOptimizer::optimizeExpression(const ASTPtr & outer_expr
 
 void PredicateExpressionsOptimizer::getAllSubqueryProjectionColumns(SubqueriesProjectionColumns & all_subquery_projection_columns)
 {
-    const auto tables_expression = getSelectTablesExpression(ast_select);
+    const auto tables_expression = getSelectTablesExpression(*ast_select);
 
     for (const auto & table_expression : tables_expression)
     {
         if (table_expression->subquery)
         {
             /// Use qualifiers to translate the columns of subqueries
-            const auto database_and_table_with_alias =
-                getTableNameWithAliasFromTableExpression(*table_expression, context.getCurrentDatabase());
+            DatabaseAndTableWithAlias database_and_table_with_alias(*table_expression, context.getCurrentDatabase());
             String qualified_name_prefix = database_and_table_with_alias.getQualifiedNamePrefix();
             getSubqueryProjectionColumns(all_subquery_projection_columns, qualified_name_prefix,
                                          static_cast<const ASTSubquery *>(table_expression->subquery.get())->children[0]);
@@ -306,8 +302,8 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 {
     /// first should normalize query tree.
     std::unordered_map<String, ASTPtr> aliases;
-    QueryAliasesVisitor query_aliases_visitor;
-    query_aliases_visitor.visit(ast, aliases, 0);
+    QueryAliasesVisitor query_aliases_visitor(aliases);
+    query_aliases_visitor.visit(ast);
     QueryNormalizer(ast, aliases, settings, {}, {}).perform();
 
     ASTs projection_columns;
@@ -336,7 +332,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
     if (!select_query->tables || select_query->tables->children.empty())
         return {};
 
-    std::vector<ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
+    std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
 
     if (const auto qualified_asterisk = typeid_cast<ASTQualifiedAsterisk *>(asterisk.get()))
     {
@@ -354,8 +350,7 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
         for (auto it = tables_expression.begin(); it != tables_expression.end(); ++it)
         {
             const ASTTableExpression * table_expression = *it;
-            const auto database_and_table_with_alias =
-                getTableNameWithAliasFromTableExpression(*table_expression, context.getCurrentDatabase());
+            DatabaseAndTableWithAlias database_and_table_with_alias(*table_expression, context.getCurrentDatabase());
             /// database.table.*
             if (num_components == 2 && !database_and_table_with_alias.database.empty()
                 && static_cast<const ASTIdentifier &>(*ident->children[0]).name == database_and_table_with_alias.database
@@ -394,8 +389,8 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
             else if (table_expression->database_and_table_name)
             {
                 const auto database_and_table_ast = static_cast<ASTIdentifier*>(table_expression->database_and_table_name.get());
-                const auto database_and_table_name = getDatabaseAndTableNameFromIdentifier(*database_and_table_ast);
-                storage = context.tryGetTable(database_and_table_name.first, database_and_table_name.second);
+                DatabaseAndTableWithAlias database_and_table_name(*database_and_table_ast);
+                storage = context.getTable(database_and_table_name.database, database_and_table_name.table);
             }
 
             const auto block = storage->getSampleBlock();
@@ -404,25 +399,6 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
         }
     }
     return projection_columns;
-}
-
-std::vector<ASTTableExpression *> PredicateExpressionsOptimizer::getSelectTablesExpression(ASTSelectQuery * select_query)
-{
-    if (!select_query->tables)
-        return {};
-
-    std::vector<ASTTableExpression *> tables_expression;
-    const ASTTablesInSelectQuery & tables_in_select_query = static_cast<const ASTTablesInSelectQuery &>(*select_query->tables);
-
-    for (const auto & child : tables_in_select_query.children)
-    {
-        ASTTablesInSelectQueryElement * tables_element = static_cast<ASTTablesInSelectQueryElement *>(child.get());
-
-        if (tables_element->table_expression)
-            tables_expression.emplace_back(static_cast<ASTTableExpression *>(tables_element->table_expression.get()));
-    }
-
-    return tables_expression;
 }
 
 void PredicateExpressionsOptimizer::cleanExpressionAlias(ASTPtr & expression)

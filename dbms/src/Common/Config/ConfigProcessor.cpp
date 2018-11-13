@@ -464,6 +464,8 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         std::string include_from_path;
         if (node)
         {
+            /// if we include_from env or zk.
+            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
             include_from_path = node->innerText();
         }
         else
