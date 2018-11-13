@@ -440,10 +440,9 @@ void FlatDictionary::calculateBytesAllocated()
 template <typename T>
 void FlatDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    const auto & null_value_ref = std::get<T>(attribute.null_values) =
-        null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<ContainerPtrType<T>>(attribute.arrays) =
-        std::make_unique<ContainerType<T>>(initial_array_size, null_value_ref);
+    attribute.null_values = null_value.get<typename NearestFieldType<T>::Type>();
+    const auto & null_value_ref = std::get<T>(attribute.null_values);
+    attribute.arrays = std::make_unique<ContainerType<T>>(initial_array_size, null_value_ref);
 }
 
 template <>
@@ -454,8 +453,7 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
     const String & string = null_value.get<typename NearestFieldType<String>::Type>();
     const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
     null_value_ref = StringRef{string_in_arena, string.size()};
-    std::get<ContainerPtrType<StringRef>>(attribute.arrays) =
-        std::make_unique<ContainerType<StringRef>>(initial_array_size, null_value_ref);
+    attribute.arrays = std::make_unique<ContainerType<StringRef>>(initial_array_size, null_value_ref);
 }
 
 

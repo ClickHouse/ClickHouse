@@ -352,8 +352,8 @@ void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<ContainerPtrType<T>>(attribute.maps) = std::make_unique<ContainerType<T>>();
+    attribute.null_values = null_value.get<typename NearestFieldType<T>::Type>();
+    attribute.maps = std::make_unique<ContainerType<T>>();
 }
 
 TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -380,8 +380,8 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
 
         case AttributeUnderlyingType::String:
         {
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<ContainerPtrType<StringRef>>(attr.maps) = std::make_unique<ContainerType<StringRef>>();
+            attr.null_values = null_value.get<String>();
+            attr.maps = std::make_unique<ContainerType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }
