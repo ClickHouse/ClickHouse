@@ -70,7 +70,7 @@ void FlatDictionary::isInImpl(
     PaddedPODArray<UInt8> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    const auto & attr = *std::get<ContainerPtrType<Key>>(hierarchical_attribute->arrays);
+    const auto & attr = std::get<ContainerType<Key>>(hierarchical_attribute->arrays);
     const auto rows = out.size();
 
     size_t loaded_size = attr.size();
@@ -395,9 +395,9 @@ void FlatDictionary::loadData()
 template <typename T>
 void FlatDictionary::addAttributeSize(const Attribute & attribute)
 {
-    const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
-    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_bytes();
-    bucket_count = array_ref->capacity();
+    const auto & array_ref = std::get<ContainerType<T>>(attribute.arrays);
+    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref.allocated_bytes();
+    bucket_count = array_ref.capacity();
 }
 
 
@@ -440,9 +440,9 @@ void FlatDictionary::calculateBytesAllocated()
 template <typename T>
 void FlatDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.get<typename NearestFieldType<T>::Type>();
+    attribute.null_values = T(null_value.get<typename NearestFieldType<T>::Type>());
     const auto & null_value_ref = std::get<T>(attribute.null_values);
-    attribute.arrays = std::make_unique<ContainerType<T>>(initial_array_size, null_value_ref);
+    attribute.arrays.emplace<ContainerType<T>>(initial_array_size, null_value_ref);
 }
 
 template <>
@@ -450,10 +450,10 @@ void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Fi
 {
     attribute.string_arena = std::make_unique<Arena>();
     auto & null_value_ref = std::get<StringRef>(attribute.null_values);
-    const String & string = null_value.get<typename NearestFieldType<String>::Type>();
+    const String & string = null_value.get<String>();
     const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
     null_value_ref = StringRef{string_in_arena, string.size()};
-    attribute.arrays = std::make_unique<ContainerType<StringRef>>(initial_array_size, null_value_ref);
+    attribute.arrays.emplace<ContainerType<StringRef>>(initial_array_size, null_value_ref);
 }
 
 
@@ -523,7 +523,7 @@ void FlatDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
-    const auto & attr = *std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
+    const auto & attr = std::get<ContainerType<AttributeType>>(attribute.arrays);
     const auto rows = ext::size(ids);
 
     for (const auto row : ext::range(0, rows))
@@ -541,7 +541,7 @@ void FlatDictionary::resize(Attribute & attribute, const Key id)
     if (id >= max_array_size)
         throw Exception{name + ": identifier should be less than " + toString(max_array_size), ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-    auto & array = *std::get<ContainerPtrType<T>>(attribute.arrays);
+    auto & array = std::get<ContainerType<T>>(attribute.arrays);
     if (id >= array.size())
     {
         const size_t elements_count = id + 1; //id=0 -> elements_count=1
@@ -554,7 +554,7 @@ template <typename T>
 void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T & value)
 {
     resize<T>(attribute, id);
-    auto & array = *std::get<ContainerPtrType<T>>(attribute.arrays);
+    auto & array = std::get<ContainerType<T>>(attribute.arrays);
     array[id] = value;
     loaded_ids[id] = true;
 }
@@ -564,7 +564,7 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const 
 {
     resize<StringRef>(attribute, id);
     const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-    auto & array = *std::get<ContainerPtrType<StringRef>>(attribute.arrays);
+    auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
     array[id] = StringRef{string_in_arena, string.size()};
     loaded_ids[id] = true;
 }
