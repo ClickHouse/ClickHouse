@@ -42,15 +42,8 @@ public:
     const ColumnsDescription & getColumns() const override { return data.getColumns(); }
     void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
-    NameAndTypePair getColumn(const String & column_name) const override
-    {
-        return data.getColumn(column_name);
-    }
-
-    bool hasColumn(const String & column_name) const override
-    {
-        return data.hasColumn(column_name);
-    }
+    NameAndTypePair getColumn(const String & column_name) const override { return data.getColumn(column_name); }
+    bool hasColumn(const String & column_name) const override { return data.hasColumn(column_name); }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -66,11 +59,7 @@ public:
       */
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -147,6 +136,13 @@ private:
         std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
     void clearOldMutations();
+
+    // Partition helpers
+    void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context);
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
