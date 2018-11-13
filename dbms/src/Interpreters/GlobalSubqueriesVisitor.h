@@ -1,5 +1,21 @@
 #pragma once
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Common/typeid_cast.h>
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Databases/IDatabase.h>
+#include <Storages/StorageMemory.h>
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
 
