@@ -14,7 +14,7 @@ enum class PresenceType : int32_t
     InPrimaryKey = 1<<0,
     InOrderKey = 1<<1,
     InPartitionKey = 1<<2,
-    InSamplingKey = 1<<3,
+    InSampleKey = 1<<3,
 };
 
 
