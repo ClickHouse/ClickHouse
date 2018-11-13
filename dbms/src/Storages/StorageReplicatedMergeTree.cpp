@@ -407,9 +407,6 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    /// Note: setting columns first so that the new sorting key can use new columns.
-    setColumns(std::move(new_columns));
-
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_order_by_ast = data.order_by_ast;
     IDatabase::ASTModifier storage_modifier;
@@ -418,9 +415,14 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         ParserNotEmptyExpressionList parser(false);
         auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
 
-        auto tuple = makeASTFunction("tuple");
-        tuple->arguments->children = new_sorting_key_expr_list->children;
-        new_order_by_ast = tuple;
+        if (new_sorting_key_expr_list->children.size() == 1)
+            new_order_by_ast = new_sorting_key_expr_list->children[0];
+        else
+        {
+            auto tuple = makeASTFunction("tuple");
+            tuple->arguments->children = new_sorting_key_expr_list->children;
+            new_order_by_ast = tuple;
+        }
 
         if (!data.primary_key_ast)
         {
@@ -434,20 +436,22 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
             auto & storage_ast = typeid_cast<ASTStorage &>(ast);
 
             if (!storage_ast.order_by)
-                throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR); /// TODO: better exception message
+                throw Exception(
+                    "ALTER MODIFY ORDER BY of default-partitioned tables is not supported",
+                    ErrorCodes::LOGICAL_ERROR);
 
             if (new_primary_key_ast.get() != data.primary_key_ast.get())
                 storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
-            storage_ast.set(storage_ast.order_by, tuple);
+            storage_ast.set(storage_ast.order_by, new_order_by_ast);
         };
     }
 
-    context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), storage_modifier);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    data.setPrimaryKey(new_order_by_ast, new_primary_key_ast);
+    data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
 }
 
 
@@ -3044,21 +3048,24 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         data.checkAlter(params);
 
         for (const AlterCommand & param : params)
+        {
             if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
                 throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
+        }
 
         ColumnsDescription new_columns = data.getColumns();
-        params.apply(new_columns);
+        ASTPtr new_order_by_ast = data.order_by_ast;
+        ASTPtr new_primary_key_ast = data.primary_key_ast;
+        params.apply(new_columns, &new_order_by_ast, &new_primary_key_ast);
+
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
             changed_nodes.emplace_back(zookeeper_path, "columns", new_columns_str);
 
         ReplicatedMergeTreeTableMetadata new_metadata(data);
-        for (const AlterCommand & param : params)
-        {
-            if (param.type == AlterCommand::MODIFY_ORDER_BY)
-                new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(param.order_by));
-        }
+        if (new_order_by_ast.get() != data.order_by_ast.get())
+            new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
+
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
             changed_nodes.emplace_back(zookeeper_path, "metadata", new_metadata_str);

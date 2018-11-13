@@ -96,8 +96,7 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{columns_},
-    context(context_),
+    : context(context_),
     merging_params(merging_params_),
     index_granularity(settings_.index_granularity),
     settings(settings_),
@@ -111,10 +110,10 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
+    setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
+
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
-
-    setPrimaryKey(order_by_ast_, primary_key_ast_);
 
     if (sample_by_ast)
     {
@@ -149,6 +148,7 @@ MergeTreeData::MergeTreeData(
     }
     else
     {
+        is_custom_partitioned = true;
         initPartitionKey();
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
@@ -214,7 +214,8 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKey(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast)
+void MergeTreeData::setPrimaryKeyAndColumns(
+    const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check)
 {
     if (!new_order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -253,7 +254,51 @@ void MergeTreeData::setPrimaryKey(const ASTPtr & new_order_by_ast, ASTPtr new_pr
         }
     }
 
-    auto all_columns = getColumns().getAllPhysical();
+    auto all_columns = new_columns.getAllPhysical();
+
+    if (order_by_ast && only_check)
+    {
+        /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
+        /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
+
+        ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+        for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
+        {
+            if (old_i < sorting_key_columns.size())
+            {
+                if (new_sorting_key_columns[new_i] != sorting_key_columns[old_i])
+                    added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
+                else
+                    ++old_i;
+            }
+            else
+                added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
+        }
+
+        if (!added_key_column_expr_list->children.empty())
+        {
+            auto syntax = SyntaxAnalyzer(context, {}).analyze(added_key_column_expr_list, all_columns);
+            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, context)
+                .getRequiredSourceColumns();
+
+            NamesAndTypesList deleted_columns;
+            NamesAndTypesList added_columns;
+            getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+
+            for (const String & col : used_columns)
+            {
+                if (!added_columns.contains(col) || deleted_columns.contains(col))
+                    throw Exception("Existing column " + col + " is used in the expression that was "
+                        "added to the sorting key. You can add expressions that use only the newly added columns",
+                        ErrorCodes::BAD_ARGUMENTS);
+
+                if (new_columns.defaults.count(col))
+                    throw Exception("Newly added column " + col + " has a default expression, so adding "
+                        "expressions that use it to the sorting key is forbidden",
+                        ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+    }
 
     auto new_sorting_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_sorting_key_expr_list, all_columns);
     auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
@@ -277,16 +322,22 @@ void MergeTreeData::setPrimaryKey(const ASTPtr & new_order_by_ast, ASTPtr new_pr
         new_primary_key_data_types.push_back(elem.type);
     }
 
-    order_by_ast = new_order_by_ast;
-    sorting_key_columns = std::move(new_sorting_key_columns);
-    sorting_key_expr = std::move(new_sorting_key_expr);
+    if (!only_check)
+    {
+        setColumns(new_columns);
 
-    primary_key_ast = new_primary_key_ast;
-    primary_key_columns = std::move(new_primary_key_columns);
-    primary_key_expr = std::move(new_primary_key_expr);
-    primary_key_sample = std::move(new_primary_key_sample);
-    primary_key_data_types = std::move(new_primary_key_data_types);
+        order_by_ast = new_order_by_ast;
+        sorting_key_columns = std::move(new_sorting_key_columns);
+        sorting_key_expr = std::move(new_sorting_key_expr);
+
+        primary_key_ast = new_primary_key_ast;
+        primary_key_columns = std::move(new_primary_key_columns);
+        primary_key_expr = std::move(new_primary_key_expr);
+        primary_key_sample = std::move(new_primary_key_sample);
+        primary_key_data_types = std::move(new_primary_key_data_types);
+    }
 }
+
 
 ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 {
@@ -922,7 +973,9 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
-    commands.apply(new_columns);
+    ASTPtr new_order_by_ast = order_by_ast;
+    ASTPtr new_primary_key_ast = primary_key_ast;
+    commands.apply(new_columns, &new_order_by_ast, &new_primary_key_ast);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -979,7 +1032,17 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
                     "ALTER of key column " + command.column_name + " must be metadata-only",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
+
+        if (command.type == AlterCommand::MODIFY_ORDER_BY)
+        {
+            if (!is_custom_partitioned)
+                throw Exception(
+                    "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
     }
+
+    setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;

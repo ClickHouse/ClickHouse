@@ -84,6 +84,19 @@ size_t NamesAndTypesList::sizeOfDifference(const NamesAndTypesList & rhs) const
     return (std::unique(vector.begin(), vector.end()) - vector.begin()) * 2 - size() - rhs.size();
 }
 
+void NamesAndTypesList::getDifference(const NamesAndTypesList & rhs, NamesAndTypesList & deleted, NamesAndTypesList & added) const
+{
+    NamesAndTypes lhs_vector(begin(), end());
+    std::sort(lhs_vector.begin(), lhs_vector.end());
+    NamesAndTypes rhs_vector(rhs.begin(), rhs.end());
+    std::sort(rhs_vector.begin(), rhs_vector.end());
+
+    std::set_difference(lhs_vector.begin(), lhs_vector.end(), rhs_vector.begin(), rhs_vector.end(),
+        std::back_inserter(deleted));
+    std::set_difference(rhs_vector.begin(), rhs_vector.end(), lhs_vector.begin(), lhs_vector.end(),
+        std::back_inserter(added));
+}
+
 Names NamesAndTypesList::getNames() const
 {
     Names res;

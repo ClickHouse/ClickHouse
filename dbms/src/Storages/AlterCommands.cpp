@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -110,7 +111,7 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
     return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
-void AlterCommand::apply(ColumnsDescription & columns_description) const
+void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast, ASTPtr * primary_key_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -240,22 +241,43 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
             /// both old and new columns have default expression, update it
             columns_description.defaults[column_name].expression = default_expression;
     }
-    else if (type == MODIFY_PRIMARY_KEY || type == MODIFY_ORDER_BY)
+    else if (type == MODIFY_PRIMARY_KEY)
     {
-        /// This have no relation to changing the list of columns.
-        /// TODO Check that all columns exist, that only columns with constant defaults are added.
+        if (!primary_key_ast || !order_by_ast)
+            throw Exception("ALTER MODIFY PRIMARY KEY is not supported for this type of tables",
+                ErrorCodes::BAD_ARGUMENTS);
+
+        if (!(*primary_key_ast))
+            *order_by_ast = primary_key;
+        else
+            *primary_key_ast = primary_key;
+    }
+    else if (type == MODIFY_ORDER_BY)
+    {
+        if (!primary_key_ast || !order_by_ast)
+            throw Exception("ALTER MODIFY PRIMARY KEY is not supported for this type of tables",
+                ErrorCodes::BAD_ARGUMENTS);
+
+        if (!(*primary_key_ast))
+        {
+            /// Primary and sorting key become independent after this ALTER so we have to
+            /// save the old ORDER BY expression as the new primary key.
+            *primary_key_ast = (*order_by_ast)->clone();
+        }
+
+        *order_by_ast = order_by;
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
 
-void AlterCommands::apply(ColumnsDescription & columns_description) const
+void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast, ASTPtr * primary_key_ast) const
 {
     auto new_columns_description = columns_description;
 
     for (const AlterCommand & command : *this)
-        command.apply(new_columns_description);
+        command.apply(new_columns_description, order_by_ast, primary_key_ast);
 
     columns_description = std::move(new_columns_description);
 }
