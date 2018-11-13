@@ -128,17 +128,26 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     const auto fallback_pos = pos;
     if (!s_default.check(pos, expected) &&
         !s_materialized.check(pos, expected) &&
-        !s_alias.check(pos, expected))
+        !s_alias.check(pos, expected) &&
+        !s_comment.check(pos, expected))
     {
         type_parser.parse(pos, type, expected);
     }
     else
         pos = fallback_pos;
 
-    /// parse {DEFAULT, MATERIALIZED, ALIAS}
+    /// parse {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
     String default_specifier;
     ASTPtr default_expression;
+    ASTPtr comment_expression;
     Pos pos_before_specifier = pos;
+    if (!s_default.ignore(pos, expected) &&
+        !s_materialized.ignore(pos, expected) &&
+        !s_alias.ignore(pos, expected) &&
+        !s_comment.ignore(pos, expected) &&
+        !type)
+        return false;  /// reject sole column name without type
+
     if (s_default.ignore(pos, expected) ||
         s_materialized.ignore(pos, expected) ||
         s_alias.ignore(pos, expected))
@@ -149,14 +158,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!expr_parser.parse(pos, default_expression, expected))
             return false;
     }
-    else if (!type)
-        return false; /// reject sole column name without type
-
-    ASTPtr comment_expression;
-    if (s_comment.ignore(pos, expected))
+    else if (s_comment.ignore(pos, expected))
     {
         string_literal_parser.parse(pos, comment_expression, expected);
     }
+    else if (!type) // TODO: тут надо очень хорошо подумать. есть проблема с тем, что для modify column имя колонки и коммент ок, а для создания таблицы не ок.
+        return false; /// reject sole column name without type
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;

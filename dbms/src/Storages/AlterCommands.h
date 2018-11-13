@@ -56,6 +56,8 @@ struct AlterCommand
 
     void apply(ColumnsDescription & columns_description) const;
 
+    /// Checks that not only metadata touched by that command
+    bool is_mutable() const;
 };
 
 class IStorage;

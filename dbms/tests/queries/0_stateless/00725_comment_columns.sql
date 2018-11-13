@@ -60,4 +60,18 @@ FROM system.columns
 WHERE table = 'check_query_comment_column' and database = 'test'
 FORMAT PrettyCompactNoEscapes;
 
-DROP table test.check_query_comment_column;
+DROP TABLE IF test.check_query_comment_column;
+
+CREATE TABLE test.check_query_comment_column
+  (
+    first_column UInt8 COMMENT 'first comment'
+  ) ENGINE = TinyLog;
+
+ALTER TABLE test.check_query_comment_column MODIFY COLUMN first_column COMMENT 'another comment';
+
+SELECT table, name, comment
+FROM system.columns
+WHERE table = 'check_query_comment_column' and database = 'test'
+FORMAT PrettyCompactNoEscapes;
+
+DROP TABLE IF EXISTS test.check_query_comment_column;
