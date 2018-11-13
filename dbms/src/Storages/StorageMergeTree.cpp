@@ -780,8 +780,45 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
+void StorageMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+{
+    for (const PartitionCommand & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                checkPartitionCanBeDropped(command.partition);
+                dropPartition(command.partition, command.detach, context);
+                break;
 
-void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & partition, bool detach, const Context & context)
+            case PartitionCommand::ATTACH_PARTITION:
+                attachPartition(command.partition, command.part, context);
+                break;
+
+            case PartitionCommand::REPLACE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+            }
+            break;
+
+            case PartitionCommand::FREEZE_PARTITION:
+                freezePartition(command.partition, command.with_name, context);
+                break;
+
+            case PartitionCommand::CLEAR_COLUMN:
+                clearColumnInPartition(command.partition, command.column_name, context);
+                break;
+
+            default:
+                IStorage::partition(query, commands, context); // should throw an exception.
+        }
+    }
+}
+
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
 {
     {
         /// Asks to complete merges and does not allow them to start.
