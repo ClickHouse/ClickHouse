@@ -261,7 +261,7 @@ void RangeHashedDictionary::calculateBytesAllocated()
 template <typename T>
 void RangeHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = null_value.get<typename NearestFieldType<T>::Type>();
+    attribute.null_values = T(null_value.get<typename NearestFieldType<T>::Type>());
     attribute.maps = std::make_unique<Collection<T>>();
 }
 
