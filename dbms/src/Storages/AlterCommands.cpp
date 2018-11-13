@@ -188,6 +188,20 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     }
     else if (type == MODIFY_COLUMN)
     {
+        if (!is_mutable())
+        {
+            auto & comments = columns_description.comments;
+            if (comment.empty())
+            {
+                if (auto it = comments.find(column_name); it != comments.end())
+                    comments.erase(it);
+            }
+            else
+                columns_description.comments[column_name] = comment;
+
+            return;
+        }
+
         const auto default_it = columns_description.defaults.find(column_name);
         const auto had_default_expr = default_it != std::end(columns_description.defaults);
         const auto old_default_kind = had_default_expr ? default_it->second.kind : ColumnDefaultKind{};
@@ -256,6 +270,15 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
+bool AlterCommand::is_mutable() const
+{
+    if (type == COMMENT_COLUMN)
+        return false;
+    if (type == MODIFY_COLUMN)
+        return data_type.get() || default_expression;
+
+    return true;
+}
 
 void AlterCommands::apply(ColumnsDescription & columns_description) const
 {

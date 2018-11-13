@@ -239,8 +239,8 @@ public:
     {
         for (const auto & param : params)
         {
-            if (param.type != AlterCommand::Type::COMMENT_COLUMN)
-                throw Exception("Method alter only supports change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+            if (param.is_mutable())
+                throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
         }
 
         auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
