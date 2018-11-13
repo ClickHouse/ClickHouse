@@ -4894,7 +4894,7 @@ var Result = function () {
               term = _exposeLoaderLunrLunr2.default[lang].stemmer(new _exposeLoaderLunrLunr2.default.Token(term)).toString();
             }
           }
-          query.term(term, { wildcard: _exposeLoaderLunrLunr2.default.Query.wildcard.TRAILING });
+          query.term(term, { wildcard: _exposeLoaderLunrLunr2.default.Query.wildcard.TRAILING | _exposeLoaderLunrLunr2.default.Query.wildcard.LEADING });
         });
       })
 
