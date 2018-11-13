@@ -385,7 +385,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTCreate
     {
         FillColumnPresenceInTableDeclaration(res.presences, storage_def->order_by, PresenceType::InOrderKey);
         FillColumnPresenceInTableDeclaration(res.presences, storage_def->partition_by, PresenceType::InPartitionKey);
-        FillColumnPresenceInTableDeclaration(res.presences, storage_def->sample_by, PresenceType::InSamplingKey);
+        FillColumnPresenceInTableDeclaration(res.presences, storage_def->sample_by, PresenceType::InSampleKey);
     }
 
     if (res.ordinary.size() + res.materialized.size() == 0)

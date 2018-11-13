@@ -22,14 +22,19 @@ enum class PresenceType : int32_t
 class ColumnPresence
 {
 public:
-    bool Get(PresenceType type)
+    bool Get(PresenceType type) const
     {
-        return static_cast<bool>(presenceMask & static_cast<int32_t>(type));
+        return (presenceMask & static_cast<int32_t>(type)) != 0;
     }
 
     void Set(PresenceType type)
     {
         presenceMask |= static_cast<int32_t>(type);
+    }
+
+    void Remove(PresenceType type)
+    {
+        presenceMask &= ~static_cast<int32_t>(type);
     }
 
 private:

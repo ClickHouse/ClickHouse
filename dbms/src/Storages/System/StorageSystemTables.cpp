@@ -252,7 +252,7 @@ protected:
                 }
                 else
                 {
-                    src_index += 2;
+                    src_index += 2; // TODO: подумать над этим
                 }
 
                 const auto table_it = context.getTable(database_name, table_name);
