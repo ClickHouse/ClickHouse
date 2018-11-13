@@ -515,11 +515,10 @@ public:
         std::swap(m_size, rhs.m_size);
         std::swap(grower, rhs.grower);
 
-        static_cast<Hash &>(*this) = std::move(static_cast<Hash &>(rhs));
-        static_cast<Allocator &>(*this) = std::move(static_cast<Allocator &>(rhs));
-        static_cast<typename Cell::State &>(*this) = std::move(static_cast<typename Cell::State &>(rhs));
-        static_cast<ZeroValueStorage<Cell::need_zero_value_storage, Cell> &>(*this)
-            = std::move(static_cast<ZeroValueStorage<Cell::need_zero_value_storage, Cell> &>(rhs));
+        Hash::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs));
+        Cell::State::operator=(std::move(rhs));
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs));
 
         return *this;
     }
