@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -6,7 +7,6 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -124,8 +124,8 @@ MergeTreeData::MergeTreeData(
             && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        columns_required_for_sampling = ExpressionAnalyzer(
-            sample_by_ast, context, nullptr, getColumns().getAllPhysical())
+        auto syntax = SyntaxAnalyzer(context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
+        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, context)
             .getRequiredSourceColumns();
     }
 
@@ -255,15 +255,17 @@ void MergeTreeData::setPrimaryKey(const ASTPtr & new_order_by_ast, ASTPtr new_pr
 
     auto all_columns = getColumns().getAllPhysical();
 
-    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, context, nullptr, all_columns)
+    auto new_sorting_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_sorting_key_expr_list, all_columns);
+    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
         .getActions(false);
     auto new_sorting_key_sample =
-        ExpressionAnalyzer(new_sorting_key_expr_list, context, nullptr, all_columns)
+        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
         .getActions(true)->getSampleBlock();
 
     checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
 
-    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, context, nullptr, all_columns)
+    auto new_primary_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_primary_key_expr_list, all_columns);
+    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, context)
         .getActions(false);
 
     Block new_primary_key_sample;
@@ -285,7 +287,6 @@ void MergeTreeData::setPrimaryKey(const ASTPtr & new_order_by_ast, ASTPtr new_pr
     primary_key_sample = std::move(new_primary_key_sample);
     primary_key_data_types = std::move(new_primary_key_data_types);
 }
-
 
 ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 {
@@ -316,7 +317,11 @@ void MergeTreeData::initPartitionKey()
     if (partition_key_expr_list->children.empty())
         return;
 
-    partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, context, nullptr, getColumns().getAllPhysical()).getActions(false);
+    {
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
+        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, context).getActions(false);
+    }
+
     for (const ASTPtr & ast : partition_key_expr_list->children)
     {
         String col_name = ast->getColumnName();
@@ -1196,8 +1201,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
     if (new_primary_key_expr_list)
     {
-        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(
-            new_primary_key_expr_list, context, nullptr, new_columns).getActions(true);
+        ASTPtr query = new_primary_key_expr_list;
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, new_columns);
+        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
         Block new_primary_key_sample = new_primary_expr->getSampleBlock();
         size_t new_key_size = new_primary_key_sample.columns();
 

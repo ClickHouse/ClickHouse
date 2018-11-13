@@ -429,7 +429,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             {
                 ++result_offset;
                 if constexpr (is_numeric_column)
-                    result_data.insert(pair.first);
+                    result_data.insertValue(pair.first);
                 else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                     result_data.insertData(pair.first.data, pair.first.size);
                 else

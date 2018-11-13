@@ -1,7 +1,9 @@
-#include <Common/config_build.h>
+#include "StorageSystemBuildOptions.h"
+
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Settings.h>
-#include <Storages/System/StorageSystemBuildOptions.h>
+
+extern const char * auto_config_build[];
 
 namespace DB
 {
@@ -18,8 +20,8 @@ void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, const Con
 {
     for (auto it = auto_config_build; *it; it += 2)
     {
-        res_columns[0]->insert(String(it[0]));
-        res_columns[1]->insert(String(it[1]));
+        res_columns[0]->insert(it[0]);
+        res_columns[1]->insert(it[1]);
     }
 }
 

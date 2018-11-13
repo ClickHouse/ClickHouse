@@ -63,6 +63,8 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int UNEXPECTED_AST_STRUCTURE;
 
+    extern const int SYNTAX_ERROR;
+
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_FUNCTION;
     extern const int UNKNOWN_IDENTIFIER;
@@ -108,6 +110,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
              exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
         return HTTPResponse::HTTP_BAD_REQUEST;
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||

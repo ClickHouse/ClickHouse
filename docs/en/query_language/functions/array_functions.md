@@ -53,9 +53,9 @@ Combines arrays passed as arguments.
 arrayConcat(arrays)
 ```
 
-**Arguments**
+**Parameters**
 
-- `arrays` – Arrays of comma-separated `[values]`.
+- `arrays` – arbitrary number of arguments of type Array.
 
 **Example**
 
@@ -71,9 +71,9 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 ## arrayElement(arr, n), operator arr[n]
 
-Get the element with the index 'n' from the array 'arr'.'n' must be any integer type.
+Get the element with the index `n` from the array `arr`. `n` must be any integer type.
 Indexes in an array begin from one.
-Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, 'arr\[-1\]' is the last item in the array.
+Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.).
 
@@ -92,6 +92,79 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
+## hasAll
+
+Checks whether one array is a subset of another.
+
+```
+hasAll(set, subset)
+```
+
+**Parameters**
+
+- `set` – Array of any type with a set of elements.
+- `subset` – Array of any type with elements that should be tested to be a subset of `set`.
+
+**Return values**
+
+- `1`, if `set` contains all of the elements from `subset`.
+- `0`, otherwise.
+
+**Peculiar properties**
+
+- An empty array is a subset of any array.
+- `Null` processed as a value.
+- Order of values in both of arrays doesn't matter.
+
+**Examples**
+
+`SELECT hasAll([], [])` returns 1.
+
+`SELECT hasAll([1, Null], [Null])` returns 1.
+
+`SELECT hasAll([1.0, 2, 3, 4], [1, 3])` returns 1.
+
+`SELECT hasAll(['a', 'b'], ['a'])` returns 1.
+
+`SELECT hasAll([1], ['a'])` returns 0.
+
+`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
+
+## hasAny
+
+Checks whether two arrays have intersection by some elements.
+
+```
+hasAny(array1, array2)
+```
+
+**Parameters**
+
+- `array1` – Array of any type with a set of elements.
+- `array2` – Array of any type with a set of elements.
+
+**Return values**
+
+- `1`, if `array1` and `array2` have one similar element at least.
+- `0`, otherwise.
+
+**Peculiar properties**
+
+- `Null` processed as a value.
+- Order of values in both of arrays doesn't matter.
+
+**Examples**
+
+`SELECT hasAny([1], [])` returns `0`.
+
+`SELECT hasAny([Null], [Null, 1])` returns `1`.
+
+`SELECT hasAny([-128, 1., 512], [1])` returns `1`.
+
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
+
+`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
+
 ## indexOf(arr, x)
 
 Returns the index of the first 'x' element (starting from 1) if it is in the array, or 0 if it is not.
@@ -99,7 +172,7 @@ Returns the index of the first 'x' element (starting from 1) if it is in the arr
 Example:
 
 ```
-:) select indexOf([1,3,NULL,NULL],NULL)
+:) SELECT indexOf([1,3,NULL,NULL],NULL)
 
 SELECT indexOf([1, 3, NULL, NULL], NULL)
 
@@ -230,7 +303,7 @@ Removes the last item from the array.
 arrayPopBack(array)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 
@@ -254,7 +327,7 @@ Removes the first item from the array.
 arrayPopFront(array)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 
@@ -278,7 +351,7 @@ Adds one item to the end of the array.
 arrayPushBack(array, single_value)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 - `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
@@ -303,7 +376,7 @@ Adds one element to the beginning of the array.
 arrayPushFront(array, single_value)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 - `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)".  Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
@@ -366,7 +439,7 @@ Returns a slice of the array.
 arraySlice(array, offset[, length])
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` –  Array of data.
 - `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.

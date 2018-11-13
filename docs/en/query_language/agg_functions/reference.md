@@ -53,6 +53,135 @@ FROM ontime
 Selects the last value encountered.
 The result is just as indeterminate as for the `any` function.
 
+##groupBitAnd
+
+Applies bitwise `AND` for series of numbers.
+
+```
+groupBitAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitAnd(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+00000100 = 4
+```
+
+##groupBitOr
+
+Applies bitwise `OR` for series of numbers.
+
+```
+groupBitOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitOr(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01111101 = 125
+```
+
+##groupBitXor
+
+Applies bitwise `XOR` for series of numbers.
+
+```
+groupBitXor(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitXor(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01101000 = 104
+```
+
 ## min(x)
 
 Calculates the minimum.
@@ -210,14 +339,14 @@ Creates an array from different argument values. Memory consumption is the same 
 
 ## quantile(level)(x)
 
-Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1.
-We recommend using a 'level' value in the range of 0.01..0.99
-Don't use a 'level' value equal to 0 or 1 – use the 'min' and 'max' functions for these cases.
+Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
+We recommend using a `level` value in the range of `[0.01, 0.99]`
+Don't use a `level` value equal to 0 or 1 – use the `min` and `max` functions for these cases.
 
-In this function, as well as in all functions for calculating quantiles, the 'level' parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
+In this function, as well as in all functions for calculating quantiles, the `level` parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
 
 Works for numbers, dates, and dates with times.
-Returns: for numbers – Float64; for dates – a date; for dates with times – a date with time.
+Returns: for numbers – `Float64`; for dates – a date; for dates with times – a date with time.
 
 Uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192.
 If necessary, the result is output with linear approximation from the two neighboring values.

@@ -206,8 +206,14 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
                 prepared_function->createLowCardinalityResultCache(settings.max_threads);
 
+            bool compile_expressions = false;
+#if USE_EMBEDDED_COMPILER
+            compile_expressions = settings.compile_expressions;
+#endif
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-            if (all_const && function_base->isSuitableForConstantFolding())
+            /// But if we compile expressions compiled version of this function maybe placed in cache,
+            /// so we don't want to unfold non deterministic functions
+            if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
                 function->execute(sample_block, arguments, result_position, sample_block.rows());
 
@@ -265,8 +271,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = sample_block.getByName(name);
-                if (column.column)
-                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -479,8 +483,6 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = block.getByName(name);
-                if (column.column)
-                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -671,7 +673,8 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
 
-    if (action.type == ExpressionAction::APPLY_FUNCTION)
+    /// Compiled functions are custom functions and them don't need building
+    if (action.type == ExpressionAction::APPLY_FUNCTION && !action.is_function_compiled)
     {
         if (sample_block.has(action.result_name))
             throw Exception("Column '" + action.result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);

@@ -49,9 +49,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// defined in ExpressionAnalyser.cpp
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-
+NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+{
+    return std::find_if(cols.begin(), cols.end(),
+                        [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
+}
 
 void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
                      const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
@@ -568,8 +570,8 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            auto database_table = getDatabaseAndTableNameFromIdentifier(*identifier);
-            StoragePtr table = context.tryGetTable(database_table.first, database_table.second);
+            DatabaseAndTableWithAlias database_table(*identifier);
+            StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
             if (table)
             {
