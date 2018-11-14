@@ -47,6 +47,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserCompoundColumnDeclaration parser_col_decl;
+    ParserCompoundColumnDeclaration parser_modify_col_decl(false);
     ParserPartition parser_partition;
     ParserExpression parser_exp_elem;
     ParserList parser_assignment_list(
@@ -181,7 +182,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_modify_column.ignore(pos, expected))
     {
-        if (!parser_col_decl.parse(pos, command->col_decl, expected))
+        if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
             return false;
 
         command->type = ASTAlterCommand::MODIFY_COLUMN;
