@@ -18,7 +18,7 @@ MarksData::MarksData(
         loadMarks();
 }
 
-void MarksData::loadMarks()
+void MarksData::loadMarks() const
 {
     auto load = [&]() -> MarkCache::MappedPtr {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
@@ -74,10 +74,18 @@ void MarksData::loadMarks()
         throw Exception("Failed to load marks: " + path, ErrorCodes::LOGICAL_ERROR);
 }
 
-const MarkInCompressedFile & MarksData::getMark(size_t index)
+const MarkInCompressedFile & MarksData::getMark(size_t index) const
 {
     if (!marks)
         loadMarks();
     return (*marks)[index];
+}
+
+size_t MarksData::getNumRowsBetweenMarks(size_t mark_from, size_t mark_to) const
+{
+    size_t result = 0;
+    for (size_t mark = mark_from; mark < mark_to; ++mark)
+        result += getMark(mark).index_granularity;
+    return result;
 }
 }
