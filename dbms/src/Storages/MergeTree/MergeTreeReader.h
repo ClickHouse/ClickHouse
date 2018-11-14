@@ -74,7 +74,7 @@ public:
     ///  .....................................................................................
     /// ---------------------------------------------------------------------------------------
 
-    MarksData getAnyStreamMarksData() const { return streams.begin()->second->marks_data; }
+    MarksData getAnyStreamMarksData() const { std::cerr << "STREAMS SIZE:" << streams.size() << std::endl; return streams.begin()->second->marks_data; }
 
 private:
     class Stream

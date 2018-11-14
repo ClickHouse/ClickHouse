@@ -5,6 +5,7 @@
 #include <Columns/FilterDescription.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/StackTrace.h>
 #include <ext/range.h>
 #include <DataTypes/DataTypeNothing.h>
 
@@ -114,12 +115,22 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         return index_granularity * granule_to_read - reader.numReadRowsInCurrentGranule();
     };
 
+    if (reader == nullptr) {
+        std::cerr << "=====STACK TRACE WITH NULL READER=====\n";
+        std::cerr << StackTrace().toString() << std::endl;
+    }
+    if (pre_reader == nullptr) {
+        std::cerr << "=====STACK TRACE WITH NULL PREREADER=====\n";
+        std::cerr << StackTrace().toString() << std::endl;
+    }
+
     if (!task->range_reader.isInitialized())
     {
         if (prewhere_info)
         {
             if (reader->getColumns().empty())
             {
+                std::cerr << "EMPTY COLUMNS\n";
                 task->range_reader = MergeTreeRangeReader(
                     pre_reader.get(), index_granularity, nullptr,
                     prewhere_info->alias_actions, prewhere_info->prewhere_actions,
@@ -128,14 +139,23 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             }
             else
             {
-                task->pre_range_reader = MergeTreeRangeReader(
-                    pre_reader.get(), index_granularity, nullptr,
-                    prewhere_info->alias_actions, prewhere_info->prewhere_actions,
-                    &prewhere_info->prewhere_column_name, &task->ordered_names,
-                    task->should_reorder, task->remove_prewhere_column, false);
+                std::cerr << "MORE INTERESTING COLUMNS\n";
+                MergeTreeRangeReader * pre_reader_ptr = nullptr;
+                if (pre_reader != nullptr)
+                {
+                    std::cerr << "SETTING PREREADER\n";
+                    std::cerr << "PreReader is NULL:" << (pre_reader == nullptr) << std::endl;
+                    task->pre_range_reader = MergeTreeRangeReader(
+                        pre_reader.get(), index_granularity, nullptr,
+                        prewhere_info->alias_actions, prewhere_info->prewhere_actions,
+                        &prewhere_info->prewhere_column_name, &task->ordered_names,
+                        task->should_reorder, task->remove_prewhere_column, false);
+                    pre_reader_ptr = &task->pre_range_reader;
+                }
 
+                std::cerr << "Reader is NULL:" << (reader == nullptr) << std::endl;
                 task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, &task->pre_range_reader, nullptr, nullptr,
+                    reader.get(), index_granularity, pre_reader_ptr, nullptr, nullptr,
                     nullptr, &task->ordered_names, true, false, true);
             }
         }

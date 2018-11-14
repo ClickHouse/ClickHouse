@@ -14,23 +14,26 @@ public:
         bool save_marks_in_cache_ = true,
         bool lazy_load = true);
 
-    const MarkInCompressedFile & getMark(size_t index);
+    MarksData() = default;
+
+    const MarkInCompressedFile & getMark(size_t index) const;
+    size_t getNumRowsBetweenMarks(size_t mark_from, size_t mark_to) const;
     const size_t & getMarksCount() const
     {
         return marks_count;
     }
 
 private:
-    void loadMarks();
+    void loadMarks() const;
 
 private:
-    const std::string path;
-    const size_t one_mark_bytes_size;
-    const size_t marks_count;
-    const size_t storage_index_granularity;
-    const bool save_marks_in_cache;
+    std::string path = "";
+    size_t one_mark_bytes_size = 0;
+    size_t marks_count = 0;
+    size_t storage_index_granularity = 0;
+    bool save_marks_in_cache = false;
 
-    MarkCachePtr mark_cache;
-    MarkCache::MappedPtr marks;
+    MarkCachePtr mark_cache = nullptr;
+    mutable MarkCache::MappedPtr marks = nullptr;
 };
 }
