@@ -131,39 +131,30 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     const auto memory_amount = getMemoryAmount();
-    { /// After full config loaded
+
 #if defined(__linux__)
-        if (config().getBool("mlock_executable",
-            false // TODO: uncomment after tests:
-/*
-#if NDEBUG
-            memory_amount > 16000000000
-                ? true // Change me to true in future
-                : false // Dont mlock if we have less than 16G ram
-#else
-            false
-#endif
-*/
-        ))
+    /// After full config loaded
+    {
+        if (config().getBool("mlock_executable", false))
         {
             if (hasLinuxCapability(CAP_IPC_LOCK))
             {
+                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
                 if (0 != mlockall(MCL_CURRENT))
                     LOG_WARNING(log, "Failed mlockall: " + errnoToString());
                 else
-                    LOG_TRACE(log, "Binary mlock'ed");
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
             }
             else
             {
-                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                      " It could happen due to incorrect ClickHouse package installation."
-                      " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
-                      " Note that it will not work on 'nosuid' mounted filesystems.");
-
+                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.");
             }
         }
-#endif
     }
+#endif
 
     std::string path = getCanonicalPath(config().getString("path"));
     std::string default_database = config().getString("default_database", "default");
