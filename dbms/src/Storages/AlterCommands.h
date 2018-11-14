@@ -22,9 +22,10 @@ struct AlterCommand
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
         COMMENT_COLUMN,
+        UKNOWN_TYPE,
     };
 
-    Type type;
+    Type type = UKNOWN_TYPE;
 
     String column_name;
 
@@ -47,7 +48,7 @@ struct AlterCommand
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
-                 const String & after_column = String{}, const String & comment = "")
+                 const String & after_column = String{}, const String & comment = "") // TODO: разобраться здесь с параметром по умолчанию
         : type{type}, column_name{column_name}, data_type{data_type}, default_kind{default_kind},
         default_expression{default_expression}, comment(comment), after_column{after_column}
     {}

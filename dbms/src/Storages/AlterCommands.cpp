@@ -81,6 +81,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.comment)
+        {
+            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
+            command.comment = ast_comment.value.get<String>();
+        }
+
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
@@ -276,7 +282,7 @@ bool AlterCommand::is_mutable() const
         return false;
     if (type == MODIFY_COLUMN)
         return data_type.get() || default_expression;
-
+    // TODO: возможно, здесь нужно дополнить
     return true;
 }
 
