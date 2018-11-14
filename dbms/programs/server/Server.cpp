@@ -42,6 +42,11 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 
+#if defined(__linux__)
+#include <Common/hasLinuxCapability.h>
+#include <sys/mman.h>
+#endif
+
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
@@ -123,6 +128,41 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config_processor.savePreprocessedConfig(loaded_config);
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
+
+    const auto memory_amount = getMemoryAmount();
+    { /// After full config loaded
+#if defined(__linux__)
+        if (config().getBool("mlock_executable",
+            false // TODO: uncomment after tests:
+/*
+#if NDEBUG
+            memory_amount > 16000000000
+                ? true // Change me to true in future
+                : false // Dont mlock if we have less than 16G ram
+#else
+            false
+#endif
+*/
+        ))
+        {
+            if (hasLinuxCapability(CAP_IPC_LOCK))
+            {
+                if (0 != mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString());
+                else
+                    LOG_TRACE(log, "Binary mlock'ed");
+            }
+            else
+            {
+                 LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                      " It could happen due to incorrect ClickHouse package installation."
+                      " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                      " Note that it will not work on 'nosuid' mounted filesystems.");
+
+            }
+        }
+#endif
     }
 
     std::string path = getCanonicalPath(config().getString("path"));
@@ -599,7 +639,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
                 << " threads = " <<  std::thread::hardware_concurrency() << ".";
