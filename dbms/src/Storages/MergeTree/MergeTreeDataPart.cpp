@@ -23,12 +23,6 @@
 
 #include <common/logger_useful.h>
 
-namespace {
-    constexpr auto MERGE_TREE_MARK_SIZE_FIXED_INDEX_GRANULARITY = 2 * sizeof(UInt64);
-    constexpr auto MERGE_TREE_MARK_SIZE_ADAPTIVE_INDEX_GRANULARITY = 3 * sizeof(UInt64);
-}
-
-
 namespace DB
 {
 
@@ -161,7 +155,7 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(const String 
             size.data_uncompressed += bin_checksum->second.uncompressed_size;
         }
 
-        auto mrk_checksum = checksums.files.find(file_name + ".mrk");
+        auto mrk_checksum = checksums.files.find(file_name + storage.marks_file_extension);
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
     }, {});
@@ -449,12 +443,8 @@ void MergeTreeDataPart::loadIndex()
         if (columns.empty())
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        if (storage.format_version < MERGE_TREE_MARK_SIZE_ADAPTIVE_INDEX_GRANULARITY)
-            marks_count = Poco::File(getFullPath() + escapeForFileName(columns.front().name) + ".mrk")
-                .getSize() / MERGE_TREE_MARK_SIZE_FIXED_INDEX_GRANULARITY;
-        else
-            marks_count = Poco::File(getFullPath() + escapeForFileName(columns.front().name) + ".mrk2")
-                .getSize() / MERGE_TREE_MARK_SIZE_ADAPTIVE_INDEX_GRANULARITY;
+        marks_count = Poco::File(getFullPath() + escapeForFileName(columns.front().name) + storage.marks_file_extension)
+            .getSize() / storage.one_mark_bytes_size;
 
     }
 
@@ -653,7 +643,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
                 name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-                    String mrk_file_name = file_name + ".mrk";
+                    String mrk_file_name = file_name + storage.marks_file_extension;
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
                         throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
@@ -717,7 +707,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         {
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
             {
-                Poco::File file(IDataType::getFileNameForStream(name_type.name, substream_path) + ".mrk");
+                Poco::File file(IDataType::getFileNameForStream(name_type.name, substream_path) + storage.marks_file_extension);
 
                 /// Missing file is Ok for case when new column was added.
                 if (file.exists())
@@ -748,7 +738,7 @@ bool MergeTreeDataPart::hasColumnFiles(const String & column) const
 
     String escaped_column = escapeForFileName(column);
     return Poco::File(prefix + escaped_column + ".bin").exists()
-        && Poco::File(prefix + escaped_column + ".mrk").exists();
+        && Poco::File(prefix + escaped_column + storage.marks_file_extension).exists();
 }
 
 

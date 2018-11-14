@@ -569,6 +569,9 @@ public:
     /// For generating names of temporary parts during insertion.
     SimpleIncrement insert_increment;
 
+    std::string marks_file_extension;
+    size_t one_mark_bytes_size;
+
 private:
     friend struct MergeTreeDataPart;
     friend class StorageMergeTree;

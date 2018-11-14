@@ -2,6 +2,7 @@
 
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MarksData.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Core/NamesAndTypes.h>
@@ -53,6 +54,28 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
 
+    /// It doesn't matter, which column marks we would get -- they all have the same index granularity
+    /// and different offsets in files and blocks, but caller of this method mustn't be interested in them
+    /// Example:
+    /// Column1: (some long string)
+    /// _______________________________________________________________________________________
+    /// | Mark | offset_in_compressed_file | offset_in_decompressed_block | index_granularity |
+    /// ---------------------------------------------------------------------------------------
+    /// |    0 |                         0 |                            0 |               242 |
+    /// |    1 |                    121000 |                          344 |               127 |
+    ///  .....................................................................................
+    /// ---------------------------------------------------------------------------------------
+    /// Column2: (int64)
+    /// _______________________________________________________________________________________
+    /// | Mark | offset_in_compressed_file | offset_in_decompressed_block | index_granularity |
+    /// ---------------------------------------------------------------------------------------
+    /// |    0 |                         0 |                            0 |               242 |
+    /// |    1 |                      1936 |                           24 |               127 |
+    ///  .....................................................................................
+    /// ---------------------------------------------------------------------------------------
+
+    MarksData getAnyStreamMarksData() const { return streams.begin()->second->marks_data; }
+
 private:
     class Stream
     {
@@ -60,35 +83,24 @@ private:
         Stream(
             const String & path_prefix_, const String & extension_, size_t marks_count_,
             const MarkRanges & all_mark_ranges,
-            MarkCache * mark_cache, bool save_marks_in_cache,
+            bool save_marks_in_cache,
             UncompressedCache * uncompressed_cache,
             size_t aio_threshold, size_t max_read_buffer_size,
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-            MergeTreeDataFormatVersion format_version_);
+            const MergeTreeData & storage_);
 
         void seekToMark(size_t index);
         void seekToStart();
 
         ReadBuffer * data_buffer;
+        MarksData marks_data;
 
     private:
         Stream() = default;
 
-        /// NOTE: lazily loads marks from the marks cache.
-        const MarkInCompressedFile & getMark(size_t index);
-
-        void loadMarks();
-
         std::string path_prefix;
         std::string extension;
 
-        size_t marks_count;
-
-        MarkCache * mark_cache;
-        bool save_marks_in_cache;
-        MarkCache::MappedPtr marks;
-
-        MergeTreeDataFormatVersion format_version;
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
     };
