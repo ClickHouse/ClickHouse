@@ -4,7 +4,10 @@
 
 namespace DB
 {
-bool hasLinuxCapability(decltype(CAP_NET_ADMIN) cap);
+
+/// Check that the current process has Linux capability. Examples: CAP_IPC_LOCK, CAP_NET_ADMIN.
+bool hasLinuxCapability(int cap);
+
 }
 
 #endif
