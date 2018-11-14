@@ -19,3 +19,4 @@
 Некоррректная конфигурация в deb пакете могла привести к неавторизованному доступу к базе данных.
 
 Обнаружено благодаря: the UK's National Cyber Security Centre (NCSC)
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/security_changelog/) <!--hide-->

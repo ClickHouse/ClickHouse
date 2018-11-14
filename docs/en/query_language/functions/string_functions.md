@@ -82,3 +82,5 @@ Decode base64-encoded string 's' into original string. In case of failure raises
 
 ## tryBase64Decode(s)
 Similar to base64Decode, but in case of error an empty string would be returned.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

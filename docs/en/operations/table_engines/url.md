@@ -23,7 +23,7 @@ respectively. For processing `POST` requests, the remote server must support
 
 **1.** Create a `url_engine_table` table on the server :
 
-```sql
+``` sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
@@ -53,11 +53,11 @@ python3 server.py
 
 **3.** Request data:
 
-```sql
+``` sql
 SELECT * FROM url_engine_table
 ```
 
-```text
+```
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │
@@ -71,3 +71,5 @@ SELECT * FROM url_engine_table
     - `ALTER` and `SELECT...SAMPLE` operations.
     - Indexes.
     - Replication.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/url/) <!--hide-->

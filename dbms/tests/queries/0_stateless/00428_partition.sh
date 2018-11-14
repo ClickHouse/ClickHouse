@@ -18,14 +18,18 @@ $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(31), 1)"
 $chl "INSERT INTO test.partition_428 (p, k) VALUES(toDate(1), 2)"
 
 for part in `$chl "SELECT name FROM system.parts WHERE database='test' AND table='partition_428'"`; do
-    sudo -n cat $ch_dir/data/test/partition_428/$part/columns.txt | wc -l # 2 header lines + 3 columns
+    # 2 header lines + 3 columns
+    (sudo -n cat $ch_dir/data/test/partition_428/$part/columns.txt 2>/dev/null || \
+             cat $ch_dir/data/test/partition_428/$part/columns.txt) | wc -l
 done
 
 $chl "ALTER TABLE test.partition_428 DETACH PARTITION 197001"
 $chl "ALTER TABLE test.partition_428 ATTACH PARTITION 197001"
 
 for part in `$chl "SELECT name FROM system.parts WHERE database='test' AND table='partition_428'"`; do
-    sudo -n cat $ch_dir/data/test/partition_428/$part/columns.txt | wc -l # 2 header lines + 3 columns
+    # 2 header lines + 3 columns
+    (sudo -n cat $ch_dir/data/test/partition_428/$part/columns.txt 2>/dev/null || \
+             cat $ch_dir/data/test/partition_428/$part/columns.txt) | wc -l
 done
 
 $chl "ALTER TABLE test.partition_428 MODIFY COLUMN v1 Int8"

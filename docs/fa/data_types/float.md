@@ -17,7 +17,7 @@ Type های float در ClickHouse مشابه C می باشد:
 
 </div>
 
-```sql
+``` sql
 SELECT 1 - 0.9
 ```
 ```
@@ -40,7 +40,7 @@ SELECT 1 - 0.9
 
 </div>
 
-```sql
+``` sql
 SELECT 0.5 / 0
 ```
 
@@ -56,7 +56,7 @@ SELECT 0.5 / 0
 
 </div>
 
-```sql
+``` sql
 SELECT -0.5 / 0
 ```
 
@@ -87,3 +87,4 @@ SELECT 0 / 0
 قوانین مربوط به مرتب سازی ` Nan ` را در بخش [ORDER BY clause](../query_language/select.md#query_language-queries-order_by) ببینید.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/float/) <!--hide-->

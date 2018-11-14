@@ -4,3 +4,5 @@
 
 - 三方提供的 JDBC 驱动 [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC).
 
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/jdbc/) <!--hide-->

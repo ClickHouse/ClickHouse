@@ -116,9 +116,9 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
                 std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(ast, *context);
                 Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
 
+                /// Check that we are indeed allowed to insert a NULL.
                 if (value.isNull())
                 {
-                    /// Check that we are indeed allowed to insert a NULL.
                     if (!type.isNullable())
                         throw Exception{"Expression returns value " + applyVisitor(FieldVisitorToString(), value)
                             + ", that is out of range of type " + type.getName()

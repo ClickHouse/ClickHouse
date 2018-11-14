@@ -18,7 +18,7 @@ class MergeTreeBaseBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     MergeTreeBaseBlockInputStream(
-        MergeTreeData & storage,
+        const MergeTreeData & storage,
         const PrewhereInfoPtr & prewhere_info,
         UInt64 max_block_size_rows,
         UInt64 preferred_block_size_bytes,
@@ -47,7 +47,7 @@ protected:
     void injectVirtualColumns(Block & block) const;
 
 protected:
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
 
     PrewhereInfoPtr prewhere_info;
 

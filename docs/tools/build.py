@@ -8,8 +8,13 @@ import datetime
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import time
+
+import markdown.extensions
+import markdown.util
 
 from mkdocs import config
 from mkdocs import exceptions
@@ -34,6 +39,17 @@ def autoremoved_file(path):
     finally:
         os.unlink(path)
 
+class ClickHouseMarkdown(markdown.extensions.Extension):
+    class ClickHousePreprocessor(markdown.util.Processor):
+        def run(self, lines):
+            for line in lines:
+                if '<!--hide-->' not in line:
+                    yield line
+
+    def extendMarkdown(self, md):
+        md.preprocessors.register(self.ClickHousePreprocessor(), 'clickhouse_preprocessor', 31)
+
+markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
@@ -61,10 +77,8 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
-                'opposite_lang': 'ru' if lang == 'en' else 'en',
-                'now': datetime.datetime.now() # TODO better way to avoid caching
+                'now': int(time.mktime(datetime.datetime.now().timetuple())) # TODO better way to avoid caching
             }
-
         }
 
         site_names = {
@@ -89,6 +103,7 @@ def build_for_lang(lang, args):
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
             markdown_extensions=[
+                'clickhouse',
                 'admonition',
                 'attr_list',
                 'codehilite',
@@ -134,8 +149,7 @@ def build_single_page_version(lang, args, cfg):
                     'docs_dir': docs_temp_lang,
                     'site_dir': site_temp,
                     'extra': {
-                        'single_page': True,
-                        'opposite_lang': 'en' if lang == 'ru' else 'ru'
+                        'single_page': True
                     },
                     'nav': [
                         {cfg.data.get('site_name'): 'single.md'}
@@ -153,6 +167,12 @@ def build_single_page_version(lang, args, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
+
+                single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
+                single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                logging.debug(' '.join(create_pdf_command))
+                subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
 
 def build_redirects(args):

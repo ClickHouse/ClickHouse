@@ -7,7 +7,7 @@ Reading is automatically parallelized. During a read, the table indexes on remot
 The Distributed engine accepts parameters: the cluster name in the server's config file, the name of a remote database, the name of a remote table, and (optionally) a sharding key.
 Example:
 
-```text
+```
 Distributed(logs, default, hits[, sharding_key])
 ```
 
@@ -122,3 +122,5 @@ If the server ceased to exist or had a rough restart (for example, after a devic
 
 When the max_parallel_replicas option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section "Settings, max_parallel_replicas".
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/distributed/) <!--hide-->

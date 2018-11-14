@@ -24,6 +24,33 @@ Merge(hits, '^WatchLog')
 
 Типичный способ использования движка `Merge` — работа с большим количеством таблиц типа `TinyLog`, как с одной.
 
+Пример 2:
+
+Пусть есть старая таблица `WatchLog_old`. Необходимо изменить партиционирование без перемещения данных в новую таблицу `WatchLog_new`. При этом в выборке должны участвовать данные обеих таблиц.
+
+```
+CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
+ENGINE=MergeTree(date, (UserId, EventType), 8192);
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
+ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT *
+FROM WatchLog
+
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+
+```
+
 ## Виртуальные столбцы
 
 Виртуальные столбцы — столбцы, предоставляемые движком таблиц независимо от определения таблицы. То есть, такие столбцы не указываются в `CREATE TABLE`, но доступны для `SELECT`.
@@ -39,3 +66,5 @@ Merge(hits, '^WatchLog')
 Таблица типа `Merge` содержит виртуальный столбец `_table` типа `String`. (Если в таблице уже есть столбец `_table`, то виртуальный столбец называется `_table1`; если уже есть `_table1`, то `_table2` и т. п.) Он содержит имя таблицы, из которой были прочитаны данные.
 
 Если секция `WHERE/PREWHERE` содержит (в качестве одного из элементов конъюнкции или в качестве всего выражения) условия на столбец `_table`, не зависящие от других столбцов таблицы, то эти условия используются как индекс: условия выполняются над множеством имён таблиц, из которых нужно читать данные, и чтение будет производиться только из тех таблиц, для которых условия сработали.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/merge/) <!--hide-->

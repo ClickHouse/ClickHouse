@@ -67,3 +67,5 @@
 
 ## tryBase64Decode(s)
 Функционал аналогичен base64Decode, но при невозможности декодирования возвращает пустую строку.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_functions/) <!--hide-->

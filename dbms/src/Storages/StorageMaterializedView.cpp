@@ -2,11 +2,12 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
@@ -27,23 +28,26 @@ namespace ErrorCodes
 
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
-    auto query_table = query.table();
+    auto db_and_table = getDatabaseAndTable(query, 0);
+    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
 
-    if (!query_table)
+    if (!db_and_table && !subquery)
         return;
 
-    if (auto ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
+    if (db_and_table)
     {
-        auto query_database = query.database();
+        select_table_name = db_and_table->table;
 
-        if (!query_database)
-            query.setDatabaseIfNeeded(select_database_name);
-
-        select_table_name = ast_id->name;
-        select_database_name = query_database ? typeid_cast<const ASTIdentifier &>(*query_database).name : select_database_name;
-
+        if (db_and_table->database.empty())
+        {
+            db_and_table->database = select_database_name;
+            AddDefaultDatabaseVisitor visitor(select_database_name);
+            visitor.visit(query);
+        }
+        else
+            select_database_name = db_and_table->database;
     }
-    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(subquery.get()))
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
@@ -64,12 +68,11 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (query.prewhere_expression || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    auto query_table = query.table();
-
-    if (!query_table)
+    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    if (!subquery)
         return;
 
-    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
+    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(subquery.get()))
     {
         if (ast_select->list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);

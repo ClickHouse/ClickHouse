@@ -74,15 +74,37 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
-Two parameters are also added in the beginning of the parameters list – the path to the table in ZooKeeper, and the replica name in ZooKeeper.
+**Replicated\*MergeTree parameters**
+
+- `zoo_path` — The path to the table in ZooKeeper.
+- `replica_name` — The replica name in ZooKeeper.
 
 Example:
 
-```text
-ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+```sql
+CREATE TABLE table_name
+(
+    EventDate DateTime,
+    CounterID UInt32,
+    UserID UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}')
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
 ```
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the config file. Example:
+Example in deprecated syntax:
+
+```sql
+CREATE TABLE table_name
+(
+    EventDate DateTime,
+    CounterID UInt32,
+    UserID UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+```
+
+As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the configuration file. Example:
 
 ```xml
 <macros>
@@ -180,3 +202,5 @@ After this, you can launch the server, create a `MergeTree` table, move the data
 ## Recovery When Metadata in The ZooKeeper Cluster is Lost or Damaged
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/replication/) <!--hide-->

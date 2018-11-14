@@ -65,3 +65,5 @@ The `Merge` type table contains a virtual `_table` column of the `String` type. 
 
 If the `WHERE/PREWHERE`  clause contains conditions for the `_table`  column that do not depend on other table columns (as one of the conjunction elements, or as an entire expression), these conditions are used as an index. The conditions are performed on a data set of table names to read data from, and the read operation will be performed from only those tables that the condition was triggered on.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/merge/) <!--hide-->

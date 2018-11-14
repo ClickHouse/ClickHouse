@@ -87,7 +87,7 @@
 
 ## Условное выражение
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -95,9 +95,9 @@ CASE [x]
 END
 ```
 
-В случае указания x - функция transform(x, \[a, ...\], \[b, ...\], c). Иначе - multiIf(a, b, ..., c).
-При отсутствии секции `ELSE c`, значением по умолчанию будет NULL.
-P.S. Функция transform не умеет работать с NULL.
+В случае указания `x` - функция `transform(x, [a, ...], [b, ...], c)`. Иначе — `multiIf(a, b, ..., c)`.
+При отсутствии секции `ELSE c`, значением по умолчанию будет `NULL`.
+P.S. Функция `transform` не умеет работать с `NULL`.
 
 ## Оператор склеивания строк
 
@@ -173,3 +173,5 @@ WHERE isNotNull(y)
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/operators/) <!--hide-->
