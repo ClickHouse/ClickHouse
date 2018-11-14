@@ -159,7 +159,7 @@ public:
 private:
     static int getCodec()
     {
-        return BASE64_FORCE_PLAIN;
+        return 0;
     }
 };
 }
