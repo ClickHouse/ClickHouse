@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/MarkInCompressedFile.h>
 #include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
@@ -106,6 +107,8 @@ MergeTreeData::MergeTreeData(
     primary_expr_ast(primary_expr_ast_),
     secondary_sort_expr_ast(secondary_sort_expr_ast_),
     partition_expr_ast(partition_expr_ast_),
+    marks_file_extension(".mrk"),
+    one_mark_bytes_size(sizeof(MarkInCompressedFile) - sizeof(size_t)),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_),
@@ -152,7 +155,11 @@ MergeTreeData::MergeTreeData(
     else
     {
         if (settings_.index_granularity_bytes != 0)
+        {
             min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY;
+            marks_file_extension = ".mrk2";
+            one_mark_bytes_size = sizeof(MarkInCompressedFile);
+        }
         else
             min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
         initPartitionKey();
@@ -994,7 +1001,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + ".mrk"] = "";
+                        out_rename_map[file_name + marks_file_extension] = "";
                     }
                 }, {});
             }
@@ -1069,7 +1076,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + ".mrk"] = original_file_name + ".mrk";
+                    out_rename_map[temporary_file_name + marks_file_extension] = original_file_name + marks_file_extension;
                 }, {});
         }
 

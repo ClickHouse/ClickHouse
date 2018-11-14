@@ -15,8 +15,6 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-constexpr auto MARKS_FILE_EXTENSION_WITH_FIXED_GRANULARITY = ".mrk";
-constexpr auto MARKS_FILE_EXTENSION_WITH_ADAPTIVE_INDEX_GRANULARITY = ".mrk2";
 
 }
 
@@ -56,14 +54,10 @@ void IMergedBlockOutputStream::addStreams(
         if (column_streams.count(stream_name))
             return;
 
-        std::string marks_file_extension = MARKS_FILE_EXTENSION_WITH_FIXED_GRANULARITY;
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
-            marks_file_extension = MARKS_FILE_EXTENSION_WITH_ADAPTIVE_INDEX_GRANULARITY;
-
         column_streams[stream_name] = std::make_unique<ColumnStream>(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
-            path + stream_name, marks_file_extension,
+            path + stream_name, storage.marks_file_extension,
             max_compress_block_size,
             compression_settings,
             estimated_size,
@@ -119,7 +113,6 @@ void IMergedBlockOutputStream::writeData(
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
 
-    std::cerr << "Index granularity:" << index_granularity << std::endl;
     size_t size = column.size();
     size_t prev_mark = 0;
     while (prev_mark < size)
@@ -154,11 +147,8 @@ void IMergedBlockOutputStream::writeData(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
-                std::cerr << "Format version:" << storage.format_version << std::endl;
-                if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY) {
-                    std::cerr << "Writing index granularity:" << index_granularity << std::endl;
+                if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
                     writeIntBinary(index_granularity, stream.marks);
-                }
             }, serialize_settings.path);
         }
 
