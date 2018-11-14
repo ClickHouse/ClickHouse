@@ -1,3 +1,5 @@
+SET insert_sample_with_metadata=1;
+
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.defaults;
 CREATE TABLE IF NOT EXISTS test.defaults

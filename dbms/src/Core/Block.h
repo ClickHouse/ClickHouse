@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <list>
+#include <set>
 #include <map>
 #include <initializer_list>
 
@@ -54,6 +55,8 @@ public:
     void insertUnique(ColumnWithTypeAndName && elem);
     /// remove the column at the specified position
     void erase(size_t position);
+    /// remove the columns at the specified positions
+    void erase(const std::set<size_t> & positions);
     /// remove the column with the specified name
     void erase(const String & name);
 

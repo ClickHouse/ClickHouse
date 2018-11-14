@@ -575,7 +575,6 @@ Connection::Packet Connection::receivePacket()
         switch (res.type)
         {
             case Protocol::Server::Data:
-            case Protocol::Server::CapnProto:
                 res.block = receiveData();
                 return res;
 

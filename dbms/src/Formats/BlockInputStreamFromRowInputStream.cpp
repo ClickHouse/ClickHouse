@@ -68,7 +68,8 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
                 {
-                    if (!info.read_columns[column_idx]) {
+                    if (!info.read_columns[column_idx])
+                    {
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
                             throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);

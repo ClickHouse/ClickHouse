@@ -56,13 +56,11 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
-#include <Storages/IStorage.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Proto/protoHelpers.h>
-#include <Storages/TableMetadata.h>
+#include <Storages/ColumnDefault.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -895,12 +893,11 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        TableMetadata table_meta(parsed_insert_query.database, parsed_insert_query.table);
-        if (receiveSampleBlock(sample, table_meta))
+        if (receiveSampleBlock(sample))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample, table_meta);
+            sendData(sample);
             receiveEndOfQuery();
         }
     }
@@ -938,7 +935,7 @@ private:
     }
 
 
-    void sendData(Block & sample, const TableMetadata & table_meta)
+    void sendData(Block & sample)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -949,19 +946,19 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample, table_meta);
+            sendDataFrom(data_in, sample);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample, table_meta);
+            sendDataFrom(std_in, sample);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample, const TableMetadata & table_meta)
+    void sendDataFrom(ReadBuffer & buf, Block & sample)
     {
         String current_format = insert_format;
 
@@ -973,7 +970,7 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        const ColumnDefaults & column_defaults = table_meta.column_defaults;
+        auto column_defaults = ColumnDefaultsHelper::extract(sample);
         if (!column_defaults.empty())
             block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
@@ -1113,7 +1110,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out, TableMetadata & table_meta)
+    bool receiveSampleBlock(Block & out)
     {
         while (true)
         {
@@ -1124,12 +1121,6 @@ private:
                 case Protocol::Server::Data:
                     out = packet.block;
                     return true;
-
-                case Protocol::Server::CapnProto:
-#if USE_CAPNP
-                    loadTableMetadata(packet.block, table_meta);
-#endif
-                    return receiveSampleBlock(out, table_meta);
 
                 case Protocol::Server::Exception:
                     onException(*packet.exception);
