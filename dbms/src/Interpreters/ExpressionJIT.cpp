@@ -142,6 +142,20 @@ static llvm::TargetMachine * getNativeMachine()
 #if LLVM_VERSION_MAJOR >= 7
 auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 {
+    // Actually this should work for 7.0.0 but now we have OLDER 7.0.0svn in contrib
+#if LLVM_VERSION_MINOR > 0 || LLVM_VERSION_PATCH >= 1
+    auto flags = [&](const llvm::orc::SymbolNameSet & symbols)
+    {
+        llvm::orc::SymbolFlagsMap flags;
+        for (const auto & symbol : symbols)
+        {
+            auto resolved = jsr.lookupFlags({*symbol});
+            if (resolved && resolved->size())
+                flags.emplace(symbol, resolved->begin()->second);
+        }
+        return flags;
+    };
+#else
     auto flags = [&](llvm::orc::SymbolFlagsMap & flags, const llvm::orc::SymbolNameSet & symbols)
     {
         llvm::orc::SymbolNameSet missing;
@@ -155,6 +169,8 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
         }
         return missing;
     };
+#endif
+
     auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols)
     {
         llvm::orc::SymbolNameSet missing;
