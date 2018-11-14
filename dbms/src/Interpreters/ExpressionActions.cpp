@@ -691,6 +691,10 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         action.result_type = action.function_base->getReturnType();
     }
 
+    if (action.type == ExpressionAction::ADD_ALIASES)
+        for (const auto & name_with_alias : action.projection)
+            new_names.emplace_back(name_with_alias.second);
+
     action.prepare(sample_block, settings);
     actions.push_back(action);
 }

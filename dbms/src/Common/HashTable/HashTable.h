@@ -494,10 +494,33 @@ public:
         alloc(grower);
     }
 
+    HashTable(HashTable && rhs)
+        : buf(nullptr)
+    {
+        *this = std::move(rhs);
+    }
+
     ~HashTable()
     {
         destroyElements();
         free();
+    }
+
+    HashTable & operator= (HashTable && rhs)
+    {
+        destroyElements();
+        free();
+
+        std::swap(buf, rhs.buf);
+        std::swap(m_size, rhs.m_size);
+        std::swap(grower, rhs.grower);
+
+        Hash::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs));
+        Cell::State::operator=(std::move(rhs));
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs));
+
+        return *this;
     }
 
     class Reader final : private Cell::State

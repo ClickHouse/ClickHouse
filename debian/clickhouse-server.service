@@ -11,7 +11,7 @@ RestartSec=30
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml
 LimitCORE=infinity
 LimitNOFILE=500000
-CapabilityBoundingSet=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_IPC_LOCK
 
 [Install]
 WantedBy=multi-user.target

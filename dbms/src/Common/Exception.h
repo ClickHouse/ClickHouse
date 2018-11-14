@@ -59,6 +59,7 @@ private:
 using Exceptions = std::vector<std::exception_ptr>;
 
 
+std::string errnoToString(int code = 0, int the_errno = errno);
 [[noreturn]] void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
 
 
