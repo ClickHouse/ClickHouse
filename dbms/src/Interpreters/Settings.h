@@ -125,7 +125,7 @@ struct Settings
     M(SettingUInt64, max_concurrent_queries_for_user, 0, "The maximum number of concurrent requests per user.") \
     \
     M(SettingBool, insert_deduplicate, true, "For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed") \
-    M(SettingBool, insert_sample_with_metadata, true, "For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions.") \
+    M(SettingBool, insert_sample_with_metadata, false, "For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions.") \
     \
     M(SettingUInt64, insert_quorum, 0, "For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled.") \
     M(SettingMilliseconds, insert_quorum_timeout, 600000, "") \
