@@ -449,11 +449,10 @@ template <>
 void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
     attribute.string_arena = std::make_unique<Arena>();
-    auto & null_value_ref = std::get<StringRef>(attribute.null_values);
     const String & string = null_value.get<String>();
-    const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-    null_value_ref = StringRef{string_in_arena, string.size()};
-    attribute.arrays.emplace<ContainerType<StringRef>>(initial_array_size, null_value_ref);
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+    attribute.arrays.emplace<ContainerType<StringRef>>(initial_array_size, StringRef(string_in_arena, string.size()));
 }
 
 
