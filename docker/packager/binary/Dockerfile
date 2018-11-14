@@ -5,9 +5,6 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             cmake \
-            ccache \
-            distcc \
-            distcc-pump \
             curl \
             gcc-7 \
             g++-7 \
