@@ -53,13 +53,13 @@ Combines arrays passed as arguments.
 arrayConcat(arrays)
 ```
 
-**Arguments**
+**Parameters**
 
-- `arrays` – Arrays of comma-separated `[values]`.
+- `arrays` – arbitrary number of arguments of type Array.
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
 
@@ -71,9 +71,9 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 ## arrayElement(arr, n), operator arr[n]
 
-Get the element with the index 'n' from the array 'arr'.'n' must be any integer type.
+Get the element with the index `n` from the array `arr`. `n` must be any integer type.
 Indexes in an array begin from one.
-Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, 'arr\[-1\]' is the last item in the array.
+Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.).
 
@@ -92,6 +92,79 @@ SELECT has([1, 2, NULL], NULL)
 └─────────────────────────┘
 ```
 
+## hasAll
+
+Checks whether one array is a subset of another.
+
+```
+hasAll(set, subset)
+```
+
+**Parameters**
+
+- `set` – Array of any type with a set of elements.
+- `subset` – Array of any type with elements that should be tested to be a subset of `set`.
+
+**Return values**
+
+- `1`, if `set` contains all of the elements from `subset`.
+- `0`, otherwise.
+
+**Peculiar properties**
+
+- An empty array is a subset of any array.
+- `Null` processed as a value.
+- Order of values in both of arrays doesn't matter.
+
+**Examples**
+
+`SELECT hasAll([], [])` returns 1.
+
+`SELECT hasAll([1, Null], [Null])` returns 1.
+
+`SELECT hasAll([1.0, 2, 3, 4], [1, 3])` returns 1.
+
+`SELECT hasAll(['a', 'b'], ['a'])` returns 1.
+
+`SELECT hasAll([1], ['a'])` returns 0.
+
+`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
+
+## hasAny
+
+Checks whether two arrays have intersection by some elements.
+
+```
+hasAny(array1, array2)
+```
+
+**Parameters**
+
+- `array1` – Array of any type with a set of elements.
+- `array2` – Array of any type with a set of elements.
+
+**Return values**
+
+- `1`, if `array1` and `array2` have one similar element at least.
+- `0`, otherwise.
+
+**Peculiar properties**
+
+- `Null` processed as a value.
+- Order of values in both of arrays doesn't matter.
+
+**Examples**
+
+`SELECT hasAny([1], [])` returns `0`.
+
+`SELECT hasAny([Null], [Null, 1])` returns `1`.
+
+`SELECT hasAny([-128, 1., 512], [1])` returns `1`.
+
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
+
+`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
+
 ## indexOf(arr, x)
 
 Returns the index of the first 'x' element (starting from 1) if it is in the array, or 0 if it is not.
@@ -99,7 +172,7 @@ Returns the index of the first 'x' element (starting from 1) if it is in the arr
 Example:
 
 ```
-:) select indexOf([1,3,NULL,NULL],NULL)
+:) SELECT indexOf([1,3,NULL,NULL],NULL)
 
 SELECT indexOf([1, 3, NULL, NULL], NULL)
 
@@ -132,7 +205,7 @@ Returns the array \[1, 2, 3, ..., length (arr) \]
 
 This function is normally used with ARRAY JOIN. It allows counting something just once for each array after applying ARRAY JOIN. Example:
 
-```sql
+``` sql
 SELECT
     count() AS Reaches,
     countIf(num = 1) AS Hits
@@ -144,7 +217,7 @@ WHERE CounterID = 160656
 LIMIT 10
 ```
 
-```text
+```
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -152,7 +225,7 @@ LIMIT 10
 
 In this example, Reaches is the number of conversions (the strings received after applying ARRAY JOIN), and Hits is the number of pageviews (strings before ARRAY JOIN). In this particular case, you can get the same result in an easier way:
 
-```sql
+``` sql
 SELECT
     sum(length(GoalsReached)) AS Reaches,
     count() AS Hits
@@ -160,7 +233,7 @@ FROM test.hits
 WHERE (CounterID = 160656) AND notEmpty(GoalsReached)
 ```
 
-```text
+```
 ┌─Reaches─┬──Hits─┐
 │   95606 │ 31406 │
 └─────────┴───────┘
@@ -176,7 +249,7 @@ For example: arrayEnumerateUniq(\[10, 20, 10, 30\]) = \[1,  1,  2,  1\].
 This function is useful when using ARRAY JOIN and aggregation of array elements.
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID AS GoalID,
     sum(Sign) AS Reaches,
@@ -191,7 +264,7 @@ ORDER BY Reaches DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌──GoalID─┬─Reaches─┬─Visits─┐
 │   53225 │    3214 │   1097 │
 │ 2825062 │    3188 │   1097 │
@@ -210,11 +283,11 @@ In this example, each goal ID has a calculation of the number of conversions (ea
 
 The arrayEnumerateUniq function can take multiple arrays of the same size as arguments. In this case, uniqueness is considered for tuples of elements in the same positions in all the arrays.
 
-```sql
+``` sql
 SELECT arrayEnumerateUniq([1, 1, 1, 2, 2, 2], [1, 1, 2, 1, 1, 2]) AS res
 ```
 
-```text
+```
 ┌─res───────────┐
 │ [1,2,1,1,2,1] │
 └───────────────┘
@@ -230,13 +303,13 @@ Removes the last item from the array.
 arrayPopBack(array)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
 
@@ -254,13 +327,13 @@ Removes the first item from the array.
 arrayPopFront(array)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
 
@@ -278,14 +351,14 @@ Adds one item to the end of the array.
 arrayPushBack(array, single_value)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 - `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPushBack(['a'], 'b') AS res
 ```
 
@@ -303,14 +376,14 @@ Adds one element to the beginning of the array.
 arrayPushFront(array, single_value)
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` – Array.
 - `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)".  Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
-```sql
+``` sql
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
 
@@ -366,7 +439,7 @@ Returns a slice of the array.
 arraySlice(array, offset[, length])
 ```
 
-**Arguments**
+**Parameters**
 
 - `array` –  Array of data.
 - `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
@@ -374,7 +447,7 @@ arraySlice(array, offset[, length])
 
 **Example**
 
-```sql
+``` sql
 SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 ```
 
@@ -396,3 +469,5 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 ## arrayJoin(arr)
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_functions/) <!--hide-->

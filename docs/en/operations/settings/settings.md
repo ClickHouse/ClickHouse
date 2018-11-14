@@ -417,3 +417,5 @@ See also the following parameters:
 - [insert_quorum](#setting-insert_quorum)
 - [insert_quorum_timeout](#setting-insert_quorum_timeout)
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

@@ -55,7 +55,7 @@ endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
     set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
-    set (WITH_NATIVE_INSTRUCTIONS ${ARCHNATIVE} CACHE INTERNAL "")
+    set (WITH_NATIVE_INSTRUCTIONS ${ARCH_NATIVE} CACHE INTERNAL "")
     if (OS_FREEBSD OR ARCH_I386)
         set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
     endif ()
@@ -164,6 +164,8 @@ if (USE_INTERNAL_LLVM_LIBRARY)
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
+    set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
+    set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     add_subdirectory (llvm/llvm)
 endif ()
 

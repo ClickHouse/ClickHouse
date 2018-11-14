@@ -18,19 +18,20 @@ class WriteBuffer;
 struct ExternalQueryBuilder
 {
     const DictionaryStructure & dict_struct;
-    const std::string & db;
-    const std::string & table;
+    std::string db;
+    std::string table;
+    std::string schema;
     const std::string & where;
 
     IdentifierQuotingStyle quoting_style;
 
 
     ExternalQueryBuilder(
-        const DictionaryStructure & dict_struct,
-        const std::string & db,
-        const std::string & table,
-        const std::string & where,
-        IdentifierQuotingStyle quoting_style);
+        const DictionaryStructure & dict_struct_,
+        const std::string & db_,
+        const std::string & table_,
+        const std::string & where_,
+        IdentifierQuotingStyle quoting_style_);
 
     /** Generate a query to load all data. */
     std::string composeLoadAllQuery() const;

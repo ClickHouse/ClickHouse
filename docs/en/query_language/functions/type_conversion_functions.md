@@ -12,6 +12,10 @@
 
 ## toDate, toDateTime
 
+## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
+
+Converts `value` to [Decimal](../../data_types/decimal.md#data_type-decimal) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+
 ## toString
 
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.
@@ -24,7 +28,7 @@ When converting dates with times to numbers or vice versa, the date with time co
 
 The date and date-with-time formats for the toDate/toDateTime functions are defined as follows:
 
-```text
+```
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
@@ -37,13 +41,13 @@ Conversion between numeric types uses the same rules as assignments between diff
 
 Additionally, the toString function of the DateTime argument can take a second String argument containing the name of the time zone. Example: `Asia/Yekaterinburg` In this case, the time is formatted according to the specified time zone.
 
-```sql
+``` sql
 SELECT
     now() AS now_local,
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 ```
 
-```text
+```
 ┌───────────now_local─┬─now_yekat───────────┐
 │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
 └─────────────────────┴─────────────────────┘
@@ -62,21 +66,21 @@ Accepts a String or FixedString argument. Returns the String with the content tr
 
 Example:
 
-```sql
+``` sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```text
+```
 ┌─s─────────────┬─s_cut─┐
 │ foo\0\0\0\0\0 │ foo   │
 └───────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```text
+```
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
@@ -102,7 +106,7 @@ Converts 'x' to the 't' data type. The syntax CAST(x AS t) is also supported.
 
 Example:
 
-```sql
+``` sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,
@@ -111,7 +115,7 @@ SELECT
     CAST(timestamp, 'FixedString(22)') AS fixed_string
 ```
 
-```text
+```
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
@@ -137,3 +141,5 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 └─────────────────────────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

@@ -31,7 +31,7 @@ You may manually create this subfolder and file in server filesystem and then [A
 
 **1.** Set up the `file_engine_table` table:
 
-```sql
+``` sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -47,11 +47,11 @@ two	2
 
 **3.** Query the data:
 
-```sql
+``` sql
 SELECT * FROM file_engine_table
 ```
 
-```text
+```
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
@@ -76,3 +76,5 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
   - `SELECT ... SAMPLE`
   - Indices
   - Replication
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/file/) <!--hide-->

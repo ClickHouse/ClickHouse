@@ -532,6 +532,7 @@ Columns in the log:
 - database_name – The name of the database.
 - table_name – Name of the table.
 - part_name – Name of the data part.
+- partition_id – The identifier of the partition.
 - size_in_bytes – Size of the data part in bytes.
 - merged_from – An array of names of data parts that make up the merge (also used when downloading a merged part).
 - merge_time_ms – Time spent on the merge.
@@ -717,3 +718,5 @@ For more information, see the section "[Replication](../../operations/table_engi
 <zookeeper incl="zookeeper-servers" optional="true" />
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->

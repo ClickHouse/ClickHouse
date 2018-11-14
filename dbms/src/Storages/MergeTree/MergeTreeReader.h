@@ -30,7 +30,7 @@ public:
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         bool save_marks_in_cache,
-        MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+        const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
         size_t aio_threshold, size_t max_read_buffer_size,
         const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
@@ -111,7 +111,7 @@ private:
     /// If save_marks_in_cache is false, then, if marks are not in cache, we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache;
 
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;

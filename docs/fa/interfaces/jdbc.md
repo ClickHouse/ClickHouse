@@ -12,3 +12,4 @@ JDBC drivers implemented by other organizations:
 - [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/jdbc/) <!--hide-->

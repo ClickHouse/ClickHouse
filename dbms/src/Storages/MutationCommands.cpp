@@ -4,7 +4,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
 #include <Common/typeid_cast.h>
 

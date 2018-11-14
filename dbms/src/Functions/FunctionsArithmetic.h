@@ -997,6 +997,10 @@ template <> constexpr bool IsIntegral<DataTypeInt16> = true;
 template <> constexpr bool IsIntegral<DataTypeInt32> = true;
 template <> constexpr bool IsIntegral<DataTypeInt64> = true;
 
+template <typename DataType> constexpr bool IsFloatingPoint = false;
+template <> constexpr bool IsFloatingPoint<DataTypeFloat32> = true;
+template <> constexpr bool IsFloatingPoint<DataTypeFloat64> = true;
+
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
@@ -1055,7 +1059,12 @@ public:
         /// least(Date, Date) -> Date
         /// greatest(Date, Date) -> Date
         Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastImpl<T0, T1>> || std::is_same_v<Op, GreatestImpl<T0, T1>>),
-            LeftDataType>>;
+            LeftDataType>,
+        /// Date % Int32 -> int32
+        Case<std::is_same_v<Op, ModuloImpl<T0, T1>>, Switch<
+            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, RightDataType>,
+            Case<IsDateOrDateTime<LeftDataType> && IsFloatingPoint<RightDataType>, DataTypeInt32>>>>;
+
 };
 
 

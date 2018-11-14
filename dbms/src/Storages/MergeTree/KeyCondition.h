@@ -10,7 +10,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -233,7 +232,6 @@ public:
     KeyCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
-        const NamesAndTypesList & all_columns,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
@@ -270,7 +268,7 @@ public:
 
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
+        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,

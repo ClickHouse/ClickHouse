@@ -104,3 +104,5 @@ For distributed query processing, the accumulated amounts are stored on the requ
 
 When the server is restarted, quotas are reset.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/quotas/) <!--hide-->

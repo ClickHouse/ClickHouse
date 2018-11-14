@@ -155,7 +155,8 @@ DictionarySourcePtr DictionarySourceFactory::create(
     else if ("odbc" == source_type)
     {
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(config, context.getSettings().http_connection_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+        const auto & global_config = context.getConfigRef();
+        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(global_config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
         return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
 #else
         throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
@@ -166,7 +167,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
-//        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_connection_timeout, config.getString(config_prefix + ".connection_string"));
+//        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
 //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
     }
     else if ("executable" == source_type)

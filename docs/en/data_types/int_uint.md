@@ -18,3 +18,5 @@ Fixed-length integers, with or without a sign.
 - UInt32 - [0 : 4294967295]
 - UInt64 - [0 : 18446744073709551615]
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/int_uint/) <!--hide-->

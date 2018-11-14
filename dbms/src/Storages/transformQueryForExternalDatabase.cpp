@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -25,7 +26,10 @@ static void replaceConstFunction(IAST & node, const Context & context, const Nam
 
         if (ASTFunction * function = typeid_cast<ASTFunction *>(&*child))
         {
-            auto result_block = KeyCondition::getBlockWithConstants(function->ptr(), context, all_columns);
+            NamesAndTypesList source_columns = all_columns;
+            ASTPtr query = function->ptr();
+            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
+            auto result_block = KeyCondition::getBlockWithConstants(query, syntax_result, context);
             if (!result_block.has(child->getColumnName()))
                 return;
 
@@ -88,7 +92,8 @@ String transformQueryForExternalDatabase(
     const Context & context)
 {
     auto clone_query = query.clone();
-    ExpressionAnalyzer analyzer(clone_query, context, {}, available_columns);
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(clone_query, available_columns);
+    ExpressionAnalyzer analyzer(clone_query, syntax_result, context);
     const Names & used_columns = analyzer.getRequiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
@@ -119,16 +124,23 @@ String transformQueryForExternalDatabase(
         {
             if (function->name == "and")
             {
+                bool compatible_found = false;
                 auto new_function_and = std::make_shared<ASTFunction>();
                 auto new_function_and_arguments = std::make_shared<ASTExpressionList>();
                 new_function_and->arguments = new_function_and_arguments;
                 new_function_and->children.push_back(new_function_and_arguments);
 
                 for (const auto & elem : function->arguments->children)
+                {
                     if (isCompatible(*elem))
+                    {
                         new_function_and_arguments->children.push_back(elem);
+                        compatible_found = true;
+                    }
+                }
 
-                select->where_expression = std::move(new_function_and);
+                if (compatible_found)
+                     select->where_expression = std::move(new_function_and);
             }
         }
     }

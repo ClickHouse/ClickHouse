@@ -21,7 +21,7 @@ Turbo-Boost крайне не рекомендуется отключать. П�
 Нужно всегда использовать `performance` scaling governor. `ondemand` scaling governor работает намного хуже при постоянно высоком спросе.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
+sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## Ограничение CPU
@@ -178,7 +178,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Версия Java:
 
-```text
+```
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -226,7 +226,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```text
+```
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]
@@ -254,3 +254,5 @@ script
         -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
 end script
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/tips/) <!--hide-->

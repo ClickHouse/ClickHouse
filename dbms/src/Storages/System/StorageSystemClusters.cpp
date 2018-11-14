@@ -30,13 +30,13 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context
     {
         size_t i = 0;
         res_columns[i++]->insert(cluster_name);
-        res_columns[i++]->insert(static_cast<UInt64>(shard_info.shard_num));
-        res_columns[i++]->insert(static_cast<UInt64>(shard_info.weight));
-        res_columns[i++]->insert(static_cast<UInt64>(address.replica_num));
+        res_columns[i++]->insert(shard_info.shard_num);
+        res_columns[i++]->insert(shard_info.weight);
+        res_columns[i++]->insert(address.replica_num);
         res_columns[i++]->insert(address.host_name);
         res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
-        res_columns[i++]->insert(static_cast<UInt64>(address.port));
-        res_columns[i++]->insert(static_cast<UInt64>(shard_info.isLocal()));
+        res_columns[i++]->insert(address.port);
+        res_columns[i++]->insert(shard_info.isLocal());
         res_columns[i++]->insert(address.user);
         res_columns[i++]->insert(address.default_database);
     };

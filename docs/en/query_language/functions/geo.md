@@ -10,10 +10,10 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **Input parameters**
 
-- `lon1Deg` — Latitude of the first point in degrees. Range: `[-90°, 90°]`.
-- `lat1Deg` — Longitude of the first point in degrees. Range: `[-180°, 180°]`.
-- `lon2Deg` — Latitude of the second point in degrees. Range: `[-90°, 90°]`.
-- `lat2Deg` — Longitude of the second point in degrees. Range: `[-180°, 180°]`.
+- `lon1Deg` — Longitude of the first point in degrees. Range: `[-180°, 180°]`.
+- `lat1Deg` — Latitude of the first point in degrees. Range: `[-90°, 90°]`.
+- `lon2Deg` — Longitude of the second point in degrees. Range: `[-180°, 180°]`.
+- `lat2Deg` — Latitude of the second point in degrees. Range: `[-90°, 90°]`.
 
 Positive values correspond to North latitude and East longitude, and negative values correspond to South latitude and West longitude.
 
@@ -25,11 +25,11 @@ Generates an exception when the input parameter values fall outside of the range
 
 **Example**
 
-```sql
+``` sql
 SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 ```
 
-```text
+```
 ┌─greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)─┐
 │                                                14132374.194975413 │
 └───────────────────────────────────────────────────────────────────┘
@@ -45,8 +45,7 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **Input parameters**
 
-- `x` — Latitude of the point.
-- `y` — Longitude of the point.
+- `x, y` — Coordinates of a point on the plane.
 - `xᵢ, yᵢ` — Coordinates of the center of the `i`-th ellipsis.
 - `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in meters.
 
@@ -58,11 +57,11 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
 ```
 
-```text
+```
 ┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
 │                                                                   1 │
 └─────────────────────────────────────────────────────────────────────┘
@@ -89,7 +88,7 @@ If the point is on the polygon boundary, the function may return either 0 or 1.
 
 **Example**
 
-```sql
+``` sql
 SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 ```
 
@@ -99,3 +98,5 @@ SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
 └─────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/geo/) <!--hide-->

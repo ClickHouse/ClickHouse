@@ -19,12 +19,12 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
 #include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
@@ -161,7 +161,7 @@ public:
         : storage(storage_), consumer(nullptr), context(context_), max_block_size(max_block_size_)
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
-        context.setSetting("input_format_skip_unknown_fields", UInt64(1));
+        context.setSetting("input_format_skip_unknown_fields", 1u);
         if (schema.size() > 0)
             context.setSetting("format_schema", schema);
     }
@@ -268,7 +268,8 @@ StorageKafka::StorageKafka(
     Context & context_,
     const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
-    const String & format_name_, char row_delimiter_, const String & schema_name_, size_t num_consumers_)
+    const String & format_name_, char row_delimiter_, const String & schema_name_,
+    size_t num_consumers_, size_t max_block_size_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), context(context_),
     topics(context.getMacros()->expand(topics_)),
@@ -277,7 +278,7 @@ StorageKafka::StorageKafka(
     format_name(context.getMacros()->expand(format_name_)),
     row_delimiter(row_delimiter_),
     schema_name(context.getMacros()->expand(schema_name_)),
-    num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
+    num_consumers(num_consumers_), max_block_size(max_block_size_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers()
 {
     task = context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
@@ -295,10 +296,10 @@ BlockInputStreams StorageKafka::read(
 {
     check(column_names);
 
-    if (num_consumers == 0)
+    if (num_created_consumers == 0)
         return BlockInputStreams();
 
-    const size_t stream_count = std::min(num_streams, num_consumers);
+    const size_t stream_count = std::min(num_streams, num_created_consumers);
 
     BlockInputStreams streams;
     streams.reserve(stream_count);
@@ -434,26 +435,44 @@ void StorageKafka::pushConsumer(StorageKafka::ConsumerPtr c)
     semaphore.set();
 }
 
+bool StorageKafka::checkDependencies(const String & database_name, const String & table_name)
+{
+    // Check if all dependencies are attached
+    auto dependencies = context.getDependencies(database_name, table_name);
+    if (dependencies.size() == 0)
+        return true;
+
+    // Check the dependencies are ready?
+    for (const auto & db_tab : dependencies)
+    {
+        auto table = context.tryGetTable(db_tab.first, db_tab.second);
+        if (!table)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(table.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+
+        // Check all its dependencies
+        if (!checkDependencies(db_tab.first, db_tab.second))
+            return false;
+    }
+
+    return true;
+}
+
 void StorageKafka::streamThread()
 {
     try
     {
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled)
-        {
-            // Check if all dependencies are attached
-            auto dependencies = context.getDependencies(database_name, table_name);
-            if (dependencies.size() == 0)
-                break;
+        // Check if at least one direct dependency is attached
+        auto dependencies = context.getDependencies(database_name, table_name);
 
-            // Check the dependencies are ready?
-            bool ready = true;
-            for (const auto & db_tab : dependencies)
-            {
-                if (!context.tryGetTable(db_tab.first, db_tab.second))
-                    ready = false;
-            }
-            if (!ready)
+        // Keep streaming as long as there are attached views and streaming is not cancelled
+        while (!stream_cancelled && num_created_consumers > 0 && dependencies.size() > 0)
+        {
+            if (!checkDependencies(database_name, table_name))
                 break;
 
             LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
@@ -488,12 +507,14 @@ bool StorageKafka::streamToViews()
 
     // Limit the number of batched messages to allow early cancellations
     const Settings & settings = context.getSettingsRef();
-    const size_t block_size = settings.max_block_size.value;
+    size_t block_size = max_block_size;
+    if (block_size == 0)
+        block_size = settings.max_block_size.value;
 
     // Create a stream for each consumer and join them in a union stream
     BlockInputStreams streams;
-    streams.reserve(num_consumers);
-    for (size_t i = 0; i < num_consumers; ++i)
+    streams.reserve(num_created_consumers);
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream = std::make_shared<KafkaBlockInputStream>(*this, context, schema_name, block_size);
         streams.emplace_back(stream);
@@ -509,7 +530,7 @@ bool StorageKafka::streamToViews()
     // Join multiple streams if necessary
     BlockInputStreamPtr in;
     if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, num_consumers);
+        in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, streams.size());
     else
         in = streams[0];
 
@@ -644,6 +665,7 @@ void registerStorageKafka(StorageFactory & factory)
         CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter)
         CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema)
         CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers)
+        CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         // Get and check broker list
@@ -790,9 +812,28 @@ void registerStorageKafka(StorageFactory & factory)
             num_consumers = kafka_settings.kafka_num_consumers.value;
         }
 
+        // Parse max block size (optional)
+        size_t max_block_size = 0;
+        if (args_count >= 8)
+        {
+            auto ast = typeid_cast<const ASTLiteral *>(engine_args[7].get());
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
+            }
+            else
+            {
+                throw Exception("Maximum block size must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+        else if (kafka_settings.kafka_max_block_size.changed)
+        {
+            max_block_size = static_cast<size_t>(kafka_settings.kafka_max_block_size.value);
+        }
+
         return StorageKafka::create(
             args.table_name, args.database_name, args.context, args.columns,
-            brokers, group, topics, format, row_delimiter, schema, num_consumers);
+            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size);
     });
 }
 
