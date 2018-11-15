@@ -908,7 +908,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 
     for (const AlterCommand & command : commands)
     {
-        if (command.type == AlterCommand::COMMENT_COLUMN)
+        if (!command.is_mutable())
         {
             continue;
         }

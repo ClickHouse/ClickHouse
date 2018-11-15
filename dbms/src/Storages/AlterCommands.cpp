@@ -477,4 +477,15 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
     }
 }
 
+bool AlterCommands::is_mutable() const
+{
+    for (const auto & param : *this)
+    {
+        if (param.is_mutable())
+            return true;
+    }
+
+    return false;
+}
+
 }

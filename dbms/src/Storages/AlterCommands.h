@@ -70,6 +70,7 @@ public:
     void apply(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);
+    bool is_mutable() const;
 };
 
 }
