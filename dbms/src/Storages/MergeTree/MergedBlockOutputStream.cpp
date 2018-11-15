@@ -2,6 +2,7 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataStreams/MarkInCompressedFile.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
@@ -15,6 +16,10 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
+constexpr auto FIXED_MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto ADAPTIVE_MARKS_FILE_EXTENSION = ".mrk2";
+constexpr auto FIXED_MARK_BYTE_SIZE = sizeof(MarkInCompressedFile);
+constexpr auto ADAPTIVE_MARK_BYTE_SIZE = sizeof(MarkInCompressedFile) + sizeof(size_t);
 
 }
 
@@ -31,7 +36,9 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     min_compress_block_size(min_compress_block_size_),
     max_compress_block_size(max_compress_block_size_),
     aio_threshold(aio_threshold_),
-    compression_settings(compression_settings_)
+    compression_settings(compression_settings_),
+    marks_file_extension(storage.index_granularity_bytes == 0 ? FIXED_MARKS_FILE_EXTENSION : ADAPTIVE_MARKS_FILE_EXTENSION),
+    mark_size_in_bytes(storage.index_granularity_bytes == 0 ? FIXED_MARK_BYTE_SIZE : ADAPTIVE_MARK_BYTE_SIZE)
 {
 }
 
@@ -57,7 +64,7 @@ void IMergedBlockOutputStream::addStreams(
         column_streams[stream_name] = std::make_unique<ColumnStream>(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
-            path + stream_name, storage.marks_file_extension,
+            path + stream_name, marks_file_extension,
             max_compress_block_size,
             compression_settings,
             estimated_size,
@@ -90,11 +97,11 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
 
 size_t IMergedBlockOutputStream::getBlockIndexGranularity(const Block & block) const
 {
-    if (storage.index_granularity_bytes == 0 || storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+    if (storage.index_granularity_bytes == 0)
         return storage.index_granularity;
 
-    size_t blockSize = block.allocatedBytes();
-    return std::max(blockSize / storage.index_granularity_bytes, 1);
+    size_t block_size_in_memory = block.allocatedBytes();
+    return std::max(block_size_in_memory / storage.index_granularity_bytes, 1);
 }
 
 
@@ -147,7 +154,7 @@ void IMergedBlockOutputStream::writeData(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
-                if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY)
+                if (stream.marks_file_extension != FIXED_MARKS_FILE_EXTENSION)
                     writeIntBinary(index_granularity, stream.marks);
             }, serialize_settings.path);
         }
@@ -386,6 +393,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
     new_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_part->getFullPath());
+    new_part->marks_file_extension = marks_file_extension;
+    new_part->marks_index_granularity.swap(marks_index_granularity);
+    new_part->mark_size_in_bytes = mark_size_in_bytes;
 }
 
 void MergedBlockOutputStream::init()
@@ -502,6 +512,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
             }
 
+            marks_index_granularity.push_back(current_block_index_granularity);
             ++marks_count;
         }
     }
@@ -549,7 +560,6 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         initialized = true;
     }
 
-    size_t current_block_index_granularity = getBlockIndexGranularity(block);
     size_t rows = block.rows();
 
     WrittenOffsetColumns offset_columns = already_written_offset_columns;
