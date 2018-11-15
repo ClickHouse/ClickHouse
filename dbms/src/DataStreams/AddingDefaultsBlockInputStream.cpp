@@ -49,7 +49,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
             evaluate_block.erase(column.first);
     }
 
-    evaluateMissingDefaultsUnsafe(evaluate_block, header.getNamesAndTypesList(), column_defaults, context);
+    evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), column_defaults, context, false);
 
     std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
