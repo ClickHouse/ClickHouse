@@ -47,8 +47,8 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, streams.out->getHeader(), context.getSettings().max_insert_block_size);
 
     auto column_defaults = ColumnDefaultsHelper::loadFromContext(context, ast_insert_query->database, ast_insert_query->table);
-    if (column_defaults)
-        res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, *column_defaults, context);
+    if (!column_defaults.empty())
+        res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, context);
 }
 
 }
