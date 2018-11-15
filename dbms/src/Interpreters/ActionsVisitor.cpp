@@ -264,7 +264,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         && projection_manipulator->tryToGetFromUpperProjection(getColumnName()))
         return;
 
-    if (typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
     {
         if (!only_consts && !projection_manipulator->tryToGetFromUpperProjection(getColumnName()))
         {
@@ -279,6 +279,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             if (found)
                 throw Exception("Column " + getColumnName() + " is not under aggregate function and not in GROUP BY.",
                     ErrorCodes::NOT_AN_AGGREGATE);
+
+            /// Special check for WITH statement alias. Add alias action to be able to use this alias.
+            if (identifier->prefer_alias_to_column_name && !identifier->alias.empty())
+                actions_stack.addAction(ExpressionAction::addAliases({{identifier->name, identifier->alias}}));
         }
     }
     else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
