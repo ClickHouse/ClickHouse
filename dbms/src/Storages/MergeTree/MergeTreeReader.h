@@ -2,7 +2,6 @@
 
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MarksData.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Core/NamesAndTypes.h>
@@ -54,52 +53,43 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
 
-    /// It doesn't matter, which column marks we would get -- they all have the same index granularity
-    /// and different offsets in files and blocks, but caller of this method mustn't be interested in them
-    /// Example:
-    /// Column1: (some long string)
-    /// _______________________________________________________________________________________
-    /// | Mark | offset_in_compressed_file | offset_in_decompressed_block | index_granularity |
-    /// ---------------------------------------------------------------------------------------
-    /// |    0 |                         0 |                            0 |               242 |
-    /// |    1 |                    121000 |                          344 |               127 |
-    ///  .....................................................................................
-    /// ---------------------------------------------------------------------------------------
-    /// Column2: (int64)
-    /// _______________________________________________________________________________________
-    /// | Mark | offset_in_compressed_file | offset_in_decompressed_block | index_granularity |
-    /// ---------------------------------------------------------------------------------------
-    /// |    0 |                         0 |                            0 |               242 |
-    /// |    1 |                      1936 |                           24 |               127 |
-    ///  .....................................................................................
-    /// ---------------------------------------------------------------------------------------
-
-    MarksData getAnyStreamMarksData() const { std::cerr << "STREAMS SIZE:" << streams.size() << std::endl; return streams.begin()->second->marks_data; }
-
+    MergeTreeData::DataPartPtr data_part;
 private:
     class Stream
     {
     public:
         Stream(
-            const String & path_prefix_, const String & extension_, size_t marks_count_,
+            const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
             const MarkRanges & all_mark_ranges,
-            bool save_marks_in_cache,
+            MarkCache * mark_cache, bool save_marks_in_cache,
             UncompressedCache * uncompressed_cache,
             size_t aio_threshold, size_t max_read_buffer_size,
-            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-            const MergeTreeData & storage_);
+            const std::string & marks_file_extension_, size_t one_mark_bytes_size_,
+            const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
         void seekToMark(size_t index);
         void seekToStart();
 
         ReadBuffer * data_buffer;
-        MarksData marks_data;
 
     private:
         Stream() = default;
 
+        /// NOTE: lazily loads marks from the marks cache.
+        const MarkInCompressedFile & getMark(size_t index);
+
+        void loadMarks();
+
         std::string path_prefix;
-        std::string extension;
+        std::string data_file_extension;
+        std::string marks_file_extension;
+
+        size_t marks_count;
+        size_t one_mark_bytes_size;
+
+        MarkCache * mark_cache;
+        bool save_marks_in_cache;
+        MarkCache::MappedPtr marks;
 
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
@@ -113,7 +103,6 @@ private:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// Path to the directory containing the part
     String path;
-    MergeTreeData::DataPartPtr data_part;
 
     FileStreams streams;
 
@@ -129,7 +118,6 @@ private:
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
-    size_t index_granularity;
 
     void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);

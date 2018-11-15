@@ -107,8 +107,6 @@ MergeTreeData::MergeTreeData(
     primary_expr_ast(primary_expr_ast_),
     secondary_sort_expr_ast(secondary_sort_expr_ast_),
     partition_expr_ast(partition_expr_ast_),
-    marks_file_extension(".mrk"),
-    one_mark_bytes_size(sizeof(MarkInCompressedFile) - sizeof(size_t)),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_),
@@ -154,14 +152,7 @@ MergeTreeData::MergeTreeData(
     }
     else
     {
-        if (settings_.index_granularity_bytes != 0)
-        {
-            min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY;
-            marks_file_extension = ".mrk2";
-            one_mark_bytes_size = sizeof(MarkInCompressedFile);
-        }
-        else
-            min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+        min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
         initPartitionKey();
     }
 
@@ -196,12 +187,6 @@ MergeTreeData::MergeTreeData(
             throw Exception(
                 "MergeTree data format version on disk doesn't support custom partitioning",
                 ErrorCodes::METADATA_MISMATCH);
-        else if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_ADAPTIVE_INDEX_GRANULARITY.toUnderType())
-            throw Exception(
-                "MergeTree data format version on disk doesn't support adaptive index granularity",
-                ErrorCodes::METADATA_MISMATCH);
-
-
     }
 
 }
@@ -954,11 +939,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     /// Check that type conversions are possible.
-    ExpressionActionsPtr unused_expression;
-    NameToNameMap unused_map;
-    bool unused_bool;
+    ///ExpressionActionsPtr unused_expression;
+    ///NameToNameMap unused_map;
+    ///bool unused_bool;
 
-    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
+    ///createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1001,7 +986,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + marks_file_extension] = "";
+                        out_rename_map[file_name + part->marks_file_extension] = "";
                     }
                 }, {});
             }
@@ -1075,8 +1060,9 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
+                    std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + marks_file_extension] = original_file_name + marks_file_extension;
+                    out_rename_map[temporary_file_name + part->marks_file_extension] = original_file_name + part->marks_file_extension;
                 }, {});
         }
 
@@ -2246,6 +2232,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
             for (size_t i = 0; i < res.size(); ++i)
                 (*out_states)[i] = res[i]->state;
         }
+    }
+    std::cerr << "NOT INITIALIZED DATA PART\n";
+    for (auto part : res) {
+        std::cerr << "FullPath:" << part->getFullPath() << std::endl;
+        std::cerr << "MarkSFileExtensSion:" << part->marks_file_extension << std::endl;
     }
 
     return res;

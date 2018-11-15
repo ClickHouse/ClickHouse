@@ -3,7 +3,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
 #include <IO/CachedCompressedReadBuffer.h>
-#include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
@@ -43,7 +42,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
     clockid_t clock_type)
     : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
     try
     {
@@ -158,20 +157,20 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
 
 MergeTreeReader::Stream::Stream(
-    const String & path_prefix_, const String & extension_, size_t marks_count_,
+    const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
     const MarkRanges & all_mark_ranges,
-    bool save_marks_in_cache_,
+    MarkCache * mark_cache_, bool save_marks_in_cache_,
     UncompressedCache * uncompressed_cache,
     size_t aio_threshold, size_t max_read_buffer_size,
-    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type,
-    const MergeTreeData & storage_)
-    : path_prefix(path_prefix_), extension(extension_),
-      marks_data(path_prefix_, storage_, marks_count_, save_marks_in_cache_)
+    const std::string & marks_file_extension_, size_t one_mark_bytes_size_,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+    : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
+    , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_), marks_file_extension(marks_file_extension_)
+    , one_mark_bytes_size(one_mark_bytes_size_)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range = 0;
 
-    size_t marks_count = marks_data.getMarksCount();
     for (size_t i = 0; i < all_mark_ranges.size(); ++i)
     {
         size_t right = all_mark_ranges[i].end;
@@ -179,11 +178,11 @@ MergeTreeReader::Stream::Stream(
         /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
 
         /// If the end of range is inside the block, we will need to read it too.
-        if (right < marks_count && marks_data.getMark(right).offset_in_decompressed_block > 0)
+        if (right < marks_count && getMark(right).offset_in_decompressed_block > 0)
         {
             while (right < marks_count
-                   && marks_data.getMark(right).offset_in_compressed_file
-                       == marks_data.getMark(all_mark_ranges[i].end).offset_in_compressed_file)
+                   && getMark(right).offset_in_compressed_file
+                       == getMark(all_mark_ranges[i].end).offset_in_compressed_file)
             {
                 ++right;
             }
@@ -192,15 +191,15 @@ MergeTreeReader::Stream::Stream(
         /// If there are no marks after the end of range, just use max_read_buffer_size
         if (right >= marks_count
             || (right + 1 == marks_count
-                && marks_data.getMark(right).offset_in_compressed_file
-                    == marks_data.getMark(all_mark_ranges[i].end).offset_in_compressed_file))
+                && getMark(right).offset_in_compressed_file
+                    == getMark(all_mark_ranges[i].end).offset_in_compressed_file))
         {
             max_mark_range = max_read_buffer_size;
             break;
         }
 
         max_mark_range = std::max(max_mark_range,
-            marks_data.getMark(right).offset_in_compressed_file - marks_data.getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
+            getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
     }
 
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
@@ -217,12 +216,12 @@ MergeTreeReader::Stream::Stream(
         for (const auto & mark_range : all_mark_ranges)
         {
             size_t offset_begin = (mark_range.begin > 0)
-                ? marks_data.getMark(mark_range.begin).offset_in_compressed_file
+                ? getMark(mark_range.begin).offset_in_compressed_file
                 : 0;
 
             size_t offset_end = (mark_range.end < marks_count)
-                ? marks_data.getMark(mark_range.end).offset_in_compressed_file
-                : Poco::File(path_prefix + extension).getSize();
+                ? getMark(mark_range.end).offset_in_compressed_file
+                : Poco::File(path_prefix +  data_file_extension).getSize();
 
             if (offset_end > offset_begin)
                 estimated_size += offset_end - offset_begin;
@@ -233,7 +232,7 @@ MergeTreeReader::Stream::Stream(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path_prefix + extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+            path_prefix +  data_file_extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -244,7 +243,7 @@ MergeTreeReader::Stream::Stream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path_prefix + extension, estimated_size, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, estimated_size, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -255,10 +254,83 @@ MergeTreeReader::Stream::Stream(
 }
 
 
+const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
+{
+    if (!marks)
+        loadMarks();
+    return (*marks)[index];
+}
+
+
+void MergeTreeReader::Stream::loadMarks()
+{
+    std::string path = path_prefix + marks_file_extension;
+
+    auto load = [&]() -> MarkCache::MappedPtr
+    {
+        /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+
+        size_t file_size = Poco::File(path).getSize();
+        size_t expected_file_size = one_mark_bytes_size * marks_count;
+        if (expected_file_size != file_size)
+            throw Exception(
+                "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: "  + std::to_string(expected_file_size),
+                ErrorCodes::CORRUPTED_DATA);
+
+        auto res = std::make_shared<MarksInCompressedFile>(marks_count);
+
+        if (one_mark_bytes_size == sizeof(MarkInCompressedFile))
+        {
+            /// Read directly to marks.
+            ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(res->data()));
+
+            if (buffer.eof() || buffer.buffer().size() != file_size)
+                throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        else
+        {
+            ReadBufferFromFile buffer(path, file_size, -1);
+            size_t i = 0;
+            while (!buffer.eof())
+            {
+                readIntBinary((*res)[i].offset_in_compressed_file, buffer);
+                readIntBinary((*res)[i].offset_in_decompressed_block, buffer);
+                buffer.seek(sizeof(size_t), SEEK_CUR);
+                ++i;
+            }
+            if (i * one_mark_bytes_size != file_size)
+                throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+
+        return res;
+    };
+
+    if (mark_cache)
+    {
+        auto key = mark_cache->hash(path);
+        if (save_marks_in_cache)
+        {
+            marks = mark_cache->getOrSet(key, load);
+        }
+        else
+        {
+            marks = mark_cache->get(key);
+            if (!marks)
+                marks = load();
+        }
+    }
+    else
+        marks = load();
+
+    if (!marks)
+        throw Exception("Failed to load marks: " + path, ErrorCodes::LOGICAL_ERROR);
+}
+
 
 void MergeTreeReader::Stream::seekToMark(size_t index)
 {
-    MarkInCompressedFile mark = marks_data.getMark(index);
+    MarkInCompressedFile mark = getMark(index);
 
     try
     {
@@ -321,8 +393,10 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
 
         streams.emplace(stream_name, std::make_unique<Stream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
-            all_mark_ranges, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type, storage));
+            all_mark_ranges, mark_cache, save_marks_in_cache,
+            uncompressed_cache, aio_threshold, max_read_buffer_size,
+            data_part->marks_file_extension, data_part->mark_size_in_bytes,
+            profile_callback, clock_type));
     };
 
     IDataType::SubstreamPath path;

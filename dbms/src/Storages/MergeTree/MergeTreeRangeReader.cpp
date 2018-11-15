@@ -17,14 +17,16 @@ MergeTreeRangeReader::DelayedStream::DelayedStream(
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
         , merge_tree_reader(merge_tree_reader)
         , continue_reading(false), is_finished(false)
-        , marks_data(merge_tree_reader->getAnyStreamMarksData())
 {
 }
 
 size_t MergeTreeRangeReader::DelayedStream::position() const
 {
-    size_t num_rows_before_from_mark = marks_data.getNumRowsBetweenMarks(0, current_mark);
-    return num_rows_before_from_mark + current_offset + num_delayed_rows;
+    size_t num_rows_before_current_mark = 0;
+    for (size_t i = 0; i < current_mark; ++i)
+        num_rows_before_current_mark += merge_tree_reader->data_part->marks_index_granularity[i];
+
+    return num_rows_before_current_mark + current_offset + num_delayed_rows;
 }
 
 size_t MergeTreeRangeReader::DelayedStream::readRows(Block & block, size_t num_rows)
@@ -49,8 +51,10 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Block & block, size_t num_r
 
 size_t MergeTreeRangeReader::DelayedStream::read(Block & block, size_t from_mark, size_t offset, size_t num_rows)
 {
+    size_t num_rows_before_from_mark = 0;
+    for (size_t i = 0; i < from_mark; ++i)
+        num_rows_before_from_mark += merge_tree_reader->data_part->marks_index_granularity[i];
 
-    size_t num_rows_before_from_mark = marks_data.getNumRowsBetweenMarks(0, from_mark);
     /// We already stand accurately in required position,
     /// so because stream is lazy, we don't read anything
     /// and only increment amount delayed_rows
@@ -77,16 +81,16 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(Block & block)
     /// We need to skip some rows before reading
     if (current_offset && !continue_reading)
     {
-        for (size_t mark_num : ext::range(current_mark, marks_data.getMarksCount()))
+        for (size_t mark_num : ext::range(current_mark, merge_tree_reader->data_part->marks_count))
         {
-            size_t mark_index_granularity = marks_data.getMark(mark_num).index_granularity;
+            size_t mark_index_granularity = merge_tree_reader->data_part->marks_index_granularity[mark_num];
             if (current_offset >= mark_index_granularity)
             {
                 current_offset -= mark_index_granularity;
                 current_mark++;
-            } else {
-                break;
             }
+            else
+                break;
 
         }
 
@@ -113,7 +117,7 @@ MergeTreeRangeReader::Stream::Stream(
         : current_mark(from_mark), offset_after_current_mark(0)
         , last_mark(to_mark)
         , merge_tree_reader(merge_tree_reader)
-        , current_mark_index_granularity(merge_tree_reader->getAnyStreamMarksData().getMark(current_mark).index_granularity)
+        , current_mark_index_granularity(merge_tree_reader->data_part->marks_index_granularity[from_mark])
         , stream(from_mark, merge_tree_reader)
 {
 }
@@ -143,7 +147,8 @@ size_t MergeTreeRangeReader::Stream::readRows(Block & block, size_t num_rows)
 void MergeTreeRangeReader::Stream::toNextMark()
 {
     ++current_mark;
-    current_mark_index_granularity = merge_tree_reader->getAnyStreamMarksData().getMark(current_mark).index_granularity;
+    current_mark_index_granularity = merge_tree_reader->data_part->marks_index_granularity[current_mark];
+    std::cerr << "Current mark granularity:" << current_mark_index_granularity << std::endl;
     offset_after_current_mark = 0;
 }
 
@@ -389,11 +394,11 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
 
 MergeTreeRangeReader::MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader, size_t index_granularity, MergeTreeRangeReader * prev_reader,
+        MergeTreeReader * merge_tree_reader, MergeTreeRangeReader * prev_reader,
         ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
         const String * prewhere_column_name, const Names * ordered_names,
         bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain)
-        : index_granularity(index_granularity), merge_tree_reader(merge_tree_reader)
+        : merge_tree_reader(merge_tree_reader)
         , prev_reader(prev_reader), prewhere_column_name(prewhere_column_name)
         , ordered_names(ordered_names), alias_actions(alias_actions), prewhere_actions(std::move(prewhere_actions))
         , always_reorder(always_reorder), remove_prewhere_column(remove_prewhere_column)
@@ -417,11 +422,14 @@ size_t MergeTreeRangeReader::numPendingRowsInCurrentGranule() const
 
     auto pending_rows = stream.numPendingRowsInCurrentGranule();
     /// If pending_rows is zero, than stream is not initialized.
-    return pending_rows ? pending_rows : index_granularity; //TODO(alesap) FIXME
+    return pending_rows ? pending_rows : stream.current_mark_index_granularity;
 }
 
 size_t MergeTreeRangeReader::Stream::numPendingRows() const {
-    return merge_tree_reader->getAnyStreamMarksData().getNumRowsBetweenMarks(current_mark, last_mark) - offset_after_current_mark;
+    size_t rows_between_marks = 0;
+    for(size_t mark = current_mark; mark < last_mark; ++mark)
+        rows_between_marks += merge_tree_reader->data_part->marks_index_granularity[mark];
+    return rows_between_marks - offset_after_current_mark;
 }
 
 bool MergeTreeRangeReader::isCurrentRangeFinished() const
@@ -593,7 +601,7 @@ Block MergeTreeRangeReader::continueReadingChain(ReadResult & result)
             if (merge_tree_reader == nullptr)
             {
                 std::cerr << "HERE IS NULL\n";
-                std::cerr << StackTrace().toString();
+                //std::cerr << StackTrace().toString();
             }
             stream = Stream(range.begin, range.end, merge_tree_reader);
         }

@@ -115,14 +115,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         return index_granularity * granule_to_read - reader.numReadRowsInCurrentGranule();
     };
 
-    if (reader == nullptr) {
-        std::cerr << "=====STACK TRACE WITH NULL READER=====\n";
-        std::cerr << StackTrace().toString() << std::endl;
-    }
-    if (pre_reader == nullptr) {
-        std::cerr << "=====STACK TRACE WITH NULL PREREADER=====\n";
-        std::cerr << StackTrace().toString() << std::endl;
-    }
+    //if (reader == nullptr) {
+    //    std::cerr << "=====STACK TRACE WITH NULL READER=====\n";
+    //    std::cerr << StackTrace().toString() << std::endl;
+    //}
+    //if (pre_reader == nullptr) {
+    //    std::cerr << "=====STACK TRACE WITH NULL PREREADER=====\n";
+    //    std::cerr << StackTrace().toString() << std::endl;
+    //}
 
     if (!task->range_reader.isInitialized())
     {
@@ -132,7 +132,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             {
                 std::cerr << "EMPTY COLUMNS\n";
                 task->range_reader = MergeTreeRangeReader(
-                    pre_reader.get(), index_granularity, nullptr,
+                    pre_reader.get(), nullptr,
                     prewhere_info->alias_actions, prewhere_info->prewhere_actions,
                     &prewhere_info->prewhere_column_name, &task->ordered_names,
                     task->should_reorder, task->remove_prewhere_column, true);
@@ -146,7 +146,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
                     std::cerr << "SETTING PREREADER\n";
                     std::cerr << "PreReader is NULL:" << (pre_reader == nullptr) << std::endl;
                     task->pre_range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr,
+                        pre_reader.get(), nullptr,
                         prewhere_info->alias_actions, prewhere_info->prewhere_actions,
                         &prewhere_info->prewhere_column_name, &task->ordered_names,
                         task->should_reorder, task->remove_prewhere_column, false);
@@ -155,14 +155,14 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
                 std::cerr << "Reader is NULL:" << (reader == nullptr) << std::endl;
                 task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, pre_reader_ptr, nullptr, nullptr,
+                    reader.get(), pre_reader_ptr, nullptr, nullptr,
                     nullptr, &task->ordered_names, true, false, true);
             }
         }
         else
         {
             task->range_reader = MergeTreeRangeReader(
-                reader.get(), index_granularity, nullptr, nullptr, nullptr,
+                reader.get(),  nullptr, nullptr, nullptr,
                 nullptr, &task->ordered_names, task->should_reorder, false, true);
         }
     }

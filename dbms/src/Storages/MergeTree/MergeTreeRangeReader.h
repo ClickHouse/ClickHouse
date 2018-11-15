@@ -20,7 +20,7 @@ class MergeTreeReader;
 class MergeTreeRangeReader
 {
 public:
-    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader, size_t index_granularity, MergeTreeRangeReader * prev_reader,
+    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader, MergeTreeRangeReader * prev_reader,
                          ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
                          const String * prewhere_column_name, const Names * ordered_names,
                          bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain);
@@ -64,7 +64,6 @@ public:
         bool continue_reading = false;
         bool is_finished = true;
 
-        MarksData marks_data;
         /// Current position from the begging of file in rows
         size_t position() const;
         size_t readRows(Block & block, size_t num_rows);
@@ -91,6 +90,7 @@ public:
         size_t numPendingGranules() const { return last_mark - current_mark; }
         size_t numPendingRows() const;
 
+        size_t current_mark_index_granularity = 0;
     private:
         size_t current_mark = 0;
         /// Invariant: offset_after_current_mark + skipped_rows_after_offset < index_granularity
@@ -100,7 +100,6 @@ public:
 
         DelayedStream stream;
         MergeTreeReader * merge_tree_reader = nullptr;
-        size_t current_mark_index_granularity = 0;
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
@@ -184,7 +183,6 @@ private:
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
     void filterBlock(Block & block, const IColumn::Filter & filter) const;
 
-    size_t index_granularity = 0;
     MergeTreeReader * merge_tree_reader = nullptr;
     MergeTreeRangeReader * prev_reader = nullptr; /// If not nullptr, read from prev_reader firstly.
 
