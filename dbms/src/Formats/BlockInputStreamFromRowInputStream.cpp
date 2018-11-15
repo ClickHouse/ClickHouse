@@ -53,7 +53,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 {
     size_t num_columns = sample.columns();
     MutableColumns columns = sample.cloneEmptyColumns();
-    BlockDelayedDefaults delayed_defaults;
+    delayed_defaults.clear();
 
     try
     {
@@ -144,10 +144,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
     if (columns.empty() || columns[0]->empty())
         return {};
 
-    auto out_block = sample.cloneWithColumns(std::move(columns));
-    if (!delayed_defaults.empty())
-        out_block.delayed_defaults = std::move(delayed_defaults);
-    return out_block;
+    return sample.cloneWithColumns(std::move(columns));
 }
 
 
