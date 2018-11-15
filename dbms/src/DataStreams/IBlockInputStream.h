@@ -19,6 +19,7 @@ class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
+class BlockMissingValues;
 class TableStructureReadLock;
 
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
@@ -68,6 +69,12 @@ public:
     virtual BlockExtraInfo getBlockExtraInfo() const
     {
         throw Exception("Method getBlockExtraInfo is not supported by the data stream " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual const BlockMissingValues & getMissingValues() const
+    {
+        static const BlockMissingValues none;
+        return none;
     }
 
     /** Read something before starting all data or after the end of all data.

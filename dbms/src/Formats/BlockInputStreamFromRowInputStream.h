@@ -33,6 +33,8 @@ public:
 
     Block getHeader() const override { return sample; }
 
+    const BlockMissingValues & getMissingValues() const override { return delayed_defaults; }
+
 protected:
     Block readImpl() override;
 
@@ -40,6 +42,7 @@ private:
     RowInputStreamPtr row_input;
     Block sample;
     size_t max_block_size;
+    BlockMissingValues delayed_defaults;
 
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;

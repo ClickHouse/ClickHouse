@@ -37,7 +37,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
     if (column_defaults.empty())
         return res;
 
-    BlockDelayedDefaults delayed_defaults = res.delayed_defaults;
+    const BlockMissingValues & delayed_defaults = children.back()->getMissingValues();
     if (delayed_defaults.empty())
         return res;
 
