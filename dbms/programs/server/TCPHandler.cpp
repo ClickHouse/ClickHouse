@@ -363,9 +363,13 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     /// Send block to the client - table structure.
     Block block = state.io.out->getHeader();
 
-    /// attach table metadata (column defaults)
+    /// attach column defaults to sample block (allow client to attach defaults for ommited source values)
     if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
-        ColumnDefaultsHelper::attachFromContext(query_context, block);
+    {
+        auto db_and_table = query_context.getInsertionTable();
+        ColumnDefaults column_defaults = ColumnDefaultsHelper::loadFromContext(query_context, db_and_table.first, db_and_table.second);
+        ColumnDefaultsHelper::attach(column_defaults, block);
+    }
 
     sendData(block);
 

@@ -10,16 +10,27 @@
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 
-namespace DB
+namespace
 {
 
+struct AliasNames
+{
+    static constexpr const char * DEFAULT = "DEFAULT";
+    static constexpr const char * MATERIALIZED = "MATERIALIZED";
+    static constexpr const char * ALIAS = "ALIAS";
+};
+
+}
+
+namespace DB
+{
 
 ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
 {
     static const std::unordered_map<std::string, ColumnDefaultKind> map{
-        { "DEFAULT", ColumnDefaultKind::Default },
-        { "MATERIALIZED", ColumnDefaultKind::Materialized },
-        { "ALIAS", ColumnDefaultKind::Alias }
+        { AliasNames::DEFAULT, ColumnDefaultKind::Default },
+        { AliasNames::MATERIALIZED, ColumnDefaultKind::Materialized },
+        { AliasNames::ALIAS, ColumnDefaultKind::Alias }
     };
 
     const auto it = map.find(str);
@@ -30,9 +41,9 @@ ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
 std::string toString(const ColumnDefaultKind kind)
 {
     static const std::unordered_map<ColumnDefaultKind, std::string> map{
-        { ColumnDefaultKind::Default, "DEFAULT" },
-        { ColumnDefaultKind::Materialized, "MATERIALIZED" },
-        { ColumnDefaultKind::Alias, "ALIAS" }
+        { ColumnDefaultKind::Default, AliasNames::DEFAULT },
+        { ColumnDefaultKind::Materialized, AliasNames::MATERIALIZED },
+        { ColumnDefaultKind::Alias, AliasNames::ALIAS }
     };
 
     const auto it = map.find(kind);
@@ -43,11 +54,6 @@ std::string toString(const ColumnDefaultKind kind)
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
     return lhs.kind == rhs.kind && queryToString(lhs.expression) == queryToString(rhs.expression);
-}
-
-ColumnDefaults ColumnDefaultsHelper::loadFromContext(const Context & context)
-{
-    return loadFromContext(context, context.getCurrentDatabase(), context.getCurrentTable());
 }
 
 ColumnDefaults ColumnDefaultsHelper::loadFromContext(const Context & context, const String & database, const String & table)
@@ -64,9 +70,8 @@ ColumnDefaults ColumnDefaultsHelper::loadFromContext(const Context & context, co
     return {};
 }
 
-void ColumnDefaultsHelper::attachFromContext(const Context & context, Block & sample)
+void ColumnDefaultsHelper::attach(const ColumnDefaults & column_defaults, Block & sample)
 {
-    ColumnDefaults column_defaults = loadFromContext(context);
     if (column_defaults.empty())
         return;
 
@@ -75,9 +80,11 @@ void ColumnDefaultsHelper::attachFromContext(const Context & context, Block & sa
         std::stringstream ss;
         ss << *pr.second.expression;
 
+        /// Serialize defaults to special columns names.
+        /// It looks better to send expression as a column data but sample block has 0 rows.
         ColumnWithTypeAndName col;
         col.type = std::make_shared<DataTypeString>();
-        col.name = String(" ") + toString(pr.second.kind) + ' ' + pr.first + ' ' + ss.str();
+        col.name = Block::mkSpecialColumnName(toString(pr.second.kind) + ' ' + pr.first + ' ' + ss.str());
         col.column = col.type->createColumnConst(sample.rows(), "");
 
         sample.insert(std::move(col));
@@ -94,17 +101,20 @@ ColumnDefaults ColumnDefaultsHelper::extract(Block & sample)
     {
         const ColumnWithTypeAndName & column_wtn = sample.safeGetByPosition(i);
 
-        if (column_wtn.name.size() && column_wtn.name[0] == ' ')
+        if (Block::isSpecialColumnName(column_wtn.name, AliasNames::DEFAULT) ||
+            Block::isSpecialColumnName(column_wtn.name, AliasNames::MATERIALIZED) ||
+            Block::isSpecialColumnName(column_wtn.name, AliasNames::ALIAS))
         {
             String str_kind, column_name;
             std::stringstream ss;
             ss << column_wtn.name;
             ss >> str_kind >> column_name;
-            String expression = column_wtn.name.substr(str_kind.size() + column_name.size() + 3);
+            size_t expression_pos = str_kind.size() + column_name.size() + 3;
+            StringRef expression(&column_wtn.name[expression_pos], column_wtn.name.size() - expression_pos);
 
             ColumnDefault def;
             def.kind = columnDefaultKindFromString(str_kind);
-            def.expression = parseQuery(parser, expression, expression.size());
+            def.expression = parseQuery(parser, expression.data, expression.size);
 
             column_defaults.emplace(column_name, def);
             pos_to_erase.insert(i);
