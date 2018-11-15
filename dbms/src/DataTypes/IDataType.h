@@ -513,6 +513,13 @@ inline bool isNumber(const T & data_type)
 }
 
 template <typename T>
+inline bool isColumnedAsNumber(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
+}
+
+template <typename T>
 inline bool isString(const T & data_type)
 {
     return WhichDataType(data_type).isString();
