@@ -29,33 +29,36 @@ static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & requi
                 setAlias(it->second.expression->clone(), it->first));
     }
 
+    if (default_expr_list->children.empty())
+        return nullptr;
     return default_expr_list;
 }
-
 
 void evaluateMissingDefaults(Block & block,
     const NamesAndTypesList & required_columns,
     const ColumnDefaults & column_defaults,
-    const Context & context)
+    const Context & context, bool with_block_copy)
 {
     if (column_defaults.empty())
         return;
 
     ASTPtr default_expr_list = requiredExpressions(block, required_columns, column_defaults);
-    /// nothing to evaluate
-    if (default_expr_list->children.empty())
+    if (!default_expr_list)
         return;
+
+    if (!with_block_copy)
+    {
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
+        ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
+        return;
+    }
 
     /** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
       * we are going to operate on a copy instead of the original block */
     Block copy_block{block};
     /// evaluate default values for defaulted columns
 
-    NamesAndTypesList available_columns;
-    for (size_t i = 0, size = block.columns(); i < size; ++i)
-        available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
-
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, available_columns);
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
     ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(copy_block);
 
     /// move evaluated columns to the original block, materializing them at the same time
@@ -71,27 +74,6 @@ void evaluateMissingDefaults(Block & block,
             block.insert(pos, std::move(evaluated_col));
         }
     }
-}
-
-
-void evaluateMissingDefaultsUnsafe(Block & block,
-    const NamesAndTypesList & required_columns,
-    const std::unordered_map<std::string, ColumnDefault> & column_defaults,
-    const Context & context)
-{
-    if (column_defaults.empty())
-        return;
-
-    ASTPtr default_expr_list = requiredExpressions(block, required_columns, column_defaults);
-    if (default_expr_list->children.empty())
-        return;
-
-    NamesAndTypesList available_columns;
-    for (size_t i = 0, size = block.columns(); i < size; ++i)
-        available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
-
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, available_columns);
-    ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
 }
 
 }

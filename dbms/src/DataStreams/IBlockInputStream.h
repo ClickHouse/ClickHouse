@@ -19,7 +19,6 @@ class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
 
-class BlockMissingValues;
 class TableStructureReadLock;
 
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
