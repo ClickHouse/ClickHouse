@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDistributedShardsOptimizer.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageFactory.h>
@@ -268,6 +269,14 @@ BlockInputStreams StorageDistributed::read(
             header, processed_stage, remote_table_function_ptr, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
+
+    if (settings.distributed_optimize_skip_select_on_unused_shards) {
+        auto optimizer = StorageDistributedShardsOptimizer();
+        auto smaller_cluster = optimizer.skipUnusedShards(cluster, query_info, sharding_key_expr, sharding_key_column_name);
+
+        if (smaller_cluster)
+            cluster = smaller_cluster;
+    }
 
     return ClusterProxy::executeQuery(
         select_stream_factory, cluster, modified_query_ast, context, settings);
