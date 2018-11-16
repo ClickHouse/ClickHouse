@@ -19,8 +19,8 @@ if (CLICKHOUSE_SPLIT_BINARY)
     install (TARGETS clickhouse-server ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()
 
-if (OS_LINUX)
-    set (GLIBC_MAX_REQUIRED 2.4)
+if (OS_LINUX AND MAKE_STATIC_LIBRARIES)
+    set (GLIBC_MAX_REQUIRED 2.4 CACHE INTERNAL "")
     add_test(NAME GLIBC_required_version COMMAND bash -c "readelf -s ${CMAKE_CURRENT_BINARY_DIR}/../clickhouse-server | grep '@GLIBC' | grep -oP 'GLIBC_[\\d\\.]+' | sort | uniq | sort -r | perl -lnE 'exit 1 if $_ gt q{GLIBC_${GLIBC_MAX_REQUIRED}}'")
 endif ()
 
