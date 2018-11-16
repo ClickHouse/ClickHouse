@@ -165,7 +165,6 @@ if (USE_INTERNAL_GTEST_LIBRARY)
     # avoid problems with <regexp.h>
     target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
     target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
-    #install(EXPORT gtest DESTINATION bin)
 endif ()
 
 if (USE_INTERNAL_LLVM_LIBRARY)
