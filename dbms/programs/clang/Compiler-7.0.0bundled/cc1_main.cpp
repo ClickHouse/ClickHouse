@@ -16,7 +16,6 @@
 #include "llvm/Option/Arg.h"
 #include "clang/CodeGen/ObjectFilePCHContainerOperations.h"
 #include "clang/Config/config.h"
-#include "clang/Basic/Stack.h"
 #include "clang/Driver/DriverDiagnostic.h"
 #include "clang/Driver/Options.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -77,6 +76,13 @@ void initializePollyPasses(llvm::PassRegistry &Registry);
 #endif
 
 #ifdef CLANG_HAVE_RLIMITS
+// The amount of stack we think is "sufficient". If less than this much is
+// available, we may be unable to reach our template instantiation depth
+// limit and other similar limits.
+// FIXME: Unify this with the stack we request when spawning a thread to build
+// a module.
+static const int kSufficientStack = 8 << 20;
+
 #if defined(__linux__) && defined(__PIE__)
 static size_t getCurrentStackAllocation() {
   // If we can't compute the current stack usage, allow for 512K of command
@@ -114,7 +120,7 @@ static size_t getCurrentStackAllocation() {
 #include <alloca.h>
 
 LLVM_ATTRIBUTE_NOINLINE
-static void ensureStackAddressSpace() {
+static void ensureStackAddressSpace(int ExtraChunks = 0) {
   // Linux kernels prior to 4.1 will sometimes locate the heap of a PIE binary
   // relatively close to the stack (they are only guaranteed to be 128MiB
   // apart). This results in crashes if we happen to heap-allocate more than
@@ -123,7 +129,7 @@ static void ensureStackAddressSpace() {
   // To avoid these crashes, ensure that we have sufficient virtual memory
   // pages allocated before we start running.
   size_t Curr = getCurrentStackAllocation();
-  const int kTargetStack = DesiredStackSize - 256 * 1024;
+  const int kTargetStack = kSufficientStack - 256 * 1024;
   if (Curr < kTargetStack) {
     volatile char *volatile Alloc =
         static_cast<volatile char *>(alloca(kTargetStack - Curr));
@@ -143,23 +149,21 @@ static void ensureSufficientStack() {
 
   // Increase the soft stack limit to our desired level, if necessary and
   // possible.
-  if (rlim.rlim_cur != RLIM_INFINITY &&
-      rlim.rlim_cur < rlim_t(DesiredStackSize)) {
+  if (rlim.rlim_cur != RLIM_INFINITY && rlim.rlim_cur < kSufficientStack) {
     // Try to allocate sufficient stack.
-    if (rlim.rlim_max == RLIM_INFINITY ||
-        rlim.rlim_max >= rlim_t(DesiredStackSize))
-      rlim.rlim_cur = DesiredStackSize;
+    if (rlim.rlim_max == RLIM_INFINITY || rlim.rlim_max >= kSufficientStack)
+      rlim.rlim_cur = kSufficientStack;
     else if (rlim.rlim_cur == rlim.rlim_max)
       return;
     else
       rlim.rlim_cur = rlim.rlim_max;
 
     if (setrlimit(RLIMIT_STACK, &rlim) != 0 ||
-        rlim.rlim_cur != DesiredStackSize)
+        rlim.rlim_cur != kSufficientStack)
       return;
   }
 
-  // We should now have a stack of size at least DesiredStackSize. Ensure
+  // We should now have a stack of size at least kSufficientStack. Ensure
   // that we can actually use that much, if necessary.
   ensureStackAddressSpace();
 }
