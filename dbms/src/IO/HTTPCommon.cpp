@@ -1,9 +1,9 @@
 #include <IO/HTTPCommon.h>
 
+#include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/config.h>
-#include <Poco/Version.h>
 #if USE_POCO_NETSSL
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>
@@ -13,14 +13,22 @@
 #include <Poco/Net/RejectCertificateHandler.h>
 #include <Poco/Net/SSLManager.h>
 #endif
+#include <tuple>
+#include <unordered_map>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
+#include <Common/PoolBase.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 
 #include <sstream>
+namespace ProfileEvents
+{
+    extern const Event CreatedHTTPConnections;
+}
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
@@ -28,6 +36,105 @@ namespace ErrorCodes
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
 }
 
+
+namespace
+{
+    void setTimeouts(Poco::Net::HTTPClientSession & session, const ConnectionTimeouts & timeouts)
+    {
+#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
+        session.setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+#else
+        session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
+#endif
+    }
+
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https)
+    {
+        HTTPSessionPtr session;
+
+        if (https)
+#if USE_POCO_NETSSL
+            session = std::make_unique<Poco::Net::HTTPSClientSession>();
+#else
+            throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
+#endif
+        else
+            session = std::make_unique<Poco::Net::HTTPClientSession>();
+
+        ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
+
+        session->setHost(DNSResolver::instance().resolveHost(host).toString());
+        session->setPort(port);
+
+        return session;
+    }
+
+    class SingleEndpointHTTPSessionPool : public PoolBase<Poco::Net::HTTPClientSession>
+    {
+    private:
+        const std::string host;
+        const UInt16 port;
+        bool https;
+        using Base = PoolBase<Poco::Net::HTTPClientSession>;
+
+        ObjectPtr allocObject() override
+        {
+            return makeHTTPSessionImpl(host, port, https);
+        }
+
+    public:
+        SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_)
+            : Base(max_pool_size_, &Poco::Logger::get("HttpSessionsPool")), host(host_), port(port_), https(https_)
+        {
+        }
+    };
+
+    class HTTPSessionPool : public ext::singleton<HTTPSessionPool>
+    {
+    private:
+        using Key = std::tuple<std::string, UInt16, bool>;
+        using PoolPtr = std::shared_ptr<SingleEndpointHTTPSessionPool>;
+        using Entry = SingleEndpointHTTPSessionPool::Entry;
+
+        friend class ext::singleton<HTTPSessionPool>;
+
+        struct Hasher
+        {
+            size_t operator()(const Key & k) const
+            {
+                SipHash s;
+                s.update(std::get<0>(k));
+                s.update(std::get<1>(k));
+                s.update(std::get<2>(k));
+                return s.get64();
+            }
+        };
+
+        std::mutex mutex;
+        std::unordered_map<Key, PoolPtr, Hasher> endpoints_pool;
+
+    protected:
+        HTTPSessionPool() = default;
+
+    public:
+        Entry getSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t max_connections_per_endpoint)
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            const std::string & host = uri.getHost();
+            UInt16 port = uri.getPort();
+            bool https = (uri.getScheme() == "https");
+            auto key = std::make_tuple(host, port, https);
+            auto pool_ptr = endpoints_pool.find(key);
+            if (pool_ptr == endpoints_pool.end())
+                std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
+                    key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, max_connections_per_endpoint));
+
+            auto session = pool_ptr->second->get(-1);
+            setTimeouts(*session, timeouts);
+            return session;
+        }
+    };
+}
 
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
@@ -39,30 +146,21 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
+HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
 {
-    bool is_ssl = static_cast<bool>(uri.getScheme() == "https");
-    std::unique_ptr<Poco::Net::HTTPClientSession> session;
+    const std::string & host = uri.getHost();
+    UInt16 port = uri.getPort();
+    bool https = (uri.getScheme() == "https");
 
-    if (is_ssl)
-#if USE_POCO_NETSSL
-        session = std::make_unique<Poco::Net::HTTPSClientSession>();
-#else
-        throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
-#endif
-    else
-        session = std::make_unique<Poco::Net::HTTPClientSession>();
-
-    session->setHost(DNSResolver::instance().resolveHost(uri.getHost()).toString());
-    session->setPort(uri.getPort());
-
-#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
-    session->setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
-#else
-    session->setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
-#endif
-
+    auto session = makeHTTPSessionImpl(host, port, https);
+    setTimeouts(*session, timeouts);
     return session;
+}
+
+
+PooledHTTPSessionPtr makePooledHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t per_endpoint_pool_size)
+{
+    return HTTPSessionPool::instance().getSession(uri, timeouts, per_endpoint_pool_size);
 }
 
 

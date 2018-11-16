@@ -62,6 +62,7 @@
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
+#define DEFAULT_HTTP_AMOUNT_CONNECTIONS_PER_ENDPOINT 10
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 

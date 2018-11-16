@@ -185,7 +185,15 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         creds.setPassword(password);
     }
 
-    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts, creds};
+    PooledReadWriteBufferFromHTTP in{
+        uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        timeouts,
+        creds,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        data.settings.replicated_max_parallel_fetches_for_host
+    };
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
