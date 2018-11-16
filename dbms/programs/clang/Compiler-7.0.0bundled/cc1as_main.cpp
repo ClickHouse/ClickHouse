@@ -59,6 +59,7 @@ using namespace clang::driver::options;
 using namespace llvm;
 using namespace llvm::opt;
 
+
 namespace {
 
 /// \brief Helper class for representing a single invocation of the assembler.
@@ -181,7 +182,13 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
 
   // Issue errors on unknown arguments.
   for (const Arg *A : Args.filtered(OPT_UNKNOWN)) {
-    Diags.Report(diag::err_drv_unknown_argument) << A->getAsString(Args);
+    auto ArgString = A->getAsString(Args);
+    std::string Nearest;
+    if (OptTbl->findNearest(ArgString, Nearest, IncludedFlagsBitmask) > 1)
+      Diags.Report(diag::err_drv_unknown_argument) << ArgString;
+    else
+      Diags.Report(diag::err_drv_unknown_argument_with_suggestion)
+          << ArgString << Nearest;
     Success = false;
   }
 
@@ -392,17 +399,19 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
   if (Opts.OutputType == AssemblerInvocation::FT_Asm) {
     MCInstPrinter *IP = TheTarget->createMCInstPrinter(
         llvm::Triple(Opts.Triple), Opts.OutputAsmVariant, *MAI, *MCII, *MRI);
-    MCCodeEmitter *CE = nullptr;
-    MCAsmBackend *MAB = nullptr;
-    if (Opts.ShowEncoding) {
-      CE = TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx);
-      MCTargetOptions Options;
-      MAB = TheTarget->createMCAsmBackend(*STI, *MRI, Options);
-    }
+
+    std::unique_ptr<MCCodeEmitter> CE;
+    if (Opts.ShowEncoding)
+      CE.reset(TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx));
+    MCTargetOptions MCOptions;
+    std::unique_ptr<MCAsmBackend> MAB(
+        TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions));
+
     auto FOut = llvm::make_unique<formatted_raw_ostream>(*Out);
     Str.reset(TheTarget->createAsmStreamer(
         Ctx, std::move(FOut), /*asmverbose*/ true,
-        /*useDwarfDirectory*/ true, IP, CE, MAB, Opts.ShowInst));
+        /*useDwarfDirectory*/ true, IP, std::move(CE), std::move(MAB),
+        Opts.ShowInst));
   } else if (Opts.OutputType == AssemblerInvocation::FT_Null) {
     Str.reset(createNullStreamer(Ctx));
   } else {
@@ -413,16 +422,22 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
       Out = BOS.get();
     }
 
-    MCCodeEmitter *CE = TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx);
-    MCTargetOptions Options;
-    MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*STI, *MRI, Options);
+    std::unique_ptr<MCCodeEmitter> CE(
+        TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx));
+    MCTargetOptions MCOptions;
+    std::unique_ptr<MCAsmBackend> MAB(
+        TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions));
+
     Triple T(Opts.Triple);
     Str.reset(TheTarget->createMCObjectStreamer(
-                T, Ctx, std::unique_ptr<MCAsmBackend>(MAB), *Out, std::unique_ptr<MCCodeEmitter>(CE), *STI,
-        Opts.RelaxAll, Opts.IncrementalLinkerCompatible,
+        T, Ctx, std::move(MAB), *Out, std::move(CE), *STI, Opts.RelaxAll,
+        Opts.IncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ true));
     Str.get()->InitSections(Opts.NoExecStack);
   }
+
+  // Assembly to object compilation should leverage assembly info.
+  Str->setUseAssemblerInfoForParsing(true);
 
   bool Failed = false;
 
@@ -441,7 +456,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     auto Pair = StringRef(S).split('=');
     auto Sym = Pair.first;
     auto Val = Pair.second;
-    int64_t Value = 0;
+    int64_t Value;
     // We have already error checked this in the driver.
     Val.getAsInteger(0, Value);
     Ctx.setSymbolValue(Parser->getStreamer(), Sym, Value);
@@ -467,7 +482,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
 }
 
 static void LLVMErrorHandler(void *UserData, const std::string &Message,
-                             bool GenCrashDiag) {
+                             bool /*GenCrashDiag*/) {
   DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine*>(UserData);
 
   Diags.Report(diag::err_fe_error_backend) << Message;
@@ -476,7 +491,7 @@ static void LLVMErrorHandler(void *UserData, const std::string &Message,
   exit(1);
 }
 
-int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
+int cc1as_main(ArrayRef<const char *> Argv, const char */*Argv0*/, void */*MainAddr*/) {
   // Initialize targets and assembly printers/parsers.
   InitializeAllTargetInfos();
   InitializeAllTargetMCs();
