@@ -117,7 +117,7 @@ public:
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t max_connections_per_endpoint = DEFAULT_HTTP_AMOUNT_CONNECTIONS_PER_ENDPOINT)
+        size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
         : Parent(makePooledHTTPSession(uri, timeouts, max_connections_per_endpoint),
               uri,
               method,

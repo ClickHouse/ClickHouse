@@ -93,7 +93,7 @@ struct MergeTreeSettings
     M(SettingUInt64, replicated_max_parallel_fetches_for_table, 0)                                            \
                                                                                                               \
     /** Limit parallel fetches from endpoint (actually pool size) */                                          \
-    M(SettingUInt64, replicated_max_parallel_fetches_for_host, DEFAULT_HTTP_AMOUNT_CONNECTIONS_PER_ENDPOINT)  \
+    M(SettingUInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)\
                                                                                                               \
     /** Limit parallel sends */                                                                               \
     M(SettingUInt64, replicated_max_parallel_sends, 0)                                                        \
