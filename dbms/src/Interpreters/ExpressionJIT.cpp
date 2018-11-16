@@ -142,7 +142,7 @@ static llvm::TargetMachine * getNativeMachine()
 #if LLVM_VERSION_MAJOR >= 7
 auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 {
-#if USE_INTERNAL_LLVM_LIBRARY
+#if USE_INTERNAL_LLVM_LIBRARY && LLVM_VERSION_PATCH == 0
     // REMOVE AFTER contrib/llvm upgrade
     auto flags = [&](llvm::orc::SymbolFlagsMap & flags, const llvm::orc::SymbolNameSet & symbols)
     {
