@@ -397,14 +397,23 @@ void Cluster::initMisc()
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(*this, index) };
+    return std::unique_ptr<Cluster>{ new Cluster(*this, {index}) };
 }
 
-Cluster::Cluster(const Cluster & from, size_t index)
-    : shards_info{from.shards_info[index]}
+std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(std::vector<size_t> indexes) const
 {
-    if (!from.addresses_with_failover.empty())
-        addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+    return std::unique_ptr<Cluster>{ new Cluster(*this, indexes) };
+}
+
+Cluster::Cluster(const Cluster & from, std::vector<size_t> indexes)
+    : shards_info{}
+{
+    for (size_t index : indexes) {
+        shards_info.push_back(from.shards_info[index]);
+
+        if (!from.addresses_with_failover.empty())
+            addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+    }
 
     initMisc();
 }
