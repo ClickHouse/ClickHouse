@@ -174,9 +174,6 @@ StorageDistributed::StorageDistributed(
         if (num_local_shards && remote_database == database_name && remote_table == table_name)
             throw Exception("Distributed table " + table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
-
-    /// HACK: disable metadata for StorageDistributed queries
-    const_cast<Context &>(context).getSettingsRef().insert_sample_with_metadata = false;
 }
 
 
