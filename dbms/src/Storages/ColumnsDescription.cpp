@@ -1,5 +1,6 @@
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -110,29 +111,17 @@ String ColumnsDescription::toString() const
     write_columns(ordinary);
     write_columns(materialized);
     write_columns(aliases);
-
     return buf.str();
 }
 
-struct ParsedDefaultInfo
-{
-    ColumnDefaultKind default_kind;
-    ASTPtr default_expr_str;
-};
-
-std::optional<ParsedDefaultInfo> parseDefaultInfo(ReadBufferFromString & buf)
+std::optional<ColumnDefault> parseDefaultInfo(ReadBufferFromString & buf)
 {
     if (*buf.position() == '\n')
-    {
         return {};
-    }
 
     assertChar('\t', buf);
     if (*buf.position() == '\t')
-    {
-        assertChar('\t', buf);
         return {};
-    }
 
     String default_kind_str;
     readText(default_kind_str, buf);
@@ -143,21 +132,63 @@ std::optional<ParsedDefaultInfo> parseDefaultInfo(ReadBufferFromString & buf)
     String default_expr_str;
     readText(default_expr_str, buf);
     ASTPtr default_expr = parseQuery(expr_parser, default_expr_str, "default_expression", 0);
-    return ParsedDefaultInfo{default_kind, std::move(default_expr)};
+    return ColumnDefault{default_kind, std::move(default_expr)};
 }
 
 String parseComment(ReadBufferFromString& buf)
 {
     if (*buf.position() == '\n')
-    {
         return {};
+
+    assertChar('\t', buf);
+    ParserStringLiteral string_literal_parser;
+    String comment_expr_str;
+    readText(comment_expr_str, buf);
+    ASTPtr comment_expr = parseQuery(string_literal_parser, comment_expr_str, "comment expression", 0);
+    return typeid_cast<ASTLiteral &>(*comment_expr).value.get<String>();
+}
+
+void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const DataTypeFactory & data_type_factory)
+{
+    String column_name;
+    readBackQuotedStringWithSQLStyle(column_name, buf);
+    assertChar(' ', buf);
+
+    String type_name;
+    readText(type_name, buf);
+    auto type = data_type_factory.get(type_name);
+    if (*buf.position() == '\n')
+    {
+        assertChar('\n', buf);
+        result.ordinary.emplace_back(column_name, std::move(type));
+        return;
     }
 
-    ParserExpression parser_expr;
-    String comment_expr_str;
-    readText(comment_expr_str, buf); // This is wrong may be
-    ASTPtr comment_expr = parseQuery(parser_expr, comment_expr_str, "comment expression", 0);
-    return typeid_cast<ASTLiteral &>(*comment_expr).value.get<String>();
+    auto column_default = parseDefaultInfo(buf);
+    if (column_default)
+    {
+        switch (column_default->kind)
+        {
+            case ColumnDefaultKind::Default:
+                result.ordinary.emplace_back(column_name, std::move(type));
+                break;
+            case ColumnDefaultKind::Materialized:
+                result.materialized.emplace_back(column_name, std::move(type));
+                break;
+            case ColumnDefaultKind::Alias:
+                result.aliases.emplace_back(column_name, std::move(type));
+        }
+
+        result.defaults.emplace(column_name, std::move(*column_default));
+    }
+
+    auto comment = parseComment(buf);
+    if (!comment.empty())
+    {
+        result.comments.emplace(column_name, std::move(comment));
+    }
+
+    assertChar('\n', buf);
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)
@@ -175,49 +206,10 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     ColumnsDescription result;
     for (size_t i = 0; i < count; ++i)
     {
-        String column_name;
-        readBackQuotedStringWithSQLStyle(column_name, buf);
-        assertChar(' ', buf);
-
-        String type_name;
-        readText(type_name, buf);
-        auto type = data_type_factory.get(type_name);
-        if (*buf.position() == '\n')
-        {
-            assertChar('\n', buf);
-
-            result.ordinary.emplace_back(column_name, std::move(type));
-            continue;
-        }
-
-        assertChar('\t', buf);
-
-        const auto default_info = parseDefaultInfo(buf);
-        if (default_info)
-        {
-            const auto & default_kind = default_info->default_kind;
-            const auto & default_expr = default_info->default_expr_str;
-            if (ColumnDefaultKind::Default == default_kind)
-                result.ordinary.emplace_back(column_name, std::move(type));
-            else if (ColumnDefaultKind::Materialized == default_kind)
-                result.materialized.emplace_back(column_name, std::move(type));
-            else if (ColumnDefaultKind::Alias == default_kind)
-                result.aliases.emplace_back(column_name, std::move(type));
-
-            result.defaults.emplace(column_name, ColumnDefault{default_kind, default_expr});
-        }
-
-        const auto comment = parseComment(buf);
-        if (!comment.empty())
-        {
-            result.comments.emplace(column_name, comment);
-        }
-
-        assertChar('\n', buf);
+        parseColumn(buf, result, data_type_factory);
     }
 
     assertEOF(buf);
-
     return result;
 }
 
