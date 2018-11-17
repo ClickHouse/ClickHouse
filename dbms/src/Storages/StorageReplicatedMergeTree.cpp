@@ -110,6 +110,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
+    extern const int INCONSISTENT_CLUSTER_DEFINITION;
 }
 
 namespace ActionLocks
@@ -3870,13 +3871,13 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
     /// Query send with current user credentials
-
+    const Cluster::Address & address = findClusterAddress(leader_address);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
+        address.user, address.password, timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output({});
@@ -3885,6 +3886,30 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     return;
 }
 
+const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address) const
+{
+    const auto & clusters = context.getClusters();
+    const auto & clusterPtrs = clusters.getContainer();
+
+    for(auto iter = clusterPtrs.begin(); iter != clusterPtrs.end(); ++iter)
+    {
+        const auto & shards = iter->second->getShardsAddresses();
+
+        for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
+        {
+            for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
+            {
+                const Cluster::Address & address = shards[shard_num][replica_num];
+
+                if (address.host_name == leader_address.host && address.port == leader_address.queries_port)
+                {
+                    return address;
+                }
+            }
+        }
+    }
+    throw Exception("Not found host " + leader_address.host, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+}
 
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
 {
