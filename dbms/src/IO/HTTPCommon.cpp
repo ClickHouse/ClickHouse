@@ -88,7 +88,7 @@ namespace
 
     public:
         SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_)
-            : Base(max_pool_size_, &Poco::Logger::get("HttpSessionsPool")), host(host_), port(port_), https(https_)
+            : Base(max_pool_size_, &Poco::Logger::get("HTTPSessionPool")), host(host_), port(port_), https(https_)
         {
         }
     };
