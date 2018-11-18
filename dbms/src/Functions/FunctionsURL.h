@@ -206,7 +206,10 @@ struct ExtractFirstSignificantSubdomain
             || !strncmp(last_3_periods[1] + 1, "net.", 4)
             || !strncmp(last_3_periods[1] + 1, "org.", 4)
             || !strncmp(last_3_periods[1] + 1, "co.", 3)
-            || !strncmp(last_3_periods[1] + 1, "biz.", 4))
+            || !strncmp(last_3_periods[1] + 1, "biz.", 4)
+            || !strncmp(last_3_periods[1] + 1, "gov.", 4)
+            || !strncmp(last_3_periods[1] + 1, "mil.", 4)
+            || !strncmp(last_3_periods[1] + 1, "edu.", 4))
         {
             res_data += last_3_periods[2] + 1 - begin;
             res_size = last_3_periods[1] - last_3_periods[2] - 1;
