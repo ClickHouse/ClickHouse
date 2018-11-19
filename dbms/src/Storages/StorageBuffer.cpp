@@ -565,7 +565,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (!table)
     {
-        LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table << " doesn't exist. Block of data is discarded.");
+        LOG_ERROR(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table) << " doesn't exist. Block of data is discarded.");
         return;
     }
 
@@ -587,8 +587,8 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             auto column = block.getByName(dst_col.name);
             if (!column.type->equals(*dst_col.type))
             {
-                LOG_WARNING(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << column.name << " ("
+                LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                    << " have different type of column " << backQuoteIfNeed(column.name) << " ("
                     << column.type->getName() << " != " << dst_col.type->getName()
                     << "). Block of data is converted.");
                 column.column = castColumn(column, dst_col.type, context);
@@ -601,14 +601,14 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (block_to_write.columns() == 0)
     {
-        LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                  << " have no common columns with block in buffer. Block of data is discarded.");
+        LOG_ERROR(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+            << " have no common columns with block in buffer. Block of data is discarded.");
         return;
     }
 
     if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table "
-            << destination_database << "." << destination_table << ". Some columns are discarded.");
+            << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table) << ". Some columns are discarded.");
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
