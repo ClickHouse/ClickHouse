@@ -1,7 +1,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
@@ -145,7 +147,34 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+        const Block structure_of_destination_table =
+            allow_materialized ? destination->getSampleBlock() : destination->getSampleBlockNonMaterialized();
+
+        bool can_read_from_destination = true;
+        for (const String& column_name : column_names)
+        {
+           if (!structure_of_destination_table.has(column_name))
+           {
+               LOG_WARNING(log, "Destination table " << destination_database << "." << destination_table
+                   << " doesn't have column " << column_name << ". Data from destination table is skipped.");
+               can_read_from_destination = false;
+               break;
+           }
+           auto col = getColumn(column_name);
+           auto dst_col = structure_of_destination_table.getByName(column_name);
+           if (!dst_col.type->equals(*col.type))
+           {
+               LOG_WARNING(log, "Destination table " << destination_database << "." << destination_table
+                   << " have different type of column " << column_name << " ("
+                   << col.type->getName() << " != " << dst_col.type->getName()
+                   << "). Data from destination table is skipped.");
+               can_read_from_destination = false;
+               break;
+           }
+        }
+
+        if (can_read_from_destination)
+            streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     BlockInputStreams streams_from_buffers;
@@ -233,6 +262,9 @@ public:
         if (!block)
             return;
 
+        // Check table structure.
+        storage.check(block, true);
+
         size_t rows = block.rows();
         if (!rows)
             return;
@@ -241,23 +273,8 @@ public:
         if (!storage.no_destination)
         {
             destination = storage.context.tryGetTable(storage.destination_database, storage.destination_table);
-
-            if (destination)
-            {
-                if (destination.get() == &storage)
-                    throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
-
-                /// Check table structure.
-                try
-                {
-                    destination->check(block, true);
-                }
-                catch (Exception & e)
-                {
-                    e.addMessage("(when looking at destination table " + storage.destination_database + "." + storage.destination_table + ")");
-                    throw;
-                }
-            }
+            if (destination.get() == &storage)
+                throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
 
         size_t bytes = block.bytes();
@@ -561,47 +578,45 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
       * This will support some of the cases (but not all) when the table structure does not match.
       */
     Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
-    Names columns_intersection;
-    columns_intersection.reserve(block.columns());
+    Block block_to_write;
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
     {
         auto dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
         {
-            if (!block.getByName(dst_col.name).type->equals(*dst_col.type))
+            auto column = block.getByName(dst_col.name);
+            if (!column.type->equals(*dst_col.type))
             {
-                LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << dst_col.name << " ("
-                    << block.getByName(dst_col.name).type->getName() << " != " << dst_col.type->getName()
-                    << "). Block of data is discarded.");
-                return;
+                LOG_WARNING(log, "Destination table " << destination_database << "." << destination_table
+                    << " have different type of column " << column.name << " ("
+                    << column.type->getName() << " != " << dst_col.type->getName()
+                    << "). Block of data is converted.");
+                column.column = castColumn(column, dst_col.type, context);
+                column.type = dst_col.type;
             }
 
-            columns_intersection.push_back(dst_col.name);
+            block_to_write.insert(column);
         }
     }
 
-    if (columns_intersection.empty())
+    if (block_to_write.columns() == 0)
     {
-        LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table << " have no common columns with block in buffer. Block of data is discarded.");
+        LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
+                  << " have no common columns with block in buffer. Block of data is discarded.");
         return;
     }
 
-    if (columns_intersection.size() != block.columns())
+    if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table "
             << destination_database << "." << destination_table << ". Some columns are discarded.");
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
-    list_of_columns->children.reserve(columns_intersection.size());
-    for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column));
+    list_of_columns->children.reserve(block_to_write.columns());
+    for (const auto& column : block_to_write)
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
-
-    Block block_to_write;
-    for (const auto & name : columns_intersection)
-        block_to_write.insert(block.getByName(name));
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
