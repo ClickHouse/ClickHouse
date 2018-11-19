@@ -36,10 +36,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
-        { "is_in_primary_key", std::make_shared<DataTypeUInt8>()},
-        { "is_in_order_key", std::make_shared<DataTypeUInt8>()},
-        { "is_in_partition_key", std::make_shared<DataTypeUInt8>()},
-        { "is_in_sample_key", std::make_shared<DataTypeUInt8>()},
+        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_order_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_sample_key", std::make_shared<DataTypeUInt8>() },
     }));
 }
 
@@ -187,7 +187,8 @@ protected:
                 }
 
                 {
-                    auto find_in_vector = [&key = column.name] (const Names& names) {
+                    auto find_in_vector = [&key = column.name](const Names& names)
+                    {
                         return std::find(names.cbegin(), names.cend(), key) != names.end();
                     };
 
