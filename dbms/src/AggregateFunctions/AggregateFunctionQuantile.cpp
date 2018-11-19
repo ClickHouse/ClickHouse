@@ -1,8 +1,7 @@
+#include <AggregateFunctions/AggregateFunctionQuantile.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
-#include <AggregateFunctions/FactoryHelpers.h>
-
-#include <AggregateFunctions/AggregateFunctionQuantile.h>
 
 
 namespace DB
@@ -52,10 +51,8 @@ static constexpr bool SupportDecimal()
 template <template <typename> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    if constexpr (Function<void>::hasSecondArg()) // FIXME: a little bit hacky to specify concrete type to call a static method.
-        assertBinary(name, argument_types);
-    else
-        assertUnary(name, argument_types);
+    /// Second argument type check doesn't depend on the type of the first one.
+    Function<void>::assertSecondArg(argument_types);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);
