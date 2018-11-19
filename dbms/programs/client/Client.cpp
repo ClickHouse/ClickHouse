@@ -904,7 +904,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end);
+        ParserQuery parser(end, true);
         ASTPtr res;
 
         const auto ignore_error = config().getBool("ignore-error", false);
@@ -1527,7 +1527,7 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         po::options_description main_description("Main options", line_length, min_description_length);

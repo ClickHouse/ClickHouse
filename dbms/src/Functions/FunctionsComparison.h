@@ -725,7 +725,7 @@ private:
             return true;
         };
 
-        if (!callOnBasicTypes<true, false, true>(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true, false>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -835,7 +835,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for Date: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, UInt64(date));
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, date);
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
@@ -863,7 +863,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for UUID: " + string_value.toString());
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, UInt128(uuid));
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, uuid);
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,

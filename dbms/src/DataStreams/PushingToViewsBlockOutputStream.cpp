@@ -44,6 +44,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto dependent_table = context.getTable(database_table.first, database_table.second);
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
+            if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
+                addTableLock(inner_table->lockStructure(true, __PRETTY_FUNCTION__));
+
             auto query = materialized_view.getInnerQuery();
             BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());

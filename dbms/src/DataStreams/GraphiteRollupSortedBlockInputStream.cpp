@@ -132,7 +132,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
         is_first = false;
 
-        time_t next_row_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
+        time_t next_row_time = next_cursor->all_columns[time_column_num]->getUInt(next_cursor->pos);
         /// Is new key before rounding.
         bool is_new_key = new_path || next_row_time != current_time;
 
@@ -251,7 +251,7 @@ void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merge
 void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & merged_columns)
 {
     /// Insert calculated values of the columns `time`, `value`, `version`.
-    merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
+    merged_columns[time_column_num]->insert(current_time_rounded);
     merged_columns[version_column_num]->insertFrom(
         *(*current_subgroup_newest_row.columns)[version_column_num], current_subgroup_newest_row.row_num);
 

@@ -58,3 +58,5 @@
 
 ## convertCharset(s, from, to)
 Возвращает сконвертированную из кодировки from в кодировку to строку s.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/string_functions/) <!--hide-->

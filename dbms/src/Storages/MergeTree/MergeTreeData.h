@@ -481,7 +481,7 @@ public:
         bool skip_sanity_checks);
 
     /// Should be called if part data is suspected to be corrupted.
-    void reportBrokenPart(const String & name)
+    void reportBrokenPart(const String & name) const
     {
         broken_part_callback(name);
     }

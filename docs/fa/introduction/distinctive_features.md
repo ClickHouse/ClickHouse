@@ -64,3 +64,4 @@ ClickHouse از روش asynchronous multimaster replication استفاده می 
 برای اطلاعات بیشتر، به بخش [replication داده ها](../operations/table_engines/replication.md#table_engines-replication) مراجعه کنید.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/introduction/distinctive_features/) <!--hide-->

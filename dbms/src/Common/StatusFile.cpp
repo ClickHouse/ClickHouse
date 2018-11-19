@@ -81,15 +81,11 @@ StatusFile::StatusFile(const std::string & path_)
 
 StatusFile::~StatusFile()
 {
-    char buf[128];
-
     if (0 != close(fd))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", errno: "
-            << errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
+        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString());
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", errno: "
-            << errno << ", strerror: " << strerror_r(errno, buf, sizeof(buf)));
+        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString());
 }
 
 }

@@ -70,7 +70,7 @@ void FlatDictionary::isInImpl(
     PaddedPODArray<UInt8> & out) const
 {
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
-    const auto & attr = *std::get<ContainerPtrType<Key>>(hierarchical_attribute->arrays);
+    const auto & attr = std::get<ContainerType<Key>>(hierarchical_attribute->arrays);
     const auto rows = out.size();
 
     size_t loaded_size = attr.size();
@@ -115,7 +115,7 @@ void FlatDictionary::isInConstantVector(
 
 
 #define DECLARE(TYPE)\
-void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
+void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -138,6 +138,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void FlatDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
@@ -156,7 +159,7 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
 #define DECLARE(TYPE)\
 void FlatDictionary::get##TYPE(\
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
-    PaddedPODArray<TYPE> & out) const\
+    ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -177,6 +180,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void FlatDictionary::getString(
@@ -194,8 +200,7 @@ void FlatDictionary::getString(
 
 #define DECLARE(TYPE)\
 void FlatDictionary::get##TYPE(\
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def,\
-    PaddedPODArray<TYPE> & out) const\
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -216,6 +221,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void FlatDictionary::getString(
@@ -250,6 +258,10 @@ void FlatDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> 
         case AttributeUnderlyingType::Float32: has<Float32>(attribute, ids, out); break;
         case AttributeUnderlyingType::Float64: has<Float64>(attribute, ids, out); break;
         case AttributeUnderlyingType::String: has<String>(attribute, ids, out); break;
+
+        case AttributeUnderlyingType::Decimal32: has<Decimal32>(attribute, ids, out); break;
+        case AttributeUnderlyingType::Decimal64: has<Decimal64>(attribute, ids, out); break;
+        case AttributeUnderlyingType::Decimal128: has<Decimal128>(attribute, ids, out); break;
     }
 }
 
@@ -383,9 +395,9 @@ void FlatDictionary::loadData()
 template <typename T>
 void FlatDictionary::addAttributeSize(const Attribute & attribute)
 {
-    const auto & array_ref = std::get<ContainerPtrType<T>>(attribute.arrays);
-    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref->allocated_bytes();
-    bucket_count = array_ref->capacity();
+    const auto & array_ref = std::get<ContainerType<T>>(attribute.arrays);
+    bytes_allocated += sizeof(PaddedPODArray<T>) + array_ref.allocated_bytes();
+    bucket_count = array_ref.capacity();
 }
 
 
@@ -408,6 +420,11 @@ void FlatDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::Int64: addAttributeSize<Int64>(attribute); break;
             case AttributeUnderlyingType::Float32: addAttributeSize<Float32>(attribute); break;
             case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
+
+            case AttributeUnderlyingType::Decimal32: addAttributeSize<Decimal32>(attribute); break;
+            case AttributeUnderlyingType::Decimal64: addAttributeSize<Decimal64>(attribute); break;
+            case AttributeUnderlyingType::Decimal128: addAttributeSize<Decimal128>(attribute); break;
+
             case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
@@ -423,22 +440,19 @@ void FlatDictionary::calculateBytesAllocated()
 template <typename T>
 void FlatDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    const auto & null_value_ref = std::get<T>(attribute.null_values) =
-        null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<ContainerPtrType<T>>(attribute.arrays) =
-        std::make_unique<ContainerType<T>>(initial_array_size, null_value_ref);
+    attribute.null_values = T(null_value.get<typename NearestFieldType<T>::Type>());
+    const auto & null_value_ref = std::get<T>(attribute.null_values);
+    attribute.arrays.emplace<ContainerType<T>>(initial_array_size, null_value_ref);
 }
 
 template <>
 void FlatDictionary::createAttributeImpl<String>(Attribute & attribute, const Field & null_value)
 {
     attribute.string_arena = std::make_unique<Arena>();
-    auto & null_value_ref = std::get<StringRef>(attribute.null_values);
-    const String & string = null_value.get<typename NearestFieldType<String>::Type>();
-    const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-    null_value_ref = StringRef{string_in_arena, string.size()};
-    std::get<ContainerPtrType<StringRef>>(attribute.arrays) =
-        std::make_unique<ContainerType<StringRef>>(initial_array_size, null_value_ref);
+    const String & string = null_value.get<String>();
+    const char * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
+    attribute.null_values.emplace<StringRef>(string_in_arena, string.size());
+    attribute.arrays.emplace<ContainerType<StringRef>>(initial_array_size, StringRef(string_in_arena, string.size()));
 }
 
 
@@ -460,6 +474,10 @@ FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const Attribut
         case AttributeUnderlyingType::Float32: createAttributeImpl<Float32>(attr, null_value); break;
         case AttributeUnderlyingType::Float64: createAttributeImpl<Float64>(attr, null_value); break;
         case AttributeUnderlyingType::String: createAttributeImpl<String>(attr, null_value); break;
+
+        case AttributeUnderlyingType::Decimal32: createAttributeImpl<Decimal32>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal64: createAttributeImpl<Decimal64>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal128: createAttributeImpl<Decimal128>(attr, null_value); break;
     }
 
     return attr;
@@ -488,6 +506,9 @@ void FlatDictionary::getItemsNumber(
     DISPATCH(Int64)
     DISPATCH(Float32)
     DISPATCH(Float64)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
 #undef DISPATCH
     else
         throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
@@ -501,7 +522,7 @@ void FlatDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
-    const auto & attr = *std::get<ContainerPtrType<AttributeType>>(attribute.arrays);
+    const auto & attr = std::get<ContainerType<AttributeType>>(attribute.arrays);
     const auto rows = ext::size(ids);
 
     for (const auto row : ext::range(0, rows))
@@ -519,7 +540,7 @@ void FlatDictionary::resize(Attribute & attribute, const Key id)
     if (id >= max_array_size)
         throw Exception{name + ": identifier should be less than " + toString(max_array_size), ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
-    auto & array = *std::get<ContainerPtrType<T>>(attribute.arrays);
+    auto & array = std::get<ContainerType<T>>(attribute.arrays);
     if (id >= array.size())
     {
         const size_t elements_count = id + 1; //id=0 -> elements_count=1
@@ -532,7 +553,7 @@ template <typename T>
 void FlatDictionary::setAttributeValueImpl(Attribute & attribute, const Key id, const T & value)
 {
     resize<T>(attribute, id);
-    auto & array = *std::get<ContainerPtrType<T>>(attribute.arrays);
+    auto & array = std::get<ContainerType<T>>(attribute.arrays);
     array[id] = value;
     loaded_ids[id] = true;
 }
@@ -542,7 +563,7 @@ void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, const 
 {
     resize<StringRef>(attribute, id);
     const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-    auto & array = *std::get<ContainerPtrType<StringRef>>(attribute.arrays);
+    auto & array = std::get<ContainerType<StringRef>>(attribute.arrays);
     array[id] = StringRef{string_in_arena, string.size()};
     loaded_ids[id] = true;
 }
@@ -563,6 +584,10 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
         case AttributeUnderlyingType::Float32: setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>()); break;
         case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
         case AttributeUnderlyingType::String: setAttributeValueImpl<String>(attribute, id, value.get<String>()); break;
+
+        case AttributeUnderlyingType::Decimal32: setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal128>()); break;
+        case AttributeUnderlyingType::Decimal64: setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal128>()); break;
+        case AttributeUnderlyingType::Decimal128: setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>()); break;
     }
 }
 

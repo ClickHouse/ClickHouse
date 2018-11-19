@@ -856,7 +856,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
         if (builder)
             builder.initSink(input_rows_count);
 
-        if (index == UInt64(0))
+        if (index == 0u)
             throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
         if (!( executeNumberConst<UInt8>(block, arguments, result, index, builder)

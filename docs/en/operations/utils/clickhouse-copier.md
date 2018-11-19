@@ -159,3 +159,5 @@ Parameters:
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

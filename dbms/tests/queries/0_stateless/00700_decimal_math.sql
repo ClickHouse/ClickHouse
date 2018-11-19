@@ -1,4 +1,3 @@
-SET allow_experimental_decimal_type = 1;
 SET send_logs_level = 'none';
 
 SELECT toDecimal32('42.42', 4) AS x, toDecimal32(log(x), 4) AS y, exp(y);

@@ -16,7 +16,7 @@ Usually those have some way to preview how Markdown will look like, which allows
 
 It'll take some effort to go through, but the result will be very close to production documentation.
 
-For the first time you'll need to set up virtualenv:
+For the first time you'll need to install [wkhtmltopdf](https://wkhtmltopdf.org/) and set up virtualenv:
 
 ``` bash
 $ cd ClickHouse/docs/tools

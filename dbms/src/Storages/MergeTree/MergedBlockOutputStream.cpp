@@ -19,6 +19,7 @@ constexpr auto MARKS_FILE_EXTENSION = ".mrk";
 
 }
 
+
 /// Implementation of IMergedBlockOutputStream.
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -70,7 +71,7 @@ void IMergedBlockOutputStream::addStreams(
 
 
 IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
-        const String & name, OffsetColumns & offset_columns, bool skip_offsets)
+        const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets)
 {
     return [&, skip_offsets] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
@@ -93,7 +94,7 @@ void IMergedBlockOutputStream::writeData(
     const String & name,
     const IDataType & type,
     const IColumn & column,
-    OffsetColumns & offset_columns,
+    WrittenOffsetColumns & offset_columns,
     bool skip_offsets,
     IDataType::SerializeBinaryBulkStatePtr & serialization_state)
 {
@@ -304,7 +305,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         IDataType::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
         serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-        OffsetColumns offset_columns;
+        WrittenOffsetColumns offset_columns;
         auto it = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++it)
         {
@@ -395,7 +396,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     size_t rows = block.rows();
 
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
-    OffsetColumns offset_columns;
+    WrittenOffsetColumns offset_columns;
 
     auto sort_columns = storage.getPrimarySortColumns();
 
@@ -427,7 +428,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     if (serialization_states.empty())
     {
         serialization_states.reserve(columns_list.size());
-        OffsetColumns tmp_offset_columns;
+        WrittenOffsetColumns tmp_offset_columns;
         IDataType::SerializeBinaryBulkSettings settings;
 
         for (const auto & col : columns_list)
@@ -501,12 +502,15 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 /// Implementation of MergedColumnOnlyOutputStream.
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_)
+    MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
+    CompressionSettings compression_settings, bool skip_offsets_,
+    WrittenOffsetColumns & already_written_offset_columns)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
         storage_.context.getSettings().max_compress_block_size, compression_settings,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
-    header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
+    header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
+    already_written_offset_columns(already_written_offset_columns)
 {
 }
 
@@ -517,7 +521,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         column_streams.clear();
         serialization_states.clear();
         serialization_states.reserve(block.columns());
-        OffsetColumns tmp_offset_columns;
+        WrittenOffsetColumns tmp_offset_columns;
         IDataType::SerializeBinaryBulkSettings settings;
 
         for (size_t i = 0; i < block.columns(); ++i)
@@ -535,7 +539,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 
     size_t rows = block.rows();
 
-    OffsetColumns offset_columns;
+    WrittenOffsetColumns offset_columns = already_written_offset_columns;
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
@@ -558,11 +562,11 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-    OffsetColumns offset_columns;
-    for (size_t i = 0; i < header.columns(); ++i)
+
+    for (size_t i = 0, size = header.columns(); i < size; ++i)
     {
-        auto & column = header.safeGetByPosition(i);
-        serialize_settings.getter = createStreamGetter(column.name, offset_columns, skip_offsets);
+        auto & column = header.getByPosition(i);
+        serialize_settings.getter = createStreamGetter(column.name, already_written_offset_columns, skip_offsets);
         column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
     }
 

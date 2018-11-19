@@ -218,3 +218,5 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
 
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/http_interface/) <!--hide-->

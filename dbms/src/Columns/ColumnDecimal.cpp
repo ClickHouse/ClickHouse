@@ -1,6 +1,3 @@
-//#include <cstring>
-#include <cmath>
-
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -20,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
@@ -45,6 +43,14 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(*reinterpret_cast<const T *>(pos));
     return pos + sizeof(T);
+}
+
+template <typename T>
+UInt64 ColumnDecimal<T>::get64(size_t n) const
+{
+    if constexpr (sizeof(T) > sizeof(UInt64))
+        throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+    return static_cast<typename T::NativeType>(data[n]);
 }
 
 template <typename T>
@@ -109,6 +115,14 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
     }
 
     return std::move(res);
+}
+
+template <typename T>
+void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
+{
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
 template <typename T>

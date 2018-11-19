@@ -196,3 +196,5 @@
 ## transfer_overflow_mode
 
 Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/query_complexity/) <!--hide-->

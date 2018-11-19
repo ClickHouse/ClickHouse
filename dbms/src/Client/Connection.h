@@ -106,6 +106,7 @@ public:
     void setDefaultDatabase(const String & database);
 
     void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision);
+    UInt64 getServerRevision();
 
     const String & getServerTimezone();
     const String & getServerDisplayName();

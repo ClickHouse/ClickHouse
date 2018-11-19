@@ -40,12 +40,12 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         MutableColumns columns = InternalTextLogsQueue::getSampleColumns();
 
         size_t i = 0;
-        columns[i++]->insert(static_cast<UInt64>(msg_ext.time_seconds));
-        columns[i++]->insert(static_cast<UInt64>(msg_ext.time_microseconds));
+        columns[i++]->insert(msg_ext.time_seconds);
+        columns[i++]->insert(msg_ext.time_microseconds);
         columns[i++]->insert(DNSResolver::instance().getHostName());
         columns[i++]->insert(msg_ext.query_id);
-        columns[i++]->insert(static_cast<UInt64>(msg_ext.thread_number));
-        columns[i++]->insert(static_cast<Int64>(msg.getPriority()));
+        columns[i++]->insert(msg_ext.thread_number);
+        columns[i++]->insert(Int64(msg.getPriority()));
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 
