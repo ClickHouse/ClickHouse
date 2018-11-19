@@ -32,7 +32,7 @@ static Block removeConstants(
         }
     }
 
-    return block;
+    return std::move(block);
 }
 
 RemoveConstantsTransform::RemoveConstantsTransform(
