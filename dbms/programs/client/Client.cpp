@@ -802,7 +802,7 @@ private:
 
         connection->forceConnected();
 
-        if (insert && !insert->select)
+        if (insert && !insert->select && !insert->in_file)
             processInsertQuery();
         else
             processOrdinaryQuery();
