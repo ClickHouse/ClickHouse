@@ -13,7 +13,7 @@ class ReadBuffer;
 class IInputFormat : public ISource
 {
 private:
-    ReadBuffer & in;
+    ReadBuffer & in [[maybe_unused]];
 
 public:
     IInputFormat(Block header, ReadBuffer & in)

@@ -29,7 +29,7 @@ static Block wrapConstants(
 
     wrapByPosition(result);
 
-    return block;
+    return std::move(block);
 }
 
 WrapConstantsTransform::WrapConstantsTransform(

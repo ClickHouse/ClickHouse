@@ -38,8 +38,8 @@ protected:
       */
     virtual bool readRow(MutableColumns & columns) = 0;
 
-    virtual void readPrefix() {};                /// delimiter before begin of result
-    virtual void readSuffix() {};                /// delimiter after end of result
+    virtual void readPrefix() {}                /// delimiter before begin of result
+    virtual void readSuffix() {}                /// delimiter after end of result
 
     /// Skip data until next row.
     /// This is intended for text streams, that allow skipping of errors.

@@ -32,7 +32,7 @@ private:
     {
         auto & col = block.getByPosition(position);
         col.column = col.type->createColumnConst(block.getNumRows(), value);
-        return block;
+        return std::move(block);
     }
 };
 
