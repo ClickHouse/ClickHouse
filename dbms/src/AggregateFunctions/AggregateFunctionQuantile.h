@@ -1,5 +1,7 @@
 #pragma once
 
+#include <AggregateFunctions/FactoryHelpers.h>
+
 /// These must be exposed in header for the purpose of dynamic compilation.
 #include <AggregateFunctions/QuantileReservoirSampler.h>
 #include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
@@ -169,7 +171,14 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 
-    static constexpr bool hasSecondArg() { return has_second_arg; }
+    static void assertSecondArg(const DataTypes & argument_types)
+    {
+        if constexpr (has_second_arg)
+            /// TODO: check that second argument is of numerical type.
+            assertBinary(Name::name, argument_types);
+        else
+            assertUnary(Name::name, argument_types);
+    }
 };
 
 struct NameQuantile { static constexpr auto name = "quantile"; };
