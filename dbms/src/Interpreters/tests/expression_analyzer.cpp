@@ -8,11 +8,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-
-#include <Analyzers/CollectAliases.h>
-#include <Analyzers/ExecuteTableFunctions.h>
-#include <Analyzers/CollectTables.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -35,23 +31,14 @@ struct TestEntry
     {
         ASTPtr ast = parse(query);
 
-        ExpressionAnalyzer analyzer(ast, context, {}, source_columns, required_result_columns);
-
-        const ExpressionAnalyzerData & data = analyzer.getAnalyzedData();
-
-        if (!checkAliases(data))
-        {
-            collectWithAnalysers(context, ast);
-            return false;
-        }
-
-        return true;
+        auto res =  SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
+        return checkAliases(*res);
     }
 
 private:
-    bool checkAliases(const ExpressionAnalyzerData & data)
+    bool checkAliases(const SyntaxAnalyzerResult & res)
     {
-        for (const auto & alias : data.aliases)
+        for (const auto & alias : res.aliases)
         {
             const String & alias_name = alias.first;
             if (expected_aliases.count(alias_name) == 0 ||
@@ -81,22 +68,6 @@ private:
         if (ASTPtr ast = tryParseQuery(parser, text, text + query.size(), message, false, "", false, 0))
             return ast;
         throw Exception(message);
-    }
-
-    void collectWithAnalysers(const Context & context, ASTPtr ast) const
-    {
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
-        WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-
-        CollectAliases collect_aliases;
-        collect_aliases.process(ast);
-
-        ExecuteTableFunctions execute_table_functions;
-        execute_table_functions.process(ast, context);
-
-        CollectTables collect_tables;
-        collect_tables.process(ast, context, collect_aliases, execute_table_functions);
-        collect_tables.dump(out);
     }
 };
 

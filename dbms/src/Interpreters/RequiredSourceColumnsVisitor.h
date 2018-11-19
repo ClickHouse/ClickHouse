@@ -1,11 +1,21 @@
 #pragma once
 
+#include <Core/Names.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <DataTypes/NestedUtils.h>
+#include <Common/typeid_cast.h>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
