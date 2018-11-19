@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <optional>
 
 #include <Common/config.h>
 #include <common/MultiVersion.h>
@@ -276,6 +277,8 @@ public:
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
+
+    std::optional<UInt16> getTCPPortSecure() const;
 
     /// Get query for the CREATE table.
     ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;

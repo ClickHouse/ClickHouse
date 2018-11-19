@@ -86,7 +86,7 @@ if __name__ == "__main__":
     parser.add_argument("--build-type", choices=("debug", ""), default="")
     parser.add_argument("--compiler", choices=("clang-6.0", "gcc-7", "gcc-8"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
-    parser.add_argument("--cache", choices=("ccache", "distcc"))
+    parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
     parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
 

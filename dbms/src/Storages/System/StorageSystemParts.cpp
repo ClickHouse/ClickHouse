@@ -65,13 +65,13 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
             columns[i++]->insert(out.str());
         }
         columns[i++]->insert(part->name);
-        columns[i++]->insert(static_cast<UInt64>(part_state == State::Committed));
-        columns[i++]->insert(static_cast<UInt64>(part->marks_count));
-        columns[i++]->insert(static_cast<UInt64>(part->rows_count));
-        columns[i++]->insert(static_cast<UInt64>(part->bytes_on_disk));
-        columns[i++]->insert(static_cast<UInt64>(columns_size.data_compressed));
-        columns[i++]->insert(static_cast<UInt64>(columns_size.data_uncompressed));
-        columns[i++]->insert(static_cast<UInt64>(columns_size.marks));
+        columns[i++]->insert(part_state == State::Committed);
+        columns[i++]->insert(part->marks_count);
+        columns[i++]->insert(part->rows_count);
+        columns[i++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
+        columns[i++]->insert(columns_size.data_compressed);
+        columns[i++]->insert(columns_size.data_uncompressed);
+        columns[i++]->insert(columns_size.marks);
         columns[i++]->insert(static_cast<UInt64>(part->modification_time));
 
         time_t remove_time = part->remove_time.load(std::memory_order_relaxed);
@@ -80,15 +80,15 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         /// For convenience, in returned refcount, don't add references that was due to local variables in this method: all_parts, active_parts.
         columns[i++]->insert(static_cast<UInt64>(part.use_count() - 1));
 
-        columns[i++]->insert(static_cast<UInt64>(part->getMinDate()));
-        columns[i++]->insert(static_cast<UInt64>(part->getMaxDate()));
+        columns[i++]->insert(part->getMinDate());
+        columns[i++]->insert(part->getMaxDate());
         columns[i++]->insert(part->info.partition_id);
         columns[i++]->insert(part->info.min_block);
         columns[i++]->insert(part->info.max_block);
-        columns[i++]->insert(static_cast<UInt64>(part->info.level));
+        columns[i++]->insert(part->info.level);
         columns[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
-        columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
-        columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
+        columns[i++]->insert(part->getIndexSizeInBytes());
+        columns[i++]->insert(part->getIndexSizeInAllocatedBytes());
 
         columns[i++]->insert(info.database);
         columns[i++]->insert(info.table);

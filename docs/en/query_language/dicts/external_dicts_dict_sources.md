@@ -28,11 +28,11 @@ Types of sources (`source_type`):
 - [Local file](#dicts-external_dicts_dict_sources-local_file)
 - [Executable file](#dicts-external_dicts_dict_sources-executable)
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
-- [ODBC](#dicts-external_dicts_dict_sources-odbc)
 - DBMS
     - [MySQL](#dicts-external_dicts_dict_sources-mysql)
     - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
@@ -400,6 +400,7 @@ Setting fields:
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where ` – The selection criteria. May be omitted.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
 <a name="dicts-external_dicts_dict_sources-mongodb"></a>
 

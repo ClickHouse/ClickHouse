@@ -430,8 +430,8 @@ void HashedDictionary::calculateBytesAllocated()
 template <typename T>
 void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<CollectionPtrType<T>>(attribute.maps) = std::make_unique<CollectionType<T>>();
+    attribute.null_values = T(null_value.get<typename NearestFieldType<T>::Type>());
+    attribute.maps = std::make_unique<CollectionType<T>>();
 }
 
 HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -458,8 +458,8 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
 
         case AttributeUnderlyingType::String:
         {
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<CollectionPtrType<StringRef>>(attr.maps) = std::make_unique<CollectionType<StringRef>>();
+            attr.null_values = null_value.get<String>();
+            attr.maps = std::make_unique<CollectionType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }

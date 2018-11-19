@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/StringRange.h>
+#include <Interpreters/ExpressionActions.h>
 
 
 namespace DB
@@ -9,9 +10,6 @@ namespace DB
 class Context;
 class ASTFunction;
 struct ProjectionManipulatorBase;
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 
 class Set;

@@ -10,7 +10,7 @@
 #include <Parsers/ASTSubquery.h>
 
 #include <Interpreters/interpretSubquery.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
@@ -69,10 +69,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         }
         else
         {
-            auto database_table = getDatabaseAndTableNameFromIdentifier(*table);
-            const auto & storage = context.getTable(database_table.first, database_table.second);
+            DatabaseAndTableWithAlias database_table(*table);
+            const auto & storage = context.getTable(database_table.database, database_table.table);
             columns = storage->getColumns().ordinary;
-            select_query->replaceDatabaseAndTable(database_table.first, database_table.second);
+            select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
         }
 
         select_expression_list->children.reserve(columns.size());
