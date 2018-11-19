@@ -167,6 +167,7 @@ target_link_libraries (clickhouse_common_io
     ${Boost_SYSTEM_LIBRARY}
     apple_rt
     ${CMAKE_DL_LIBS}
+    ${HDFS3_LIBRARY}
 )
 
 target_link_libraries (dbms

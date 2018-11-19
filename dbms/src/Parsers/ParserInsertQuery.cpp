@@ -31,6 +31,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_format("FORMAT");
     ParserKeyword s_select("SELECT");
     ParserKeyword s_with("WITH");
+    ParserKeyword s_infile("INFILE");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
@@ -43,6 +44,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr format;
     ASTPtr select;
     ASTPtr table_function;
+    ASTPtr in_file;
     /// Insertion data
     const char * data = nullptr;
 
@@ -81,7 +83,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Pos before_select = pos;
 
-    /// VALUES or FORMAT or SELECT
+    /// VALUES or FORMAT or SELECT or INFILE
     if (s_values.ignore(pos, expected))
     {
         data = pos->begin;
@@ -93,34 +95,54 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!name_p.parse(pos, format, expected))
             return false;
 
-        data = name_pos->end;
+        // there are two case after FORMAT xx:
+        // case 1: data_set.
+        // case 2: INFILE xx clause.
+        if (s_infile.ignore(pos, expected))
+        {
+            ParserStringLiteral in_file_p;
 
-        if (data < end && *data == ';')
-            throw Exception("You have excessive ';' symbol before data for INSERT.\n"
-                                    "Example:\n\n"
-                                    "INSERT INTO t (x, y) FORMAT TabSeparated\n"
-                                    ";\tHello\n"
-                                    "2\tWorld\n"
-                                    "\n"
-                                    "Note that there is no ';' just after format name, "
-                                    "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
+            if (!in_file_p.parse(pos, in_file, expected))
+                return false;
 
-        while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
-            ++data;
+        }
+        else
+        {
+            data = name_pos->end;
 
-        /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
+            if (data < end && *data == ';')
+                throw Exception("You have excessive ';' symbol before data for INSERT.\n"
+                        "Example:\n\n"
+                        "INSERT INTO t (x, y) FORMAT TabSeparated\n"
+                        ";\tHello\n"
+                        "2\tWorld\n"
+                        "\n"
+                        "Note that there is no ';' just after format name, "
+                        "you need to put at least one whitespace symbol before the data.", ErrorCodes::SYNTAX_ERROR);
 
-        if (data < end && *data == '\r')
-            ++data;
+            while (data < end && (*data == ' ' || *data == '\t' || *data == '\f'))
+                ++data;
 
-        if (data < end && *data == '\n')
-            ++data;
+            /// Data starts after the first newline, if there is one, or after all the whitespace characters, otherwise.
+
+            if (data < end && *data == '\r')
+                ++data;
+
+            if (data < end && *data == '\n')
+                ++data;
+        }
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
         pos = before_select;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
+    }
+    else if (s_infile.ignore(pos, expected))
+    {
+        ParserStringLiteral in_file_p;
+        if (!in_file_p.parse(pos, in_file, expected))
+            return false;
     }
     else
     {
@@ -147,13 +169,21 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->columns = columns;
     query->select = select;
-    query->data = data != end ? data : nullptr;
+    query->in_file = in_file;
+
+    if (query->in_file)
+        query->data = nullptr;
+    else
+        query->data = data != end ? data : nullptr;
     query->end = end;
 
     if (columns)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
+
+    if (in_file)
+        query->children.push_back(in_file);
 
     return true;
 }

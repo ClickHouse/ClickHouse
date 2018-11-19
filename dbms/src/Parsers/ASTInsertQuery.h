@@ -18,6 +18,7 @@ public:
     String format;
     ASTPtr select;
     ASTPtr table_function;
+    ASTPtr in_file;
 
     // Set to true if the data should only be inserted into attached views
     bool no_destination = false;
@@ -39,6 +40,11 @@ public:
         if (table_function)
         {
             res->table_function = table_function->clone(); res->children.push_back(res->table_function);
+        }
+
+        if (in_file)
+        {
+            res->in_file = in_file->clone(); res->children.push_back(res->in_file);
         }
 
         return res;
