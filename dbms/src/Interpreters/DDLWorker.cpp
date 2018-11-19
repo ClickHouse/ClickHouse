@@ -301,7 +301,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     for (const HostID & host : task->entry.hosts)
     {
         auto maybe_secure_port = context.getTCPPortSecure();
-        
+
         /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
         bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
             || host.isLocalAddress(context.getTCPPort());
