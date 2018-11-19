@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Core/Names.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -102,6 +103,27 @@ public:
 
     ASTPtr getOrderExpression() const override { return data.secondary_sort_expr_ast; }
 
+    Names getSamplingExpressionNames() const override
+    {
+        NameOrderedSet names;
+        const auto & expr = data.sampling_expression;
+        if (expr)
+            expr->collectIdentifierNames(names);
+        return Names(names.begin(), names.end());
+    }
+
+    Names getPrimaryExpressionNames() const override { return data.getPrimarySortColumns(); }
+
+    Names getPartitionExpressionNames() const override
+    {
+        NameOrderedSet names;
+        const auto & expr = data.partition_expr_ast;
+        if (expr)
+            expr->collectIdentifierNames(names);
+        return Names(names.cbegin(), names.cend());
+    }
+
+    Names getOrderExpressionNames() const override { return data.getSortColumns(); }
 private:
     String path;
     String database_name;

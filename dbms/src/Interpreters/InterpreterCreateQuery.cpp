@@ -348,31 +348,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     return columns_list;
 }
 
-void FillColumnPresenceInTableDeclaration(ColumnPresences & presences, IAST * ast, PresenceType type)
+ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context)
 {
-    if (!ast)
-        return;
-
-    IdentifierNameSet names_set;
-    ast->collectIdentifierNames(names_set);
-    for (const auto & name : names_set)
-    {
-        auto it = presences.find(name);
-        if (it == presences.end())
-            it = presences.insert({name, ColumnPresence()}).first;
-
-        it->second.Set(type);
-    }
-}
-
-ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTCreateQuery & ast, const Context & context)
-{
-    // TODO: или это было не правильное решение?
-    if (ast.columns == nullptr)
-        return {};
-
-    const ASTExpressionList & columns = *ast.columns;
-    const ASTStorage * storage_def = ast.storage;
     ColumnsDescription res;
 
     auto && columns_and_defaults = parseColumns(columns, context);
@@ -380,13 +357,6 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTCreate
     res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
     res.ordinary = std::move(columns_and_defaults.first);
     res.defaults = std::move(columns_and_defaults.second);
-
-    if (storage_def && storage_def->engine)
-    {
-        FillColumnPresenceInTableDeclaration(res.presences, storage_def->order_by, PresenceType::InOrderKey);
-        FillColumnPresenceInTableDeclaration(res.presences, storage_def->partition_by, PresenceType::InPartitionKey);
-        FillColumnPresenceInTableDeclaration(res.presences, storage_def->sample_by, PresenceType::InSampleKey);
-    }
 
     if (res.ordinary.size() + res.materialized.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
@@ -429,7 +399,7 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     if (create.columns)
     {
-        res = getColumnsDescription(create, context);
+        res = getColumnsDescription(*create.columns, context);
     }
     else if (!create.as_table.empty())
     {
