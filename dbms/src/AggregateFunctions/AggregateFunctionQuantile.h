@@ -63,9 +63,9 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
-    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>)&&(
-        !(std::is_same_v<Value, DataTypeDate::FieldType> || std::is_same_v<Value, DataTypeDateTime::FieldType>)
-        || std::is_same_v<Data, QuantileTiming<Value>>);
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>)
+        && (!(std::is_same_v<Value, DataTypeDate::FieldType> || std::is_same_v<Value, DataTypeDateTime::FieldType>)
+            || std::is_same_v<Data, QuantileTiming<Value>>);
     static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
