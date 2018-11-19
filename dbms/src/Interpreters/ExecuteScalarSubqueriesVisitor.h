@@ -1,15 +1,14 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
-
-class Context;
-class ASTSubquery;
-class ASTFunction;
-struct ASTTableExpression;
 
 /// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
 /// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.

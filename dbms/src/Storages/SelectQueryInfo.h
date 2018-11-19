@@ -37,6 +37,8 @@ struct PrewhereInfo
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
+struct SyntaxAnalyzerResult;
+using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -45,6 +47,8 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 struct SelectQueryInfo
 {
     ASTPtr query;
+
+    SyntaxAnalyzerResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
 

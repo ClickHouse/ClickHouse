@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/File.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>

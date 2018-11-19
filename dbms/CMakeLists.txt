@@ -48,8 +48,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions ("-fno-tree-loop-distribute-patterns")
 endif ()
 
-find_package (Threads)
-
 add_subdirectory (src)
 
 set(dbms_headers)
@@ -61,7 +59,6 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Analyzers)
 add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
