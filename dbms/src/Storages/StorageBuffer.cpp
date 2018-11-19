@@ -613,7 +613,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(block_to_write.columns());
-    for (const auto& column : block_to_write)
+    for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
