@@ -151,11 +151,11 @@ BlockInputStreams StorageBuffer::read(
             allow_materialized ? destination->getSampleBlock() : destination->getSampleBlockNonMaterialized();
 
         bool can_read_from_destination = true;
-        for (const String& column_name : column_names)
+        for (const String & column_name : column_names)
         {
            if (!structure_of_destination_table.has(column_name))
            {
-               LOG_WARNING(log, "Destination table " << destination_database << "." << destination_table
+               LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
                    << " doesn't have column " << column_name << ". Data from destination table is skipped.");
                can_read_from_destination = false;
                break;
@@ -164,8 +164,8 @@ BlockInputStreams StorageBuffer::read(
            auto dst_col = structure_of_destination_table.getByName(column_name);
            if (!dst_col.type->equals(*col.type))
            {
-               LOG_WARNING(log, "Destination table " << destination_database << "." << destination_table
-                   << " have different type of column " << column_name << " ("
+               LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                   << " has different type of column " << backQuoteIfNeed(column_name) << " ("
                    << col.type->getName() << " != " << dst_col.type->getName()
                    << "). Data from destination table is skipped.");
                can_read_from_destination = false;
