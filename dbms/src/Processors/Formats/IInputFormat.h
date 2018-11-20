@@ -15,7 +15,7 @@ class IInputFormat : public ISource
 private:
 
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wno-ignore-attributes"
+#pragma GCC diagnostic ignored "-Wattributes"
 
     ReadBuffer & in [[maybe_unused]];
 
