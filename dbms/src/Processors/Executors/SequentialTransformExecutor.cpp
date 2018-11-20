@@ -1,6 +1,7 @@
 #include <Processors/Executors/SequentialTransformExecutor.h>
 #include <Processors/ISink.h>
 #include <Processors/ISource.h>
+#include <Processors/printPipeline.h>
 
 namespace DB
 {
@@ -74,6 +75,8 @@ SequentialTransformExecutor::SequentialTransformExecutor(Processors processors, 
 void SequentialTransformExecutor::execute(Block & block)
 {
     std::lock_guard<std::mutex> guard(mutex);
+
+    // printPipeline(dynamic_cast<const SequentialPipelineExecutor *>(executor.get())->getProcessors())
 
     *input_block = std::move(block);
     output_block->clear();

@@ -26,6 +26,8 @@ public:
     Status prepare() override;
     void work() override;
     void schedule(EventCounter & watch) override;
+
+    const Processors & getProcessors() const { return processors; }
 };
 
 }
