@@ -16,7 +16,9 @@ public:
         const PreparedFunctionPtr & function,
         Block input_header,
         const ColumnNumbers & column_numbers,
-        size_t result);
+        size_t result,
+        bool use_default_implementation_for_constants,
+        const ColumnNumbers & remain_constants);
 
     String getName() const override { return "ExecuteFunctionTransform"; }
 
@@ -27,6 +29,8 @@ private:
     PreparedFunctionPtr prepared_function;
     ColumnNumbers column_numbers;
     size_t result;
+    bool use_default_implementation_for_constants;
+    ColumnNumbers remain_constants;
 };
 
 }

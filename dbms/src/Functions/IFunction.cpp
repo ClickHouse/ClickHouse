@@ -94,28 +94,28 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
     return res;
 }
 
-bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
-{
-    for (auto arg : args)
-    {
-        auto & column = block.getByPosition(arg).column;
-        if (!column || !column->isColumnConst())
-            return false;
-    }
-    return true;
-}
-
-void checkArgumentsToRemainConstantsAreConstants(
-    const Block & header,
-    const ColumnNumbers & arguments,
-    const ColumnNumbers & arguments_to_remain_constants,
-    const String & function_name)
-{
-    for (auto arg_num : arguments_to_remain_constants)
-        if (arg_num < arguments.size() && !header.getByPosition(arguments[arg_num]).column->isColumnConst())
-            throw Exception("Argument at index " + toString(arg_num) + " for function " + function_name
-                            + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-}
+//bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
+//{
+//    for (auto arg : args)
+//    {
+//        auto & column = block.getByPosition(arg).column;
+//        if (!column || !column->isColumnConst())
+//            return false;
+//    }
+//    return true;
+//}
+//
+//void checkArgumentsToRemainConstantsAreConstants(
+//    const Block & header,
+//    const ColumnNumbers & arguments,
+//    const ColumnNumbers & arguments_to_remain_constants,
+//    const String & function_name)
+//{
+//    for (auto arg_num : arguments_to_remain_constants)
+//        if (arg_num < arguments.size() && !header.getByPosition(arguments[arg_num]).column->isColumnConst())
+//            throw Exception("Argument at index " + toString(arg_num) + " for function " + function_name
+//                            + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+//}
 
 }
 
@@ -191,7 +191,9 @@ SequentialTransformExecutorPtr IFunctionBase::createPipeline(Block & block, cons
     auto executePreparedFunction = [&](const Block & header) -> ProcessorPtr
     {
         auto function = prepare(header, arguments, result);
-        auto processor = std::make_shared<ExecuteFunctionTransform>(function, header, arguments, result);
+        auto processor = std::make_shared<ExecuteFunctionTransform>(function, header, arguments, result,
+                                                                    useDefaultImplementationForConstants(),
+                                                                    getArgumentsThatAreAlwaysConstant());
         processors.emplace_back(processor);
         return processor;
     };
@@ -239,40 +241,40 @@ SequentialTransformExecutorPtr IFunctionBase::createPipeline(Block & block, cons
         return nullptr;
     };
 
-    auto executeRemoveConstants = [&](const Block & header) -> ProcessorPtr
-    {
-        ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
-        checkArgumentsToRemainConstantsAreConstants(header, arguments, arguments_to_remain_constants, getName());
-
-        if (arguments.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(header, arguments))
-            return nullptr;
-
-        auto remove_constants = std::make_shared<RemoveConstantsTransform>(
-                header, arguments_to_remain_constants, arguments, result);
-        auto & out_remove_constants = remove_constants->getOutputs().at(0);
-
-        processors.emplace_back(remove_constants);
-
-        auto exec_function_head = executeWithoutLowCardinality(out_remove_constants.getHeader());
-        auto & exec_function_tail = processors.back();
-        auto & in_func_result = exec_function_head->getInputs().at(0);
-        auto & out_func_result = exec_function_tail->getOutputs().at(0);
-
-        auto wrap_constants = std::make_shared<WrapConstantsTransform>(out_func_result.getHeader(), arguments, result);
-        auto & in_wrap_constants = wrap_constants->getInputs().at(0);
-
-        processors.emplace_back(wrap_constants);
-
-        connect(out_remove_constants, in_func_result);
-        connect(out_func_result, in_wrap_constants);
-
-        return remove_constants;
-    };
+//    auto executeRemoveConstants = [&](const Block & header) -> ProcessorPtr
+//    {
+//        ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
+//        checkArgumentsToRemainConstantsAreConstants(header, arguments, arguments_to_remain_constants, getName());
+//
+//        if (arguments.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(header, arguments))
+//            return nullptr;
+//
+//        auto remove_constants = std::make_shared<RemoveConstantsTransform>(
+//                header, arguments_to_remain_constants, arguments, result);
+//        auto & out_remove_constants = remove_constants->getOutputs().at(0);
+//
+//        processors.emplace_back(remove_constants);
+//
+//        auto exec_function_head = executeWithoutLowCardinality(out_remove_constants.getHeader());
+//        auto & exec_function_tail = processors.back();
+//        auto & in_func_result = exec_function_head->getInputs().at(0);
+//        auto & out_func_result = exec_function_tail->getOutputs().at(0);
+//
+//        auto wrap_constants = std::make_shared<WrapConstantsTransform>(out_func_result.getHeader(), arguments, result);
+//        auto & in_wrap_constants = wrap_constants->getInputs().at(0);
+//
+//        processors.emplace_back(wrap_constants);
+//
+//        connect(out_remove_constants, in_func_result);
+//        connect(out_func_result, in_wrap_constants);
+//
+//        return remove_constants;
+//    };
 
     executeWithoutLowCardinality = [&](const Block & header) -> ProcessorPtr
     {
-        if (auto remove_constants = executeRemoveConstants(header))
-            return remove_constants;
+//        if (auto remove_constants = executeRemoveConstants(header))
+//            return remove_constants;
 
         if (auto remove_nullable = executeRemoveNullable(header))
             return remove_nullable;

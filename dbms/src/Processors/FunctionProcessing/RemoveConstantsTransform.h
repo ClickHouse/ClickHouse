@@ -14,6 +14,12 @@ public:
 
     String getName() const override { return "RemoveConstantsTransform"; }
 
+    static Block removeConstants(
+        Block && block,
+        const ColumnNumbers & remain_constants,
+        const ColumnNumbers & column_numbers,
+        size_t result);
+
 protected:
     void transform(Block & block) override;
 

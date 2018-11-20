@@ -6,7 +6,7 @@
 namespace DB
 {
 
-static Block wrapConstants(
+static Block WrapConstantsTransform::wrapConstants(
     Block && block,
     const ColumnNumbers & column_numbers,
     size_t result)
