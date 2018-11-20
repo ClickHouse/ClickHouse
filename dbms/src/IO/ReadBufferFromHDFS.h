@@ -10,7 +10,6 @@
 
 namespace DB
 {
-
     /** Accepts path to file and opens it, or pre-opened file descriptor.
      * Closes file by himself (thus "owns" a file descriptor).
      */
@@ -18,7 +17,6 @@ namespace DB
     {
         protected:
             std::string hdfs_uri;
-            // std::unique_ptr<struct hdfsBuilder> builder;
             struct hdfsBuilder *builder;
             hdfsFS fs;
             hdfsFile fin;
@@ -27,14 +25,15 @@ namespace DB
                 : BufferWithOwnMemory<ReadBuffer>(buf_size), hdfs_uri(hdfs_name_) , builder(hdfsNewBuilder())
             {
                 Poco::URI uri(hdfs_name_);
-                auto& host = uri.getHost();
+                auto & host = uri.getHost();
                 auto port = uri.getPort();
-                auto& path = uri.getPath();
+                auto & path = uri.getPath();
                 if (host.empty() || port == 0 || path.empty())
                 {
-                    throw Exception("Illegal HDFS URI : " + hdfs_uri);
+                    throw Exception("Illegal HDFS URI: " + hdfs_uri);
                 }
                 // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
+                /// TODO Allow to tune from query Settings.
                 hdfsBuilderConfSetStr(builder, "input.read.timeout", "60000"); // 1 min
                 hdfsBuilderConfSetStr(builder, "input.connect.timeout", "60000"); // 1 min
 
@@ -66,20 +65,20 @@ namespace DB
 
             bool nextImpl() override
             {
-                int done = hdfsRead(fs, fin, internal_buffer.begin(), internal_buffer.size());
-                if (done <0)
+                int bytes_read = hdfsRead(fs, fin, internal_buffer.begin(), internal_buffer.size());
+                if (bytes_read < 0)
                 {
                     throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + String(hdfsGetLastError()));
                 }
 
-                if (done)
-                    working_buffer.resize(done);
+                if (bytes_read)
+                    working_buffer.resize(bytes_read);
                 else
                     return false;
                 return true;
             }
 
-            const std::string& getHDFSUri() const
+            const std::string & getHDFSUri() const
             {
                 return hdfs_uri;
             }
