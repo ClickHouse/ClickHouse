@@ -49,3 +49,5 @@ See [above](#permissions_for_queries) for the division of queries into groups.
 - 1 — DDL queries are allowed. Default value.
 
 You can not execute `SET allow_ddl = 1` if `allow_ddl = 0` for current session.
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
