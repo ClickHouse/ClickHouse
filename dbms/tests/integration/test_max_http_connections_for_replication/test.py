@@ -22,8 +22,8 @@ def _fill_nodes(nodes, shard, connections_count):
         '''.format(shard=shard, replica=node.name, connections=connections_count))
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', config_dir="configs", main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', config_dir="configs", main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def start_small_cluster():
@@ -52,9 +52,9 @@ def test_single_endpoint_connections_count(start_small_cluster):
 
     assert node2.query("SELECT value FROM system.events where event='CreatedHTTPConnections'") == '1\n'
 
-node3 = cluster.add_instance('node3', config_dir="configs", main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
-node5 = cluster.add_instance('node5', config_dir="configs", main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+node3 = cluster.add_instance('node3', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
+node5 = cluster.add_instance('node5', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/log_conf.xml'], with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def start_big_cluster():

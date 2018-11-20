@@ -50,7 +50,7 @@ namespace detail
             : ReadBuffer(nullptr, 0)
             , uri {uri}
             , method {!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
-            , session {std::move(session_)}
+            , session {session_}
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
             if (uri.getPath().empty())
