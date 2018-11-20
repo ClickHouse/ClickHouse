@@ -511,7 +511,6 @@ private:
 
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
-	
     const Cluster::Address & findClusterAddress(ReplicatedMergeTreeAddress & leader_address);
 
 protected:
