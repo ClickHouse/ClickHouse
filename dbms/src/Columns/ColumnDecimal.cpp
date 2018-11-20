@@ -213,8 +213,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.size() == 0)
     {
-        min = typename NearestFieldType<T>::Type(0, scale);
-        max = typename NearestFieldType<T>::Type(0, scale);
+        min = NearestFieldType<T>(0, scale);
+        max = NearestFieldType<T>(0, scale);
         return;
     }
 
@@ -229,8 +229,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min, scale);
-    max = typename NearestFieldType<T>::Type(cur_max, scale);
+    min = NearestFieldType<T>(cur_min, scale);
+    max = NearestFieldType<T>(cur_max, scale);
 }
 
 template class ColumnDecimal<Decimal32>;
