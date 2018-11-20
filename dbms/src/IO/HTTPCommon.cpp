@@ -52,23 +52,24 @@ namespace
 #endif
     }
 
-    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https)
+    HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive)
     {
         HTTPSessionPtr session;
 
         if (https)
 #if USE_POCO_NETSSL
-            session = std::make_unique<Poco::Net::HTTPSClientSession>();
+            session = std::make_shared<Poco::Net::HTTPSClientSession>();
 #else
             throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
         else
-            session = std::make_unique<Poco::Net::HTTPClientSession>();
+            session = std::make_shared<Poco::Net::HTTPClientSession>();
 
         ProfileEvents::increment(ProfileEvents::CreatedHTTPConnections);
 
         session->setHost(DNSResolver::instance().resolveHost(host).toString());
         session->setPort(port);
+        session->setKeepAlive(keep_alive);
 
         return session;
     }
@@ -83,7 +84,7 @@ namespace
 
         ObjectPtr allocObject() override
         {
-            return makeHTTPSessionImpl(host, port, https);
+            return makeHTTPSessionImpl(host, port, https, true);
         }
 
     public:
@@ -133,7 +134,9 @@ namespace
                 std::tie(pool_ptr, std::ignore) = endpoints_pool.emplace(
                     key, std::make_shared<SingleEndpointHTTPSessionPool>(host, port, https, max_connections_per_endpoint));
 
-            auto session = pool_ptr->second->get(-1);
+            auto retry_timeout = timeouts.connection_timeout.totalMicroseconds();
+            auto session = pool_ptr->second->get(retry_timeout);
+
             setTimeouts(*session, timeouts);
             return session;
         }
@@ -156,7 +159,7 @@ HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts &
     UInt16 port = uri.getPort();
     bool https = (uri.getScheme() == "https");
 
-    auto session = makeHTTPSessionImpl(host, port, https);
+    auto session = makeHTTPSessionImpl(host, port, https, false);
     setTimeouts(*session, timeouts);
     return session;
 }
