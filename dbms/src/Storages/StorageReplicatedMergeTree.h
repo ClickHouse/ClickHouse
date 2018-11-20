@@ -197,6 +197,14 @@ public:
 
     ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
 
+    Names getSamplingExpressionNames() const override;
+
+    Names getPrimaryExpressionNames() const override;
+
+    Names getOrderExpressionNames() const override;
+
+    Names getPartitionExpressionNames() const override;
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();

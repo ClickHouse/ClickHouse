@@ -86,7 +86,6 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
     src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     src/AggregateFunctions/AggregateFunctionState.cpp
-    src/AggregateFunctions/FactoryHelpers.cpp
     src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
