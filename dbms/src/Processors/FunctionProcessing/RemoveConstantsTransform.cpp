@@ -6,7 +6,7 @@
 namespace DB
 {
 
-static Block RemoveConstantsTransform::removeConstants(
+Block RemoveConstantsTransform::removeConstants(
     Block && block,
     const ColumnNumbers & remain_constants,
     const ColumnNumbers & column_numbers,
