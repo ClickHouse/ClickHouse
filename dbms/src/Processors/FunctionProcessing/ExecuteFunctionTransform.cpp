@@ -61,10 +61,16 @@ void ExecuteFunctionTransform::transform(Block & block)
     bool remove_constants = !column_numbers.empty()
                             && use_default_implementation_for_constants
                             && allArgumentsAreConstants(block, column_numbers);
-    if (remove_constants)
-        block = RemoveConstantsTransform::removeConstants(std::move(block), remain_constants, column_numbers, result);
 
-    prepared_function->execute(block, column_numbers, result, block.getNumRows());
+    size_t num_rows = block.getNumRows();
+
+    if (remove_constants)
+    {
+        block = RemoveConstantsTransform::removeConstants(std::move(block), remain_constants, column_numbers, result);
+        num_rows = 1;
+    }
+
+    prepared_function->execute(block, column_numbers, result, num_rows);
 
     if (remove_constants)
         block = WrapConstantsTransform::wrapConstants(std::move(block), column_numbers, result);

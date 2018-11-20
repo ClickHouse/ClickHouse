@@ -76,7 +76,7 @@ void SequentialTransformExecutor::execute(Block & block)
 {
     std::lock_guard<std::mutex> guard(mutex);
 
-    // printPipeline(dynamic_cast<const SequentialPipelineExecutor *>(executor.get())->getProcessors())
+    // printPipeline(dynamic_cast<const SequentialPipelineExecutor *>(executor.get())->getProcessors());
 
     *input_block = std::move(block);
     output_block->clear();
