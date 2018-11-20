@@ -158,6 +158,7 @@ nav:
     - 'Серверные настройки': 'operations/server_settings/settings.md'
   - 'Настройки':
     - 'Введение': 'operations/settings/index.md'
+    - 'Разрешения на выполнение запросов': 'operations/settings/permissions_for_queries.md'
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
