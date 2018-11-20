@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
-#include <ext/singleton.h>
+#include "IDictionarySource.h"
 
+#include <ext/singleton.h>
 #include <unordered_map>
 
 namespace Poco

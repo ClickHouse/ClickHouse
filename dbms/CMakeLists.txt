@@ -63,9 +63,6 @@ add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
-#add_headers_and_sources(dbms src/Dictionaries)
-#add_headers_and_sources(dbms src/Dictionaries/Embedded)
-#add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
@@ -81,9 +78,6 @@ list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
 list (APPEND dbms_sources src/Functions/IFunction.cpp src/Functions/FunctionFactory.cpp src/Functions/FunctionHelpers.cpp)
 list (APPEND dbms_headers src/Functions/IFunction.h src/Functions/FunctionFactory.h src/Functions/FunctionHelpers.h)
-
-#list (APPEND dbms_sources src/Dictionaries/DictionarySourceFactory.cpp)
-#list (APPEND dbms_headers src/Dictionaries/DictionarySourceFactory.h)
 
 list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
@@ -180,7 +174,6 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
-    #${BTRIE_LIBRARIES}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
 )
 
@@ -191,38 +184,6 @@ endif ()
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
-
-if (Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-#    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-#    target_include_directories (dbms SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-endif()
-
-if (USE_POCO_SQLODBC)
-#    target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
-#    target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY})
-    if (NOT USE_INTERNAL_POCO_LIBRARY)
-#        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIR})
-#        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} PUBLIC ${Poco_SQL_INCLUDE_DIR})
-    endif()
-endif()
-
-#if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-if (Poco_Data_FOUND)
-#    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-#    target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-endif()
-
-if (USE_POCO_DATAODBC)
-#    target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
-#    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
-    if (NOT USE_INTERNAL_POCO_LIBRARY)
-#        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
-    endif()
-endif()
-
-#if (USE_POCO_MONGODB)
-#    target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
-#endif()
 
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})

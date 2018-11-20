@@ -8,7 +8,7 @@
 #include <Common/PODArray.h>
 #include <memory>
 #include <chrono>
-#include <Dictionaries/IDictionarySource.h>
+#include "IDictionarySource.h"
 
 namespace DB
 {
