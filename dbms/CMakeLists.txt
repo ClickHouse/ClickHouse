@@ -59,7 +59,6 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Analyzers)
 add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
@@ -87,7 +86,6 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
     src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     src/AggregateFunctions/AggregateFunctionState.cpp
-    src/AggregateFunctions/FactoryHelpers.cpp
     src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
