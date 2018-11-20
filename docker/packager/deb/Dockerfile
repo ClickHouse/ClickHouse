@@ -5,9 +5,6 @@ RUN apt-get update -y \
         apt-get install --yes --no-install-recommends \
             bash \
             fakeroot \
-            ccache \
-            distcc \
-            distcc-pump \
             cmake \
             curl \
             gcc-7 \

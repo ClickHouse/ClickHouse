@@ -86,9 +86,10 @@ Please fix this and reinstall this package." >&2
     fi
 
     # Set net_admin capabilities to support introspection of "taskstats" performance metrics from the kernel.
+
     command -v setcap >/dev/null \
-        && setcap cap_net_admin=+ep "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
-        || echo "Cannot set 'net_admin' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
+        && setcap "cap_net_admin=+ep cap_ipc_lock=+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
+        || echo "Cannot set 'net_admin' or 'ipc_lock' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
 
     # Clean old dynamic compilation results
     if [ -d "${CLICKHOUSE_DATADIR}/build" ]; then
