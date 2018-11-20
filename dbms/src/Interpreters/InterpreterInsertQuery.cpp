@@ -156,7 +156,8 @@ BlockIO InterpreterInsertQuery::execute()
         String uristr = typeid_cast<const ASTLiteral &>(*query.in_file).value.safeGet<String>();
         // create Datastream based on Format:
         String format = query.format;
-        if (format.empty()) format = "Values";
+        if (format.empty())
+            format = context.getDefaultFormat();
 
         auto & settings = context.getSettingsRef();
 
@@ -177,20 +178,20 @@ BlockIO InterpreterInsertQuery::execute()
         Poco::URI uri(uriPrefix);
         String scheme = uri.getScheme();
 
-        std::vector<String> fuzzyNameList = parseDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',' , 100/* hard coded max files */);
+        std::vector<String> fuzzyNameList = parseDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',', 100/* hard coded max files */);
 
         std::vector<std::vector<String> > fileNames;
 
-        for(auto fuzzyName : fuzzyNameList)
+        for (const auto & fuzzyName : fuzzyNameList)
             fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
 
         BlockInputStreams inputs;
 
-        for (auto & vecNames : fileNames)
+        for (const auto & vecNames : fileNames)
         {
-            for (auto & name: vecNames)
+            for (const auto & name : vecNames)
             {
-                std::unique_ptr<ReadBuffer> read_buf = nullptr;
+                std::unique_ptr<ReadBuffer> read_buf;
 
                 if (scheme.empty() || scheme == "file")
                 {
