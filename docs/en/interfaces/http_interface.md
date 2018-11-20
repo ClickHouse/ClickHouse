@@ -1,3 +1,5 @@
+<a name="http_interface"></a>
+
 # HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
