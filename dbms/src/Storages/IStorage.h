@@ -356,16 +356,16 @@ public:
     /// Returns secondary expression for storage or nullptr if there is no.
     virtual ASTPtr getOrderExpression() const { return nullptr; }
 
-    /// Returns sampling key names for storage ot empty vector if there is no.
+    /// Returns sampling key names for storage or empty vector if there is no.
     virtual Names getSamplingExpressionNames() const { return {}; }
 
-    /// Returns primary key names for storage ot empty vector if there is no.
+    /// Returns primary key names for storage or empty vector if there is no.
     virtual Names getPrimaryExpressionNames() const { return {}; }
 
-    /// Returns partition key names for storage ot empty vector if there is no.
+    /// Returns partition key names for storage or empty vector if there is no.
     virtual Names getPartitionExpressionNames() const { return {}; }
 
-    /// Returns order key names for storage ot empty vector if there is no.
+    /// Returns order key names for storage or empty vector if there is no.
     virtual Names getOrderExpressionNames() const { return {}; }
 
     using ITableDeclaration::ITableDeclaration;
