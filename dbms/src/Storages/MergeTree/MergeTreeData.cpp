@@ -1281,7 +1281,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
 void MergeTreeData::freezeAll(const String & with_name, const Context & context)
 {
-    freezePartitionsByMatcher([] (DataPartPtr){ return true; }, with_name, context);
+    freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
 void MergeTreeData::AlterDataPartTransaction::commit()
@@ -2071,7 +2071,7 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
 
 
     freezePartitionsByMatcher(
-        [&prefix, &partition_id](DataPartPtr part)
+        [&prefix, &partition_id](const DataPartPtr & part)
         {
             if (prefix)
                 return startsWith(part->info.partition_id, *prefix);

@@ -3279,15 +3279,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         }
     }
 
-    /// Do freeze of all parts local-only after all other operations.
-    for (const AlterCommand & param : params)
-    {
-        if (param.type == AlterCommand::FREEZE_ALL)
-        {
-            data.freezeAll(param.with_name, context);
-        }
-    }
-
     LOG_DEBUG(log, "ALTER finished");
 }
 
@@ -3320,12 +3311,22 @@ void StorageReplicatedMergeTree::partition(const ASTPtr & query, const Partition
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
-                freezePartition(command.partition, command.with_name, context);
-                break;
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezePartition(command.partition, command.with_name, context);
+            }
+            break;
 
             case PartitionCommand::CLEAR_COLUMN:
                 clearColumnInPartition(command.partition, command.column_name, context);
                 break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezeAll(command.with_name, context);
+            }
+            break;
 
             default:
                 IStorage::partition(query, commands, context); // should throw an exception.
@@ -3431,6 +3432,8 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     if (!is_leader)
     {
+        // TODO: we can manually reconstruct the query from outside the |dropPartition()| and remove the |query| argument from interface.
+        //       It's the only place where we need this argument.
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
     }
@@ -4204,13 +4207,6 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
         ++try_no;
     } while (!missing_parts.empty());
-}
-
-
-void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    auto lock = lockStructure(false, __PRETTY_FUNCTION__);
-    data.freezePartition(partition, with_name, context);
 }
 
 
