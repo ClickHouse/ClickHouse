@@ -2,6 +2,8 @@
 
 #include <string>
 #include <memory>
+#include <vector>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -42,5 +44,6 @@ private:
 
 using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 
+std::vector<String> parseDescription(const String & description, size_t l, size_t r, char separator, size_t max_addresses);
 
 }
