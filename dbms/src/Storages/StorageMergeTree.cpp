@@ -938,4 +938,34 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
     return {};
 }
 
+Names StorageMergeTree::getSamplingExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.sampling_expression;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.begin(), names.end());
+}
+
+Names StorageMergeTree::getPrimaryExpressionNames() const
+{
+    return data.getPrimarySortColumns();
+}
+
+Names StorageMergeTree::getPartitionExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.partition_expr_ast;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.cbegin(), names.cend());
+}
+
+Names StorageMergeTree::getOrderExpressionNames() const
+{
+    return data.getSortColumns();
+}
+
 }
