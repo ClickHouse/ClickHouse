@@ -103,27 +103,13 @@ public:
 
     ASTPtr getOrderExpression() const override { return data.secondary_sort_expr_ast; }
 
-    Names getSamplingExpressionNames() const override
-    {
-        NameOrderedSet names;
-        const auto & expr = data.sampling_expression;
-        if (expr)
-            expr->collectIdentifierNames(names);
-        return Names(names.begin(), names.end());
-    }
+    Names getSamplingExpressionNames() const override;
 
-    Names getPrimaryExpressionNames() const override { return data.getPrimarySortColumns(); }
+    Names getPrimaryExpressionNames() const override;
 
-    Names getPartitionExpressionNames() const override
-    {
-        NameOrderedSet names;
-        const auto & expr = data.partition_expr_ast;
-        if (expr)
-            expr->collectIdentifierNames(names);
-        return Names(names.cbegin(), names.cend());
-    }
+    Names getPartitionExpressionNames() const override;
 
-    Names getOrderExpressionNames() const override { return data.getSortColumns(); }
+    Names getOrderExpressionNames() const override;
 private:
     String path;
     String database_name;
