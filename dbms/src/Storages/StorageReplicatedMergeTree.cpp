@@ -3886,14 +3886,12 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     return;
 }
 
-const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address) const
-{
-    const auto & clusters = context.getClusters();
-    const auto & clusterPtrs = clusters.getContainer();
 
-    for(auto iter = clusterPtrs.begin(); iter != clusterPtrs.end(); ++iter)
+const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address)
+{
+    for(auto & iter : context.getClusters().getContainer())
     {
-        const auto & shards = iter->second->getShardsAddresses();
+        const auto & shards = iter.second->getShardsAddresses();
 
         for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
         {
@@ -3908,7 +3906,7 @@ const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(Replicat
             }
         }
     }
-    throw Exception("Not found host " + leader_address.host, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+    throw Exception("Not found replicate leader host " + leader_address.host + ":" + leader_address.queries_port, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
 }
 
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
