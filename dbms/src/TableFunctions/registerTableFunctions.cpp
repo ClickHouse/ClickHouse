@@ -13,6 +13,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
+void registerTableFunctionHDFS(TableFunctionFactory & factory);
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
@@ -36,6 +37,7 @@ void registerTableFunctions()
     registerTableFunctionCatBoostPool(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
+    registerTableFunctionHDFS(factory);
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
