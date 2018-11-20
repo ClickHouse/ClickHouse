@@ -580,36 +580,44 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 
 template <typename T> struct NearestFieldType;
 
-template <> struct NearestFieldType<UInt8>   { using Type = UInt64; };
-template <> struct NearestFieldType<UInt16>  { using Type = UInt64; };
-template <> struct NearestFieldType<UInt32>  { using Type = UInt64; };
-template <> struct NearestFieldType<UInt64>  { using Type = UInt64; };
-#ifdef __APPLE__
-template <> struct NearestFieldType<time_t>  { using Type = UInt64; };
-template <> struct NearestFieldType<size_t>  { using Type = UInt64; };
-#endif
-template <> struct NearestFieldType<DayNum>  { using Type = UInt64; };
+/// char may be signed or unsigned, and behave identically that signed char or unsigned char,
+///  but they are always three different types.
+/// signedness of char is different in Linux on Intel and Linux on ARM.
+template <> struct NearestFieldType<char> { using Type = std::conditional_t<std::is_signed_v<char>, Int64, UInt64>; };
+template <> struct NearestFieldType<signed char> { using Type = Int64; };
+template <> struct NearestFieldType<unsigned char> { using Type = UInt64; };
+
+template <> struct NearestFieldType<UInt16> { using Type = UInt64; };
+template <> struct NearestFieldType<UInt32> { using Type = UInt64; };
+
+template <> struct NearestFieldType<DayNum> { using Type = UInt64; };
 template <> struct NearestFieldType<UInt128> { using Type = UInt128; };
-template <> struct NearestFieldType<UUID>  { using Type = UInt128; };
-template <> struct NearestFieldType<Int8>    { using Type = Int64; };
-template <> struct NearestFieldType<Int16>   { using Type = Int64; };
-template <> struct NearestFieldType<Int32>   { using Type = Int64; };
-template <> struct NearestFieldType<Int64>   { using Type = Int64; };
-template <> struct NearestFieldType<Int128>  { using Type = Int128; };
-template <> struct NearestFieldType<Decimal32>   { using Type = DecimalField<Decimal32>; };
-template <> struct NearestFieldType<Decimal64>   { using Type = DecimalField<Decimal64>; };
-template <> struct NearestFieldType<Decimal128>  { using Type = DecimalField<Decimal128>; };
-template <> struct NearestFieldType<DecimalField<Decimal32>>   { using Type = DecimalField<Decimal32>; };
-template <> struct NearestFieldType<DecimalField<Decimal64>>   { using Type = DecimalField<Decimal64>; };
-template <> struct NearestFieldType<DecimalField<Decimal128>>  { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldType<UUID> { using Type = UInt128; };
+template <> struct NearestFieldType<Int16> { using Type = Int64; };
+template <> struct NearestFieldType<Int32> { using Type = Int64; };
+
+/// long and long long are always different types that may behave identically or not.
+/// This is different on Linux and Mac.
+template <> struct NearestFieldType<long> { using Type = Int64; };
+template <> struct NearestFieldType<long long> { using Type = Int64; };
+template <> struct NearestFieldType<unsigned long> { using Type = UInt64; };
+template <> struct NearestFieldType<unsigned long long> { using Type = UInt64; };
+
+template <> struct NearestFieldType<Int128> { using Type = Int128; };
+template <> struct NearestFieldType<Decimal32> { using Type = DecimalField<Decimal32>; };
+template <> struct NearestFieldType<Decimal64> { using Type = DecimalField<Decimal64>; };
+template <> struct NearestFieldType<Decimal128> { using Type = DecimalField<Decimal128>; };
+template <> struct NearestFieldType<DecimalField<Decimal32>> { using Type = DecimalField<Decimal32>; };
+template <> struct NearestFieldType<DecimalField<Decimal64>> { using Type = DecimalField<Decimal64>; };
+template <> struct NearestFieldType<DecimalField<Decimal128>> { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldType<Float32> { using Type = Float64; };
 template <> struct NearestFieldType<Float64> { using Type = Float64; };
-template <> struct NearestFieldType<const char*>  { using Type = String; };
-template <> struct NearestFieldType<String>  { using Type = String; };
-template <> struct NearestFieldType<Array>   { using Type = Array; };
-template <> struct NearestFieldType<Tuple>   { using Type = Tuple; };
-template <> struct NearestFieldType<bool>    { using Type = UInt64; };
-template <> struct NearestFieldType<Null>    { using Type = Null; };
+template <> struct NearestFieldType<const char *> { using Type = String; };
+template <> struct NearestFieldType<String> { using Type = String; };
+template <> struct NearestFieldType<Array> { using Type = Array; };
+template <> struct NearestFieldType<Tuple> { using Type = Tuple; };
+template <> struct NearestFieldType<bool> { using Type = UInt64; };
+template <> struct NearestFieldType<Null> { using Type = Null; };
 
 template <typename T>
 decltype(auto) nearestFieldType(T && x)
