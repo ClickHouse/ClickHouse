@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/Entries.h>
-
+#include "Entries.h"
 #include <memory>
 
 

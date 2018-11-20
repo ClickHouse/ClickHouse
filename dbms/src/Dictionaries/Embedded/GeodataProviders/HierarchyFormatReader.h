@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-
+#include "IHierarchiesProvider.h"
 #include <IO/ReadBuffer.h>
 
 

@@ -1,12 +1,10 @@
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include "RegionsHierarchy.h"
 
+#include "GeodataProviders/IHierarchiesProvider.h"
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
-
 #include <common/logger_useful.h>
 #include <ext/singleton.h>
-
 #include <IO/WriteHelpers.h>
 
 

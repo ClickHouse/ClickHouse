@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
-
+#include "INamesProvider.h"
 #include <Common/FileUpdatesTracker.h>
 
 

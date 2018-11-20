@@ -1,7 +1,7 @@
 #include <Common/config.h>
 #if USE_MYSQL
 
-#include <Dictionaries/Embedded/TechDataHierarchy.h>
+#include "TechDataHierarchy.h"
 
 #include <common/logger_useful.h>
 #include <mysqlxx/PoolWithFailover.h>
