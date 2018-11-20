@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <iostream>
 
 namespace DB
 {
