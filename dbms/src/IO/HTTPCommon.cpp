@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+    extern const int UNSUPPORTED_URI_SCHEME;
 }
 
 
@@ -50,6 +51,16 @@ namespace
 #else
         session.setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
 #endif
+    }
+
+    bool isHTTPS(const Poco::URI & uri)
+    {
+        if (uri.getScheme() == "https")
+            return true;
+        else if (uri.getScheme() == "http")
+            return false;
+        else
+            throw Exception("Unsupported scheme in URI '" + uri.toString() + "'", ErrorCodes::UNSUPPORTED_URI_SCHEME);
     }
 
     HTTPSessionPtr makeHTTPSessionImpl(const std::string & host, UInt16 port, bool https, bool keep_alive)
@@ -127,7 +138,7 @@ namespace
             std::unique_lock<std::mutex> lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
-            bool https = (uri.getScheme() == "https");
+            bool https = isHTTPS(uri);
             auto key = std::make_tuple(host, port, https);
             auto pool_ptr = endpoints_pool.find(key);
             if (pool_ptr == endpoints_pool.end())
@@ -157,7 +168,7 @@ HTTPSessionPtr makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts &
 {
     const std::string & host = uri.getHost();
     UInt16 port = uri.getPort();
-    bool https = (uri.getScheme() == "https");
+    bool https = isHTTPS(uri);
 
     auto session = makeHTTPSessionImpl(host, port, https, false);
     setTimeouts(*session, timeouts);
