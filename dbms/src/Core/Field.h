@@ -580,9 +580,9 @@ template <> struct TypeName<Tuple> { static std::string get() { return "Tuple"; 
 
 template <typename T> struct NearestFieldType;
 
-/// char may be signed or unsigned, and behave identically that signed char or unsigned char,
+/// char may be signed or unsigned, and behave identically to signed char or unsigned char,
 ///  but they are always three different types.
-/// signedness of char is different in Linux on Intel and Linux on ARM.
+/// signedness of char is different in Linux on x86 and Linux on ARM.
 template <> struct NearestFieldType<char> { using Type = std::conditional_t<std::is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldType<signed char> { using Type = Int64; };
 template <> struct NearestFieldType<unsigned char> { using Type = UInt64; };
