@@ -91,13 +91,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.primary_key = command_ast->primary_key;
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
-    {
-        AlterCommand command;
-        command.type = AlterCommand::FREEZE_ALL;
-        command.with_name = command_ast->with_name;
-        return command;
-    }
     else
         return {};
 }
@@ -244,10 +237,6 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     {
         /// This have no relation to changing the list of columns.
         /// TODO Check that all columns exist, that only columns with constant defaults are added.
-    }
-    else if (type == FREEZE_ALL)
-    {
-        /// Do nothing with columns.
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

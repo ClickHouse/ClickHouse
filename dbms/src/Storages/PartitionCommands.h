@@ -21,6 +21,7 @@ struct PartitionCommand
         CLEAR_COLUMN,
         DROP_PARTITION,
         FETCH_PARTITION,
+        FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
         REPLACE_PARTITION,
     };

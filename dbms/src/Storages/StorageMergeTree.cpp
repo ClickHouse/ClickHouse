@@ -261,15 +261,6 @@ void StorageMergeTree::alter(
 
     if (primary_key_is_modified)
         data.loadDataParts(false);
-
-    /// Do freeze of all parts after all other operations.
-    for (const AlterCommand & param : params)
-    {
-        if (param.type == AlterCommand::FREEZE_ALL)
-        {
-            data.freezeAll(param.with_name, context);
-        }
-    }
 }
 
 
@@ -805,12 +796,22 @@ void StorageMergeTree::partition(const ASTPtr & query, const PartitionCommands &
             break;
 
             case PartitionCommand::FREEZE_PARTITION:
-                freezePartition(command.partition, command.with_name, context);
-                break;
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezePartition(command.partition, command.with_name, context);
+            }
+            break;
 
             case PartitionCommand::CLEAR_COLUMN:
                 clearColumnInPartition(command.partition, command.column_name, context);
                 break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezeAll(command.with_name, context);
+            }
+            break;
 
             default:
                 IStorage::partition(query, commands, context); // should throw an exception.
@@ -904,12 +905,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 
     /// New parts with other data may appear in place of deleted parts.
     context.dropCaches();
-}
-
-void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    auto lock = lockStructure(false, __PRETTY_FUNCTION__);
-    data.freezePartition(partition, with_name, context);
 }
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)

@@ -20,11 +20,6 @@ struct AlterCommand
     {
         ADD_COLUMN,
         DROP_COLUMN,
-
-        /// Even though this command operates on partitions, it needs global locks to prevent table alteration.
-        /// It's vulnerable to the column modification commands.
-        FREEZE_ALL,
-
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
     };
@@ -35,9 +30,6 @@ struct AlterCommand
 
     /// For DROP COLUMN ... FROM PARTITION
     String partition_name;
-
-    /// For FREEZE of all partitions
-    String with_name;
 
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type;
