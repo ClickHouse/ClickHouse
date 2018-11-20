@@ -23,7 +23,7 @@ The following settings regulate user permissions for the groups of queries:
 
 Restricts permissions for read data, write data and change settings queries.
 
-See the beginning of the page for the division of queries into groups.
+See [above](#permissions_for_queries) for the division of queries into groups.
 
 **Possible values**
 
@@ -41,7 +41,7 @@ When using the `GET` method in the [HTTP interface](../../interfaces/http_interf
 
 Allows/denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 
-See the beginning of the page for the division of queries into groups.
+See [above](#permissions_for_queries) for the division of queries into groups.
 
 **Possible values**
 
