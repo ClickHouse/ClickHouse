@@ -144,7 +144,7 @@ public:
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
     /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
-    std::unique_ptr<Cluster> getClusterWithMultipleShards(std::vector<size_t> indexes) const;
+    std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
 
 private:
     using SlotToShard = std::vector<UInt64>;
