@@ -157,7 +157,7 @@ private:
     void initMisc();
 
     /// For getClusterWithMultipleShards implementation.
-    Cluster(const Cluster & from, std::vector<size_t> indexes);
+    Cluster(const Cluster & from, const std::vector<size_t> & indices);
 
     String hash_of_addresses;
     /// Description of the cluster shards.
