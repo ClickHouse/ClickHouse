@@ -1,4 +1,5 @@
 #include <Processors/FunctionProcessing/WrapNullableTransform.h>
+#include <Processors/FunctionProcessing/RemoveNullableTransform.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -14,8 +15,10 @@ Block wrapNullable(Blocks && blocks, const ColumnNumbers & column_numbers, size_
     auto & block = blocks.at(0);
     auto & null_maps = blocks.at(1);
 
-    auto wrapByPosition = [&](size_t block_position, size_t null_map_position)
+    size_t num_args = column_numbers.size();
+    for (size_t null_map_position = 0; null_map_position < num_args; ++null_map_position)
     {
+        size_t block_position = column_numbers[null_map_position];
         auto & col = block.getByPosition(block_position);
         auto & null_map = null_maps.getByPosition(null_map_position);
 
@@ -41,13 +44,29 @@ Block wrapNullable(Blocks && blocks, const ColumnNumbers & column_numbers, size_
                     col.column = ColumnConst::create(col.column, col_size);
             }
         }
-    };
+    }
 
-    size_t num_args = column_numbers.size();
-    for (size_t i = 0; i < num_args; ++i)
-        wrapByPosition(column_numbers[i], i);
+    auto & res = block.getByPosition(result);
+    auto & res_map = block.getByPosition(num_args);
 
-    wrapByPosition(result, result);
+    res.type = makeNullable(res.type);
+
+    if (res.column && res_map.column)
+    {
+        if (res_map.column->isColumnConst())
+            res.column = res.type->createColumnConst(res_map.column->size(), Null());
+        else if (!res.column->onlyNull())
+        {
+            if (res.column->isColumnConst())
+                res.column = res.column->convertToFullColumnIfConst();
+
+            ColumnPtr res_null_map = static_cast<const ColumnNullable &>(*res.column).getNullMapColumnPtr();
+            ColumnPtr res_nested = static_cast<const ColumnNullable &>(*res.column).getNestedColumnPtr();
+            res.column = nullptr; /// Decrease ref count.
+            RemoveNullableTransform::mergeNullMaps(res_null_map, *res_map.column);
+            res.column = ColumnNullable::create(res_nested, res_null_map);
+        }
+    }
 
     return block;
 }
