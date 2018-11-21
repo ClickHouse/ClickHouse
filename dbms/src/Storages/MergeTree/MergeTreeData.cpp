@@ -79,6 +79,9 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
+    extern const int CANNOT_MREMAP;
 }
 
 
@@ -477,7 +480,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Don't count the part as broken if there is not enough memory to load it.
             /// In fact, there can be many similar situations.
             /// But it is OK, because there is a safety guard against deleting too many parts.
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                || e.code() == ErrorCodes::CANNOT_MUNMAP
+                || e.code() == ErrorCodes::CANNOT_MREMAP)
                 throw;
 
             broken = true;

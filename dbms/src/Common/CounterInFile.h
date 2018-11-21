@@ -18,7 +18,15 @@
 
 #include <common/Types.h>
 
-#define SMALL_READ_WRITE_BUFFER_SIZE 16
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_OPEN_FILE;
+        extern const int CANNOT_READ_ALL_DATA;
+        extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    }
+}
 
 
 /** Stores a number in the file.
@@ -26,6 +34,9 @@
  */
 class CounterInFile
 {
+private:
+    static inline constexpr size_t SMALL_READ_WRITE_BUFFER_SIZE = 16;
+
 public:
     /// path - the name of the file, including the path
     CounterInFile(const std::string & path_) : path(path_) {}
@@ -56,13 +67,13 @@ public:
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0666);
         if (-1 == fd)
-            DB::throwFromErrno("Cannot open file " + path);
+            DB::throwFromErrno("Cannot open file " + path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
         try
         {
             int flock_ret = flock(fd, LOCK_EX);
             if (-1 == flock_ret)
-                DB::throwFromErrno("Cannot lock file " + path);
+                DB::throwFromErrno("Cannot lock file " + path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
             if (!file_doesnt_exists)
             {
@@ -130,7 +141,7 @@ public:
 
         int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0666);
         if (-1 == fd)
-            DB::throwFromErrno("Cannot open file " + path);
+            DB::throwFromErrno("Cannot open file " + path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
         try
         {
@@ -178,6 +189,3 @@ private:
     std::string path;
     std::mutex mutex;
 };
-
-
-#undef SMALL_READ_WRITE_BUFFER_SIZE
