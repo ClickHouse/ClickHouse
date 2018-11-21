@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -662,6 +663,63 @@ public:
     {
         return { true, true, true };
     }
+};
+
+
+class FunctionRoundDown : public IFunction {
+public:
+    static constexpr auto name = "roundDown";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
+
+public:
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override {
+        const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
+
+        if (!array)
+            throw Exception{"Second argument of function " + getName() + " must be constant array.", ErrorCodes::ILLEGAL_COLUMN};
+
+        const Array & boundaries = array->getValue<Array>();
+
+        const auto src = checkAndGetColumn<ColumnVector<Int32>>(block.getByPosition(arguments.front()).column.get())->getdata();
+        auto column_result = block.getByPosition(result).type->createColumn();
+        auto dst = checkAndGetColumn<ColumnVector<Int32>>(column_result.get())->getData();
+
+        size_t size = src.size();
+        size_t boundaries_size = boundaries.size();
+        dst.resize(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (src[i] < boundaries[0].get<Int32>())
+            {
+                dst[i] = boundaries[0].get<Int32>();
+            }
+            else if (src[i] >= boundaries.back().get<Int32>()) {
+                dst[i] = boundaries.back().get<Int32>();
+            }
+            else
+            {
+                for (size_t j = 1; j < boundaries_size; ++j) {
+                    if (src[i] < boundaries[i].get<Int32>())
+                    {
+                        dst[i] = boundaries[i - 1].get<Int32>();
+                        break;
+                    }
+                }
+            }
+        }
+
+        block.getByPosition(result).column = std::move(column_result);
+    }
+
 };
 
 
