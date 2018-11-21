@@ -59,7 +59,7 @@ static Blocks removeNullable(Block && block, const ColumnNumbers & column_number
 
             if (auto * col_nullable = checkAndGetColumn<ColumnNullable>(column))
             {
-                null_maps.insert({col_nullable->getNestedColumnPtr(), nullptr, col.name});
+                null_maps.insert({col_nullable->getNullMapColumnPtr(), nullptr, col.name});
 
                 col.column = col_nullable->getNestedColumnPtr();
                 col.type = nullable_type->getNestedType();
