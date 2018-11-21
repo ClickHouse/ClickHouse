@@ -410,10 +410,10 @@ Cluster::Cluster(const Cluster & from, const std::vector<size_t> & indices)
 {
     for (size_t index : indices)
     {
-        shards_info.push_back(from.shards_info[index]);
+        shards_info.emplace_back(from.shards_info.at(index));
 
         if (!from.addresses_with_failover.empty())
-            addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+            addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
     }
 
     initMisc();
