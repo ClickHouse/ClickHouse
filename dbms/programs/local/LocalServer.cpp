@@ -139,7 +139,7 @@ try
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
-    registerDictionaries();
+    registerStorages();
 
     /// Maybe useless
     if (config().has("macros"))
