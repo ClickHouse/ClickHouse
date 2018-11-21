@@ -170,6 +170,7 @@
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.") \
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
+    M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
 
 namespace ProfileEvents
 {
