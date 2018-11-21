@@ -1,5 +1,5 @@
 <test>
-    <name>test_hits</name>
+    <name>first_significant_subdomain</name>
     <type>loop</type>
 
     <stop_conditions>
