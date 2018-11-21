@@ -305,7 +305,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 
         size_t nested_size = 0;
 
-        if (n == getNullValueIndex())
+        if (n != getNullValueIndex())
             nested_size = column_holder->serializeValueIntoArena(n, arena, begin).size;
 
         return StringRef(pos, sizeof(null_flag) + nested_size);
