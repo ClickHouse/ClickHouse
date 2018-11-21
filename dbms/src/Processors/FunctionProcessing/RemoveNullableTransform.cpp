@@ -67,7 +67,7 @@ static Blocks removeNullable(Block && block, const ColumnNumbers & column_number
                 if (is_const)
                     col.column = ColumnConst::create(col.column, col_size);
                 else if (!has_const_null_arg)
-                    mergeNullMaps(result_null_map_column, *col_nullable);
+                    RemoveNullableTransform::mergeNullMaps(result_null_map_column, *col_nullable);
             }
             else
                 throw Exception("Incompatible column " + col.column->getName() +
