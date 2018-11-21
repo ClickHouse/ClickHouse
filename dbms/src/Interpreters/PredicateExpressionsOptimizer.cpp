@@ -9,6 +9,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include "TranslateQualifiedNamesVisitor.h"
 
 namespace DB
 {
@@ -24,6 +25,9 @@ PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
 bool PredicateExpressionsOptimizer::optimize()
 {
     if (!settings.enable_optimize_predicate_expression || !ast_select || !ast_select->tables || ast_select->tables->children.empty())
+        return false;
+
+    if (!ast_select->where_expression && !ast_select->prewhere_expression)
         return false;
 
     SubqueriesProjectionColumns all_subquery_projection_columns;
@@ -300,14 +304,17 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(SubqueriesProje
 
 ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast)
 {
+    ASTs projection_columns;
+    auto select_query = static_cast<ASTSelectQuery *>(ast.get());
+
     /// first should normalize query tree.
     std::unordered_map<String, ASTPtr> aliases;
+    std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
+
+    TranslateQualifiedNamesVisitor({}, tables).visit(ast);
     QueryAliasesVisitor query_aliases_visitor(aliases);
     query_aliases_visitor.visit(ast);
     QueryNormalizer(ast, aliases, settings, {}, {}).perform();
-
-    ASTs projection_columns;
-    auto select_query = static_cast<ASTSelectQuery *>(ast.get());
 
     for (const auto & projection_column : select_query->select_expression_list->children)
     {
