@@ -259,6 +259,10 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     if (last_offset < nested_column.size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
+
+    /// We cannot use size hint for arrays to read their elements.
+    settings.avg_value_size_hint = 0;
+
     nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state);
     settings.path.pop_back();
 
