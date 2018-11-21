@@ -397,6 +397,7 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     auto * tuple_state = checkAndGetTupleDeserializeState(state);
 
     settings.path.push_back(Substream::TupleElement);
+    settings.avg_value_size_hint = 0;
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         settings.path.back().tuple_element_name = names[i];

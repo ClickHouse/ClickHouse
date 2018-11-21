@@ -1,3 +1,11 @@
+## ClickHouse release 18.14.14, 2018-11-20
+
+### Bug fixes:
+* Fixed `ON CLUSTER` queries when cluster configured as secure (flag `<secure>`). [#3599]
+
+### Build changes:
+* Fixed problems (llvm-7 from system, macos) [#3582]
+
 ## ClickHouse release 18.14.11, 2018-10-29
 
 ### Bug fixes:
