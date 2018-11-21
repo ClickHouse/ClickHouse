@@ -10,6 +10,7 @@
 #include <Parsers/ASTFunction.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -31,7 +32,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_format("FORMAT");
     ParserKeyword s_select("SELECT");
     ParserKeyword s_with("WITH");
-    ParserKeyword s_infile("INFILE");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
@@ -44,7 +44,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr format;
     ASTPtr select;
     ASTPtr table_function;
+
+#if ENABLE_INSERT_INFILE
+    ParserKeyword s_infile("INFILE");
     ASTPtr in_file;
+#endif
     /// Insertion data
     const char * data = nullptr;
 
@@ -95,6 +99,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!name_p.parse(pos, format, expected))
             return false;
 
+#if ENABLE_INSERT_INFILE
         // there are two case after FORMAT xx:
         // case 1: data_set.
         // case 2: INFILE xx clause.
@@ -108,8 +113,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else
         {
+#endif
             data = name_pos->end;
-
             if (data < end && *data == ';')
                 throw Exception("You have excessive ';' symbol before data for INSERT.\n"
                         "Example:\n\n"
@@ -130,7 +135,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (data < end && *data == '\n')
                 ++data;
+#if ENABLE_INSERT_INFILE
         }
+#endif
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
@@ -138,12 +145,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
     }
+#if ENABLE_INSERT_INFILE
     else if (s_infile.ignore(pos, expected))
     {
         ParserStringLiteral in_file_p;
         if (!in_file_p.parse(pos, in_file, expected))
             return false;
     }
+#endif
     else
     {
         return false;
@@ -169,11 +178,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->columns = columns;
     query->select = select;
-    query->in_file = in_file;
 
+#if ENABLE_INSERT_INFILE
+    query->in_file = in_file;
     if (query->in_file)
         query->data = nullptr;
     else
+#endif
         query->data = data != end ? data : nullptr;
     query->end = end;
 
@@ -181,9 +192,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         query->children.push_back(columns);
     if (select)
         query->children.push_back(select);
-
+#if ENABLE_INSERT_INFILE
     if (in_file)
         query->children.push_back(in_file);
+#endif
 
     return true;
 }

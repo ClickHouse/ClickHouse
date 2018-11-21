@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Common/config.h>
 
 
 namespace DB
@@ -18,7 +19,10 @@ public:
     String format;
     ASTPtr select;
     ASTPtr table_function;
+
+#if ENABLE_INSERT_INFILE
     ASTPtr in_file;
+#endif
 
     // Set to true if the data should only be inserted into attached views
     bool no_destination = false;
@@ -41,12 +45,12 @@ public:
         {
             res->table_function = table_function->clone(); res->children.push_back(res->table_function);
         }
-
+#if ENABLE_INSERT_INFILE
         if (in_file)
         {
             res->in_file = in_file->clone(); res->children.push_back(res->in_file);
         }
-
+#endif
         return res;
     }
 

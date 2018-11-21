@@ -31,6 +31,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/config_version.h>
+#include <Common/config.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ExternalTable.h>
@@ -801,8 +802,11 @@ private:
         const ASTInsertQuery * insert = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
 
         connection->forceConnected();
-
+#if ENABLE_INSERT_INFILE
         if (insert && !insert->select && !insert->in_file)
+#else
+        if (insert && !insert->select)
+#endif
             processInsertQuery();
         else
             processOrdinaryQuery();

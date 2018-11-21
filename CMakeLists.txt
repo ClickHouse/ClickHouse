@@ -77,6 +77,7 @@ endif ()
 
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
+option (ENABLE_INSERT_INFILE "Enables INSERT INFILE syntax" OFF)
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
@@ -210,6 +211,10 @@ endif (TEST_COVERAGE)
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
     enable_testing()
+endif ()
+
+if (ENABLE_INSERT_INFILE)
+    message (STATUS "INSERT INFILE SYNTAX support")
 endif ()
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc

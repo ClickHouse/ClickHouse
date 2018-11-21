@@ -1,6 +1,7 @@
 #include <IO/ConcatReadBuffer.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/config.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
@@ -149,6 +150,7 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
+#if ENABLE_INSERT_INFILE
     else if (query.in_file)
     {
         // read data stream from in_file, and copy it to out
@@ -228,6 +230,7 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.out = nullptr;
     }
+#endif
 
     return res;
 }
