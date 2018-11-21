@@ -55,7 +55,7 @@ arrayConcat(arrays)
 
 **Параметры**
 
-- `arrays` - Перечисленные через запятую массивы `[values]`.
+- `arrays` – произвольное количество элементов типа [Array][../../data_types/array.md#data_type-array].
 
 **Пример**
 
