@@ -1,5 +1,5 @@
 add_executable (system_numbers system_numbers.cpp)
-target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system)
+target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system clickhouse_common_io)
 
 add_executable (storage_log storage_log.cpp)
 target_link_libraries (storage_log PRIVATE dbms)
