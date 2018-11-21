@@ -62,7 +62,9 @@
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
-#define DEFAULT_HTTP_AMOUNT_CONNECTIONS_PER_ENDPOINT 10
+/// Maximum namber of http-connections between two endpoints
+/// the number is unmotivated
+#define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 

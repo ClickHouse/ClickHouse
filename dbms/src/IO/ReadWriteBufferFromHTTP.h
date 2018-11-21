@@ -50,7 +50,7 @@ namespace detail
             : ReadBuffer(nullptr, 0)
             , uri {uri}
             , method {!method.empty() ? method : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
-            , session {std::move(session_)}
+            , session {session_}
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
             if (uri.getPath().empty())
@@ -117,7 +117,7 @@ public:
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t max_connections_per_endpoint = DEFAULT_HTTP_AMOUNT_CONNECTIONS_PER_ENDPOINT)
+        size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
         : Parent(makePooledHTTPSession(uri, timeouts, max_connections_per_endpoint),
               uri,
               method,
