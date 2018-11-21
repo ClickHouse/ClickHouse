@@ -82,6 +82,10 @@ if (ENABLE_ODBC)
             ODBC_INCLUDE_DIRECTORIES
             ODBC_LIBRARIES)
 
+        if(USE_STATIC_LIBRARIES)
+            list(APPEND ODBC_LIBRARIES ${LTDL_LIBRARY})
+        endif()
+
         mark_as_advanced(ODBC_FOUND ODBC_LIBRARIES ODBC_INCLUDE_DIRECTORIES)
     endif ()
 endif ()
