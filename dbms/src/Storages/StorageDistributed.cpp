@@ -270,7 +270,8 @@ BlockInputStreams StorageDistributed::read(
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
 
-    if (settings.distributed_optimize_skip_select_on_unused_shards) {
+    if (settings.distributed_optimize_skip_select_on_unused_shards)
+    {
         auto optimizer = StorageDistributedShardsOptimizer();
         auto smaller_cluster = optimizer.skipUnusedShards(cluster, query_info, sharding_key_expr, sharding_key_column_name);
 
