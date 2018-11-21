@@ -194,9 +194,9 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
     catch (Exception & e)
     {
         e.addMessage(
-            "avg_value_size_hint = " + toString(avg_value_size_hint)
+            "(avg_value_size_hint = " + toString(avg_value_size_hint)
             + ", avg_chars_size = " + toString(avg_chars_size)
-            + ", limit = " + toString(limit));
+            + ", limit = " + toString(limit) + ")");
         throw;
     }
 
