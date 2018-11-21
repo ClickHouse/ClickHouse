@@ -63,7 +63,7 @@ Block wrapNullable(Blocks && blocks, const ColumnNumbers & column_numbers, size_
             ColumnPtr res_null_map = static_cast<const ColumnNullable &>(*res.column).getNullMapColumnPtr();
             ColumnPtr res_nested = static_cast<const ColumnNullable &>(*res.column).getNestedColumnPtr();
             res.column = nullptr; /// Decrease ref count.
-            RemoveNullableTransform::mergeNullMaps(res_null_map, *res_map.column);
+            RemoveNullableTransform::mergeNullMaps(res_null_map, static_cast<const ColumnNullable &>(*res_map.column));
             res.column = ColumnNullable::create(res_nested, res_null_map);
         }
     }
