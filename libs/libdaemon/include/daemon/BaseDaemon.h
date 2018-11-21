@@ -27,28 +27,19 @@
 namespace Poco { class TaskManager; }
 
 
-/// \brief Базовый класс для демонов
+/// \brief Base class for applications that can run as deamons.
 ///
 /// \code
-/// # Список возможных опций командной строки обрабатываемых демоном:
-/// #    --config-file или --config - имя файла конфигурации. По умолчанию - config.xml
-/// #    --pid-file - имя PID файла. По умолчанию - pid
-/// #    --log-file - имя лог файла
-/// #    --errorlog-file - имя лог файла, в который будут помещаться только ошибки
-/// #    --daemon - запустить в режиме демона; если не указан - логгирование будет вестись на консоль
-/// <daemon_name> --daemon --config-file=localfile.xml --pid-file=pid.pid --log-file=log.log --errorlog-file=error.log
+/// # Some possible command line options:
+/// #    --config-file, -C or --config - path to configuration file. By default - config.xml in the current directory.
+/// #    --log-file
+/// #    --errorlog-file
+/// #    --daemon - run as daemon; without this option, the program will be attached to the terminal and also output logs to stderr.
+/// <daemon_name> --daemon --config-file=localfile.xml --log-file=log.log --errorlog-file=error.log
 /// \endcode
 ///
-/// Если неперехваченное исключение выкинуто в других потоках (не Task-и), то по-умолчанию
-/// используется KillingErrorHandler, который вызывает std::terminate.
-///
-/// Кроме того, класс позволяет достаточно гибко управлять журналированием. В методе initialize() вызывается метод
-/// buildLoggers() который и строит нужные логгеры. Эта функция ожидает увидеть в конфигурации определённые теги
-/// заключённые в секции "logger".
-/// Если нужно журналирование на консоль, нужно просто не использовать тег "log" или использовать --console.
-/// Теги уровней вывода использовать можно в любом случае
-
-
+/// You can configure different log options for different loggers used inside program
+///  by providing subsections to "logger" in configuration file.
 class BaseDaemon : public Poco::Util::ServerApplication
 {
     friend class SignalListener;
@@ -182,7 +173,7 @@ protected:
 
     std::unique_ptr<Poco::TaskManager> task_manager;
 
-    /// Создание и автоматическое удаление pid файла.
+    /// RAII wrapper for pid file.
     struct PID
     {
         std::string file;
