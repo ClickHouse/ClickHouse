@@ -196,7 +196,8 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block]()
     {
-        CurrentThread::attachToIfDetached(thread_group);
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;

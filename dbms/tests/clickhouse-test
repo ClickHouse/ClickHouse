@@ -277,7 +277,7 @@ def main(args):
                                         result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
 
                                         if result_is_different:
-                                            (diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
+                                            (diff, _) = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()
                                             diff = unicode(diff, errors='replace', encoding='utf-8')
 
                                             failure = et.Element("failure", attrib = {"message": "result differs with reference"})

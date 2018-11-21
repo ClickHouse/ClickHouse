@@ -1352,7 +1352,8 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 {
     auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
     {
-        CurrentThread::attachToIfDetached(thread_group);
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1805,7 +1806,8 @@ private:
         try
         {
             setThreadName("MergingAggregtd");
-            CurrentThread::attachToIfDetached(thread_group);
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
             /// TODO: add no_more_keys support maybe
@@ -2127,7 +2129,8 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
-            CurrentThread::attachToIfDetached(thread_group);
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
