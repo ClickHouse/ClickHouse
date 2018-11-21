@@ -187,17 +187,23 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
 
-    try
+    size_t size_to_reserve = data.size() + std::ceil(limit * avg_chars_size);
+
+    /// Never reserve for too big size.
+    if (size_to_reserve < 256 * 1024 * 1024)
     {
-        data.reserve(data.size() + std::ceil(limit * avg_chars_size));
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(
-            "(avg_value_size_hint = " + toString(avg_value_size_hint)
-            + ", avg_chars_size = " + toString(avg_chars_size)
-            + ", limit = " + toString(limit) + ")");
-        throw;
+        try
+        {
+            data.reserve(size_to_reserve);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "(avg_value_size_hint = " + toString(avg_value_size_hint)
+                + ", avg_chars_size = " + toString(avg_chars_size)
+                + ", limit = " + toString(limit) + ")");
+            throw;
+        }
     }
 
     offsets.reserve(offsets.size() + limit);
