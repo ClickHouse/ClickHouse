@@ -81,7 +81,7 @@ static Blocks removeNullable(Block && block, const ColumnNumbers & column_number
         removeByPosition(number);
     removeByPosition(result);
 
-    auto & result_null_map = null_maps.getByPosition(result);
+    auto & result_null_map = null_maps.getByPosition(column_numbers.size());
     if (has_const_null_arg)
         result_null_map.column = DataTypeUInt8().createColumnConst(block.getNumRows(), 1);
     else
