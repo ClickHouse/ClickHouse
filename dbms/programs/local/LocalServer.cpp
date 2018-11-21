@@ -29,6 +29,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Storages/registerStorages.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
@@ -139,6 +140,7 @@ try
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
+    registerDictionaries();
     registerStorages();
 
     /// Maybe useless
