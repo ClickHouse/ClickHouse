@@ -352,7 +352,7 @@ void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<typename NearestFieldType<T>::Type>());
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
     attribute.maps.emplace<ContainerType<T>>();
 }
 

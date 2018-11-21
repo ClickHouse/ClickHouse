@@ -40,7 +40,7 @@ public:
     SingleEndpointHTTPSessionPool(const std::string & host_, UInt16 port_, bool https_, size_t max_pool_size_);
 };
 using PooledHTTPSessionPtr = SingleEndpointHTTPSessionPool::Entry;
-using HTTPSessionPtr = std::unique_ptr<Poco::Net::HTTPClientSession>;
+using HTTPSessionPtr = std::shared_ptr<Poco::Net::HTTPClientSession>;
 
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout);
 

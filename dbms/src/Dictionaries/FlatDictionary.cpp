@@ -440,7 +440,7 @@ void FlatDictionary::calculateBytesAllocated()
 template <typename T>
 void FlatDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    attribute.null_values = T(null_value.get<typename NearestFieldType<T>::Type>());
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
     const auto & null_value_ref = std::get<T>(attribute.null_values);
     attribute.arrays.emplace<ContainerType<T>>(initial_array_size, null_value_ref);
 }

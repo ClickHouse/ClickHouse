@@ -11,6 +11,7 @@
 
 /build
 /build_*
+/build-*
 /docs/build
 /docs/edit
 /docs/tools/venv/
