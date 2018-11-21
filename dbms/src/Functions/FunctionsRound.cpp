@@ -9,6 +9,7 @@ void registerFunctionsRound(FunctionFactory & factory)
     factory.registerFunction<FunctionRoundToExp2>();
     factory.registerFunction<FunctionRoundDuration>();
     factory.registerFunction<FunctionRoundAge>();
+    factory.registerFunction<FunctionRoundDown>();
 
     factory.registerFunction<FunctionRound>("round", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionFloor>("floor", FunctionFactory::CaseInsensitive);
