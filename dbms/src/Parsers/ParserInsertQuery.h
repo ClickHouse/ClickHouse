@@ -22,6 +22,7 @@ namespace DB
   * INSERT INTO [db.]table (c1, c2, c3) SELECT ...
   * INSERT INTO [db.]table SELECT ...
 
+  * This syntax is controversial, not open for now.
   * #4 Insert of data in an arbitrary form from file(a bit variant of #2)
   * INSERT INTO [db.]table (c1, c2, c3) FORMAT format INFILE 'url'
   */
