@@ -47,7 +47,7 @@ Block wrapNullable(Blocks && blocks, const ColumnNumbers & column_numbers, size_
     }
 
     auto & res = block.getByPosition(result);
-    auto & res_map = block.getByPosition(num_args);
+    auto & res_map = null_maps.getByPosition(num_args);
 
     res.type = makeNullable(res.type);
 
