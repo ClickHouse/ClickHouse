@@ -66,6 +66,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -141,7 +142,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             {
                 LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
                 if (0 != mlockall(MCL_CURRENT))
-                    LOG_WARNING(log, "Failed mlockall: " + errnoToString());
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
                 else
                     LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
             }
