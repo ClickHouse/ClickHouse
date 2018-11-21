@@ -400,15 +400,16 @@ std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
     return std::unique_ptr<Cluster>{ new Cluster(*this, {index}) };
 }
 
-std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(std::vector<size_t> indexes) const
+std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(std::vector<size_t> indices) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(*this, indexes) };
+    return std::unique_ptr<Cluster>{ new Cluster(*this, indices) };
 }
 
-Cluster::Cluster(const Cluster & from, std::vector<size_t> indexes)
+Cluster::Cluster(const Cluster & from, std::vector<size_t> indices)
     : shards_info{}
 {
-    for (size_t index : indexes) {
+    for (size_t index : indices)
+    {
         shards_info.push_back(from.shards_info[index]);
 
         if (!from.addresses_with_failover.empty())
