@@ -45,6 +45,7 @@ struct Settings;
 
 class AlterCommands;
 class MutationCommands;
+class PartitionCommands;
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -239,44 +240,12 @@ public:
         throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
-    virtual void clearColumnInPartition(const ASTPtr & /*partition*/, const Field & /*column_name*/, const Context & /*context*/)
-    {
-        throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Execute ALTER TABLE dst.table REPLACE(ATTACH) PARTITION partition FROM src.table */
-    virtual void replacePartitionFrom(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, bool /*replace*/, const Context &)
-    {
-        throw Exception("Method replacePartitionFrom is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the query (DROP|DETACH) PARTITION.
+    /** ALTER tables with regard to its partitions.
+      * Should handle locks for each command on its own.
       */
-    virtual void dropPartition(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*detach*/, const Context & /*context*/)
+    virtual void partition(const ASTPtr & /* query */, const PartitionCommands & /* commands */, const Context & /* context */)
     {
-        throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the ATTACH request (PART|PARTITION).
-      */
-    virtual void attachPartition(const ASTPtr & /*partition*/, bool /*part*/, const Context & /*context*/)
-    {
-        throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the FETCH PARTITION query.
-      */
-    virtual void fetchPartition(const ASTPtr & /*partition*/, const String & /*from*/, const Context & /*context*/)
-    {
-        throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the FREEZE PARTITION request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
-      */
-    virtual void freezePartition(const ASTPtr & /*partition*/, const String & /*with_name*/, const Context & /*context*/)
-    {
-        throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
