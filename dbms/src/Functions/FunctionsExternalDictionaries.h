@@ -1160,6 +1160,7 @@ using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, Name
     M(DateTime) \
     M(UUID)
 
+/// This variant of function derives the result type automatically.
 class FunctionDictGetNoType final : public IFunction
 {
 public:
