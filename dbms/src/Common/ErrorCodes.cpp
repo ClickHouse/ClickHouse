@@ -396,6 +396,7 @@ namespace ErrorCodes
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN = 419;
     extern const int CANNOT_UPDATE_COLUMN = 420;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
+    extern const int UNSUPPORTED_URI_SCHEME = 422;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
