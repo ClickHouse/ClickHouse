@@ -193,7 +193,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ExpressionAction & action : expr.getActions())
     {
         if (action.type == ExpressionAction::ARRAY_JOIN)
-            throw Exception(key_name + " key cannot contain array joins");
+            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
         if (action.type == ExpressionAction::APPLY_FUNCTION)
         {
@@ -346,7 +346,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
         if (miss_column)
-            throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
+            throw Exception("Sign column " + sign_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
     /// that if the version_column column is needed, it exists and is of unsigned integer type.
@@ -375,7 +375,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
         if (miss_column)
-            throw Exception("Version column " + version_column + " does not exist in table declaration.");
+            throw Exception("Version column " + version_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
     if (mode == MergingParams::Collapsing)
@@ -392,7 +392,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
                 throw Exception(
-                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
     }
 

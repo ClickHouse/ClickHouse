@@ -19,6 +19,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -149,7 +154,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
         DayNum max_month = date_lut.toFirstDayNumOfMonth(DayNum(max_date));
 
         if (min_month != max_month)
-            throw Exception("Logical error: part spans more than one month.");
+            throw Exception("Logical error: part spans more than one month.", ErrorCodes::LOGICAL_ERROR);
 
         part_name = new_part_info.getPartNameV0(min_date, max_date);
     }
