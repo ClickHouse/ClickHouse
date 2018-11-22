@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 static String getSchemaPath(const String & schema_dir, const String & schema_file)
@@ -105,7 +106,7 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
     KJ_IF_MAYBE(child, node.findFieldByName(field))
         return *child;
     else
-        throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr());
+        throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
 
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
@@ -141,7 +142,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
                 break; // Collect list
             }
             else
-                throw Exception("Field " + field.tokens[level] + "is neither Struct nor List");
+                throw Exception("Field " + field.tokens[level] + "is neither Struct nor List", ErrorCodes::BAD_TYPE_OF_FIELD);
         }
 
         // Read field from the structure

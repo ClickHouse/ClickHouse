@@ -26,7 +26,9 @@ public:
     Exception(const std::string & msg, int code) : Poco::Exception(msg, code) {}
     Exception(const std::string & msg, const Exception & nested_exception, int code)
         : Poco::Exception(msg, nested_exception, code), trace(nested_exception.trace) {}
-    explicit Exception(const Poco::Exception & exc) : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION) {}
+
+    enum CreateFromPocoTag { CreateFromPoco };
+    Exception(CreateFromPocoTag, const Poco::Exception & exc) : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION) {}
 
     Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
