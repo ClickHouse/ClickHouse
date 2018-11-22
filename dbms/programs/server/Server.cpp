@@ -55,7 +55,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Revision;
-    extern const Metric VersionInt;
+    extern const Metric VersionInteger;
 }
 
 namespace DB
@@ -111,7 +111,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
-    CurrentMetrics::set(CurrentMetrics::VersionInt, ClickHouseRevision::getVersionInt());
+    CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
