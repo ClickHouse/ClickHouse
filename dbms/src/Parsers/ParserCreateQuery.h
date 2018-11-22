@@ -212,4 +212,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+class ParserCreateDictionaryQuery : public IParserBase
+{
+protected:
+    const char * getName() const override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 }

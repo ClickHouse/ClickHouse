@@ -9,6 +9,7 @@
 
 namespace DB
 {
+    // TODO it seems that we should add ability to write own configurations in files
 
 /** Repository with configurations of user-defined objects (dictionaries, models).
   * Used by ExternalLoader.

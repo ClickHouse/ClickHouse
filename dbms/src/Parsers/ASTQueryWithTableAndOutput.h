@@ -26,6 +26,21 @@ protected:
 };
 
 
+// TODO кажется это не нужно
+/** Query specifying dictionary name and the FORMAT section.
+ */
+class ASTQueryWithDictionaryAndOutput : public ASTQueryWithOutput
+{
+public:
+    String dictionary;
+
+protected:
+    void formatHelper(const FormatSettings & settings, const char * name) const
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << name;
+    }
+};
+
 template <typename AstIDAndQueryNames>
 class ASTQueryWithTableAndOutputImpl : public ASTQueryWithTableAndOutput
 {

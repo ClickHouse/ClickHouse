@@ -192,4 +192,26 @@ protected:
     }
 };
 
+
+class ASTSource : public IAST
+{
+protected:
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
+/// CREATE DICTIONARY
+class ASTCreateDictionaryQuery : public ASTQueryWithDictionaryAndOutput
+{
+public:
+    String dictionary;
+    ASTExpressionList * columns = nullptr;
+    ASTSource * source = nullptr;
+
+    String getID() const override;
+    ASTPtr clone() const override;
+
+protected:
+    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
 }

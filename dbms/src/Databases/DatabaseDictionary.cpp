@@ -120,6 +120,7 @@ void DatabaseDictionary::createTable(
     const StoragePtr & /*table*/,
     const ASTPtr & /*query*/)
 {
+    // TODO: here will be implementation
     throw Exception("DatabaseDictionary: createTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 

@@ -6,6 +6,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include "ParserCreateQuery.h"
 
 
 namespace DB
@@ -415,5 +416,62 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+
+const char * ParserCreateDictionaryQuery::getName() const
+{
+    return "CREATE DICTIONARY";
+}
+
+
+bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Expected &expected)
+{
+    ParserKeyword s_create("CREATE");
+    ParserKeyword s_dictionary("DICTIONARY");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserIdentifier name_p;
+    ParserToken s_left_paren(TokenType::OpeningRoundBracket);
+    ParserToken s_right_paren(TokenType::ClosingRoundBracket);
+    ParserColumnDeclarationList columns_p;
+
+
+    bool if_not_exists = false;
+
+    ASTPtr dictionary;
+    ASTPtr columns;
+    ASTPtr source;
+
+    if (!s_create.ignore(pos, expected))
+        return false;
+
+    if (!s_dictionary.ignore(pos, expected))
+        return false;
+
+    if (s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
+
+    if (!name_p.parse(pos, dictionary, expected))
+        return false;
+
+    if (s_left_paren.ignore(pos, expected))
+    {
+        if (!columns_p.parse(pos, columns, expected))
+            return false;
+
+        if (!s_right_paren.ignore(pos, expected))
+            return false;
+
+        // TODO add here parsing of source and etcetera
+    }
+
+    auto query = std::make_shared<ASTCreateDictionaryQuery>();
+    node = query;
+
+    if (dictionary)
+        query->dictionary = typeid_cast<ASTIdentifier &>(*dictionary).name;
+
+    query->set(query->columns, columns);
+
+    return true;
+}
 
 }
