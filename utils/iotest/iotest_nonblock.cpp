@@ -20,7 +20,18 @@
 #include <Common/Stopwatch.h>
 #include <port/clock.h>
 
-using DB::throwFromErrno;
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_OPEN_FILE;
+        extern const int CANNOT_CLOSE_FILE;
+        extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+        extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+        extern const int CANNOT_FSYNC;
+        extern const int SYSTEM_ERROR;
+    }
+}
 
 
 enum Mode
@@ -32,6 +43,8 @@ enum Mode
 
 int mainImpl(int argc, char ** argv)
 {
+    using namespace DB;
+
     const char * file_name = 0;
     Mode mode = MODE_READ;
     UInt64 min_offset = 0;
@@ -47,11 +60,11 @@ int mainImpl(int argc, char ** argv)
     }
 
     file_name = argv[1];
-    min_offset = DB::parse<UInt64>(argv[3]);
-    max_offset = DB::parse<UInt64>(argv[4]);
-    block_size = DB::parse<UInt64>(argv[5]);
-    descriptors = DB::parse<UInt64>(argv[6]);
-    count = DB::parse<UInt64>(argv[7]);
+    min_offset = parse<UInt64>(argv[3]);
+    max_offset = parse<UInt64>(argv[4]);
+    block_size = parse<UInt64>(argv[5]);
+    descriptors = parse<UInt64>(argv[6]);
+    count = parse<UInt64>(argv[7]);
 
     if (!strcmp(argv[2], "r"))
         mode = MODE_READ;
@@ -65,7 +78,7 @@ int mainImpl(int argc, char ** argv)
     {
         fds[i] = open(file_name, O_SYNC | ((mode == MODE_READ) ? O_RDONLY : O_WRONLY));
         if (-1 == fds[i])
-            throwFromErrno("Cannot open file");
+            throwFromErrno("Cannot open file", ErrorCodes::CANNOT_OPEN_FILE);
     }
 
     std::vector<char> buf(block_size);
@@ -87,7 +100,7 @@ int mainImpl(int argc, char ** argv)
     while (ops < count)
     {
         if (poll(&polls[0], descriptors, -1) <= 0)
-            throwFromErrno("poll failed");
+            throwFromErrno("poll failed", ErrorCodes::SYSTEM_ERROR);
         for (size_t i = 0; i < descriptors; ++i)
         {
             if (!polls[i].revents)
@@ -109,12 +122,12 @@ int mainImpl(int argc, char ** argv)
             if (mode == MODE_READ)
             {
                 if (static_cast<int>(block_size) != pread(fds[i], &buf[0], block_size, offset))
-                    throwFromErrno("Cannot read");
+                    throwFromErrno("Cannot read", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
             }
             else
             {
                 if (static_cast<int>(block_size) != pwrite(fds[i], &buf[0], block_size, offset))
-                    throwFromErrno("Cannot write");
+                    throwFromErrno("Cannot write", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
             }
         }
     }
@@ -122,7 +135,7 @@ int mainImpl(int argc, char ** argv)
     for (size_t i = 0; i < descriptors; ++i)
     {
         if (fsync(fds[i]))
-            throwFromErrno("Cannot fsync");
+            throwFromErrno("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
     }
 
     watch.stop();
@@ -130,7 +143,7 @@ int mainImpl(int argc, char ** argv)
     for (size_t i = 0; i < descriptors; ++i)
     {
         if (0 != close(fds[i]))
-            throwFromErrno("Cannot close file");
+            throwFromErrno("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
     }
 
     std::cout << std::fixed << std::setprecision(2)
