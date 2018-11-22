@@ -16,6 +16,8 @@
 
 #include <boost/range/join.hpp>
 
+#include <optional>
+
 
 namespace DB
 {
