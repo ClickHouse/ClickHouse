@@ -14,18 +14,23 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int POCO_EXCEPTION;
+}
+
 class Exception : public Poco::Exception
 {
 public:
     Exception() {}  /// For deferred initialization.
     Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
-    Exception(const std::string & msg, const Exception & exc, int code = 0) : Poco::Exception(msg, exc, code), trace(exc.trace) {}
-    explicit Exception(const Poco::Exception & exc) : Poco::Exception(exc.displayText()) {}
+    Exception(const std::string & msg, const Exception & nested_exception, int code = 0)
+        : Poco::Exception(msg, nested_exception, code), trace(nested_exception.trace) {}
+    explicit Exception(const Poco::Exception & exc) : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION) {}
 
-    const char * name() const throw() override { return "DB::Exception"; }
-    const char * className() const throw() override { return "DB::Exception"; }
-    DB::Exception * clone() const override { return new DB::Exception(*this); }
+    Exception * clone() const override { return new Exception(*this); }
     void rethrow() const override { throw *this; }
+    const char * name() const throw() override { return "DB::Exception"; }
 
     /// Add something to the existing message.
     void addMessage(const std::string & arg) { extendedMessage(arg); }
@@ -34,6 +39,8 @@ public:
 
 private:
     StackTrace trace;
+
+    const char * className() const throw() override { return "DB::Exception"; }
 };
 
 
@@ -43,15 +50,17 @@ class ErrnoException : public Exception
 public:
     ErrnoException(const std::string & msg, int code, int saved_errno_)
         : Exception(msg, code), saved_errno(saved_errno_) {}
-    ErrnoException(const std::string & msg, const std::string & arg, int code, int saved_errno_)
-        : Exception(msg, arg, code), saved_errno(saved_errno_) {}
-    ErrnoException(const std::string & msg, const Exception & exc, int code, int saved_errno_)
-        : Exception(msg, exc, code), saved_errno(saved_errno_) {}
+
+    ErrnoException * clone() const override { return new ErrnoException(*this); }
+    void rethrow() const override { throw *this; }
 
     int getErrno() const { return saved_errno; }
 
 private:
     int saved_errno;
+
+    const char * name() const throw() override { return "DB::ErrnoException"; }
+    const char * className() const throw() override { return "DB::ErrnoException"; }
 };
 
 
