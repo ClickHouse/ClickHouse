@@ -16,7 +16,7 @@ namespace DB
   *     [COMMENT COLUMN col_name string]
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
-  *     [FREEZE PARTITION]
+  *     [FREEZE [PARTITION] [WITH NAME name]]
   *     [DELETE WHERE ...]
   *     [UPDATE col_name = expr, ... WHERE ...]
   */

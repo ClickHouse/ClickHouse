@@ -11,7 +11,7 @@
 #include <ext/range.h>
 #include <atomic>
 #include <memory>
-#include <tuple>
+#include <variant>
 #include <common/logger_useful.h>
 
 struct btrie_s;
@@ -150,25 +150,24 @@ public:
 
 private:
     template <typename Value> using ContainerType = std::vector<Value>;
-    template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<
+        std::variant<
             UInt8, UInt16, UInt32, UInt64,
             UInt128,
             Int8, Int16, Int32, Int64,
             Decimal32, Decimal64, Decimal128,
             Float32, Float64,
             String> null_values;
-        std::tuple<
-            ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
-            ContainerPtrType<UInt128>,
-            ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
-            ContainerPtrType<Decimal32>, ContainerPtrType<Decimal64>, ContainerPtrType<Decimal128>,
-            ContainerPtrType<Float32>, ContainerPtrType<Float64>,
-            ContainerPtrType<StringRef>> maps;
+        std::variant<
+            ContainerType<UInt8>, ContainerType<UInt16>, ContainerType<UInt32>, ContainerType<UInt64>,
+            ContainerType<UInt128>,
+            ContainerType<Int8>, ContainerType<Int16>, ContainerType<Int32>, ContainerType<Int64>,
+            ContainerType<Decimal32>, ContainerType<Decimal64>, ContainerType<Decimal128>,
+            ContainerType<Float32>, ContainerType<Float64>,
+            ContainerType<StringRef>> maps;
         std::unique_ptr<Arena> string_arena;
     };
 

@@ -33,6 +33,7 @@ public:
         REPLACE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
+        FREEZE_ALL,
 
         DELETE,
         UPDATE,

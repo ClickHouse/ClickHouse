@@ -9,7 +9,7 @@
 
 #include <atomic>
 #include <memory>
-#include <tuple>
+#include <variant>
 
 
 namespace DB
@@ -118,13 +118,13 @@ private:
     {
     public:
         AttributeUnderlyingType type;
-        std::tuple<UInt8, UInt16, UInt32, UInt64,
+        std::variant<UInt8, UInt16, UInt32, UInt64,
                    UInt128,
                    Int8, Int16, Int32, Int64,
                    Decimal32, Decimal64, Decimal128,
                    Float32, Float64,
                    String> null_values;
-        std::tuple<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
+        std::variant<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
                    Ptr<UInt128>,
                    Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
                    Ptr<Decimal32>, Ptr<Decimal64>, Ptr<Decimal128>,

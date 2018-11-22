@@ -1,6 +1,5 @@
 #include <IO/WriteBufferFromHTTP.h>
 
-#include <IO/HTTPCommon.h>
 #include <common/logger_useful.h>
 
 

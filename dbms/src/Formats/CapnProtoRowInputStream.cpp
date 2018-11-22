@@ -7,9 +7,9 @@
 #include <Formats/CapnProtoRowInputStream.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
-
 #include <capnp/serialize.h> // Y_IGNORE
 #include <capnp/dynamic.h> // Y_IGNORE
+#include <capnp/common.h> // Y_IGNORE
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
@@ -214,7 +214,12 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns)
         array = heap_array.asPtr();
     }
 
+
+#if CAPNP_VERSION >= 8000
     capnp::UnalignedFlatArrayMessageReader msg(array);
+#else
+    capnp::FlatArrayMessageReader msg(array);
+#endif
     std::vector<capnp::DynamicStruct::Reader> stack;
     stack.push_back(msg.getRoot<capnp::DynamicStruct>(root));
 

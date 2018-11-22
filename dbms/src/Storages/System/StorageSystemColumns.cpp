@@ -37,6 +37,10 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
         { "comment",                    std::make_shared<DataTypeString>() },
+        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_order_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_sample_key", std::make_shared<DataTypeUInt8>() },
     }));
 }
 
@@ -82,6 +86,10 @@ protected:
             NamesAndTypesList columns;
             ColumnDefaults column_defaults;
             ColumnComments column_comments;
+            Names partition_key_names;
+            Names order_key_names;
+            Names primary_key_names;
+            Names sampling_key_names;
             MergeTreeData::ColumnSizeByName column_sizes;
 
             {
@@ -108,6 +116,11 @@ protected:
                 columns = storage->getColumns().getAll();
                 column_defaults = storage->getColumns().defaults;
                 column_comments = storage->getColumns().comments;
+
+                partition_key_names = storage->getPartitionExpressionNames();
+                order_key_names = storage->getOrderExpressionNames();
+                primary_key_names = storage->getPrimaryExpressionNames();
+                sampling_key_names = storage->getSamplingExpressionNames();
 
                 /** Info about sizes of columns for tables of MergeTree family.
                 * NOTE: It is possible to add getter for this info to IStorage interface.
@@ -188,6 +201,22 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(it->second);
                     }
+                }
+
+                {
+                    auto find_in_vector = [&key = column.name](const Names& names)
+                    {
+                        return std::find(names.cbegin(), names.cend(), key) != names.end();
+                    };
+
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(primary_key_names));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(order_key_names));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(partition_key_names));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(sampling_key_names));
                 }
 
                 ++rows_count;

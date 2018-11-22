@@ -1,12 +1,13 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 
-#include <Core/NamesAndTypes.h>
+#include <Core/Names.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+
 
 namespace DB
 {
@@ -16,9 +17,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & ast, const DumpASTNode & dump) const
+void TranslateQualifiedNamesVisitor::visit(ASTIdentifier & identifier, ASTPtr & ast, const DumpASTNode & dump) const
 {
-    if (identifier->general())
+    if (identifier.general())
     {
         /// Select first table name with max number of qualifiers which can be stripped.
         size_t max_num_qualifiers_to_strip = 0;
@@ -27,7 +28,7 @@ void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & 
         for (size_t table_pos = 0; table_pos < tables.size(); ++table_pos)
         {
             const auto & table = tables[table_pos];
-            auto num_qualifiers_to_strip = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, table);
+            auto num_qualifiers_to_strip = getNumComponentsToStripInOrderToTranslateQualifiedName(identifier, table);
 
             if (num_qualifiers_to_strip > max_num_qualifiers_to_strip)
             {
@@ -38,12 +39,12 @@ void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & 
 
         if (max_num_qualifiers_to_strip)
         {
-            dump.print(String("stripIdentifier ") + identifier->name, max_num_qualifiers_to_strip);
+            dump.print(String("stripIdentifier ") + identifier.name, max_num_qualifiers_to_strip);
             stripIdentifier(ast, max_num_qualifiers_to_strip);
         }
 
         /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && source_columns.contains(ast->getColumnName()))
+        if (best_table_pos && source_columns.count(ast->getColumnName()))
         {
             const DatabaseAndTableWithAlias & table = tables[best_table_pos];
             table.makeQualifiedName(ast);
@@ -52,7 +53,7 @@ void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & 
     }
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk *, ASTPtr & ast, const DumpASTNode &) const
+void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk &, ASTPtr & ast, const DumpASTNode &) const
 {
     if (ast->children.size() != 1)
         throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
@@ -88,23 +89,23 @@ void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk *, ASTPtr & ast,
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTTableJoin * join, ASTPtr &, const DumpASTNode &) const
+void TranslateQualifiedNamesVisitor::visit(ASTTableJoin & join, ASTPtr &, const DumpASTNode &) const
 {
     /// Don't translate on_expression here in order to resolve equation parts later.
-    if (join->using_expression_list)
-        visit(join->using_expression_list);
+    if (join.using_expression_list)
+        visit(join.using_expression_list);
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTSelectQuery * select, ASTPtr & ast, const DumpASTNode &) const
+void TranslateQualifiedNamesVisitor::visit(ASTSelectQuery & select, ASTPtr & ast, const DumpASTNode &) const
 {
     /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children,
     /// but also in where_expression and having_expression.
-    if (select->prewhere_expression)
-        visit(select->prewhere_expression);
-    if (select->where_expression)
-        visit(select->where_expression);
-    if (select->having_expression)
-        visit(select->having_expression);
+    if (select.prewhere_expression)
+        visit(select.prewhere_expression);
+    if (select.where_expression)
+        visit(select.where_expression);
+    if (select.having_expression)
+        visit(select.having_expression);
 
     visitChildren(ast);
 }

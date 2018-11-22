@@ -17,7 +17,16 @@
 #include <cstdlib>
 #include <port/clock.h>
 
-using DB::throwFromErrno;
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_OPEN_FILE;
+        extern const int CANNOT_CLOSE_FILE;
+        extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+        extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    }
+}
 
 
 enum Mode
@@ -33,7 +42,9 @@ enum Mode
 
 void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t count)
 {
-    DB::Memory direct_buf(block_size, sysconf(_SC_PAGESIZE));
+    using namespace DB;
+
+    Memory direct_buf(block_size, sysconf(_SC_PAGESIZE));
     std::vector<char> simple_buf(block_size);
 
     char * buf;
@@ -60,12 +71,12 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
         if (mode & MODE_READ)
         {
             if (static_cast<int>(block_size) != pread(fd, buf, block_size, offset))
-                throwFromErrno("Cannot read");
+                throwFromErrno("Cannot read", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
         }
         else
         {
             if (static_cast<int>(block_size) != pwrite(fd, buf, block_size, offset))
-                throwFromErrno("Cannot write");
+                throwFromErrno("Cannot write", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
         }
     }
 }
@@ -73,6 +84,8 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
 int mainImpl(int argc, char ** argv)
 {
+    using namespace DB;
+
     const char * file_name = 0;
     int mode = MODE_NONE;
     UInt64 min_offset = 0;
@@ -89,11 +102,11 @@ int mainImpl(int argc, char ** argv)
     }
 
     file_name = argv[1];
-    min_offset = DB::parse<UInt64>(argv[3]);
-    max_offset = DB::parse<UInt64>(argv[4]);
-    block_size = DB::parse<UInt64>(argv[5]);
-    threads = DB::parse<UInt64>(argv[6]);
-    count = DB::parse<UInt64>(argv[7]);
+    min_offset = parse<UInt64>(argv[3]);
+    max_offset = parse<UInt64>(argv[4]);
+    block_size = parse<UInt64>(argv[5]);
+    threads = parse<UInt64>(argv[6]);
+    count = parse<UInt64>(argv[7]);
 
     for (int i = 0; argv[2][i]; ++i)
     {
@@ -128,11 +141,11 @@ int mainImpl(int argc, char ** argv)
     int fd = open(file_name, ((mode & MODE_READ) ? O_RDONLY : O_WRONLY) | ((mode & MODE_SYNC) ? O_SYNC : 0));
     #endif
     if (-1 == fd)
-        throwFromErrno("Cannot open file");
+        throwFromErrno("Cannot open file", ErrorCodes::CANNOT_OPEN_FILE);
     #ifdef __APPLE__
     if (mode & MODE_DIRECT)
         if (fcntl(fd, F_NOCACHE, 1) == -1)
-            throwFromErrno("Cannot open file");
+            throwFromErrno("Cannot open file", ErrorCodes::CANNOT_CLOSE_FILE);
     #endif
     Stopwatch watch;
 
@@ -145,7 +158,7 @@ int mainImpl(int argc, char ** argv)
     watch.stop();
 
     if (0 != close(fd))
-        throwFromErrno("Cannot close file");
+        throwFromErrno("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     std::cout << std::fixed << std::setprecision(2)
         << "Done " << count << " * " << threads << " ops";

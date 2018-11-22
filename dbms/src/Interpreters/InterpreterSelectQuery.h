@@ -20,6 +20,8 @@ class ASTSelectQuery;
 struct SubqueryForSet;
 class InterpreterSelectWithUnionQuery;
 
+struct SyntaxAnalyzerResult;
+using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
   */
@@ -150,6 +152,9 @@ private:
         /// Columns from the SELECT list, before renaming them to aliases.
         Names selected_columns;
 
+        /// Columns will be removed after prewhere actions execution.
+        Names columns_to_remove_after_prewhere;
+
         /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
         bool first_stage = false;
         /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
@@ -171,7 +176,8 @@ private:
     /// dry_run - don't read from table, use empty header block instead.
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info);
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline,
+                             const PrewhereInfoPtr & prewhere_info, const Names & columns_to_remove_after_prewhere);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -214,6 +220,8 @@ private:
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth = 0;
+    NamesAndTypesList source_columns;
+    SyntaxAnalyzerResultPtr syntax_analyzer_result;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.

@@ -15,7 +15,7 @@
 namespace DB
 {
 
-template <> struct NearestFieldType<PartLogElement::Type>  { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<PartLogElement::Type> { using Type = UInt64; };
 
 Block PartLogElement::createBlock()
 {

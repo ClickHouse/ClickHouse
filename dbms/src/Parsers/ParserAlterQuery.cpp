@@ -31,7 +31,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_partition("DROP PARTITION");
     ParserKeyword s_attach_part("ATTACH PART");
     ParserKeyword s_fetch_partition("FETCH PARTITION");
-    ParserKeyword s_freeze_partition("FREEZE PARTITION");
+    ParserKeyword s_replace_partition("REPLACE PARTITION");
+    ParserKeyword s_freeze("FREEZE");
     ParserKeyword s_partition("PARTITION");
 
     ParserKeyword s_after("AFTER");
@@ -123,7 +124,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             command->type = ASTAlterCommand::ATTACH_PARTITION;
         }
     }
-    else if (ParserKeyword{"REPLACE PARTITION"}.ignore(pos, expected))
+    else if (s_replace_partition.ignore(pos, expected))
     {
         if (!parser_partition.parse(pos, command->partition, expected))
             return false;
@@ -160,10 +161,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
         command->type = ASTAlterCommand::FETCH_PARTITION;
     }
-    else if (s_freeze_partition.ignore(pos, expected))
+    else if (s_freeze.ignore(pos, expected))
     {
-        if (!parser_partition.parse(pos, command->partition, expected))
-            return false;
+        if (s_partition.ignore(pos, expected))
+        {
+            if (!parser_partition.parse(pos, command->partition, expected))
+                return false;
+
+            command->type = ASTAlterCommand::FREEZE_PARTITION;
+        }
+        else
+        {
+            command->type = ASTAlterCommand::FREEZE_ALL;
+        }
 
         /// WITH NAME 'name' - place local backup to directory with specified name
         if (s_with.ignore(pos, expected))
@@ -177,8 +187,6 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
             command->with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
         }
-
-        command->type = ASTAlterCommand::FREEZE_PARTITION;
     }
     else if (s_modify_column.ignore(pos, expected))
     {
