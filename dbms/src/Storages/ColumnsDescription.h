@@ -9,6 +9,7 @@
 namespace DB
 {
 
+/// key-values column_name, column_comment. column_comment should be non empty.
 using ColumnComments = std::unordered_map<std::string, String>;
 
 struct ColumnsDescription

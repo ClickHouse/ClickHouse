@@ -223,8 +223,8 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
 
         if (col_decl.comment)
         {
-            auto comment_literal = typeid_cast<ASTLiteral &>(*col_decl.comment);
-            comments.emplace(col_decl.name, comment_literal.value.get<String>());
+            if (auto comment_str = typeid_cast<ASTLiteral &>(*col_decl.comment).value.get<String>(); !comment_str.empty())
+                comments.emplace(col_decl.name, comment_str);
         }
     }
 
