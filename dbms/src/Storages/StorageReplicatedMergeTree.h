@@ -515,7 +515,8 @@ private:
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
-    const Cluster::Address & findClusterAddress(ReplicatedMergeTreeAddress & leader_address);
+    const Cluster::Address & findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
+
     // Partition helpers
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context);
