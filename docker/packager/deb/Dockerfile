@@ -42,6 +42,7 @@ RUN apt-get update -y \
             libsparsehash-dev \
             libgoogle-perftools-dev \
             libzstd-dev \
+            libltdl-dev \
             libre2-dev \
             libjemalloc-dev \
             unixodbc-dev \
