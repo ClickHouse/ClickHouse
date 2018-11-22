@@ -74,7 +74,7 @@ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1025 KB is sufficient for all RAID configurations.
+A block size of 1024 KB is sufficient for all RAID configurations.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
