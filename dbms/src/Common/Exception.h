@@ -42,11 +42,11 @@ private:
 class ErrnoException : public Exception
 {
 public:
-    ErrnoException(const std::string & msg, int code = 0, int saved_errno_ = 0)
+    ErrnoException(const std::string & msg, int code, int saved_errno_)
         : Exception(msg, code), saved_errno(saved_errno_) {}
-    ErrnoException(const std::string & msg, const std::string & arg, int code = 0, int saved_errno_ = 0)
+    ErrnoException(const std::string & msg, const std::string & arg, int code, int saved_errno_)
         : Exception(msg, arg, code), saved_errno(saved_errno_) {}
-    ErrnoException(const std::string & msg, const Exception & exc, int code = 0, int saved_errno_ = 0)
+    ErrnoException(const std::string & msg, const Exception & exc, int code, int saved_errno_)
         : Exception(msg, exc, code), saved_errno(saved_errno_) {}
 
     int getErrno() const { return saved_errno; }
@@ -59,8 +59,8 @@ private:
 using Exceptions = std::vector<std::exception_ptr>;
 
 
-std::string errnoToString(int code = 0, int the_errno = errno);
-[[noreturn]] void throwFromErrno(const std::string & s, int code = 0, int the_errno = errno);
+std::string errnoToString(int code, int the_errno = errno);
+[[noreturn]] void throwFromErrno(const std::string & s, int code, int the_errno = errno);
 
 
 /** Try to write an exception to the log (and forget about it).
