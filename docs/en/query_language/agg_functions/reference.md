@@ -156,7 +156,7 @@ The parameter "HLL_precision" is the base-2 logarithm of the number of cells in 
 
 The result is deterministic (it doesn't depend on the order of query processing).
 
-The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200M+ elements) will become larger than theoretical value due to poor choice of hash function.
+The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
 
 ## uniqHLL12(x)
 
