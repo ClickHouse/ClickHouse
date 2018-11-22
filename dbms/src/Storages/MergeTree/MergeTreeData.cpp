@@ -79,6 +79,9 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
+    extern const int CANNOT_MREMAP;
 }
 
 
@@ -477,7 +480,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Don't count the part as broken if there is not enough memory to load it.
             /// In fact, there can be many similar situations.
             /// But it is OK, because there is a safety guard against deleting too many parts.
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                || e.code() == ErrorCodes::CANNOT_MUNMAP
+                || e.code() == ErrorCodes::CANNOT_MREMAP)
                 throw;
 
             broken = true;
@@ -1279,6 +1285,11 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     return transaction;
 }
 
+void MergeTreeData::freezeAll(const String & with_name, const Context & context)
+{
+    freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
+}
+
 void MergeTreeData::AlterDataPartTransaction::commit()
 {
     if (!data_part)
@@ -2064,44 +2075,17 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     else
         LOG_DEBUG(log, "Freezing parts with partition ID " + partition_id);
 
-    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-    String shadow_path = clickhouse_path + "shadow/";
-    Poco::File(shadow_path).createDirectories();
-    String backup_path = shadow_path
-        + (!with_name.empty()
-            ? escapeForFileName(with_name)
-            : toString(Increment(shadow_path + "increment.txt").get(true)))
-        + "/";
 
-    LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
-
-    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
-    const auto data_parts = getDataParts();
-
-    size_t parts_processed = 0;
-    for (const auto & part : data_parts)
-    {
-        if (prefix)
+    freezePartitionsByMatcher(
+        [&prefix, &partition_id](const DataPartPtr & part)
         {
-            if (!startsWith(part->info.partition_id, *prefix))
-                continue;
-        }
-        else if (part->info.partition_id != partition_id)
-            continue;
-
-        LOG_DEBUG(log, "Freezing part " << part->name);
-
-        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
-        if (!startsWith(part_absolute_path, clickhouse_path))
-            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
-
-        String backup_part_absolute_path = part_absolute_path;
-        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
-        localBackup(part_absolute_path, backup_part_absolute_path);
-        ++parts_processed;
-    }
-
-    LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+            if (prefix)
+                return startsWith(part->info.partition_id, *prefix);
+            else
+                return part->info.partition_id == partition_id;
+        },
+        with_name,
+        context);
 }
 
 size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
@@ -2440,6 +2424,43 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = Poco::File(dst_part_absolute_path).getLastModified().epochTime();
     return dst_data_part;
+}
+
+void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
+{
+    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+    String shadow_path = clickhouse_path + "shadow/";
+    Poco::File(shadow_path).createDirectories();
+    String backup_path = shadow_path
+        + (!with_name.empty()
+            ? escapeForFileName(with_name)
+            : toString(Increment(shadow_path + "increment.txt").get(true)))
+        + "/";
+
+    LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
+
+    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
+    const auto data_parts = getDataParts();
+
+    size_t parts_processed = 0;
+    for (const auto & part : data_parts)
+    {
+        if (!matcher(part))
+            continue;
+
+        LOG_DEBUG(log, "Freezing part " << part->name);
+
+        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
+        if (!startsWith(part_absolute_path, clickhouse_path))
+            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+
+        String backup_part_absolute_path = part_absolute_path;
+        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
+        localBackup(part_absolute_path, backup_part_absolute_path);
+        ++parts_processed;
+    }
+
+    LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
 }

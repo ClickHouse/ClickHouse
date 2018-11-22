@@ -12,7 +12,8 @@ namespace DB
 
 class ASTAlterCommand;
 
-/// Operation from the ALTER query (except for manipulation with PART/PARTITION). Adding Nested columns is not expanded to add individual columns.
+/// Operation from the ALTER query (except for manipulation with PART/PARTITION).
+/// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
     enum Type

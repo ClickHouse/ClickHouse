@@ -20,6 +20,14 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_CLOSE_FILE;
+    extern const int CANNOT_TRUNCATE_FILE;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
+}
+
 
 StatusFile::StatusFile(const std::string & path_)
     : path(path_)
@@ -43,7 +51,7 @@ StatusFile::StatusFile(const std::string & path_)
     fd = ::open(path.c_str(), O_WRONLY | O_CREAT, 0666);
 
     if (-1 == fd)
-        throwFromErrno("Cannot open file " + path);
+        throwFromErrno("Cannot open file " + path, ErrorCodes::CANNOT_OPEN_FILE);
 
     try
     {
@@ -53,14 +61,14 @@ StatusFile::StatusFile(const std::string & path_)
             if (errno == EWOULDBLOCK)
                 throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.");
             else
-                throwFromErrno("Cannot lock file " + path);
+                throwFromErrno("Cannot lock file " + path, ErrorCodes::CANNOT_OPEN_FILE);
         }
 
         if (0 != ftruncate(fd, 0))
-            throwFromErrno("Cannot ftruncate " + path);
+            throwFromErrno("Cannot ftruncate " + path, ErrorCodes::CANNOT_TRUNCATE_FILE);
 
         if (0 != lseek(fd, 0, SEEK_SET))
-            throwFromErrno("Cannot lseek " + path);
+            throwFromErrno("Cannot lseek " + path, ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
         /// Write information about current server instance to the file.
         {
@@ -82,10 +90,10 @@ StatusFile::StatusFile(const std::string & path_)
 StatusFile::~StatusFile()
 {
     if (0 != close(fd))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString());
+        LOG_ERROR(&Logger::get("StatusFile"), "Cannot close file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 
     if (0 != unlink(path.c_str()))
-        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString());
+        LOG_ERROR(&Logger::get("StatusFile"), "Cannot unlink file " << path << ", " << errnoToString(ErrorCodes::CANNOT_CLOSE_FILE));
 }
 
 }

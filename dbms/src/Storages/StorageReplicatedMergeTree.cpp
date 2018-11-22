@@ -3282,6 +3282,58 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     LOG_DEBUG(log, "ALTER finished");
 }
 
+void StorageReplicatedMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+{
+    for (const PartitionCommand & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                checkPartitionCanBeDropped(command.partition);
+                dropPartition(query, command.partition, command.detach, context);
+                break;
+
+            case PartitionCommand::ATTACH_PARTITION:
+                attachPartition(command.partition, command.part, context);
+                break;
+
+            case PartitionCommand::REPLACE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+            }
+            break;
+
+            case PartitionCommand::FETCH_PARTITION:
+                fetchPartition(command.partition, command.from_zookeeper_path, context);
+                break;
+
+            case PartitionCommand::FREEZE_PARTITION:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezePartition(command.partition, command.with_name, context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_COLUMN:
+                clearColumnInPartition(command.partition, command.column_name, context);
+                break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezeAll(command.with_name, context);
+            }
+            break;
+
+            default:
+                IStorage::partition(query, commands, context); // should throw an exception.
+        }
+    }
+}
+
 
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
 static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
@@ -3380,6 +3432,8 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     if (!is_leader)
     {
+        // TODO: we can manually reconstruct the query from outside the |dropPartition()| and remove the |query| argument from interface.
+        //       It's the only place where we need this argument.
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
     }
@@ -3427,6 +3481,8 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 
 void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
+    // TODO: should get some locks to prevent race with 'alter … modify column'
+
     assertNotReadonly();
 
     String partition_id;
@@ -4151,12 +4207,6 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 
         ++try_no;
     } while (!missing_parts.empty());
-}
-
-
-void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    data.freezePartition(partition, with_name, context);
 }
 
 

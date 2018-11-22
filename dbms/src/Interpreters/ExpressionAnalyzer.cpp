@@ -1087,7 +1087,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 
     joined_block_actions = analyzedJoin().createJoinedBlockActions(
-            columns_added_by_join, select_query, context, required_columns_from_joined_table);
+        columns_added_by_join, select_query, context, required_columns_from_joined_table);
 
     /// Some columns from right join key may be used in query. This columns will be appended to block during join.
     for (const auto & right_key_name : analyzedJoin().key_names_right)
@@ -1136,7 +1136,9 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 
     if (!unknown_required_source_columns.empty())
-        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
+            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : ""),
+            ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 
