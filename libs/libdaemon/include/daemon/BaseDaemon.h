@@ -45,7 +45,7 @@ class BaseDaemon : public Poco::Util::ServerApplication
     friend class SignalListener;
 
 public:
-    static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
+    static inline constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
     ~BaseDaemon() override;
