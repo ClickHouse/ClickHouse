@@ -3943,7 +3943,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 }
 
 
-const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address)
+const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const
 {
     for (auto & iter : context.getClusters().getContainer())
     {
