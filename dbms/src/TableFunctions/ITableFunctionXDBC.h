@@ -18,7 +18,7 @@ private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const override;
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
-    virtual BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
+    virtual BridgeHelperPtr createBridgeHelper(Context & context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const = 0;
 };
@@ -33,11 +33,11 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
+    BridgeHelperPtr createBridgeHelper(Context & context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const override
     {
-        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config_, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_);
     }
 };
 
@@ -51,11 +51,11 @@ public:
     }
 
 private:
-    BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
+    BridgeHelperPtr createBridgeHelper(Context & context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const override
     {
-        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(config_, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_);
     }
 };
 }
