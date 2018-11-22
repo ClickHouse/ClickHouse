@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class Context;
@@ -295,7 +296,7 @@ public:
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */) const { return false; }
 
     /// Checks validity of the data
-    virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
+    virtual bool checkData() const { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Checks that table could be dropped right now
     /// Otherwise - throws an exception with detailed information.

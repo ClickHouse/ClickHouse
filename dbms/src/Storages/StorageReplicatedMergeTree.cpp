@@ -1014,7 +1014,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
     else
     {
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
     }
 
     if (do_fetch)
@@ -1862,7 +1862,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 if (!prev.found_new_part_info.isDisjoint(curr.found_new_part_info))
                 {
                     throw Exception("Intersected final parts detected: " + prev.found_new_part_name
-                                    + " and " + curr.found_new_part_name + ". It should be investigated.");
+                        + " and " + curr.found_new_part_name + ". It should be investigated.", ErrorCodes::INCORRECT_DATA);
                 }
             }
         }
