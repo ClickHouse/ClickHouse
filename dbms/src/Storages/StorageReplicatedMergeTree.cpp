@@ -3945,7 +3945,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
 const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address)
 {
-    for(auto & iter : context.getClusters().getContainer())
+    for (auto & iter : context.getClusters().getContainer())
     {
         const auto & shards = iter.second->getShardsAddresses();
 
