@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 {
@@ -103,7 +108,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
 {
     String path = extractPath(query_info.query);
     if (path.empty())
-        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
+        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 
@@ -134,17 +139,17 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
         size_t col_num = 0;
         res_columns[col_num++]->insert(nodes[i]);
         res_columns[col_num++]->insert(res.data);
-        res_columns[col_num++]->insert(Int64(stat.czxid));
-        res_columns[col_num++]->insert(Int64(stat.mzxid));
+        res_columns[col_num++]->insert(stat.czxid);
+        res_columns[col_num++]->insert(stat.mzxid);
         res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
         res_columns[col_num++]->insert(UInt64(stat.mtime / 1000));
-        res_columns[col_num++]->insert(Int64(stat.version));
-        res_columns[col_num++]->insert(Int64(stat.cversion));
-        res_columns[col_num++]->insert(Int64(stat.aversion));
-        res_columns[col_num++]->insert(Int64(stat.ephemeralOwner));
-        res_columns[col_num++]->insert(Int64(stat.dataLength));
-        res_columns[col_num++]->insert(Int64(stat.numChildren));
-        res_columns[col_num++]->insert(Int64(stat.pzxid));
+        res_columns[col_num++]->insert(stat.version);
+        res_columns[col_num++]->insert(stat.cversion);
+        res_columns[col_num++]->insert(stat.aversion);
+        res_columns[col_num++]->insert(stat.ephemeralOwner);
+        res_columns[col_num++]->insert(stat.dataLength);
+        res_columns[col_num++]->insert(stat.numChildren);
+        res_columns[col_num++]->insert(stat.pzxid);
         res_columns[col_num++]->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
     }
 }

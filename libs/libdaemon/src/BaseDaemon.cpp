@@ -39,10 +39,8 @@
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/SplitterChannel.h>
 #include <Poco/Ext/LevelFilterChannel.h>
 #include <Poco/Ext/ThreadNumber.h>
-#include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/TaskManager.h>
@@ -71,20 +69,6 @@
 #include <Poco/Net/RemoteSyslogChannel.h>
 
 
-using Poco::Logger;
-using Poco::AutoPtr;
-using Poco::Observer;
-using Poco::FormattingChannel;
-using Poco::SplitterChannel;
-using Poco::ConsoleChannel;
-using Poco::FileChannel;
-using Poco::Path;
-using Poco::Message;
-using Poco::Util::AbstractConfiguration;
-
-
-constexpr char BaseDaemon::DEFAULT_GRAPHITE_CONFIG_NAME[];
-
 /** For transferring information from signal handler to a separate thread.
   * If you need to do something serious in case of a signal (example: write a message to the log),
   *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
@@ -109,7 +93,7 @@ struct Pipe
         write_fd = -1;
 
         if (0 != pipe(fds))
-            DB::throwFromErrno("Cannot create pipe");
+            DB::throwFromErrno("Cannot create pipe", 0);
     }
 
     void close()
@@ -669,7 +653,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
-        Poco::AutoPtr<FileChannel> log_file = new FileChannel;
+        log_file = new Poco::FileChannel;
         log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
@@ -691,7 +675,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         createDirectory(errorlog_path);
         std::cerr << "Logging errors to " << errorlog_path << std::endl;
 
-        Poco::AutoPtr<FileChannel> error_log_file = new FileChannel;
+        error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
@@ -703,7 +687,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
-        errorlog->setLevel(Message::PRIO_NOTICE);
+        errorlog->setLevel(Poco::Message::PRIO_NOTICE);
         errorlog->open();
         split->addChannel(errorlog);
     }
@@ -767,12 +751,12 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
     Logger::root().setChannel(logger().getChannel());
 
     // Explicitly specified log levels for specific loggers.
-    AbstractConfiguration::Keys levels;
+    Poco::Util::AbstractConfiguration::Keys levels;
     config.keys("logger.levels", levels);
 
-    if(!levels.empty())
-        for(AbstractConfiguration::Keys::iterator it = levels.begin(); it != levels.end(); ++it)
-            Logger::get(*it).setLevel(config.getString("logger.levels." + *it, "trace"));
+    if (!levels.empty())
+        for (const auto & level : levels)
+            Logger::get(level).setLevel(config.getString("logger.levels." + level, "trace"));
 }
 
 
@@ -1077,7 +1061,7 @@ void BaseDaemon::logRevision() const
 /// Makes server shutdown if at least one Poco::Task have failed.
 void BaseDaemon::exitOnTaskError()
 {
-    Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
+    Poco::Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
     getTaskManager().addObserver(obs);
 }
 
@@ -1085,7 +1069,7 @@ void BaseDaemon::exitOnTaskError()
 void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
     task_failed = true;
-    AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
+    Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
     Logger *lg = &(logger());
     LOG_ERROR(lg, "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText());
     ServerApplication::terminate();
@@ -1205,7 +1189,7 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id));
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)

@@ -14,6 +14,7 @@ CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 SHELL=/bin/bash
 PROGRAM=clickhouse-server
 GENERIC_PROGRAM=clickhouse
+CLICKHOUSE_PROGRAM_ENV=""
 EXTRACT_FROM_CONFIG=${GENERIC_PROGRAM}-extract-from-config
 SYSCONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
@@ -168,7 +169,7 @@ start()
         if ! is_running; then
             # Lock should not be held while running child process, so we release the lock. Note: obviously, there is race condition.
             # But clickhouse-server has protection from simultaneous runs with same data directory.
-            su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; exec -a \"$PROGRAM\" \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
+            su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; $CLICKHOUSE_PROGRAM_ENV exec -a \"$PROGRAM\" \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
             EXIT_STATUS=$?
             if [ $EXIT_STATUS -ne 0 ]; then
                 break
@@ -328,12 +329,14 @@ status()
 {
     if is_running; then
         echo "$PROGRAM service is running"
+        exit 0
     else
         if is_cron_disabled; then
             echo "$PROGRAM service is stopped";
         else
             echo "$PROGRAM: process unexpectedly terminated"
         fi
+        exit 3
     fi
 }
 
@@ -342,7 +345,6 @@ status()
 case "$1" in
 status)
     status
-    exit 0
     ;;
 esac
 

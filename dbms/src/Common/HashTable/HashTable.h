@@ -420,7 +420,7 @@ protected:
     void destroyElements()
     {
         if (!std::is_trivially_destructible_v<Cell>)
-            for (iterator it = begin(); it != end(); ++it)
+            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
                 it.ptr->~Cell();
     }
 
@@ -445,12 +445,15 @@ protected:
 
         Derived & operator++()
         {
+            /// If iterator was pointed to ZeroValueStorage, move it to the beginning of the main buffer.
             if (unlikely(ptr->isZero(*container)))
                 ptr = container->buf;
             else
                 ++ptr;
 
-            while (ptr < container->buf + container->grower.bufSize() && ptr->isZero(*container))
+            /// Skip empty cells in the main buffer.
+            auto buf_end = container->buf + container->grower.bufSize();
+            while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
             return static_cast<Derived &>(*this);
@@ -491,10 +494,33 @@ public:
         alloc(grower);
     }
 
+    HashTable(HashTable && rhs)
+        : buf(nullptr)
+    {
+        *this = std::move(rhs);
+    }
+
     ~HashTable()
     {
         destroyElements();
         free();
+    }
+
+    HashTable & operator= (HashTable && rhs)
+    {
+        destroyElements();
+        free();
+
+        std::swap(buf, rhs.buf);
+        std::swap(m_size, rhs.m_size);
+        std::swap(grower, rhs.grower);
+
+        Hash::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs));
+        Cell::State::operator=(std::move(rhs));
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs));
+
+        return *this;
     }
 
     class Reader final : private Cell::State
@@ -569,11 +595,14 @@ public:
             return iteratorToZero();
 
         const Cell * ptr = buf;
-        while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
+        auto buf_end = buf + grower.bufSize();
+        while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return const_iterator(this, ptr);
     }
+
+    const_iterator cbegin() const { return begin(); }
 
     iterator begin()
     {
@@ -584,13 +613,15 @@ public:
             return iteratorToZero();
 
         Cell * ptr = buf;
-        while (ptr < buf + grower.bufSize() && ptr->isZero(*this))
+        auto buf_end = buf + grower.bufSize();
+        while (ptr < buf_end && ptr->isZero(*this))
             ++ptr;
 
         return iterator(this, ptr);
     }
 
     const_iterator end() const         { return const_iterator(this, buf + grower.bufSize()); }
+    const_iterator cend() const        { return end(); }
     iterator end()                     { return iterator(this, buf + grower.bufSize()); }
 
 
@@ -811,9 +842,9 @@ public:
         if (this->hasZero())
             this->zeroValue()->write(wb);
 
-        for (size_t i = 0; i < grower.bufSize(); ++i)
-            if (!buf[i].isZero(*this))
-                buf[i].write(wb);
+        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
+            if (!ptr->isZero(*this))
+                ptr->write(wb);
     }
 
     void writeText(DB::WriteBuffer & wb) const
@@ -827,12 +858,12 @@ public:
             this->zeroValue()->writeText(wb);
         }
 
-        for (size_t i = 0; i < grower.bufSize(); ++i)
+        for (auto ptr = buf, buf_end = buf + grower.bufSize(); ptr < buf_end; ++ptr)
         {
-            if (!buf[i].isZero(*this))
+            if (!ptr->isZero(*this))
             {
                 DB::writeChar(',', wb);
-                buf[i].writeText(wb);
+                ptr->writeText(wb);
             }
         }
     }

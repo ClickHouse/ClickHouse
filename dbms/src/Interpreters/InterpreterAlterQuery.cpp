@@ -27,7 +27,7 @@ BlockIO InterpreterAlterQuery::execute()
     auto & alter = typeid_cast<ASTAlterQuery &>(*query_ptr);
 
     if (!alter.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {alter.table});
+        return executeDDLQueryOnCluster(query_ptr, context, {alter.database});
 
     const String & table_name = alter.table;
     String database_name = alter.database.empty() ? context.getCurrentDatabase() : alter.database;
@@ -54,41 +54,10 @@ BlockIO InterpreterAlterQuery::execute()
         table->mutate(mutation_commands, context);
     }
 
-    partition_commands.validate(*table);
-    for (const PartitionCommand & command : partition_commands)
+    if (!partition_commands.empty())
     {
-        switch (command.type)
-        {
-            case PartitionCommand::DROP_PARTITION:
-                table->checkPartitionCanBeDropped(command.partition);
-                table->dropPartition(query_ptr, command.partition, command.detach, context);
-                break;
-
-            case PartitionCommand::ATTACH_PARTITION:
-                table->attachPartition(command.partition, command.part, context);
-                break;
-
-            case PartitionCommand::REPLACE_PARTITION:
-                {
-                    table->checkPartitionCanBeDropped(command.partition);
-                    String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
-                    auto from_storage = context.getTable(from_database, command.from_table);
-                    table->replacePartitionFrom(from_storage, command.partition, command.replace, context);
-                }
-                break;
-
-            case PartitionCommand::FETCH_PARTITION:
-                table->fetchPartition(command.partition, command.from_zookeeper_path, context);
-                break;
-
-            case PartitionCommand::FREEZE_PARTITION:
-                table->freezePartition(command.partition, command.with_name, context);
-                break;
-
-            case PartitionCommand::CLEAR_COLUMN:
-                table->clearColumnInPartition(command.partition, command.column_name, context);
-                break;
-        }
+        partition_commands.validate(*table);
+        table->partition(query_ptr, partition_commands, context);
     }
 
     if (!alter_commands.empty())

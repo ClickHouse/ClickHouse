@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 struct ArraySumImpl
 {
     static bool needBoolean() { return false; }
@@ -93,7 +98,7 @@ struct ArraySumImpl
             executeType<Float64,Float64>(mapped, offsets, res))
             return res;
         else
-            throw Exception("Unexpected column for arraySum: " + mapped->getName());
+            throw Exception("Unexpected column for arraySum: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

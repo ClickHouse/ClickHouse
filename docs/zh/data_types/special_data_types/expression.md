@@ -1,1 +1,3 @@
-../../../en/data_types/special_data_types/expression.md
+# Expression
+
+用于表示高阶函数中的Lambd表达式。

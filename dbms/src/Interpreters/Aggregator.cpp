@@ -1352,7 +1352,8 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 {
     auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
     {
-        CurrentThread::attachToIfDetached(thread_group);
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1475,9 +1476,9 @@ void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_src,
     Arena * arena) const
 {
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
-        decltype(it) res_it;
+        typename Table::iterator res_it;
         bool inserted;
         table_dst.emplace(it->first, res_it, inserted, it.getHash());
 
@@ -1512,9 +1513,9 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
-        decltype(it) res_it = table_dst.find(it->first, it.getHash());
+        typename Table::iterator res_it = table_dst.find(it->first, it.getHash());
 
         AggregateDataPtr res_data = table_dst.end() == res_it
             ? overflows
@@ -1805,7 +1806,8 @@ private:
         try
         {
             setThreadName("MergingAggregtd");
-            CurrentThread::attachToIfDetached(thread_group);
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
             /// TODO: add no_more_keys support maybe
@@ -2127,7 +2129,8 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
-            CurrentThread::attachToIfDetached(thread_group);
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {

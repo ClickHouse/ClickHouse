@@ -3,7 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <map>
-#include <tuple>
+#include <variant>
 #include <vector>
 #include <shared_mutex>
 #include <Columns/ColumnDecimal.h>
@@ -216,12 +216,9 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value>
-    using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
-    template <typename Value>
-    using ContainerType = Value[];
-    template <typename Value>
-    using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+    template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
+    template <typename Value> using ContainerType = Value[];
+    template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
     struct CellMetadata final
     {
@@ -260,10 +257,10 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<UInt8, UInt16, UInt32, UInt64, UInt128, Int8, Int16, Int32, Int64,
+        std::variant<UInt8, UInt16, UInt32, UInt64, UInt128, Int8, Int16, Int32, Int64,
             Decimal32, Decimal64, Decimal128,
             Float32, Float64, String> null_values;
-        std::tuple<ContainerPtrType<UInt8>,
+        std::variant<ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
             ContainerPtrType<UInt32>,
             ContainerPtrType<UInt64>,

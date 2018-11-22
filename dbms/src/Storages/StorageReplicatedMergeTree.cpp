@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 
 #include <Databases/IDatabase.h>
 
@@ -1013,7 +1014,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
     else
     {
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
     }
 
     if (do_fetch)
@@ -1861,7 +1862,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 if (!prev.found_new_part_info.isDisjoint(curr.found_new_part_info))
                 {
                     throw Exception("Intersected final parts detected: " + prev.found_new_part_name
-                                    + " and " + curr.found_new_part_name + ". It should be investigated.");
+                        + " and " + curr.found_new_part_name + ". It should be investigated.", ErrorCodes::INCORRECT_DATA);
                 }
             }
         }
@@ -2674,8 +2675,22 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
             Coordination::Requests ops;
             Coordination::Responses responses;
+
+            Coordination::Stat added_parts_stat;
+            String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
+
+            ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(data.format_version);
+
+            if (!old_added_parts.empty())
+                parts_with_quorum.fromString(old_added_parts);
+
+            auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+            parts_with_quorum.added_parts[part_info.partition_id] = part_name;
+
+            String new_added_parts = parts_with_quorum.toString();
+
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
-            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, part_name, -1));
+            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, new_added_parts, added_parts_stat.version));
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::ZOK)
@@ -2950,37 +2965,56 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    Int64 max_block_number_to_read = 0;
     if (settings.select_sequential_consistency)
     {
+        ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
+
+        for (const auto & data_part : data.getDataParts())
+        {
+            max_added_blocks[data_part->info.partition_id] = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
+        }
+
         auto zookeeper = getZooKeeper();
 
-        String last_part;
-        zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
+        const String quorum_status_path = zookeeper_path + "/quorum/status";
 
-        if (!last_part.empty() && !data.getActiveContainingPart(last_part))    /// TODO Disable replica for distributed queries.
-            throw Exception("Replica doesn't have part " + last_part + " which was successfully written to quorum of other replicas."
-                " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+        String value;
+        Coordination::Stat stat;
 
-        if (last_part.empty())  /// If no part has been written with quorum.
+        if (zookeeper->tryGet(quorum_status_path, value, &stat))
         {
-            String quorum_str;
-            if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_str))
+            ReplicatedMergeTreeQuorumEntry quorum_entry;
+            quorum_entry.fromString(value);
+
+            auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
+
+            max_added_blocks[part_info.partition_id] = part_info.max_block - 1;
+        }
+
+        String added_parts_str;
+        if (zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str))
+        {
+            if (!added_parts_str.empty())
             {
-                ReplicatedMergeTreeQuorumEntry quorum_entry;
-                quorum_entry.fromString(quorum_str);
-                auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
-                max_block_number_to_read = part_info.min_block - 1;
+                ReplicatedMergeTreeQuorumAddedParts part_with_quorum(data.format_version);
+                part_with_quorum.fromString(added_parts_str);
+
+                auto added_parts = part_with_quorum.added_parts;
+
+                for (const auto & added_part : added_parts)
+                    if (!data.getActiveContainingPart(added_part.second))
+                        throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
+                            " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+
+                for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
+                        max_added_blocks[max_block.first] = max_block.second;
             }
         }
-        else
-        {
-            auto part_info = MergeTreePartInfo::fromPartName(last_part, data.format_version);
-            max_block_number_to_read = part_info.max_block;
-        }
+
+        return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
     }
 
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_block_number_to_read);
+    return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
 
@@ -3248,6 +3282,58 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     LOG_DEBUG(log, "ALTER finished");
 }
 
+void StorageReplicatedMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+{
+    for (const PartitionCommand & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                checkPartitionCanBeDropped(command.partition);
+                dropPartition(query, command.partition, command.detach, context);
+                break;
+
+            case PartitionCommand::ATTACH_PARTITION:
+                attachPartition(command.partition, command.part, context);
+                break;
+
+            case PartitionCommand::REPLACE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+            }
+            break;
+
+            case PartitionCommand::FETCH_PARTITION:
+                fetchPartition(command.partition, command.from_zookeeper_path, context);
+                break;
+
+            case PartitionCommand::FREEZE_PARTITION:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezePartition(command.partition, command.with_name, context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_COLUMN:
+                clearColumnInPartition(command.partition, command.column_name, context);
+                break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezeAll(command.with_name, context);
+            }
+            break;
+
+            default:
+                IStorage::partition(query, commands, context); // should throw an exception.
+        }
+    }
+}
+
 
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
 static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
@@ -3346,6 +3432,8 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     if (!is_leader)
     {
+        // TODO: we can manually reconstruct the query from outside the |dropPartition()| and remove the |query| argument from interface.
+        //       It's the only place where we need this argument.
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
     }
@@ -3393,6 +3481,8 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 
 void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
+    // TODO: should get some locks to prevent race with 'alter … modify column'
+
     assertNotReadonly();
 
     String partition_id;
@@ -4120,12 +4210,6 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 }
 
 
-void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    data.freezePartition(partition, with_name, context);
-}
-
-
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     /// Overview of the mutation algorithm.
@@ -4820,6 +4904,36 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     return true;
+}
+
+Names StorageReplicatedMergeTree::getSamplingExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.sampling_expression;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.begin(), names.end());
+}
+
+Names StorageReplicatedMergeTree::getPrimaryExpressionNames() const
+{
+    return data.getPrimarySortColumns();
+}
+
+Names StorageReplicatedMergeTree::getOrderExpressionNames() const
+{
+    return data.getSortColumns();
+}
+
+Names StorageReplicatedMergeTree::getPartitionExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.partition_expr_ast;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.cbegin(), names.cend());
 }
 
 }

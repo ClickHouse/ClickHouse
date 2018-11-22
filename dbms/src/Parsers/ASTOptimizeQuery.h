@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 namespace DB
@@ -10,12 +10,9 @@ namespace DB
 
 /** OPTIMIZE query
   */
-class ASTOptimizeQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTOptimizeQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    String database;
-    String table;
-
     /// The partition to optimize can be specified.
     ASTPtr partition;
     /// A flag can be specified - perform optimization "to the end" instead of one step.
@@ -43,8 +40,10 @@ public:
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &new_database) const override;
-
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &new_database) const override
+    {
+        return removeOnCluster<ASTOptimizeQuery>(clone(), new_database);
+    }
 };
 
 }

@@ -24,6 +24,33 @@ Merge(hits, '^WatchLog')
 
 Типичный способ использования движка `Merge` — работа с большим количеством таблиц типа `TinyLog`, как с одной.
 
+Пример 2:
+
+Пусть есть старая таблица `WatchLog_old`. Необходимо изменить партиционирование без перемещения данных в новую таблицу `WatchLog_new`. При этом в выборке должны участвовать данные обеих таблиц.
+
+```
+CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
+ENGINE=MergeTree(date, (UserId, EventType), 8192);
+INSERT INTO WatchLog_old VALUES ('2018-01-01', 1, 'hit', 3);
+
+CREATE TABLE WatchLog_new(date Date, UserId Int64, EventType String, Cnt UInt64)
+ENGINE=MergeTree PARTITION BY date ORDER BY (UserId, EventType) SETTINGS index_granularity=8192;
+INSERT INTO WatchLog_new VALUES ('2018-01-02', 2, 'hit', 3);
+
+CREATE TABLE WatchLog as WatchLog_old ENGINE=Merge(currentDatabase(), '^WatchLog');
+
+SELECT *
+FROM WatchLog
+
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-01 │      1 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+┌───────date─┬─UserId─┬─EventType─┬─Cnt─┐
+│ 2018-01-02 │      2 │ hit       │   3 │
+└────────────┴────────┴───────────┴─────┘
+
+```
+
 ## Виртуальные столбцы
 
 Виртуальные столбцы — столбцы, предоставляемые движком таблиц независимо от определения таблицы. То есть, такие столбцы не указываются в `CREATE TABLE`, но доступны для `SELECT`.

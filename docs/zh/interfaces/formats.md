@@ -173,7 +173,7 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 解析的时候，可以使用或不使用引号来解析所有值。支持双引号和单引号。行也可以不用引号排列。 在这种情况下，它们被解析为逗号或换行符（CR 或 LF）。在解析不带引号的行时，若违反 RFC 规则，会忽略前导和尾随的空格和制表符。 对于换行，全部支持 Unix（LF），Windows（CR LF）和 Mac OS Classic（CR LF）。
 
-`NULL` is formatted as `\N`.
+`NULL` 将输出为 `\N`。
 
 CSV 格式是和 TabSeparated 一样的方式输出总数和极值。
 
@@ -511,7 +511,7 @@ test: string with 'quotes' and   with some special
  characters
 ```
 
-Compare with the Vertical format:
+和 Vertical 格式相比：
 
 ```
 :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
