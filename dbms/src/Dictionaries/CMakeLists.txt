@@ -4,7 +4,7 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 add_headers_and_sources(clickhouse_dictionaries .)
 
 add_library(clickhouse_dictionaries ${LINK_MODE} ${clickhouse_dictionaries_sources})
-target_link_libraries(clickhouse_dictionaries PRIVATE clickhouse_common_io ${MYSQLXX_LIBRARY} ${BTRIE_LIBRARIES})
+target_link_libraries(clickhouse_dictionaries PRIVATE clickhouse_common_io pocoext ${MYSQLXX_LIBRARY} ${BTRIE_LIBRARIES})
 
 if(Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
     target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})

@@ -181,12 +181,11 @@ target_link_libraries (dbms
     clickhouse_common_config
         PUBLIC
     clickhouse_common_io
-
         PRIVATE
     clickhouse_dictionaries
     clickhouse_dictionaries_embedded
-    pocoext
         PUBLIC
+    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}
