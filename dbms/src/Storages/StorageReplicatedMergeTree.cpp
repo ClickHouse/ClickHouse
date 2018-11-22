@@ -3962,7 +3962,7 @@ const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(Replicat
             }
         }
     }
-    throw Exception("Not found replicate leader host " + leader_address.host + ":" + DB::toString(leader_address.queries_port) + ", Please check the 'remote_servers' section in your configuration file (config.xml, config.d, metrika.xml)", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+    throw Exception("Not found replicate leader host " + leader_address.host + ":" + DB::toString(leader_address.queries_port) + ". Please check the 'remote_servers' section in your configuration file (config.xml, config.d, metrika.xml).", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
 }
 
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
