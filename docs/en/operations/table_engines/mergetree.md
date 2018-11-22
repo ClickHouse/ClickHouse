@@ -37,7 +37,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = MergeTree()
+) ENGINE = MergeTree(EventDate, (CounterID, EventDate), 8192)
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
@@ -48,7 +48,15 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-- `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
+- `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree(EventDate, (CounterID, EventDate), 8192)`. `MergeTree` engine accepts parameters: the name of a Date type column containing the date, a sampling expression (optional), a tuple that defines the table’s primary key, and the index granularity. Example:
+
+Example without sampling support:
+
+`MergeTree(EventDate, (CounterID, EventDate), 8192)`
+
+Example with sampling support:
+
+`MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)`
 
 - `ORDER BY` — Primary key.
 
