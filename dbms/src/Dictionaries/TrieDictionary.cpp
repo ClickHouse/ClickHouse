@@ -295,7 +295,7 @@ void TrieDictionary::loadData()
 template <typename T>
 void TrieDictionary::addAttributeSize(const Attribute & attribute)
 {
-    const auto & vec = *std::get<ContainerPtrType<T>>(attribute.maps);
+    const auto & vec = std::get<ContainerType<T>>(attribute.maps);
     bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
     bucket_count = vec.size();
 }
@@ -352,8 +352,8 @@ void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<ContainerPtrType<T>>(attribute.maps) = std::make_unique<ContainerType<T>>();
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.maps.emplace<ContainerType<T>>();
 }
 
 TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -380,8 +380,8 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
 
         case AttributeUnderlyingType::String:
         {
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<ContainerPtrType<StringRef>>(attr.maps) = std::make_unique<ContainerType<StringRef>>();
+            attr.null_values = null_value.get<String>();
+            attr.maps.emplace<ContainerType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }
@@ -428,7 +428,7 @@ void TrieDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
-    auto & vec = *std::get<ContainerPtrType<AttributeType>>(attribute.maps);
+    auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -462,7 +462,7 @@ template <typename T>
 bool TrieDictionary::setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value)
 {
     // Insert value into appropriate vector type
-    auto & vec = *std::get<ContainerPtrType<T>>(attribute.maps);
+    auto & vec = std::get<ContainerType<T>>(attribute.maps);
     size_t row = vec.size();
     vec.push_back(value);
 

@@ -94,7 +94,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, hostname=None, env_variables={}, image="ubuntu:14.04"):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test"):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -324,13 +324,12 @@ services:
             - {env_file}
 '''
 
-
 class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="ubuntu:14.04"):
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]

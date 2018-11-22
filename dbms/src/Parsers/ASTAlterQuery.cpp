@@ -128,6 +128,16 @@ void ASTAlterCommand::formatImpl(
                           << " " << std::quoted(with_name, '\'');
         }
     }
+    else if (type == ASTAlterCommand::FREEZE_ALL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE";
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+                          << " " << std::quoted(with_name, '\'');
+        }
+    }
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");

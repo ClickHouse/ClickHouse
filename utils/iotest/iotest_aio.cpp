@@ -29,7 +29,16 @@ int main(int argc, char ** argv) { return 0; }
 #include <sys/syscall.h>
 
 
-using DB::throwFromErrno;
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_OPEN_FILE;
+        extern const int CANNOT_CLOSE_FILE;
+        extern const int CANNOT_IO_SUBMIT;
+        extern const int CANNOT_IO_GETEVENTS;
+    }
+}
 
 
 enum Mode
@@ -41,11 +50,13 @@ enum Mode
 
 void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count)
 {
+    using namespace DB;
+
     AIOContext ctx;
 
-    std::vector<DB::Memory> buffers(buffers_count);
+    std::vector<Memory> buffers(buffers_count);
     for (size_t i = 0; i < buffers_count; ++i)
-        buffers[i] = DB::Memory(block_size, sysconf(_SC_PAGESIZE));
+        buffers[i] = Memory(block_size, sysconf(_SC_PAGESIZE));
 
     drand48_data rand_data;
     timespec times;
@@ -109,13 +120,13 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
         /// Send queries.
         if  (io_submit(ctx.ctx, query_cbs.size(), &query_cbs[0]) < 0)
-            throwFromErrno("io_submit failed");
+            throwFromErrno("io_submit failed", ErrorCodes::CANNOT_IO_SUBMIT);
 
         /// Receive answers. If we have something else to send, then receive at least one answer (after that send them), otherwise wait all answers.
         memset(&events[0], 0, buffers_count * sizeof(events[0]));
         int evs = io_getevents(ctx.ctx, (blocks_sent < count ? 1 : in_progress), buffers_count, &events[0], nullptr);
         if (evs < 0)
-            throwFromErrno("io_getevents failed");
+            throwFromErrno("io_getevents failed", ErrorCodes::CANNOT_IO_GETEVENTS);
 
         for (int i = 0; i < evs; ++i)
         {
@@ -131,6 +142,8 @@ void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block
 
 int mainImpl(int argc, char ** argv)
 {
+    using namespace DB;
+
     const char * file_name = 0;
     int mode = MODE_READ;
     UInt64 min_offset = 0;
@@ -149,16 +162,16 @@ int mainImpl(int argc, char ** argv)
     file_name = argv[1];
     if (argv[2][0] == 'w')
         mode = MODE_WRITE;
-    min_offset = DB::parse<UInt64>(argv[3]);
-    max_offset = DB::parse<UInt64>(argv[4]);
-    block_size = DB::parse<UInt64>(argv[5]);
-    threads_count = DB::parse<UInt64>(argv[6]);
-    buffers_count = DB::parse<UInt64>(argv[7]);
-    count = DB::parse<UInt64>(argv[8]);
+    min_offset = parse<UInt64>(argv[3]);
+    max_offset = parse<UInt64>(argv[4]);
+    block_size = parse<UInt64>(argv[5]);
+    threads_count = parse<UInt64>(argv[6]);
+    buffers_count = parse<UInt64>(argv[7]);
+    count = parse<UInt64>(argv[8]);
 
     int fd = open(file_name, ((mode == MODE_READ) ? O_RDONLY : O_WRONLY) | O_DIRECT);
     if (-1 == fd)
-        throwFromErrno("Cannot open file");
+        throwFromErrno("Cannot open file", ErrorCodes::CANNOT_OPEN_FILE);
 
     ThreadPool pool(threads_count);
 
@@ -171,7 +184,7 @@ int mainImpl(int argc, char ** argv)
     watch.stop();
 
     if (0 != close(fd))
-        throwFromErrno("Cannot close file");
+        throwFromErrno("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
 
     std::cout << std::fixed << std::setprecision(2)
     << "Done " << count << " * " << threads_count << " ops";

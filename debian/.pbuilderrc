@@ -161,7 +161,15 @@ esac
 
 if [ "$ARCH" != arm64 ]; then
     case "$DIST" in
-    "cosmic" | "bionic" | "experimental" | "unstable" | "testing")
+    "experimental")
+        EXTRAPACKAGES+=" liblld-8-dev libclang-8-dev llvm-8-dev liblld-8 "
+        export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-8 $CMAKE_FLAGS"
+        ;;
+    "cosmic" | "testing" | "unstable")
+        EXTRAPACKAGES+=" liblld-7-dev libclang-7-dev llvm-7-dev liblld-7 "
+        export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-7 $CMAKE_FLAGS"
+        ;;
+    "bionic")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;

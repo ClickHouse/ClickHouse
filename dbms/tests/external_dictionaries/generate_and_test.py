@@ -741,12 +741,20 @@ def run_tests(args):
 
     keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)', 'toUInt64(n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
+    dict_get_notype_query_skeleton = "select dictGet('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
     dict_get_or_default_query_skeleton = "select dictGet{type}OrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
+    dict_get_notype_or_default_query_skeleton = "select dictGetOrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
     dict_hierarchy_query_skeleton = "select dictGetHierarchy('{name}' as d, key), dictIsIn(d, key, toUInt64(1)), dictIsIn(d, key, key) from system.one array join range(toUInt64(8)) as key;"
     # Designed to match 4 rows hit, 4 rows miss pattern of reference file
     dict_get_query_range_hashed_skeleton = """
             select dictGet{type}('{name}', '{type}_', {key}, r)
+            from system.one
+                array join range(4) as n
+                cross join (select r from system.one array join array({hit}, {miss}) as r);
+    """
+    dict_get_notype_query_range_hashed_skeleton = """
+            select dictGet('{name}', '{type}_', {key}, r)
             from system.one
                 array join range(4) as n
                 cross join (select r from system.one array join array({hit}, {miss}) as r);
@@ -806,7 +814,7 @@ def run_tests(args):
                     stderr_element = et.Element("system-err")
                     stderr_element.text = et.CDATA(stderr)
                     report_testcase.append(stderr_element)
-                    print(stderr)
+                    print(stderr.encode('utf-8'))
 
                 if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
                     SERVER_DIED = True
@@ -877,6 +885,9 @@ def run_tests(args):
                     test_query(name,
                         dict_get_query_range_hashed_skeleton.format(**locals()),
                             type, 'dictGet' + type)
+                    test_query(name,
+                        dict_get_notype_query_range_hashed_skeleton.format(**locals()),
+                            type, 'dictGet' + type)
 
         else:
             # query dictHas is not supported for range_hashed dictionaries
@@ -890,7 +901,13 @@ def run_tests(args):
                     dict_get_query_skeleton.format(**locals()),
                     type, 'dictGet' + type)
                 test_query(name,
+                    dict_get_notype_query_skeleton.format(**locals()),
+                    type, 'dictGet' + type)
+                test_query(name,
                     dict_get_or_default_query_skeleton.format(**locals()),
+                    type + 'OrDefault', 'dictGet' + type + 'OrDefault')
+                test_query(name,
+                    dict_get_notype_or_default_query_skeleton.format(**locals()),
                     type + 'OrDefault', 'dictGet' + type + 'OrDefault')
 
         # query dictGetHierarchy, dictIsIn

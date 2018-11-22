@@ -42,6 +42,11 @@
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 
+#if defined(__linux__)
+#include <Common/hasLinuxCapability.h>
+#include <sys/mman.h>
+#endif
+
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
@@ -61,6 +66,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -124,6 +130,32 @@ int Server::main(const std::vector<std::string> & /*args*/)
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
+
+    const auto memory_amount = getMemoryAmount();
+
+#if defined(__linux__)
+    /// After full config loaded
+    {
+        if (config().getBool("mlock_executable", false))
+        {
+            if (hasLinuxCapability(CAP_IPC_LOCK))
+            {
+                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
+                else
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
+            }
+            else
+            {
+                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.");
+            }
+        }
+    }
+#endif
 
     std::string path = getCanonicalPath(config().getString("path"));
     std::string default_database = config().getString("default_database", "default");
@@ -599,7 +631,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
                 << " threads = " <<  std::thread::hardware_concurrency() << ".";
