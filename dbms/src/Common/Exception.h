@@ -23,8 +23,8 @@ class Exception : public Poco::Exception
 {
 public:
     Exception() {}  /// For deferred initialization.
-    Exception(const std::string & msg, int code = 0) : Poco::Exception(msg, code) {}
-    Exception(const std::string & msg, const Exception & nested_exception, int code = 0)
+    Exception(const std::string & msg, int code) : Poco::Exception(msg, code) {}
+    Exception(const std::string & msg, const Exception & nested_exception, int code)
         : Poco::Exception(msg, nested_exception, code), trace(nested_exception.trace) {}
     explicit Exception(const Poco::Exception & exc) : Poco::Exception(exc.displayText(), ErrorCodes::POCO_EXCEPTION) {}
 

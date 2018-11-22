@@ -18,6 +18,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+    extern const int BAD_ARGUMENTS;
+}
+
 static String getSchemaPath(const String & schema_dir, const String & schema_file)
 {
     return schema_dir + escapeForFileName(schema_file) + ".capnp";
@@ -42,7 +48,7 @@ Field convertNodeToField(capnp::DynamicValue::Reader value)
     switch (value.getType())
     {
         case capnp::DynamicValue::UNKNOWN:
-            throw Exception("Unknown field type");
+            throw Exception("Unknown field type", ErrorCodes::BAD_TYPE_OF_FIELD);
         case capnp::DynamicValue::VOID:
             return Field();
         case capnp::DynamicValue::BOOL:
@@ -87,9 +93,9 @@ Field convertNodeToField(capnp::DynamicValue::Reader value)
             return field;
         }
         case capnp::DynamicValue::CAPABILITY:
-            throw Exception("CAPABILITY type not supported");
+            throw Exception("CAPABILITY type not supported", ErrorCodes::BAD_TYPE_OF_FIELD);
         case capnp::DynamicValue::ANY_POINTER:
-            throw Exception("ANY_POINTER type not supported");
+            throw Exception("ANY_POINTER type not supported", ErrorCodes::BAD_TYPE_OF_FIELD);
     }
     return Field();
 }
@@ -290,7 +296,8 @@ void registerInputFormatCapnProto(FormatFactory & factory)
         auto schema_and_root = context.getSettingsRef().format_schema.toString();
         boost::split(tokens, schema_and_root, boost::is_any_of(":"));
         if (tokens.size() != 2)
-            throw Exception("Format CapnProto requires 'format_schema' setting to have a schema_file:root_object format, e.g. 'schema.capnp:Message'");
+            throw Exception("Format CapnProto requires 'format_schema' setting to have a schema_file:root_object format, e.g. 'schema.capnp:Message'",
+                ErrorCodes::BAD_ARGUMENTS);
 
         const String & schema_dir = context.getFormatSchemaPath();
 
