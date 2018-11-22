@@ -272,8 +272,7 @@ struct ODBCBridgeMixin
 
         std::stringstream command;
 
-#if CLICKHOUSE_SPLIT_BINARY
-#else
+#if !CLICKHOUSE_SPLIT_BINARY
         cmd_args.push_back("odbc-bridge");
 #endif
 
