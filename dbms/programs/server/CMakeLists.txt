@@ -10,12 +10,16 @@ add_library (clickhouse-server-lib ${LINK_MODE}
     TCPHandler.cpp
     )
 
-target_link_libraries (clickhouse-server-lib clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+target_link_libraries (clickhouse-server-lib PRIVATE clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
+if (USE_POCO_NETSSL)
+    target_link_libraries (clickhouse-server-lib PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+endif ()
+
 target_include_directories (clickhouse-server-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-server clickhouse-server.cpp)
-    target_link_libraries (clickhouse-server clickhouse-server-lib)
+    target_link_libraries (clickhouse-server PRIVATE clickhouse-server-lib)
     install (TARGETS clickhouse-server ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()
 
