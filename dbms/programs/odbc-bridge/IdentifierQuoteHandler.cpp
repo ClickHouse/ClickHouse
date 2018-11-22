@@ -2,9 +2,9 @@
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
 #if USE_POCO_SQLODBC
-#include <Poco/SQL/ODBC/ODBCException.h>
-#include <Poco/SQL/ODBC/SessionImpl.h>
-#include <Poco/SQL/ODBC/Utility.h>
+#include <Poco/SQL/ODBC/ODBCException.h> // Y_IGNORE
+#include <Poco/SQL/ODBC/SessionImpl.h> // Y_IGNORE
+#include <Poco/SQL/ODBC/Utility.h> // Y_IGNORE
 #define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
 #endif
 #if USE_POCO_DATAODBC

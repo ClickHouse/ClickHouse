@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=18.14.8
+ARG version=18.14.9
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
@@ -26,4 +26,4 @@ ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
 
-CMD ["/usr/bin/clickhouse-client"]
+ENTRYPOINT ["/usr/bin/clickhouse-client"]

@@ -9,7 +9,7 @@
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
-#include <iostream>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -22,9 +22,9 @@ namespace ErrorCodes
 
 
 QueryNormalizer::QueryNormalizer(ASTPtr & query, const QueryNormalizer::Aliases & aliases,
-                                 const Settings & settings, const Names & all_column_names,
+                                 ExtractedSettings && settings_, const Names & all_column_names,
                                  const TableNamesAndColumnNames & table_names_and_column_names)
-    : query(query), aliases(aliases), settings(settings), all_column_names(all_column_names),
+    : query(query), aliases(aliases), settings(settings_), all_column_names(all_column_names),
       table_names_and_column_names(table_names_and_column_names)
 {
 }
@@ -52,7 +52,7 @@ void QueryNormalizer::perform()
 void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
 {
     if (level > settings.max_ast_depth)
-        throw Exception("Normalized AST is too deep. Maximum: " + settings.max_ast_depth.toString(), ErrorCodes::TOO_DEEP_AST);
+        throw Exception("Normalized AST is too deep. Maximum: " + toString(settings.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
 
     if (finished_asts.count(ast))
     {

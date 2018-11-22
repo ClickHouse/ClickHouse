@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
 
@@ -67,7 +68,7 @@ namespace ErrorCodes
 }
 
 
-MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(MergeTreeData & data_)
+MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & data_)
     : data(data_), log(&Logger::get(data.getLogName() + " (SelectExecutor)"))
 {
 }
@@ -137,11 +138,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Context & context,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read) const
+    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     return readFromParts(
         data.getDataPartsVector(), column_names_to_return, query_info, context,
-        max_block_size, num_streams, max_block_number_to_read);
+        max_block_size, num_streams, max_block_numbers_to_read);
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
@@ -151,7 +152,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Context & context,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read) const
+    const PartitionIdToMaxBlock * max_block_numbers_to_read) const
 {
     size_t part_index = 0;
 
@@ -193,10 +194,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
 
-    NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
-    for (const auto & name : virt_column_names)
-        available_real_and_virtual_columns.emplace_back(data.getColumn(name));
-
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
@@ -213,9 +210,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     const Settings & settings = context.getSettingsRef();
     Names primary_sort_columns = data.getPrimarySortColumns();
 
-    KeyCondition key_condition(
-        query_info, context, available_real_and_virtual_columns,
-        primary_sort_columns, data.getPrimaryExpression());
+    KeyCondition key_condition(query_info, context, primary_sort_columns, data.getPrimaryExpression());
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
@@ -231,9 +226,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     std::optional<KeyCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
-        minmax_idx_condition.emplace(
-            query_info, context, available_real_and_virtual_columns,
-            data.minmax_idx_columns, data.minmax_idx_expr);
+        minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
 
         if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
         {
@@ -271,8 +264,12 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
-            if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
-                continue;
+            if (max_block_numbers_to_read)
+            {
+                auto blocks_iterator = max_block_numbers_to_read->find(part->info.partition_id);
+                if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
+                    continue;
+            }
 
             parts.push_back(part);
         }
@@ -490,7 +487,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                 filter_function->children.push_back(filter_function->arguments);
             }
 
-            filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
+            ASTPtr query = filter_function;
+            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, available_real_columns);
+            filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
             /// Add columns needed for `sampling_expression` to `column_names_to_read`.
             std::vector<String> add_columns = filter_expression->getRequiredColumns();
@@ -651,7 +650,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
         /// Let's estimate total number of rows for progress bar.
         const size_t total_rows = data.index_granularity * sum_marks;
-        LOG_TRACE(log, "Reading approx. " << total_rows << " rows");
+        LOG_TRACE(log, "Reading approx. " << total_rows << " rows with " << num_streams << " streams");
 
         for (size_t i = 0; i < num_streams; ++i)
         {
@@ -681,6 +680,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
             while (need_marks > 0 && !parts.empty())
             {
                 RangesInDataPart part = parts.back();
+                parts.pop_back();
+
                 size_t & marks_in_part = sum_marks_in_parts.back();
 
                 /// We will not take too few rows from a part.
@@ -704,7 +705,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                     ranges_to_get_from_part = part.ranges;
 
                     need_marks -= marks_in_part;
-                    parts.pop_back();
                     sum_marks_in_parts.pop_back();
                 }
                 else
@@ -727,6 +727,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                         if (range.begin == range.end)
                             part.ranges.pop_back();
                     }
+                    parts.emplace_back(part);
                 }
 
                 BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
@@ -837,7 +838,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     auto function = std::make_shared<ASTFunction>();
     auto arguments = std::make_shared<ASTExpressionList>();
     auto sign = std::make_shared<ASTIdentifier>(data.merging_params.sign_column);
-    auto one = std::make_shared<ASTLiteral>(Field(static_cast<Int64>(1)));
+    auto one = std::make_shared<ASTLiteral>(1);
 
     function->name = "equals";
     function->arguments = arguments;
@@ -846,7 +847,9 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(sign);
     arguments->children.push_back(one);
 
-    out_expression = ExpressionAnalyzer(function, context, {}, data.getColumns().getAllPhysical()).getActions(false);
+    ASTPtr query = function;
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, data.getColumns().getAllPhysical());
+    out_expression = ExpressionAnalyzer(query, syntax_result, context).getActions(false);
     out_column = function->getColumnName();
 }
 

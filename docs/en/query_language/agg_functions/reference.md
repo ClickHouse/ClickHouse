@@ -9,6 +9,8 @@ The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate f
 
 A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
+<a name="agg_function-any"></a>
+
 ## any(x)
 
 Selects the first encountered value.
@@ -51,6 +53,135 @@ FROM ontime
 Selects the last value encountered.
 The result is just as indeterminate as for the `any` function.
 
+##groupBitAnd
+
+Applies bitwise `AND` for series of numbers.
+
+```
+groupBitAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitAnd(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+00000100 = 4
+```
+
+##groupBitOr
+
+Applies bitwise `OR` for series of numbers.
+
+```
+groupBitOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitOr(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01111101 = 125
+```
+
+##groupBitXor
+
+Applies bitwise `XOR` for series of numbers.
+
+```
+groupBitXor(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitXor(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01101000 = 104
+```
+
 ## min(x)
 
 Calculates the minimum.
@@ -82,6 +213,8 @@ SELECT argMin(user, salary) FROM salary
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
+<a name="agg_function-sum"></a>
+
 ## sum(x)
 
 Calculates the sum.
@@ -92,6 +225,8 @@ Only works for numbers.
 Computes the sum of the numbers, using the same data type for the result as for the input parameters. If the sum exceeds the maximum value for this data type, the function returns an error.
 
 Only works for numbers.
+
+<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -134,6 +269,8 @@ GROUP BY timeslot
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
+
+<a name="agg_function-uniq"></a>
 
 ## uniq(x)
 
@@ -204,14 +341,14 @@ Creates an array from different argument values. Memory consumption is the same 
 
 ## quantile(level)(x)
 
-Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1.
-We recommend using a 'level' value in the range of 0.01..0.99
-Don't use a 'level' value equal to 0 or 1 – use the 'min' and 'max' functions for these cases.
+Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
+We recommend using a `level` value in the range of `[0.01, 0.99]`
+Don't use a `level` value equal to 0 or 1 – use the `min` and `max` functions for these cases.
 
-In this function, as well as in all functions for calculating quantiles, the 'level' parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
+In this function, as well as in all functions for calculating quantiles, the `level` parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
 
 Works for numbers, dates, and dates with times.
-Returns: for numbers – Float64; for dates – a date; for dates with times – a date with time.
+Returns: for numbers – `Float64`; for dates – a date; for dates with times – a date with time.
 
 Uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192.
 If necessary, the result is output with linear approximation from the two neighboring values.
@@ -270,7 +407,7 @@ A hash table is used as the algorithm. Because of this, if the passed values ​
 
 Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
 
-The performance of the function is lower than for `quantile`, `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than for `quantile` or `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 

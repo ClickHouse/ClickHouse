@@ -1,4 +1,4 @@
-if (OS_LINUX AND NOT SANITIZE)
+if (OS_LINUX AND NOT SANITIZE AND NOT ARCH_ARM)
     set(ENABLE_JEMALLOC_DEFAULT 1)
 else ()
     set(ENABLE_JEMALLOC_DEFAULT 0)
@@ -23,8 +23,9 @@ if (ENABLE_JEMALLOC)
         find_package (JeMalloc)
     endif ()
 
-    if (NOT JEMALLOC_LIBRARIES AND NOT MISSING_INTERNAL_JEMALLOC_LIBRARY)
+    if ((NOT JEMALLOC_LIBRARIES OR NOT JEMALLOC_INCLUDE_DIR) AND NOT MISSING_INTERNAL_JEMALLOC_LIBRARY)
         set (JEMALLOC_LIBRARIES "jemalloc")
+        set (JEMALLOC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc-cmake/include" "${ClickHouse_SOURCE_DIR}/contrib/jemalloc-cmake/include_linux_x86_64")
         set (USE_INTERNAL_JEMALLOC_LIBRARY 1)
     endif ()
 
@@ -38,5 +39,5 @@ if (ENABLE_JEMALLOC)
         message (FATAL_ERROR "ENABLE_JEMALLOC is set to true, but it cannot be used with sanitizers")
     endif ()
 
-    message (STATUS "Using jemalloc=${USE_JEMALLOC}: ${JEMALLOC_LIBRARIES}")
+    message (STATUS "Using jemalloc=${USE_JEMALLOC}: ${JEMALLOC_INCLUDE_DIR} : ${JEMALLOC_LIBRARIES}")
 endif ()

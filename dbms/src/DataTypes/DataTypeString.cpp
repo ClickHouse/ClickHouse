@@ -177,7 +177,7 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
     ColumnString::Chars_t & data = column_string.getChars();
     ColumnString::Offsets & offsets = column_string.getOffsets();
 
-    double avg_chars_size;
+    double avg_chars_size = 1; /// By default reserve only for empty strings.
 
     if (avg_value_size_hint && avg_value_size_hint > sizeof(offsets[0]))
     {
@@ -186,13 +186,25 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 
         avg_chars_size = (avg_value_size_hint - sizeof(offsets[0])) * avg_value_size_hint_reserve_multiplier;
     }
-    else
-    {
-        /// By default reserve only for empty strings.
-        avg_chars_size = 1;
-    }
 
-    data.reserve(data.size() + std::ceil(limit * avg_chars_size));
+    size_t size_to_reserve = data.size() + std::ceil(limit * avg_chars_size);
+
+    /// Never reserve for too big size.
+    if (size_to_reserve < 256 * 1024 * 1024)
+    {
+        try
+        {
+            data.reserve(size_to_reserve);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(
+                "(avg_value_size_hint = " + toString(avg_value_size_hint)
+                + ", avg_chars_size = " + toString(avg_chars_size)
+                + ", limit = " + toString(limit) + ")");
+            throw;
+        }
+    }
 
     offsets.reserve(offsets.size() + limit);
 

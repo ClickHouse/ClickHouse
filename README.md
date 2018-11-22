@@ -8,7 +8,3 @@ ClickHouse is an open-source column-oriented database management system that all
 * [Tutorial](https://clickhouse.yandex/tutorial.html) shows how to set up and query small ClickHouse cluster.
 * [Documentation](https://clickhouse.yandex/docs/en/) provides more in-depth information.
 * [Contacts](https://clickhouse.yandex/#contacts) can help to get your questions answered if there are any.
-
-## Upcoming Meetups
-
-* [Beijing on October 28](http://www.clickhouse.com.cn/topic/5ba0e3f99d28dfde2ddc62a1)

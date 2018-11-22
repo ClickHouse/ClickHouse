@@ -4,7 +4,6 @@
 
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Common/typeid_cast.h>
 

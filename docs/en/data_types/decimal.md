@@ -4,7 +4,7 @@
 
 Signed fixed point numbers that keep precision during add, subtract and multiply operations. For division least significant digits are discarded (not rounded).
 
-## Параметры
+## Parameters
 
 - P - precision. Valid range: [ 1 : 38 ]. Determines how many decimal digits number can have (including fraction).
 - S - scale. Valid range: [ 0 : P ]. Determines how many decimal digits fraction can have.

@@ -29,7 +29,7 @@ BlockInputStreams StorageSystemOne::read(
 
     return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
         Block{ColumnWithTypeAndName(
-            DataTypeUInt8().createColumnConst(1, UInt64(0))->convertToFullColumnIfConst(),
+            DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst(),
             std::make_shared<DataTypeUInt8>(),
             "dummy")}));
 }

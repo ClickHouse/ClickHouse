@@ -42,10 +42,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
 class Benchmark
@@ -170,7 +168,7 @@ private:
         }
 
         if (queries.empty())
-            throw Exception("Empty list of queries.");
+            throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
 
         std::cerr << "Loaded " << queries.size() << " queries.\n";
     }

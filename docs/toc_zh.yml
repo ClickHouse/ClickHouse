@@ -7,15 +7,15 @@ nav:
   - '性能': 'introduction/performance.md'
   - 'Yandex.Metrica使用案例': 'introduction/ya_metrika_task.md'
 
-- '起步':
+- '入门指南':
   - '部署运行': 'getting_started/index.md'
   - '示例数据集':
-    - 'OnTime': 'getting_started/example_datasets/ontime.md'
-    - 'New York Taxi data': 'getting_started/example_datasets/nyc_taxi.md'
-    - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
-    - 'WikiStat': 'getting_started/example_datasets/wikistat.md'
-    - 'Terabyte click logs from Criteo': 'getting_started/example_datasets/criteo.md'
-    - 'Star Schema Benchmark': 'getting_started/example_datasets/star_schema.md'
+    - '航班飞行数据': 'getting_started/example_datasets/ontime.md'
+    - '纽约市出租车数据': 'getting_started/example_datasets/nyc_taxi.md'
+    - 'AMPLab大数据基准测试': 'getting_started/example_datasets/amplab_benchmark.md'
+    - '维基访问数据': 'getting_started/example_datasets/wikistat.md'
+    - 'Criteo TB级别点击日志': 'getting_started/example_datasets/criteo.md'
+    - 'Star Schema基准测试': 'getting_started/example_datasets/star_schema.md'
 
 - '客户端':
   - '介绍': 'interfaces/index.md'
@@ -157,6 +157,7 @@ nav:
     - 'Server settings': 'operations/server_settings/settings.md'
   - 'Settings':
     - 'Introduction': 'operations/settings/index.md'
+    - 'Permissions for queries': 'operations/settings/permissions_for_queries.md'
     - 'Restrictions on query complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'

@@ -8,7 +8,7 @@ Checks whether the argument is [NULL](../syntax.md#null-literal).
 isNull(x)
 ```
 
-**Parameters:**
+**Parameters**
 
 - `x` — A value with a non-compound data type.
 

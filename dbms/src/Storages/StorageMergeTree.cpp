@@ -114,7 +114,7 @@ BlockInputStreams StorageMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, 0);
+    return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
@@ -771,8 +771,55 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
+void StorageMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+{
+    for (const PartitionCommand & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                checkPartitionCanBeDropped(command.partition);
+                dropPartition(command.partition, command.detach, context);
+                break;
 
-void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & partition, bool detach, const Context & context)
+            case PartitionCommand::ATTACH_PARTITION:
+                attachPartition(command.partition, command.part, context);
+                break;
+
+            case PartitionCommand::REPLACE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+            }
+            break;
+
+            case PartitionCommand::FREEZE_PARTITION:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezePartition(command.partition, command.with_name, context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_COLUMN:
+                clearColumnInPartition(command.partition, command.column_name, context);
+                break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezeAll(command.with_name, context);
+            }
+            break;
+
+            default:
+                IStorage::partition(query, commands, context); // should throw an exception.
+        }
+    }
+}
+
+void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, const Context & context)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -806,6 +853,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & pa
 
 void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, const Context & context)
 {
+    // TODO: should get some locks to prevent race with 'alter … modify column'
+
     String partition_id;
 
     if (part)
@@ -856,11 +905,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 
     /// New parts with other data may appear in place of deleted parts.
     context.dropCaches();
-}
-
-void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    data.freezePartition(partition, with_name, context);
 }
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
@@ -936,6 +980,36 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
         return merger_mutator.actions_blocker.cancel();
 
     return {};
+}
+
+Names StorageMergeTree::getSamplingExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.sampling_expression;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.begin(), names.end());
+}
+
+Names StorageMergeTree::getPrimaryExpressionNames() const
+{
+    return data.getPrimarySortColumns();
+}
+
+Names StorageMergeTree::getPartitionExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.partition_expr_ast;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.cbegin(), names.cend());
+}
+
+Names StorageMergeTree::getOrderExpressionNames() const
+{
+    return data.getSortColumns();
 }
 
 }

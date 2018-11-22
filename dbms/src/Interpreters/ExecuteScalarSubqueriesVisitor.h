@@ -1,16 +1,17 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Parsers/DumpASTNode.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {
 
-class Context;
-class ASTSubquery;
-class ASTFunction;
-struct ASTTableExpression;
-
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /** Replace subqueries that return exactly one row
     * ("scalar" subqueries) to the corresponding constants.
@@ -40,11 +41,9 @@ public:
 
     void visit(ASTPtr & ast) const
     {
-        DumpASTNode dump(*ast, ostr, visit_depth, "executeScalarSubqueries");
-
-        if (!tryVisit<ASTSubquery>(ast, dump) &&
-            !tryVisit<ASTTableExpression>(ast, dump) &&
-            !tryVisit<ASTFunction>(ast, dump))
+        if (!tryVisit<ASTSubquery>(ast) &&
+            !tryVisit<ASTTableExpression>(ast) &&
+            !tryVisit<ASTFunction>(ast))
             visitChildren(ast);
     }
 
@@ -54,9 +53,9 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
 
-    void visit(ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode & dump) const;
-    void visit(ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const;
-    void visit(ASTTableExpression *, ASTPtr &, const DumpASTNode &) const;
+    void visit(const ASTSubquery & subquery, ASTPtr & ast) const;
+    void visit(const ASTFunction & func, ASTPtr & ast) const;
+    void visit(const ASTTableExpression &, ASTPtr &) const;
 
     void visitChildren(ASTPtr & ast) const
     {
@@ -65,11 +64,12 @@ private:
     }
 
     template <typename T>
-    bool tryVisit(ASTPtr & ast, const DumpASTNode & dump) const
+    bool tryVisit(ASTPtr & ast) const
     {
-        if (T * t = typeid_cast<T *>(ast.get()))
+        if (const T * t = typeid_cast<const T *>(ast.get()))
         {
-            visit(t, ast, dump);
+            DumpASTNode dump(*ast, ostr, visit_depth, "executeScalarSubqueries");
+            visit(*t, ast);
             return true;
         }
         return false;
