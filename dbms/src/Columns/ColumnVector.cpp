@@ -311,8 +311,8 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min);
-    max = typename NearestFieldType<T>::Type(cur_max);
+    min = NearestFieldType<T>(cur_min);
+    max = NearestFieldType<T>(cur_max);
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.
