@@ -1,3 +1,8 @@
+## ClickHouse release 18.14.15, 2018-11-21
+
+### Bug fixes:
+* The size of memory chunk was overestimated while deserializing the column of type `Array(String)` that leads to "Memory limit exceeded" errors. The issue appeared in version 18.12.13. [#3589](https://github.com/yandex/ClickHouse/issues/3589)
+
 ## ClickHouse release 18.14.14, 2018-11-20
 
 ### Bug fixes:
