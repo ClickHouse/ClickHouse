@@ -1,6 +1,7 @@
+#include "FileDictionarySource.h"
+
 #include <Interpreters/Context.h>
 #include <DataStreams/OwningBlockInputStream.h>
-#include <Dictionaries/FileDictionarySource.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/File.h>
 

@@ -1,13 +1,13 @@
-#include <Dictionaries/DictionarySourceFactory.h>
+#include "DictionarySourceFactory.h"
 
 #include <Core/Block.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/FileDictionarySource.h>
-#include <Dictionaries/ClickHouseDictionarySource.h>
-#include <Dictionaries/ExecutableDictionarySource.h>
-#include <Dictionaries/HTTPDictionarySource.h>
-#include <Dictionaries/LibraryDictionarySource.h>
-#include <Dictionaries/XDBCDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "FileDictionarySource.h"
+#include "ClickHouseDictionarySource.h"
+#include "ExecutableDictionarySource.h"
+#include "HTTPDictionarySource.h"
+#include "LibraryDictionarySource.h"
+#include "XDBCDictionarySource.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -20,13 +20,13 @@
 
 #include <Common/config.h>
 #if USE_POCO_MONGODB
-    #include <Dictionaries/MongoDBDictionarySource.h>
+    #include "MongoDBDictionarySource.h"
 #endif
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     #include <Poco/Data/ODBC/Connector.h>
 #endif
 #if USE_MYSQL
-    #include <Dictionaries/MySQLDictionarySource.h>
+    #include "MySQLDictionarySource.h"
 #endif
 
 #include <Poco/Logger.h>
@@ -120,6 +120,8 @@ DictionarySourcePtr DictionarySourceFactory::create(
 
     const auto & source_type = keys.front();
 
+DUMP(source_type);
+
     if ("file" == source_type)
     {
         if (dict_struct.has_expressions)
@@ -129,7 +131,9 @@ DictionarySourcePtr DictionarySourceFactory::create(
         const auto format = config.getString(config_prefix + ".file.format");
         return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);
     }
-    else if ("mysql" == source_type)
+    else 
+
+    if ("mysql" == source_type)
     {
 #if USE_MYSQL
         return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
@@ -191,9 +195,11 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else
     {
+DUMP("FIND!");
         const auto found = registered_sources.find(source_type);
         if (found != registered_sources.end())
         {
+DUMP("FOUND!");
             const auto & create_source = found->second;
             return create_source(dict_struct, config, config_prefix, sample_block, context);
         }
