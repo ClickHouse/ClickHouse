@@ -108,14 +108,14 @@ void Connection::connect()
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
