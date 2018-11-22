@@ -107,8 +107,26 @@ public:
         active_threads = max_threads;
         threads.reserve(max_threads);
         auto thread_group = CurrentThread::getGroup();
-        for (size_t i = 0; i < max_threads; ++i)
-            threads.emplace_back([=] () { thread(thread_group, i); } );
+
+        try
+        {
+            for (size_t i = 0; i < max_threads; ++i)
+                threads.emplace_back([=] () { thread(thread_group, i); } );
+        }
+        catch (...)
+        {
+            cancel(false);
+            wait();
+            if (active_threads)
+            {
+                active_threads = 0;
+                /// handler.onFinish() is supposed to be called from one of the threads when the number of
+                /// finished threads reaches max_threads. But since we weren't able to launch all threads,
+                /// we have to call onFinish() manually here.
+                handler.onFinish();
+            }
+            throw;
+        }
     }
 
     /// Ask all sources to stop earlier than they run out.
