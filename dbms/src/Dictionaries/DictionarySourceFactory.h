@@ -30,7 +30,7 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block,
-        const Context & context)>;
+        Context & context)>;
 
     DictionarySourceFactory();
 

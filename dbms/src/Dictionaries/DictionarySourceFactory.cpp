@@ -2,12 +2,6 @@
 
 #include <Core/Block.h>
 #include "DictionaryStructure.h"
-#include "FileDictionarySource.h"
-#include "ClickHouseDictionarySource.h"
-#include "ExecutableDictionarySource.h"
-#include "HTTPDictionarySource.h"
-#include "LibraryDictionarySource.h"
-#include "XDBCDictionarySource.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -19,14 +13,8 @@
 #include <mutex>
 
 #include <Common/config.h>
-#if USE_POCO_MONGODB
-    #include "MongoDBDictionarySource.h"
-#endif
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     #include <Poco/Data/ODBC/Connector.h>
-#endif
-#if USE_MYSQL
-    #include "MySQLDictionarySource.h"
 #endif
 
 #include <Poco/Logger.h>
@@ -122,6 +110,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
 
 DUMP(source_type);
 
+/*
     if ("file" == source_type)
     {
         if (dict_struct.has_expressions)
@@ -132,7 +121,8 @@ DUMP(source_type);
         return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);
     }
     else 
-
+*/
+/*
     if ("mysql" == source_type)
     {
 #if USE_MYSQL
@@ -194,6 +184,7 @@ DUMP(source_type);
         return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context);
     }
     else
+*/
     {
 DUMP("FIND!");
         const auto found = registered_sources.find(source_type);
