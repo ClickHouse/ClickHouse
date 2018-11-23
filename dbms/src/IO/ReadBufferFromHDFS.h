@@ -43,7 +43,7 @@ namespace DB
 
                 if (fs == nullptr)
                 {
-                    throw Exception("Unable to connect to HDFS:" + String(hdfsGetLastError()));
+                    throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()));
                 }
 
                 fin = hdfsOpenFile(fs, path.c_str(), O_RDONLY, 0, 0, 0);
