@@ -31,7 +31,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    cmd = "docker run --privileged --volume={bin}:/clickhouse --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img}".format(
+    cmd = "docker run --net=host --privileged --volume={bin}:/clickhouse \
+        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img}".format(
         bin=args.binary,
         cfg=args.configs_dir,
         pth=args.clickhouse_root,
