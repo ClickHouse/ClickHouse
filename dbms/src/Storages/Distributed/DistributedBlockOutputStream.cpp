@@ -54,6 +54,7 @@ namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
+    extern const int CANNOT_LINK;
 }
 
 
@@ -196,7 +197,8 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block]()
     {
-        CurrentThread::attachToIfDetached(thread_group);
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;
@@ -556,7 +558,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path);
+            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path, ErrorCodes::CANNOT_LINK);
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads

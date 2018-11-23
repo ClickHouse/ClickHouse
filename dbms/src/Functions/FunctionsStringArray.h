@@ -145,7 +145,7 @@ public:
         String sep_str = col->getValue<String>();
 
         if (sep_str.size() != 1)
-            throw Exception("Illegal separator for function " + getName() + ". Must be exactly one byte.");
+            throw Exception("Illegal separator for function " + getName() + ". Must be exactly one byte.", ErrorCodes::BAD_ARGUMENTS);
 
         sep = sep_str[0];
     }

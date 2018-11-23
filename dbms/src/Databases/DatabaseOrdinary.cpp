@@ -392,7 +392,7 @@ void DatabaseOrdinary::renameTable(
     catch (const Poco::Exception & e)
     {
         /// Better diagnostics.
-        throw Exception{e};
+        throw Exception{Exception::CreateFromPoco, e};
     }
 
     ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));

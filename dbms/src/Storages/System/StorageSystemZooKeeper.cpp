@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 {
@@ -103,7 +108,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
 {
     String path = extractPath(query_info.query);
     if (path.empty())
-        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
+        throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
     zkutil::ZooKeeperPtr zookeeper = context.getZooKeeper();
 

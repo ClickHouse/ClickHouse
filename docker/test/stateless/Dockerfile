@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM yandex/clickhouse-deb-builder
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \

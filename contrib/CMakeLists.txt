@@ -200,3 +200,7 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
     endif ()
     add_subdirectory(libhdfs3-cmake)
 endif ()
+
+if (USE_BASE64)
+    add_subdirectory (base64-cmake)
+endif()
