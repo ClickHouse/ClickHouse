@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -123,7 +124,7 @@ DayNum stringToDate(const String & s)
 
     readDateText(date, in);
     if (!in.eof())
-        throw Exception("String is too long for Date: " + s);
+        throw Exception("String is too long for Date: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     return date;
 }
@@ -135,7 +136,7 @@ UInt64 stringToDateTime(const String & s)
 
     readDateTimeText(date_time, in);
     if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s);
+        throw Exception("String is too long for DateTime: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     return UInt64(date_time);
 }

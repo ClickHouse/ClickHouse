@@ -6,6 +6,14 @@
 #include <common/logger_useful.h>
 #include <IO/WriteHelpers.h>
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int INCORRECT_DATA;
+    }
+}
+
 
 RegionsNames::RegionsNames(IRegionsNamesDataProviderPtr data_provider)
 {
@@ -76,7 +84,8 @@ void RegionsNames::reload()
                 max_region_id = name_entry.id;
 
                 if (name_entry.id > max_size)
-                    throw DB::Exception("Region id is too large: " + DB::toString(name_entry.id) + ", should be not more than " + DB::toString(max_size));
+                    throw DB::Exception("Region id is too large: " + DB::toString(name_entry.id) + ", should be not more than " + DB::toString(max_size),
+                        DB::ErrorCodes::INCORRECT_DATA);
             }
 
             while (name_entry.id >= new_names_refs.size())

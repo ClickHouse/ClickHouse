@@ -56,6 +56,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Revision;
+    extern const Metric VersionInteger;
 }
 
 namespace DB
@@ -67,6 +68,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
 }
 
@@ -75,7 +77,7 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty");
+        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -111,6 +113,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
+    CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...

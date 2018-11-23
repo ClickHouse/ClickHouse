@@ -9,7 +9,7 @@ namespace DB
 class NetException : public Exception
 {
 public:
-    NetException(const std::string & msg, int code = 0) : Exception(msg, code) {}
+    NetException(const std::string & msg, int code) : Exception(msg, code) {}
 
     NetException * clone() const override { return new NetException(*this); }
     void rethrow() const override { throw *this; }
