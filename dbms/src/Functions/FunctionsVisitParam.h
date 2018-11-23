@@ -104,7 +104,7 @@ struct ExtractRaw
             }
             else
             {
-                switch(*pos)
+                switch (*pos)
                 {
                     case '[':
                         expects_end.push_back((current_expect_end = ']'));
