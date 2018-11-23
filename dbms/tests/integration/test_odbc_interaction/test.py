@@ -194,10 +194,15 @@ def test_bridge_dies_with_parent(started_cluster):
     assert clickhouse_pid is not None
     assert bridge_pid is not None
 
-    node1.exec_in_container(["bash", "-c", "kill {}".format(clickhouse_pid)], privileged=True, user='root')
-    node1.exec_in_container(["bash", "-c", "kill {}".format(clickhouse_pid)], privileged=True, user='root')
+    while clickhouse_pid is not None:
+        try:
+            node1.exec_in_container(["bash", "-c", "kill {}".format(clickhouse_pid)], privileged=True, user='root')
+        except:
+            pass
+        clickhouse_pid = get_pid("clickhouse server")
+        time.sleep(1)
 
-    clickhouse_pid = get_pid("clickhouse server")
+    time.sleep(1) # just for sure, that odbc-bridge caught signal
     bridge_pid = get_pid("odbc-bridge")
 
     assert clickhouse_pid is None
