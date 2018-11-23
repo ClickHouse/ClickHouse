@@ -2,7 +2,7 @@
 
 This directory contains tests that involve several ClickHouse instances, custom configs, ZooKeeper, etc.
 
-### Running
+### Running natively
 
 Prerequisites:
 * Ubuntu 14.04 (Trusty) or higher.
@@ -30,6 +30,61 @@ set the following environment variables:
 * `CLICKHOUSE_TESTS_CLIENT_BIN_PATH` to choose the client binary.
 * `CLICKHOUSE_TESTS_BASE_CONFIG_DIR` to choose the directory from which base configs (`config.xml` and
   `users.xml`) are taken.
+  
+### Running with runner script
+
+The only requirement is fresh docker with access to the internet. You can check it with:
+```
+$ docker run ubuntu:14.04 ping github.com
+PING github.com (140.82.118.3) 56(84) bytes of data.
+64 bytes from 140.82.118.3: icmp_seq=1 ttl=53 time=40.1 ms
+64 bytes from 140.82.118.3: icmp_seq=2 ttl=53 time=40.4 ms
+64 bytes from 140.82.118.3: icmp_seq=3 ttl=53 time=40.3 ms
+64 bytes from 140.82.118.3: icmp_seq=4 ttl=53 time=40.1 ms
+
+--- github.com ping statistics ---
+4 packets transmitted, 4 received, 0% packet loss, time 19823ms
+rtt min/avg/max/mdev = 40.157/40.284/40.463/0.278 ms
+```
+
+You can run tests via `./runner` script and pass pytest arguments as last arg:
+```
+$ ./runner.py --binary $HOME/ClickHouse/dbms/programs/clickhouse --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
+Start tests
+============================= test session starts ==============================
+platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
+rootdir: /ClickHouse/dbms/tests/integration, inifile: pytest.ini
+collected 6 items
+
+test_odbc_interaction/test.py Removing network clickhouse_default
+...
+
+Killing roottestodbcinteraction_node1_1     ... done
+Killing roottestodbcinteraction_mysql1_1    ... done
+Killing roottestodbcinteraction_postgres1_1 ... done
+Removing roottestodbcinteraction_node1_1     ... done
+Removing roottestodbcinteraction_mysql1_1    ... done
+Removing roottestodbcinteraction_postgres1_1 ... done
+Removing network roottestodbcinteraction_default
+
+==================== 6 passed, 1 warnings in 95.21 seconds =====================
+
+```
+
+Path to binary and configs maybe specified via env variables:
+```
+$ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/dbms/programs/server/
+$ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse
+$ ./runner.py 'test_odbc_interaction'
+Start tests
+============================= test session starts ==============================
+platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
+rootdir: /ClickHouse/dbms/tests/integration, inifile: pytest.ini
+collected 6 items
+
+test_odbc_interaction/test.py ......                                     [100%]
+==================== 6 passed, 1 warnings in 96.33 seconds =====================
+```
 
 ### Adding new tests
 
