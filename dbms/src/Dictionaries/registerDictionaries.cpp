@@ -19,7 +19,6 @@ namespace DB
 void registerDictionaries()
 {
     {
-        auto & factory = DictionarySourceFactory::instance();
 
         /*
 DB::DictionarySourcePtr CreateTableDictionarySource(
@@ -54,6 +53,7 @@ void RegisterTableDictionarySource(
 }
 */
 
+        auto & factory = DictionarySourceFactory::instance();
         registerDictionarySourceFile(factory);
         registerDictionarySourceMysql(factory);
         registerDictionarySourceClickHouse(factory);
