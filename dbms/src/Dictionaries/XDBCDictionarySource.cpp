@@ -241,11 +241,9 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr {
+                                 Context & context) -> DictionarySourcePtr {
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-        const auto & global_config = context.getConfigRef();
-        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
-            global_config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
         return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
 #else
         throw Exception {"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",

@@ -94,7 +94,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test"):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -113,7 +113,7 @@ class ClickHouseCluster:
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=hostname, env_variables=env_variables, image=image)
+            clickhouse_path_dir, with_odbc_drivers, hostname=hostname, env_variables=env_variables, image=image, stay_alive=stay_alive)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -300,6 +300,10 @@ class ClickHouseCluster:
         self.pre_zookeeper_commands.append(command)
 
 
+CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
+
+CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
+
 DOCKER_COMPOSE_TEMPLATE = '''
 version: '2'
 services:
@@ -313,12 +317,7 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             {odbc_ini_path}
-        entrypoint:
-            -  clickhouse
-            -  server
-            -  --config-file=/etc/clickhouse-server/config.xml
-            -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
-            -  --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
+        entrypoint: {entrypoint_cmd}
         depends_on: {depends_on}
         env_file:
             - {env_file}
@@ -329,7 +328,7 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test"):
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -365,6 +364,7 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0 # 20 sec
         self.image = image
+        self.stay_alive = stay_alive
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
@@ -578,6 +578,11 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = '- ' + self.odbc_ini_path
 
+        entrypoint_cmd = CLICKHOUSE_START_COMMAND
+
+        if self.stay_alive:
+            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
+
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
@@ -592,6 +597,7 @@ class ClickHouseInstance:
                 depends_on=str(depends_on),
                 env_file=env_file,
                 odbc_ini_path=odbc_ini_path,
+                entrypoint_cmd=entrypoint_cmd,
             ))
 
 
