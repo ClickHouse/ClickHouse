@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 
 
 namespace Poco { class Logger; }
@@ -56,5 +56,8 @@ private:
     Block sample_block;
     const Context & context;
 };
+
+class DictionarySourceFactory;
+void registerDictionarySourceExecutable(DictionarySourceFactory & factory);
 
 }

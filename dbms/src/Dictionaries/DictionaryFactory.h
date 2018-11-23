@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
+#include "IDictionary.h"
 #include <Poco/Util/AbstractConfiguration.h>
 #include <ext/singleton.h>
 

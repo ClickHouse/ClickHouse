@@ -1,5 +1,5 @@
-#include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/RangeDictionaryBlockInputStream.h>
+#include "RangeHashedDictionary.h"
+#include "RangeDictionaryBlockInputStream.h"
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/TypeList.h>

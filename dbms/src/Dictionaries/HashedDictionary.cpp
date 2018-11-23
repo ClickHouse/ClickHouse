@@ -1,6 +1,6 @@
 #include <ext/size.h>
-#include <Dictionaries/HashedDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "HashedDictionary.h"
+#include "DictionaryBlockInputStream.h"
 
 namespace DB
 {

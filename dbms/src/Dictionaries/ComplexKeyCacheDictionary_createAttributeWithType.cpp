@@ -1,4 +1,4 @@
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include "ComplexKeyCacheDictionary.h"
 
 namespace DB
 {

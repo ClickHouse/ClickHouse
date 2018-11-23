@@ -2,12 +2,10 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Dictionaries/ExternalResultDescription.h>
-
+#include "ExternalResultDescription.h"
 #include <Poco/Data/Session.h>
 #include <Poco/Data/Statement.h>
 #include <Poco/Data/RecordSet.h>
-
 #include <string>
 
 

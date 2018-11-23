@@ -1,5 +1,5 @@
-#include <Dictionaries/FlatDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "FlatDictionary.h"
+#include "DictionaryBlockInputStream.h"
 #include <IO/WriteHelpers.h>
 
 

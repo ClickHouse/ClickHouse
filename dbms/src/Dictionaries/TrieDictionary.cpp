@@ -3,10 +3,10 @@
 #include <ext/range.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/ByteOrder.h>
-#include <Dictionaries/TrieDictionary.h>
+#include "TrieDictionary.h"
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "DictionaryBlockInputStream.h"
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteIntText.h>

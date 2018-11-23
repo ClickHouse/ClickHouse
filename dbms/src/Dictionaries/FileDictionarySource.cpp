@@ -4,7 +4,8 @@
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Poco/File.h>
-
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
 
 namespace DB
 {
@@ -45,6 +46,25 @@ std::string FileDictionarySource::toString() const
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
     return Poco::File{filename}.getLastModified();
+}
+
+void registerDictionarySourceFile(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & context) -> DictionarySourcePtr {
+        if (dict_struct.has_expressions)
+            throw Exception {"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+
+        const auto filename = config.getString(config_prefix + ".file.path");
+        const auto format = config.getString(config_prefix + ".file.format");
+
+        return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);
+    };
+
+    factory.registerSource("file", createTableSource);
 }
 
 }

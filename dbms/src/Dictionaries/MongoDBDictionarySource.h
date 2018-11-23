@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include <Common/config.h>
+#if USE_POCO_MONGODB
 
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 
 namespace Poco
 {
@@ -78,4 +80,11 @@ private:
     std::shared_ptr<Poco::MongoDB::Connection> connection;
 };
 
+}
+#endif
+
+namespace DB
+{
+class DictionarySourceFactory;
+void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
 }

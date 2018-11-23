@@ -1,21 +1,22 @@
-#include <Common/config.h>
-#if USE_POCO_MONGODB
-#include <Poco/Util/AbstractConfiguration.h>
+#include "DictionarySourceFactory.h" 
+#include "DictionaryStructure.h"
+#include "MongoDBDictionarySource.h"
 
+#if USE_POCO_MONGODB
+
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Database.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Array.h>
 #include <Poco/MongoDB/ObjectId.h>
-
 #include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
-#include <Dictionaries/MongoDBDictionarySource.h>
-#include <Dictionaries/MongoDBBlockInputStream.h>
+#include "MongoDBBlockInputStream.h"
 #include <Common/FieldVisitors.h>
 #include <IO/WriteHelpers.h>
 #include <ext/enumerate.h>
@@ -291,6 +292,31 @@ std::string MongoDBDictionarySource::toString() const
     return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + DB::toString(port);
 }
 
+
+
 }
 
 #endif
+
+namespace DB
+{
+
+void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & /* context */) -> DictionarySourcePtr {
+#if USE_POCO_MONGODB
+        return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+#else
+        throw Exception {"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
+                         ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    };
+    //DB::DictionarySourceFactory::instance()
+    factory.registerSource("mongodb", createTableSource);
+}
+
+}

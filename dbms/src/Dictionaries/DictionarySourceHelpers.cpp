@@ -1,5 +1,5 @@
-#include <Dictionaries/DictionarySourceHelpers.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "DictionarySourceHelpers.h"
+#include "DictionaryStructure.h"
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>

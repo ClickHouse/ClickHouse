@@ -1,7 +1,7 @@
 #include <ext/map.h>
 #include <ext/range.h>
-#include <Dictionaries/ComplexKeyHashedDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "ComplexKeyHashedDictionary.h"
+#include "DictionaryBlockInputStream.h"
 
 
 namespace DB

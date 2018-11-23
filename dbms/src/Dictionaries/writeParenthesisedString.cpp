@@ -1,4 +1,4 @@
-#include <Dictionaries/writeParenthesisedString.h>
+#include "writeParenthesisedString.h"
 
 namespace DB
 {

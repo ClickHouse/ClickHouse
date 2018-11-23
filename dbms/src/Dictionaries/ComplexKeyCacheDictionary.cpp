@@ -1,5 +1,5 @@
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "ComplexKeyCacheDictionary.h"
+#include "DictionaryBlockInputStream.h"
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>

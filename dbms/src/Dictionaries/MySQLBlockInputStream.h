@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Dictionaries/ExternalResultDescription.h>
+#include "ExternalResultDescription.h"
 #include <mysqlxx/Query.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <string>

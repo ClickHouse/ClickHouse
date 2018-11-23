@@ -12,9 +12,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/SmallObjectPool.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 #include <common/StringRef.h>
 #include <ext/bit_cast.h>
 #include <ext/map.h>

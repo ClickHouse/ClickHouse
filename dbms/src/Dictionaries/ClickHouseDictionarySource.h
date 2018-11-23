@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <memory>
@@ -72,4 +72,6 @@ private:
     const std::string load_all_query;
 };
 
+class DictionarySourceFactory;
+void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);
 }

@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Poco/URI.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 #include <common/LocalDateTime.h>
 #include <IO/ConnectionTimeouts.h>
 
@@ -59,5 +59,8 @@ private:
     const Context & context;
     ConnectionTimeouts timeouts;
 };
+
+class DictionarySourceFactory;
+void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
 
 }

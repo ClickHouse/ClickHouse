@@ -1,13 +1,13 @@
-#include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/DictionarySourceFactory.h>
-#include <Dictionaries/FlatDictionary.h>
-#include <Dictionaries/HashedDictionary.h>
-#include <Dictionaries/CacheDictionary.h>
-#include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/ComplexKeyHashedDictionary.h>
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/TrieDictionary.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "DictionaryFactory.h"
+#include "DictionarySourceFactory.h"
+#include "FlatDictionary.h"
+#include "HashedDictionary.h"
+#include "CacheDictionary.h"
+#include "RangeHashedDictionary.h"
+#include "ComplexKeyHashedDictionary.h"
+#include "ComplexKeyCacheDictionary.h"
+#include "TrieDictionary.h"
+#include "DictionaryStructure.h"
 #include <memory>
 
 

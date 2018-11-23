@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/CurrentMetrics.h>
 #include <Columns/ColumnDecimal.h>

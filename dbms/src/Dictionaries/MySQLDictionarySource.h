@@ -1,8 +1,11 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include <Common/config.h>
+#if USE_MYSQL
+
+#include "IDictionarySource.h"
+#include "ExternalQueryBuilder.h"
+#include "DictionaryStructure.h"
 #include <common/LocalDateTime.h>
 #include <mysqlxx/PoolWithFailover.h>
 
@@ -80,4 +83,9 @@ private:
     mutable std::string invalidate_query_response;
 };
 
+class DictionarySourceFactory;
+void registerDictionarySourceMysql(DictionarySourceFactory & factory);
+
 }
+
+#endif

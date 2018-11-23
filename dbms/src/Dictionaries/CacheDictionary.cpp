@@ -11,8 +11,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include <Dictionaries/CacheDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "CacheDictionary.h"
+#include "DictionaryBlockInputStream.h"
 #include <ext/size.h>
 #include <ext/range.h>
 #include <ext/map.h>
