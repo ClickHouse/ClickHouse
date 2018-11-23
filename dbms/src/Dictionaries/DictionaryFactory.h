@@ -32,7 +32,7 @@ public:
         DictionarySourcePtr source_ptr
         )>;
 
-    void registerLayout(const std::string & layout_type, Creator create_source);
+    void registerLayout(const std::string & layout_type, Creator create_layout);
 
 private:
     using LayoutRegistry = std::unordered_map<std::string, Creator>;
