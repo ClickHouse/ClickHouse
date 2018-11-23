@@ -16,6 +16,7 @@
 #include "ComplexKeyHashedDictionary.h"
 #include "ComplexKeyCacheDictionary.h"
 #include "TrieDictionary.h"
+#include "FlatDictionary.h"
 
 namespace DB
 {
@@ -74,6 +75,7 @@ void RegisterTableDictionarySource(
         registerDictionaryComplexKeyHashed(factory);
         registerDictionaryComplexKeyCache(factory);
         registerDictionaryTrie(factory);
+        registerDictionaryFlat(factory);
     }
 
 }
