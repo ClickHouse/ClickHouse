@@ -10,7 +10,7 @@ from helpers.cluster import ClickHouseCluster
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
-node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, image='alesapin/ubuntu_with_odbc', main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml', 'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'])
+node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, image='alesapin/ubuntu_with_odbc', main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml', 'configs/dictionaries/postgres_odbc_hashed_dictionary.xml'], stay_alive=True)
 
 create_table_sql_template =   """
     CREATE TABLE `clickhouse`.`{}` (
@@ -176,3 +176,34 @@ def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     time.sleep(5)
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))") == "world\n"
+
+def test_bridge_dies_with_parent(started_cluster):
+    node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")
+    def get_pid(cmd):
+        output = node1.exec_in_container(["bash", "-c", "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(cmd)], privileged=True, user='root')
+        if output:
+            try:
+                pid = int(output.split('\n')[0].strip())
+                return pid
+            except:
+                return None
+            return None
+
+    clickhouse_pid = get_pid("clickhouse server")
+    bridge_pid = get_pid("odbc-bridge")
+    assert clickhouse_pid is not None
+    assert bridge_pid is not None
+
+    while clickhouse_pid is not None:
+        try:
+            node1.exec_in_container(["bash", "-c", "kill {}".format(clickhouse_pid)], privileged=True, user='root')
+        except:
+            pass
+        clickhouse_pid = get_pid("clickhouse server")
+        time.sleep(1)
+
+    time.sleep(1) # just for sure, that odbc-bridge caught signal
+    bridge_pid = get_pid("odbc-bridge")
+
+    assert clickhouse_pid is None
+    assert bridge_pid is None
