@@ -16,3 +16,4 @@
 #cmakedefine01 USE_POCO_NETSSL
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
 #cmakedefine01 ENABLE_INSERT_INFILE
+#cmakedefine01 USE_BASE64

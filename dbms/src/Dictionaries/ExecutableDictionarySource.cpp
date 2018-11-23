@@ -213,7 +213,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    if(update_field.empty())
+    if (update_field.empty())
         return false;
     else
         return true;

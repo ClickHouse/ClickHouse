@@ -1150,7 +1150,7 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
     SipHash hash;
     hash.update(action.type);
     hash.update(action.is_function_compiled);
-    switch(action.type)
+    switch (action.type)
     {
         case ADD_COLUMN:
             hash.update(action.result_name);

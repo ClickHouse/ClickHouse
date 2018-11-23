@@ -39,7 +39,8 @@
     M(StorageBufferRows, "Number of rows in buffers of Buffer tables") \
     M(StorageBufferBytes, "Number of bytes in buffers of Buffer tables") \
     M(DictCacheRequests, "Number of requests in fly to data sources of dictionaries of cache type.") \
-    M(Revision, "Revision of the server. It is a number incremented for every release or release candidate.") \
+    M(Revision, "Revision of the server. It is a number incremented for every release or release candidate except patch releases.") \
+    M(VersionInteger, "Version of the server in a single integer number in base-1000. For example, version 11.22.33 is translated to 11022033.") \
     M(RWLockWaitingReaders, "Number of threads waiting for read on a table RWLock.") \
     M(RWLockWaitingWriters, "Number of threads waiting for write on a table RWLock.") \
     M(RWLockActiveReaders, "Number of threads holding read lock in a table RWLock.") \

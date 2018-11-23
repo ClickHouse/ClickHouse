@@ -93,27 +93,31 @@ endif ()
 find_package (Threads)
 
 target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
-target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
 target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-target_link_libraries (
-    common
+target_link_libraries (common
+        PRIVATE
     pocoext
+        PUBLIC
+    ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
+        PRIVATE
     ${CCTZ_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
+        PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+        PRIVATE
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)
-    target_link_libraries (common ${RT_LIBRARY})
+    target_link_libraries (common PRIVATE ${RT_LIBRARY})
 endif ()
 
 if (ENABLE_TESTS)

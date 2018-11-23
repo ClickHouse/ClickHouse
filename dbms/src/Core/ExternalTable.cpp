@@ -168,7 +168,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     /// Write data
     data.first->readPrefix();
     output->writePrefix();
-    while(Block block = data.first->read())
+    while (Block block = data.first->read())
         output->write(block);
     data.first->readSuffix();
     output->writeSuffix();

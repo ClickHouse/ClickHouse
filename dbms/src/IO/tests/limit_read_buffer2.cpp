@@ -6,6 +6,15 @@
 #include <IO/ReadHelpers.h>
 
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+}
+
+
 int main(int, char **)
 try
 {
@@ -31,18 +40,18 @@ try
         if (limit_in.count() != 1)
         {
             s << "Failed!, incorrect count(): " << limit_in.count();
-            throw Exception(s.str());
+            throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
         }
 
         if (in.count() != limit_in.count())
         {
             s << "Failed!, incorrect underlying buffer's count(): " << in.count();
-            throw Exception(s.str());
+            throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
         }
         if (src != dst)
         {
             s << "Failed!, incorrect destination value, read: " << dst << ", expected: " << src;
-            throw Exception(s.str());
+            throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
         }
     }
     {
@@ -65,20 +74,20 @@ try
             if (in.count() != 2)
             {
                 s << "Failed!, Incorrect underlying buffer's count: " << in.count() << ", expected: " << 2;
-                throw Exception(s.str());
+                throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
             }
 
             if (limit_in.count() != 1)
             {
                 s << "Failed!, Incorrect count: " << limit_in.count() << ", expected: " << 1;
-                throw Exception(s.str());
+                throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
             }
         }
 
         if (dst != "b")
         {
             s << "Failed!, Incorrect destination value: " << dst << ", expected 'b'";
-            throw Exception(dst);
+            throw Exception(dst, ErrorCodes::LOGICAL_ERROR);
         }
 
         char y;
@@ -86,14 +95,14 @@ try
         if (y != 'c')
         {
             s << "Failed!, Read incorrect value from underlying buffer: " << y << ", expected 'c'";
-            throw Exception(s.str());
+            throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
         }
         while (!in.eof())
             in.ignore();
         if (in.count() != 3)
         {
             s << "Failed!, Incorrect final count from underlying buffer: " << in.count() << ", expected: 3";
-            throw Exception(s.str());
+            throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
         }
     }
 
@@ -110,14 +119,14 @@ try
             if (limit_in.count() != 1)
             {
                 s << "Failed!, Incorrect count: " << limit_in.count() << ", expected: " << 1;
-                throw Exception(s.str());
+                throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
             }
         }
 
         if (in.count() != 1)
         {
             s << "Failed!, Incorrect final count from underlying buffer: " << in.count() << ", expected: 1";
-            throw Exception(s.str());
+            throw Exception(s.str(), ErrorCodes::LOGICAL_ERROR);
         }
     }
 

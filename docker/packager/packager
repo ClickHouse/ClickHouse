@@ -52,7 +52,7 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled):
     result = []
     if package_type == "deb":
         result.append("DEB_CC={}".format(compiler))
@@ -75,6 +75,8 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, di
     elif cache == "distcc":
         result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
 
+    if unbundled:
+        result.append('CMAKE_FLAGS="-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 $CMAKE_FLAGS"')
     return result
 
 if __name__ == "__main__":
@@ -86,6 +88,7 @@ if __name__ == "__main__":
     parser.add_argument("--build-type", choices=("debug", ""), default="")
     parser.add_argument("--compiler", choices=("clang-6.0", "gcc-7", "gcc-8"), default="gcc-7")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
+    parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
     parser.add_argument("--distcc-hosts", nargs="+")
     parser.add_argument("--force-build-image", action="store_true")
@@ -105,6 +108,6 @@ if __name__ == "__main__":
     if not check_image_exists_locally(image_name) or args.force_build_image:
         if not pull_image(image_name) or args.force_build_image:
             build_image(image_name, dockerfile)
-    env_prepared = parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type, args.cache, args.distcc_hosts)
+    env_prepared = parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type, args.cache, args.distcc_hosts, args.unbundled)
     run_image_with_env(image_name, args.output_dir, env_prepared, ch_root)
     logging.info("Output placed into {}".format(args.output_dir))
