@@ -168,13 +168,13 @@
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>59000</port>
+                     <port>9000</port>
                  </replica>
              </shard>
              <shard>
                  <replica>
                      <host>localhost</host>
-                     <port>59000</port>
+                     <port>9000</port>
                  </replica>
              </shard>
          </test_cluster_two_shards_localhost>
