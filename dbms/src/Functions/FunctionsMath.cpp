@@ -33,6 +33,7 @@ void registerFunctionsMath(FunctionFactory & factory)
     factory.registerFunction<FunctionPow>(FunctionFactory::CaseInsensitive);
 
     factory.registerAlias("power", "pow", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("ln", "log", FunctionFactory::CaseInsensitive);
 }
 
 }
