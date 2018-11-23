@@ -3,22 +3,10 @@
 #include <Core/Block.h>
 #include "DictionaryStructure.h"
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/FieldVisitors.h>
-#include <Common/XDBCBridgeHelper.h>
 #include <Columns/ColumnsNumber.h>
-#include <IO/HTTPCommon.h>
-#include <memory>
-#include <mutex>
-
-#include <Common/config.h>
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-    #include <Poco/Data/ODBC/Connector.h>
-#endif
-
+#include <Core/ColumnWithTypeAndName.h>
 #include <Poco/Logger.h>
-
 #include <common/logger_useful.h>
 
 namespace DB
@@ -82,9 +70,6 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 DictionarySourceFactory::DictionarySourceFactory()
     : log(&Poco::Logger::get("DictionarySourceFactory"))
 {
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-    Poco::Data::ODBC::Connector::registerConnector();
-#endif
 }
 
 void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
@@ -108,89 +93,10 @@ DictionarySourcePtr DictionarySourceFactory::create(
 
     const auto & source_type = keys.front();
 
-DUMP(source_type);
-
-/*
-    if ("file" == source_type)
     {
-        if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
-
-        const auto filename = config.getString(config_prefix + ".file.path");
-        const auto format = config.getString(config_prefix + ".file.format");
-        return std::make_unique<FileDictionarySource>(filename, format, sample_block, context);
-    }
-    else 
-*/
-/*
-    if ("mysql" == source_type)
-    {
-#if USE_MYSQL
-        return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
-#else
-        throw Exception{"Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.",
-            ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-    }
-    else if ("clickhouse" == source_type)
-    {
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse",
-            sample_block, context);
-    }
-    else if ("mongodb" == source_type)
-    {
-#if USE_POCO_MONGODB
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
-#else
-        throw Exception{"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
-            ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-    }
-    else if ("odbc" == source_type)
-    {
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-        const auto & global_config = context.getConfigRef();
-        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(global_config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
-        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
-#else
-        throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
-            ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-    }
-    else if ("jdbc" == source_type)
-    {
-        throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-//        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
-//        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
-    }
-    else if ("executable" == source_type)
-    {
-        if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
-
-        return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
-    }
-    else if ("http" == source_type)
-    {
-
-        if (dict_struct.has_expressions)
-            throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
-
-        return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
-    }
-    else if ("library" == source_type)
-    {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context);
-    }
-    else
-*/
-    {
-DUMP("FIND!");
         const auto found = registered_sources.find(source_type);
         if (found != registered_sources.end())
         {
-DUMP("FOUND!");
             const auto & create_source = found->second;
             return create_source(dict_struct, config, config_prefix, sample_block, context);
         }

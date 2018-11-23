@@ -14,9 +14,9 @@
 #if USE_POCO_MONGODB
 #include "MongoDBDictionarySource.h"
 #endif
-//#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-//    #include <Poco/Data/ODBC/Connector.h>
-//#endif
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+    #include <Poco/Data/ODBC/Connector.h>
+#endif
 #if USE_MYSQL
 #include "MySQLDictionarySource.h"
 #endif
@@ -102,6 +102,10 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 }
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+    Poco::Data::ODBC::Connector::registerConnector();
+#endif
+
     auto createTableSource = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
@@ -178,7 +182,7 @@ void registerDictionaries()
 {
     DUMP("");
     {
-        auto & factory = DictionaryFactory::instance();
+        //auto & factory = DictionaryFactory::instance();
     }
 
     {
