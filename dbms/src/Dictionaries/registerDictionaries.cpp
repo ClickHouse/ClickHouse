@@ -18,6 +18,7 @@
 #include "TrieDictionary.h"
 #include "FlatDictionary.h"
 #include "HashedDictionary.h"
+#include "CacheDictionary.h"
 
 namespace DB
 {
@@ -78,6 +79,7 @@ void RegisterTableDictionarySource(
         registerDictionaryTrie(factory);
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
+        registerDictionaryCache(factory);
     }
 
 }

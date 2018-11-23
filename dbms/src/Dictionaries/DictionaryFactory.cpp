@@ -39,31 +39,6 @@ DictionaryPtr DictionaryFactory::create(
 
     const auto & layout_type = keys.front();
 
-
- if ("cache" == layout_type)
-    {
-        if (dict_struct.key)
-            throw Exception {"'key' is not supported for dictionary of layout '" + layout_type + "'", ErrorCodes::UNSUPPORTED_METHOD};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception {name
-                                 + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                   "for a dictionary of layout 'range_hashed'",
-                             ErrorCodes::BAD_ARGUMENTS};
-        const auto & layout_prefix = config_prefix + ".layout";
-        const auto size = config.getInt(layout_prefix + ".cache.size_in_cells");
-        if (size == 0)
-            throw Exception {name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
-
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        if (require_nonempty)
-            throw Exception {name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
-                             ErrorCodes::BAD_ARGUMENTS};
-
-        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
-        return std::make_unique<CacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
-    }
-
     {
         const auto found = registered_layouts.find(layout_type);
         if (found != registered_layouts.end())
