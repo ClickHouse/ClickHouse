@@ -1,0 +1,43 @@
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
+import subprocess
+import os
+import argparse
+import logging
+
+CUR_FILE_DIR_PATH = os.path.dirname(os.path.realpath(__file__))
+DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR_PATH, "../../../"))
+
+DIND_INTEGRATION_TESTS_IMAGE_NAME = "yandex/clickhouse-integration-tests-runner"
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
+    parser.add_argument(
+        "--binary",
+        default=os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse")),
+        help="Path to clickhouse binary")
+    parser.add_argument(
+        "--configs-dir",
+        default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", "/etc/clickhouse-server"),
+        help="Path to clickhouse configs directory"
+    )
+    parser.add_argument(
+        "--clickhouse-root",
+        default=DEFAULT_CLICKHOUSE_ROOT,
+        help="Path to repository root folder"
+    )
+    parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
+
+    args = parser.parse_args()
+
+    cmd = "docker run --net=host --privileged --volume={bin}:/clickhouse \
+        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img}".format(
+        bin=args.binary,
+        cfg=args.configs_dir,
+        pth=args.clickhouse_root,
+        opts=' '.join(args.pytest_args),
+        img=DIND_INTEGRATION_TESTS_IMAGE_NAME,
+    )
+
+    subprocess.check_call(cmd, shell=True)
