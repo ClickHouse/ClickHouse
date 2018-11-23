@@ -39,6 +39,7 @@ const char * auto_config_build[]
     "USE_POCO_DATAODBC", "@USE_POCO_DATAODBC@",
     "USE_POCO_MONGODB", "@USE_POCO_MONGODB@",
     "USE_POCO_NETSSL", "@USE_POCO_NETSSL@",
+    "USE_BASE64", "@USE_BASE64@",
 
     nullptr, nullptr
 };
