@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -58,7 +59,7 @@ static Field convertNumericTypeImpl(const Field & from)
     if (!accurate::equalsOp(value, To(value)))
         return {};
 
-    return Field(typename NearestFieldType<To>::Type(value));
+    return To(value);
 }
 
 template <typename To>
@@ -86,7 +87,7 @@ static Field convertIntToDecimalType(const Field & from, const To & type)
         throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     FieldType scaled_value = type.getScaleMultiplier() * value;
-    return Field(typename NearestFieldType<FieldType>::Type(scaled_value, type.getScale()));
+    return DecimalField<FieldType>(scaled_value, type.getScale());
 }
 
 
@@ -97,7 +98,7 @@ static Field convertStringToDecimalType(const Field & from, const DataTypeDecima
 
     const String & str_value = from.get<String>();
     T value = type.parseFromString(str_value);
-    return Field(typename NearestFieldType<FieldType>::Type(value, type.getScale()));
+    return DecimalField<FieldType>(value, type.getScale());
 }
 
 
@@ -123,7 +124,7 @@ DayNum stringToDate(const String & s)
 
     readDateText(date, in);
     if (!in.eof())
-        throw Exception("String is too long for Date: " + s);
+        throw Exception("String is too long for Date: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     return date;
 }
@@ -135,7 +136,7 @@ UInt64 stringToDateTime(const String & s)
 
     readDateTimeText(date_time, in);
     if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s);
+        throw Exception("String is too long for DateTime: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     return UInt64(date_time);
 }
@@ -150,11 +151,11 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     /// Conversion between Date and DateTime and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
-        return UInt64(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()));
+        return static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>());
     }
     else if (which_type.isDateTime() && which_from_type.isDate())
     {
-        return UInt64(static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>())));
+        return static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>()));
     }
     else if (type.isValueRepresentedByNumber())
     {
@@ -184,7 +185,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             if (which_type.isDate())
             {
                 /// Convert 'YYYY-MM-DD' Strings to Date
-                return UInt64(stringToDate(src.get<const String &>()));
+                return stringToDate(src.get<const String &>());
             }
             else if (which_type.isDateTime())
             {
@@ -218,7 +219,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
+            {
                 res[i] = convertFieldToType(src_arr[i], *nested_type);
+                if (res[i].isNull() && !type_array->getNestedType()->isNullable())
+                    throw Exception("Type mismatch of array elements in IN or VALUES section. Expected: " + type_array->getNestedType()->getName()
+                        + ". Got NULL in position " + toString(i + 1), ErrorCodes::TYPE_MISMATCH);
+            }
 
             return res;
         }

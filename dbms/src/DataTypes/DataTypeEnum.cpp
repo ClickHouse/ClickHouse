@@ -103,7 +103,7 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
 template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
+    const FieldType x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -225,7 +225,7 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
 template <typename Type>
 Field DataTypeEnum<Type>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type(values.front().second);
+    return values.front().second;
 }
 
 template <typename Type>
@@ -293,7 +293,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
 {
     if (value_or_name.getType() == Field::Types::String)
     {
-        return static_cast<Int64>(getValue(value_or_name.get<String>()));
+        return getValue(value_or_name.get<String>());
     }
     else if (value_or_name.getType() == Field::Types::Int64
           || value_or_name.getType() == Field::Types::UInt64)
@@ -347,7 +347,7 @@ static DataTypePtr create(const ASTPtr & arguments)
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
         const String & field_name = name_literal->value.get<String>();
-        const auto value = value_literal->value.get<typename NearestFieldType<FieldType>::Type>();
+        const auto value = value_literal->value.get<NearestFieldType<FieldType>>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception{"Value " + toString(value) + " for element '" + field_name + "' exceeds range of " + EnumName<FieldType>::value,

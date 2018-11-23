@@ -205,7 +205,7 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeUInt64().createColumnConst(rows, static_cast<UInt64>(task->part_index_in_query))->convertToFullColumnIfConst();
+                    column = DataTypeUInt64().createColumnConst(rows, task->part_index_in_query)->convertToFullColumnIfConst();
                 else
                     column = DataTypeUInt64().createColumn();
 

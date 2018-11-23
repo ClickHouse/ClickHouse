@@ -145,6 +145,12 @@
     -->
     <!-- <umask>022</umask> -->
 
+    <!-- Perform mlockall after startup to lower first queries latency
+          and to prevent clickhouse executable from being paged out under high IO load.
+         Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
+    -->
+    <mlock_executable>false</mlock_executable>
+
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.yandex/docs/en/table_engines/distributed/
       -->
@@ -158,6 +164,20 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_cluster_two_shards_localhost>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+             <shard>
+                 <replica>
+                     <host>localhost</host>
+                     <port>9000</port>
+                 </replica>
+             </shard>
+         </test_cluster_two_shards_localhost>
         <test_shard_localhost_secure>
             <shard>
                 <replica>

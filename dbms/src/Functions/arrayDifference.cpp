@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /** arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
   */
 struct ArrayDifferenceImpl
@@ -85,7 +90,7 @@ struct ArrayDifferenceImpl
             executeType<Float64,Float64>(mapped, array, res))
             return res;
         else
-            throw Exception("Unexpected column for arrayDifference: " + mapped->getName());
+            throw Exception("Unexpected column for arrayDifference: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
 };

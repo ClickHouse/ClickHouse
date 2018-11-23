@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTIdentifier.h>
@@ -81,6 +82,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.comment)
+        {
+            const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
+            command.comment = ast_comment.value.get<String>();
+        }
+
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
@@ -88,6 +95,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = AlterCommand::MODIFY_PRIMARY_KEY;
         command.primary_key = command_ast->primary_key;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
+    {
+        AlterCommand command;
+        command.type = COMMENT_COLUMN;
+        const auto & ast_identifier = typeid_cast<ASTIdentifier &>(*command_ast->column);
+        command.column_name = ast_identifier.name;
+        const auto & ast_comment = typeid_cast<ASTLiteral &>(*command_ast->comment);
+        command.comment = ast_comment.value.get<String>();
         return command;
     }
     else
@@ -178,6 +195,20 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     }
     else if (type == MODIFY_COLUMN)
     {
+        if (!is_mutable())
+        {
+            auto & comments = columns_description.comments;
+            if (comment.empty())
+            {
+                if (auto it = comments.find(column_name); it != comments.end())
+                    comments.erase(it);
+            }
+            else
+                columns_description.comments[column_name] = comment;
+
+            return;
+        }
+
         const auto default_it = columns_description.defaults.find(column_name);
         const auto had_default_expr = default_it != std::end(columns_description.defaults);
         const auto old_default_kind = had_default_expr ? default_it->second.kind : ColumnDefaultKind{};
@@ -237,10 +268,24 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         /// This have no relation to changing the list of columns.
         /// TODO Check that all columns exist, that only columns with constant defaults are added.
     }
+    else if (type == COMMENT_COLUMN)
+    {
+
+        columns_description.comments[column_name] = comment;
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
+bool AlterCommand::is_mutable() const
+{
+    if (type == COMMENT_COLUMN)
+        return false;
+    if (type == MODIFY_COLUMN)
+        return data_type.get() || default_expression;
+    // TODO: возможно, здесь нужно дополнить
+    return true;
+}
 
 void AlterCommands::apply(ColumnsDescription & columns_description) const
 {
@@ -298,7 +343,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
 
                     default_expr_list->children.emplace_back(setAlias(
                         makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                            std::make_shared<ASTLiteral>(Field(column_type_raw_ptr->getName()))),
+                            std::make_shared<ASTLiteral>(column_type_raw_ptr->getName())),
                         final_column_name));
 
                     default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
@@ -320,7 +365,9 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             for (const auto & default_column : defaults)
             {
                 const auto & default_expression = default_column.second.expression;
-                const auto actions = ExpressionAnalyzer{default_expression, context, {}, all_columns}.getActions(true);
+                ASTPtr query = default_expression;
+                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                 const auto required_columns = actions->getRequiredColumns();
 
                 if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
@@ -353,6 +400,15 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                 throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
+        else if (command.type == AlterCommand::COMMENT_COLUMN)
+        {
+            const auto column_it = std::find_if(std::begin(all_columns), std::end(all_columns),
+                                                std::bind(namesEqual, std::cref(command.column_name), std::placeholders::_1));
+            if (column_it == std::end(all_columns))
+            {
+                throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
+            }
+        }
     }
 
     /** Existing defaulted columns may require default expression extensions with a type conversion,
@@ -368,7 +424,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
 
             default_expr_list->children.emplace_back(setAlias(
                 makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                    std::make_shared<ASTLiteral>(Field(column_type_ptr->getName()))),
+                    std::make_shared<ASTLiteral>(column_type_ptr->getName())),
                 column_name));
 
         default_expr_list->children.emplace_back(setAlias(col_def.second.expression->clone(), tmp_column_name));
@@ -376,7 +432,9 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
         defaulted_columns.emplace_back(NameAndTypePair{column_name, column_type_ptr}, nullptr);
     }
 
-    const auto actions = ExpressionAnalyzer{default_expr_list, context, {}, all_columns}.getActions(true);
+    ASTPtr query = default_expr_list;
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+    const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
     const auto block = actions->getSampleBlock();
 
     /// set deduced types, modify default expression if necessary
@@ -413,7 +471,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                 }
 
                 command_ptr->default_expression = makeASTFunction("CAST", command_ptr->default_expression->clone(),
-                    std::make_shared<ASTLiteral>(Field(explicit_type->getName())));
+                    std::make_shared<ASTLiteral>(explicit_type->getName()));
             }
         }
         else
@@ -422,6 +480,17 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             command_ptr->data_type = block.getByName(column_name).type;
         }
     }
+}
+
+bool AlterCommands::is_mutable() const
+{
+    for (const auto & param : *this)
+    {
+        if (param.is_mutable())
+            return true;
+    }
+
+    return false;
 }
 
 }

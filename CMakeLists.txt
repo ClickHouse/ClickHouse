@@ -115,8 +115,8 @@ endif ()
 
 include (cmake/test_cpu.cmake)
 
-option (ARCHNATIVE "Enable -march=native compiler flag" OFF)
-if (ARCHNATIVE)
+option (ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
+if (ARCH_NATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
 
@@ -155,6 +155,7 @@ if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
 endif ()
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package (Threads)
 
 include (cmake/test_compiler.cmake)
 
@@ -255,6 +256,7 @@ include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
 include (cmake/find_cpuid.cmake)
 include (cmake/find_consistent-hashing.cmake)
+include (cmake/find_base64.cmake)
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
 endif ()

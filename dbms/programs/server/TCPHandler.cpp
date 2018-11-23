@@ -121,6 +121,9 @@ void TCPHandler::runImpl()
 
     while (1)
     {
+        /// Restore context of request.
+        query_context = connection_context;
+
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
         while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
             ;
@@ -145,9 +148,6 @@ void TCPHandler::runImpl()
 
         try
         {
-            /// Restore context of request.
-            query_context = connection_context;
-
             /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
             SCOPE_EXIT({state.timeout_setter.reset();});
 
@@ -718,7 +718,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
                 storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }

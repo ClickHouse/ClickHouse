@@ -79,7 +79,7 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
         }
 
         // Process next buffered message
-        rd_kafka_message_t * msg = rd_kafka_consumer_poll(consumer, READ_POLL_MS);
+        rd_kafka_message_t * msg = rd_kafka_consumer_poll(consumer, READ_POLL_MS); // XXX: use RAII.
         if (msg == nullptr)
             return false;
 
@@ -161,7 +161,7 @@ public:
         : storage(storage_), consumer(nullptr), context(context_), max_block_size(max_block_size_)
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
-        context.setSetting("input_format_skip_unknown_fields", UInt64(1));
+        context.setSetting("input_format_skip_unknown_fields", 1u);
         if (schema.size() > 0)
             context.setSetting("format_schema", schema);
     }

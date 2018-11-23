@@ -179,7 +179,7 @@ struct ArrayAndValueSourceSelectorBySink : public ArraySinkSelector<ArrayAndValu
         if (array_source.isConst() && value_source.isConst())
             checkTypeAndCallConcat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
                                    typeid_cast<ConstSource<ValueSource> *>(&value_source));
-        else if(array_source.isConst())
+        else if (array_source.isConst())
             checkTypeAndCallConcat(typeid_cast<ConstSource<ArraySource> *>(&array_source),
                                    typeid_cast<ValueSource *>(&value_source));
         else if (value_source.isConst())

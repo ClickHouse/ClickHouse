@@ -33,7 +33,7 @@ public:
     {
         block.getByPosition(result).column = DataTypeDate().createColumnConst(
             input_rows_count,
-            UInt64(DateLUT::instance().toDayNum(time(nullptr)) - 1));
+            DateLUT::instance().toDayNum(time(nullptr)) - 1);
     }
 };
 

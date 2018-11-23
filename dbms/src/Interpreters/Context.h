@@ -7,6 +7,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <optional>
 
 #include <Common/config.h>
 #include <common/MultiVersion.h>
@@ -78,6 +79,7 @@ struct SystemLogs;
 using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
+class ShellCommand;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -277,6 +279,8 @@ public:
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
+    std::optional<UInt16> getTCPPortSecure() const;
+
     /// Get query for the CREATE table.
     ASTPtr getCreateTableQuery(const String & database_name, const String & table_name) const;
     ASTPtr getCreateExternalTableQuery(const String & table_name) const;
@@ -441,6 +445,9 @@ public:
     void setCompiledExpressionCache(size_t cache_size);
     void dropCompiledExpressionCache() const;
 #endif
+
+    /// Add started bridge command. It will be killed after context destruction
+    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd);
 
 private:
     /** Check if the current client has access to the specified database.

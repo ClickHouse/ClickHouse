@@ -278,7 +278,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
         {
             std::unique_lock lock(delayed_tasks_mutex);
 
-            while(!shutdown)
+            while (!shutdown)
             {
                 Poco::Timestamp min_time;
 

@@ -150,13 +150,13 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context
         {
             for (const auto & ret : pattern.retentions)
             {
-                res_columns[0]->insert(Field(section));
-                res_columns[1]->insert(Field(pattern.regexp));
-                res_columns[2]->insert(Field(pattern.function));
-                res_columns[3]->insert(nearestFieldType(ret.age));
-                res_columns[4]->insert(nearestFieldType(ret.precision));
-                res_columns[5]->insert(nearestFieldType(pattern.priority));
-                res_columns[6]->insert(nearestFieldType(pattern.is_default));
+                res_columns[0]->insert(section);
+                res_columns[1]->insert(pattern.regexp);
+                res_columns[2]->insert(pattern.function);
+                res_columns[3]->insert(ret.age);
+                res_columns[4]->insert(ret.precision);
+                res_columns[5]->insert(pattern.priority);
+                res_columns[6]->insert(pattern.is_default);
             }
         }
     }
