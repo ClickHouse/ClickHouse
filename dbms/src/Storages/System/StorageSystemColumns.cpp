@@ -36,6 +36,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
+        { "comment",                    std::make_shared<DataTypeString>() },
         { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
         { "is_in_order_key", std::make_shared<DataTypeUInt8>() },
         { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
@@ -84,6 +85,7 @@ protected:
 
             NamesAndTypesList columns;
             ColumnDefaults column_defaults;
+            ColumnComments column_comments;
             Names partition_key_names;
             Names order_key_names;
             Names primary_key_names;
@@ -113,6 +115,7 @@ protected:
 
                 columns = storage->getColumns().getAll();
                 column_defaults = storage->getColumns().defaults;
+                column_comments = storage->getColumns().comments;
 
                 partition_key_names = storage->getPartitionExpressionNames();
                 order_key_names = storage->getOrderExpressionNames();
@@ -183,6 +186,20 @@ protected:
                             res_columns[res_index++]->insert(it->second.data_uncompressed);
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(it->second.marks);
+                    }
+                }
+
+                {
+                    const auto it = column_comments.find(column.name);
+                    if (it == std::end(column_comments))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second);
                     }
                 }
 
