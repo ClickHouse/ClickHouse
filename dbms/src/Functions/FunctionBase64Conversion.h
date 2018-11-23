@@ -159,6 +159,9 @@ public:
 private:
     static int getCodec()
     {
+        /// You can provide different value if you want to test specific codecs.
+        /// Due to poor implementation of "base64" library (it will write to a global variable),
+        ///  it doesn't scale for multiple threads. Never use non-zero values in production.
         return 0;
     }
 };
