@@ -4,10 +4,12 @@
 #include <Columns/ColumnNullable.h>
 #include <Common/TypeList.h>
 #include <ext/range.h>
-
+#include "DictionaryFactory.h"
 
 namespace
 {
+
+
 
 using RangeStorageType = DB::RangeHashedDictionary::RangeStorageType;
 
@@ -50,6 +52,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int TYPE_MISMATCH;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 bool RangeHashedDictionary::Range::isCorrectDate(const RangeStorageType & date)
@@ -558,5 +561,40 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 
     return callable.stream;
 }
+
+
+void registerDictionaryRangeHashed(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+
+        //const DictionaryStructure & dict_struct,
+        //Block & sample_block,
+        //Context & context
+        DictionarySourcePtr source_ptr
+
+                                 //Block & sample_block,
+                                 //const Context & /* context */
+                                 ) -> DictionaryPtr {
+        if (dict_struct.key)
+            throw Exception {"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+
+        if (!dict_struct.range_min || !dict_struct.range_max)
+            throw Exception {name + ": dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
+                             ErrorCodes::BAD_ARGUMENTS};
+
+        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+    };
+    //DB::DictionarySourceFactory::instance()
+    factory.registerLayout("range_hashed", create_layout);
+}
+
+
+
 
 }

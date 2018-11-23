@@ -203,4 +203,7 @@ private:
     std::exception_ptr creation_exception;
 };
 
+class DictionaryFactory;
+void registerDictionaryRangeHashed(DictionaryFactory & factory);
+
 }

@@ -1,5 +1,4 @@
-//#include "DictionaryFactory.h"
-
+#include "DictionaryFactory.h"
 #include "DictionarySourceFactory.h"
 
 #include "ClickHouseDictionarySource.h"
@@ -12,6 +11,8 @@
 #include "XDBCDictionarySource.h"
 #include "MongoDBDictionarySource.h"
 #include "MySQLDictionarySource.h"
+
+#include "RangeHashedDictionary.h"
 
 namespace DB
 {
@@ -64,6 +65,11 @@ void RegisterTableDictionarySource(
         registerDictionarySourceHTTP(factory);
         registerDictionarySourceLibrary(factory);
     }
+    {
+        auto & factory = DictionaryFactory::instance();
+        registerDictionaryRangeHashed(factory);
+    }
+
 }
 
 }
