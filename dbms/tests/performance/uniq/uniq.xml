@@ -1,6 +1,6 @@
 <test>
     <name>uniq</name>
-    <type>once</type>
+    <type>loop</type>
 
     <preconditions>
         <table_exists>hits_100m_single</table_exists>
@@ -18,7 +18,7 @@
     </stop_conditions>
 
     <main_metric>
-        <max_rows_per_second/>
+        <min_time/>
     </main_metric>
 
     <settings>
