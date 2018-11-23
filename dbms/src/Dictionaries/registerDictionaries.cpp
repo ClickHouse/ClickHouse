@@ -1,25 +1,44 @@
 #include "DictionaryFactory.h"
 #include "DictionarySourceFactory.h"
-
+/*
 #include "ClickHouseDictionarySource.h"
 #include "ExecutableDictionarySource.h"
 #include "FileDictionarySource.h"
 #include "HTTPDictionarySource.h"
 #include "LibraryDictionarySource.h"
-#include "XDBCDictionarySource.h"
 #include "MongoDBDictionarySource.h"
 #include "MySQLDictionarySource.h"
+#include "XDBCDictionarySource.h"
 
-#include "RangeHashedDictionary.h"
-#include "ComplexKeyHashedDictionary.h"
+#include "CacheDictionary.h"
 #include "ComplexKeyCacheDictionary.h"
-#include "TrieDictionary.h"
+#include "ComplexKeyHashedDictionary.h"
 #include "FlatDictionary.h"
 #include "HashedDictionary.h"
-#include "CacheDictionary.h"
+#include "RangeHashedDictionary.h"
+#include "TrieDictionary.h"
+*/
 
 namespace DB
 {
+void registerDictionarySourceFile(DictionarySourceFactory & source_factory);
+void registerDictionarySourceMysql(DictionarySourceFactory & source_factory);
+void registerDictionarySourceClickHouse(DictionarySourceFactory & source_factory);
+void registerDictionarySourceMongoDB(DictionarySourceFactory & source_factory);
+void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
+void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
+void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
+void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
+void registerDictionarySourceLibrary(DictionarySourceFactory & source_factory);
+
+void registerDictionaryRangeHashed(DictionaryFactory & factory);
+void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
+void registerDictionaryComplexKeyCache(DictionaryFactory & factory);
+void registerDictionaryTrie(DictionaryFactory & factory);
+void registerDictionaryFlat(DictionaryFactory & factory);
+void registerDictionaryHashed(DictionaryFactory & factory);
+void registerDictionaryCache(DictionaryFactory & factory);
+
 
 void registerDictionaries()
 {

@@ -242,6 +242,6 @@ private:
     BlockPtr saved_block;
 };
 
-class DictionaryFactory;
-void registerDictionaryHashed(DictionaryFactory & factory);
+//class DictionaryFactory;
+//void registerDictionaryHashed(DictionaryFactory & factory);
 }

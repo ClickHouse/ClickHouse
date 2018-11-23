@@ -243,6 +243,6 @@ private:
     BlockPtr saved_block;
 };
 
-class DictionaryFactory;
-void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
+//class DictionaryFactory;
+//void registerDictionaryComplexKeyHashed(DictionaryFactory & factory);
 }

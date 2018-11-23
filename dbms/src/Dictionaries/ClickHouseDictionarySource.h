@@ -71,6 +71,6 @@ private:
     const std::string load_all_query;
 };
 
-class DictionarySourceFactory;
-void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);
+//class DictionarySourceFactory;
+//void registerDictionarySourceClickHouse(DictionarySourceFactory & factory);
 }

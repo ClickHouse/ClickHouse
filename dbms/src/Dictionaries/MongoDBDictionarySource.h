@@ -83,8 +83,8 @@ private:
 }
 #endif
 
-namespace DB
+/*namespace DB
 {
 class DictionarySourceFactory;
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
-}
+}*/

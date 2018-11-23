@@ -83,8 +83,8 @@ private:
     mutable std::string invalidate_query_response;
 };
 
-class DictionarySourceFactory;
-void registerDictionarySourceMysql(DictionarySourceFactory & factory);
+//class DictionarySourceFactory;
+//void registerDictionarySourceMysql(DictionarySourceFactory & factory);
 
 }
 

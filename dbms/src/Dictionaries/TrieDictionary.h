@@ -242,7 +242,7 @@ private:
     Logger * logger;
 };
 
-class DictionaryFactory;
-void registerDictionaryTrie(DictionaryFactory & factory);
+//class DictionaryFactory;
+//void registerDictionaryTrie(DictionaryFactory & factory);
 
 }

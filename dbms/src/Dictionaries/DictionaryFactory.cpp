@@ -1,8 +1,8 @@
 #include "DictionaryFactory.h"
 
 #include <memory>
-#include "DictionaryStructure.h"
 #include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
 
 namespace DB
 {
@@ -19,8 +19,7 @@ void DictionaryFactory::registerLayout(const std::string & layout_type, Creator 
 {
     //LOG_DEBUG(log, "Register dictionary layout type `" + layout_type + "`");
     if (!registered_layouts.emplace(layout_type, std::move(create_layout)).second)
-        throw Exception("DictionaryFactory: the layout name '" + layout_type + "' is not unique",
-            ErrorCodes::LOGICAL_ERROR);
+        throw Exception("DictionaryFactory: the layout name '" + layout_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
 
