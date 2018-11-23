@@ -87,7 +87,8 @@ public:
     {
         callback(column_holder);
         index.setColumn(getRawColumnPtr());
-        nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
     const UInt64 * tryGetSavedHash() const override { return index.tryGetSavedHash(); }
