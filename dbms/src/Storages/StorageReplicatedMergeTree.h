@@ -514,6 +514,13 @@ private:
 
     const Cluster::Address & findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
+    // Partition helpers
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context);
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context);
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
