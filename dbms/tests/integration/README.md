@@ -49,7 +49,7 @@ rtt min/avg/max/mdev = 40.157/40.284/40.463/0.278 ms
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner.py --binary $HOME/ClickHouse/dbms/programs/clickhouse --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/dbms/programs/clickhouse --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
@@ -75,7 +75,7 @@ Path to binary and configs maybe specified via env variables:
 ```
 $ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/dbms/programs/server/
 $ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse
-$ ./runner.py 'test_odbc_interaction'
+$ ./runner 'test_odbc_interaction'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
