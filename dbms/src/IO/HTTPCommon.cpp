@@ -80,7 +80,11 @@ namespace
 
         session->setHost(DNSResolver::instance().resolveHost(host).toString());
         session->setPort(port);
+
+        /// doesn't work properly without patch
+#if POCO_CLICKHOUSE_PATCH
         session->setKeepAlive(keep_alive);
+#endif
 
         return session;
     }
