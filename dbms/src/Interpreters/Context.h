@@ -79,6 +79,7 @@ struct SystemLogs;
 using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
+class ShellCommand;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -444,6 +445,9 @@ public:
     void setCompiledExpressionCache(size_t cache_size);
     void dropCompiledExpressionCache() const;
 #endif
+
+    /// Add started bridge command. It will be killed after context destruction
+    void addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd);
 
 private:
     /** Check if the current client has access to the specified database.

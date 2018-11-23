@@ -1,6 +1,6 @@
 BasedOnStyle: WebKit
 Language: Cpp
-AlignAfterOpenBracket: false
+AlignAfterOpenBracket: AlwaysBreak
 BreakBeforeBraces: Custom
 BraceWrapping:
     AfterClass: true
@@ -25,7 +25,7 @@ Standard: Cpp11
 PointerAlignment: Middle
 MaxEmptyLinesToKeep: 2
 KeepEmptyLinesAtTheStartOfBlocks: false
-AllowShortFunctionsOnASingleLine: Empty
+AllowShortFunctionsOnASingleLine: InlineOnly
 AlwaysBreakTemplateDeclarations: true
 IndentCaseLabels: true
 SpaceAfterTemplateKeyword: true

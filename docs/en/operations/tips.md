@@ -35,6 +35,11 @@ For small amounts of data (up to \~200 GB compressed), it is best to use as much
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
 Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
 
+Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
+```
+echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
+
 ## Swap File
 
 Always disable the swap file. The only reason for not doing this is if you are using ClickHouse on your personal laptop.
@@ -74,7 +79,7 @@ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1025 KB is sufficient for all RAID configurations.
+A block size of 1024 KB is sufficient for all RAID configurations.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.

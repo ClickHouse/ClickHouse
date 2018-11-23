@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_MARK;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
@@ -285,7 +286,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                 auto stream_it = streams.find(file_name);
                 if (stream_it == streams.end())
-                    throw Exception("Logical error: cannot find stream " + file_name);
+                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
                 return &stream_it->second.uncompressed_hashing_buf;
             };
 
@@ -319,7 +320,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                 auto stream_it = streams.find(file_name);
                 if (stream_it == streams.end())
-                    throw Exception("Logical error: cannot find stream " + file_name);
+                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
 
                 stream_it->second.assertEnd();
                 stream_it->second.saveChecksums(checksums_data);

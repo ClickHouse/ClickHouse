@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -306,7 +307,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults)));
+    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults), ColumnComments{}));
 }
 
 }

@@ -718,7 +718,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
                 storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }

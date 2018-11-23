@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /** arrayCumSumNonNegative() - returns an array with cumulative sums of the original. (If value < 0 -> 0).
   */
 struct ArrayCumSumNonNegativeImpl
@@ -88,7 +93,7 @@ struct ArrayCumSumNonNegativeImpl
             executeType<Float64,Float64>(mapped, array, res))
             return res;
         else
-            throw Exception("Unexpected column for arrayCumSumNonNegativeImpl: " + mapped->getName());
+            throw Exception("Unexpected column for arrayCumSumNonNegativeImpl: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
 };
