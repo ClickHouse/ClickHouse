@@ -40,21 +40,7 @@ DictionaryPtr DictionaryFactory::create(
     const auto & layout_type = keys.front();
 
 
-if ("hashed" == layout_type)
-    {
-        if (dict_struct.key)
-            throw Exception {"'key' is not supported for dictionary of layout '" + layout_type + "'", ErrorCodes::UNSUPPORTED_METHOD};
-
-        if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception {name
-                                 + ": elements .structure.range_min and .structure.range_max should be defined only "
-                                   "for a dictionary of layout 'range_hashed'",
-                             ErrorCodes::BAD_ARGUMENTS};
-        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
-    }
-    else if ("cache" == layout_type)
+ if ("cache" == layout_type)
     {
         if (dict_struct.key)
             throw Exception {"'key' is not supported for dictionary of layout '" + layout_type + "'", ErrorCodes::UNSUPPORTED_METHOD};
