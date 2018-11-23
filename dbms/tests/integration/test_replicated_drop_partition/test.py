@@ -29,18 +29,16 @@ node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'
 def normal_work():
     try:
 	cluster.start()
-
-        _fill_nodes([node1, node2],[default,default],[pTe5Tb0s,dtnDvTr9],1)
+	
+	_fill_nodes([node1, node2],[default,default],[pTe5Tb0s,dtnDvTr9],1)
 	_fill_nodes([node2, node3],[zhang,default],[azAUGBFl,ROgXGTDq],2)
 
         yield cluster
 
     finally:
-	print('suss')
         cluster.shutdown()
 
 def test_normal_work(normal_work):
-    print "test_normal_work"
     node1.query("insert into test_table1 values ('2017-06-16', 111, 0)",settings={"password": pTe5Tb0s}, user=default)
     node1.query("insert into test_table1 values ('2017-06-16', 222, 0)",settings={"password": pTe5Tb0s}, user=default)
     node1.query("insert into test_table1 values ('2017-06-17', 333, 0)",settings={"password": pTe5Tb0s}, user=default)
