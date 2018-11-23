@@ -188,7 +188,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  Context & context) -> DictionarySourcePtr {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };
-    DB::DictionarySourceFactory::instance().registerSource("clickhouse", createTableSource);
+    factory.registerSource("clickhouse", createTableSource);
 }
 
 }

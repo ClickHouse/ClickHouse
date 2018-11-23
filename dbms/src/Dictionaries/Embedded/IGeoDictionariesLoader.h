@@ -2,8 +2,17 @@
 
 #include "RegionsHierarchies.h"
 #include "RegionsNames.h"
-#include <Poco/Util/AbstractConfiguration.h>
 #include <memory>
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+
+    class Logger;
+}
 
 
 // Provides actual versions of geo dictionaries (regions hierarchies, regions names)

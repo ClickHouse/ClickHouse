@@ -125,6 +125,15 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, const Poco::Ut
         }
     }
 
+    {
+        const auto found = registered_layouts.find(layout_type);
+        if (found != registered_layouts.end())
+        {
+            const auto & create_layout = found->second;
+            return create_layout(dict_struct, config, config_prefix, /*sample_block,*/ context);
+        }
+    }
+
     throw Exception{name + ": unknown dictionary layout type: " + layout_type,
         ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
