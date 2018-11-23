@@ -66,7 +66,7 @@ def test_normal_work(normal_work):
     assert_eq_with_retry(node1, "SELECT id FROM test_table1 order by id limit 1", '333',settings={"password": pTe5Tb0s}, user=default)
     assert_eq_with_retry(node2, "SELECT id FROM test_table1 order by id limit 1", '333',settings={"password": dtnDvTr9}, user=default)
 
-    node1.query("ALTER TABLE test_table1 DROP PARTITION 20170617")
+    node2.query("ALTER TABLE test_table1 DROP PARTITION 20170617")
     assert_eq_with_retry(node1, "SELECT id FROM test_table1 order by id limit 1", '555',settings={"password": pTe5Tb0s}, user=default)
     assert_eq_with_retry(node2, "SELECT id FROM test_table1 order by id limit 1", '555',settings={"password": dtnDvTr9}, user=default)
 
