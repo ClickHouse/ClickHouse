@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 void registerFunctionTryBase64Decode(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionBase64Conversion<TryBase64Decode>>();
