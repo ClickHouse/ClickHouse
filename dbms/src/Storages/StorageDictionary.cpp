@@ -19,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 
@@ -80,7 +81,7 @@ void StorageDictionary::checkNamesAndTypesCompatibleWithDictionary(const Diction
             message += " in dictionary " + dictionary_name + ". ";
             message += "There are only columns ";
             message += generateNamesAndTypesDescription(dictionary_names_and_types.begin(), dictionary_names_and_types.end());
-            throw Exception(message);
+            throw Exception(message, ErrorCodes::THERE_IS_NO_COLUMN);
         }
     }
 }

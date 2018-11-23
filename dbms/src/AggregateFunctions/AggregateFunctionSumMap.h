@@ -52,7 +52,7 @@ struct AggregateFunctionSumMapData
 
 template <typename T>
 class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<
-    AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>, AggregateFunctionSumMap<T>>
+    AggregateFunctionSumMapData<NearestFieldType<T>>, AggregateFunctionSumMap<T>>
 {
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;

@@ -10,6 +10,15 @@
 #include <IO/WriteHelpers.h>
 
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int INCORRECT_DATA;
+    }
+}
+
+
 RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_)
     : data_source(data_source_)
 {
@@ -49,7 +58,8 @@ void RegionsHierarchy::reload()
         if (region_entry.id > max_region_id)
         {
             if (region_entry.id > max_size)
-                throw DB::Exception("Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size));
+                throw DB::Exception("Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size),
+                    DB::ErrorCodes::INCORRECT_DATA);
 
             max_region_id = region_entry.id;
 

@@ -142,7 +142,7 @@ struct ConstSource : public Base
         else
             throw Exception(
                     "accept(ArraySourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
-                    + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource ");
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IArraySource", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     virtual void accept(ValueSourceVisitor & visitor) // override
@@ -152,7 +152,7 @@ struct ConstSource : public Base
         else
             throw Exception(
                     "accept(ValueSourceVisitor &) is not implemented for " + demangle(typeid(ConstSource<Base>).name())
-                    + " because " + demangle(typeid(Base).name()) + " is not derived from IValueSource ");
+                    + " because " + demangle(typeid(Base).name()) + " is not derived from IValueSource", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void next()

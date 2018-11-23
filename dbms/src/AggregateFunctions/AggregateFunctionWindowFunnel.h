@@ -16,10 +16,12 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 struct ComparePairFirst final
@@ -191,7 +193,7 @@ public:
         const auto time_arg = arguments.front().get();
         if (!WhichDataType(time_arg).isDateTime() && !WhichDataType(time_arg).isUInt32())
             throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function " + getName()
-                + ", must be DateTime or UInt32"};
+                + ", must be DateTime or UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         for (const auto i : ext::range(1, arguments.size()))
         {

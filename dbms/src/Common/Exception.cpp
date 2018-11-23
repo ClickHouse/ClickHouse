@@ -52,7 +52,7 @@ std::string errnoToString(int code, int e)
 
 void throwFromErrno(const std::string & s, int code, int e)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, e));
+    throw ErrnoException(s + ", " + errnoToString(code, e), code, e);
 }
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)

@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -976,7 +977,7 @@ public:
         const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
 
         if (!column_needle->isColumnConst() || !column_replacement->isColumnConst())
-            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.", ErrorCodes::ILLEGAL_COLUMN);
 
         const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
         const IColumn * c2 = block.getByPosition(arguments[2]).column.get();

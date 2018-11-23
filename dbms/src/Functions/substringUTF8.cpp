@@ -127,13 +127,13 @@ public:
         const ColumnPtr column_length = block.getByPosition(arguments[2]).column;
 
         if (!column_start->isColumnConst() || !column_length->isColumnConst())
-            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.", ErrorCodes::ILLEGAL_COLUMN);
 
         Field start_field = (*block.getByPosition(arguments[1]).column)[0];
         Field length_field = (*block.getByPosition(arguments[2]).column)[0];
 
         if (start_field.getType() != Field::Types::UInt64 || length_field.getType() != Field::Types::UInt64)
-            throw Exception("2nd and 3rd arguments of function " + getName() + " must be non-negative and must have UInt type.");
+            throw Exception("2nd and 3rd arguments of function " + getName() + " must be non-negative and must have UInt type.", ErrorCodes::ILLEGAL_COLUMN);
 
         UInt64 start = start_field.get<UInt64>();
         UInt64 length = length_field.get<UInt64>();
