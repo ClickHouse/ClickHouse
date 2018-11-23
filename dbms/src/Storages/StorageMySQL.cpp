@@ -100,7 +100,7 @@ public:
             }
             trans.commit();
         }
-        catch(...)
+        catch (...)
         {
             trans.rollback();
             throw;

@@ -72,7 +72,7 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
                 ASTPtr inner_predicate;
                 cloneOuterPredicateForInnerPredicate(outer_predicate, projection_columns, database_and_table_with_aliases, inner_predicate);
 
-                switch(optimize_kind)
+                switch (optimize_kind)
                 {
                     case OptimizeKind::NONE: continue;
                     case OptimizeKind::PUSH_TO_WHERE: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->where_expression, subquery); continue;

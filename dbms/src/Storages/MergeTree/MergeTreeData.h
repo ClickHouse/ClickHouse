@@ -192,7 +192,7 @@ public:
             {
                 rollback();
             }
-            catch(...)
+            catch (...)
             {
                 tryLogCurrentException("~MergeTreeData::Transaction");
             }
