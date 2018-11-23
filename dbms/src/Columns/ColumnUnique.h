@@ -118,6 +118,7 @@ private:
 
     mutable IncrementalHash hash;
 
+    void createNullMask();
     void updateNullMask();
 
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
@@ -150,7 +151,7 @@ ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
     , index(numSpecialValues(is_nullable), 0)
 {
     index.setColumn(getRawColumnPtr());
-    updateNullMask();
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -161,7 +162,7 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
     index.setColumn(getRawColumnPtr());
-    updateNullMask();
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -176,11 +177,11 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 
     index.setColumn(getRawColumnPtr());
-    updateNullMask();
+    createNullMask();
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::updateNullMask()
+void ColumnUnique<ColumnType>::createNullMask()
 {
     if (is_nullable)
     {
@@ -192,6 +193,20 @@ void ColumnUnique<ColumnType>::updateNullMask()
             nested_null_mask = std::move(null_mask);
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
         }
+        else
+            throw Exception("Null mask for ColumnUnique is already created.", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::updateNullMask()
+{
+    if (is_nullable)
+    {
+        if (!nested_null_mask)
+            throw Exception("Null mask for ColumnUnique is was not created.", ErrorCodes::LOGICAL_ERROR);
+
+        size_t size = getRawColumnPtr()->size();
 
         if (nested_null_mask->size() != size)
         {
