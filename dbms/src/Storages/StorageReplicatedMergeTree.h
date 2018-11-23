@@ -512,7 +512,7 @@ private:
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
-    const Cluster::Address & findClusterAddress(ReplicatedMergeTreeAddress & leader_address);
+    const Cluster::Address & findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

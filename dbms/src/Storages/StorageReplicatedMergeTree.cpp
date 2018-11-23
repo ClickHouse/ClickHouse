@@ -3870,7 +3870,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    /// Query send with current user credentials
+    /// Query send with current user credentials from the corresponding address in clusters configuration.
     const Cluster::Address & address = findClusterAddress(leader_address);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
@@ -3887,7 +3887,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 }
 
 
-const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address)
+const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const
 {
     for(auto & iter : context.getClusters().getContainer())
     {
@@ -3906,7 +3906,7 @@ const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(Replicat
             }
         }
     }
-    throw Exception("Not found replicate leader host " + leader_address.host + ":" + DB::toString(leader_address.queries_port) + ", Please check your metrika.xml", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+    throw Exception("Not found replicate leader host " + leader_address.host + ":" + DB::toString(leader_address.queries_port) + ". Please check the 'remote_servers' section in your configuration file (config.xml, config.d, metrika.xml).", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
 }
 
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
