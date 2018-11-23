@@ -124,9 +124,9 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         auto identifier_quote = getIdentifierQuote(hdbc);
         if (identifier_quote.length() == 0)
             settings.identifier_quoting_style = IdentifierQuotingStyle::None;
-        else if(identifier_quote[0] == '`')
+        else if (identifier_quote[0] == '`')
             settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
-        else if(identifier_quote[0] == '"')
+        else if (identifier_quote[0] == '"')
             settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
         else
             throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

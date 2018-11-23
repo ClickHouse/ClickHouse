@@ -25,7 +25,7 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
 #else
             return nullptr;
 #endif
-        else if(uri.getPath() == "/identifier_quote")
+        else if (uri.getPath() == "/identifier_quote")
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
             return new IdentifierQuoteHandler(keep_alive_timeout, context);
 #else
