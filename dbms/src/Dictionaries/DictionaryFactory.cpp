@@ -39,47 +39,7 @@ DictionaryPtr DictionaryFactory::create(
 
     const auto & layout_type = keys.front();
 
-/*    if ("range_hashed" == layout_type)
-    {
 
-
-    }
-    else*/ if ("complex_key_hashed" == layout_type)
-    {
-        if (!dict_struct.key)
-            throw Exception {"'key' is required for dictionary of layout 'complex_key_hashed'", ErrorCodes::BAD_ARGUMENTS};
-
-        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        return std::make_unique<ComplexKeyHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
-    }
-    else if ("complex_key_cache" == layout_type)
-    {
-        if (!dict_struct.key)
-            throw Exception {"'key' is required for dictionary of layout 'complex_key_hashed'", ErrorCodes::BAD_ARGUMENTS};
-
-        const auto size = config.getInt(layout_prefix + ".complex_key_cache.size_in_cells");
-        if (size == 0)
-            throw Exception {name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
-
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        if (require_nonempty)
-            throw Exception {name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
-                             ErrorCodes::BAD_ARGUMENTS};
-
-        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
-        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
-    }
-    else if ("ip_trie" == layout_type)
-    {
-        if (!dict_struct.key)
-            throw Exception {"'key' is required for dictionary of layout 'ip_trie'", ErrorCodes::BAD_ARGUMENTS};
-
-        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
-        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        // This is specialised trie for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<TrieDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
-    }
     if ("flat" == layout_type)
     {
         if (dict_struct.key)
@@ -118,6 +78,7 @@ DictionaryPtr DictionaryFactory::create(
                                  + ": elements .structure.range_min and .structure.range_max should be defined only "
                                    "for a dictionary of layout 'range_hashed'",
                              ErrorCodes::BAD_ARGUMENTS};
+        const auto & layout_prefix = config_prefix + ".layout";
         const auto size = config.getInt(layout_prefix + ".cache.size_in_cells");
         if (size == 0)
             throw Exception {name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};

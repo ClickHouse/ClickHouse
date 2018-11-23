@@ -634,5 +634,19 @@ BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_nam
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds() ,column_names);
 }
 
+/*
+void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 DictionarySourcePtr source_ptr
+                                 ) -> DictionaryPtr {
+    };
+    factory.registerLayout("complex_key_cache", create_layout);
+} */
+
 
 }

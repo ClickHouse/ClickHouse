@@ -13,6 +13,9 @@
 #include "MySQLDictionarySource.h"
 
 #include "RangeHashedDictionary.h"
+#include "ComplexKeyHashedDictionary.h"
+#include "ComplexKeyCacheDictionary.h"
+#include "TrieDictionary.h"
 
 namespace DB
 {
@@ -68,6 +71,9 @@ void RegisterTableDictionarySource(
     {
         auto & factory = DictionaryFactory::instance();
         registerDictionaryRangeHashed(factory);
+        registerDictionaryComplexKeyHashed(factory);
+        registerDictionaryComplexKeyCache(factory);
+        registerDictionaryTrie(factory);
     }
 
 }

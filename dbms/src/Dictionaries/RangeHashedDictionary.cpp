@@ -570,14 +570,7 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                                  const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
-
-        //const DictionaryStructure & dict_struct,
-        //Block & sample_block,
-        //Context & context
-        DictionarySourcePtr source_ptr
-
-                                 //Block & sample_block,
-                                 //const Context & /* context */
+                                 DictionarySourcePtr source_ptr
                                  ) -> DictionaryPtr {
         if (dict_struct.key)
             throw Exception {"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
@@ -590,11 +583,7 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         return std::make_unique<RangeHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
-    //DB::DictionarySourceFactory::instance()
     factory.registerLayout("range_hashed", create_layout);
 }
-
-
-
 
 }
