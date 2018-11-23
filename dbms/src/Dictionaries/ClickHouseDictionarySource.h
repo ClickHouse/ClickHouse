@@ -4,7 +4,6 @@
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include <Client/ConnectionPoolWithFailover.h>
-//#include <Poco/Util/AbstractConfiguration.h>
 #include <memory>
 
 

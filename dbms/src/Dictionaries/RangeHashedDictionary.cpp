@@ -9,8 +9,6 @@
 namespace
 {
 
-
-
 using RangeStorageType = DB::RangeHashedDictionary::RangeStorageType;
 
 // Null values mean that specified boundary, either min or max is not set on range.

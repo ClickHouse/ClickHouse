@@ -1,15 +1,8 @@
 #include "DictionaryFactory.h"
-#include <memory>
-#include "CacheDictionary.h"
-#include "ComplexKeyCacheDictionary.h"
-#include "ComplexKeyHashedDictionary.h"
-#include "DictionarySourceFactory.h"
-#include "DictionaryStructure.h"
-#include "FlatDictionary.h"
-#include "HashedDictionary.h"
-#include "RangeHashedDictionary.h"
-#include "TrieDictionary.h"
 
+#include <memory>
+#include "DictionaryStructure.h"
+#include "DictionarySourceFactory.h"
 
 namespace DB
 {

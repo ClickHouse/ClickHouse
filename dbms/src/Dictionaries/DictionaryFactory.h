@@ -1,7 +1,6 @@
 #pragma once
 
 #include "IDictionary.h"
-//#include <Poco/Util/AbstractConfiguration.h>
 #include <ext/singleton.h>
 
 namespace Poco
@@ -30,18 +29,10 @@ public:
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        //Block & sample_block,
-        //Context & context
         DictionarySourcePtr source_ptr
         )>;
 
-    //DictionaryFactory();
-
     void registerLayout(const std::string & layout_type, Creator create_source);
-
-//    DictionarySourcePtr create(
-//        const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-//        const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr) const;
 
 private:
     using LayoutRegistry = std::unordered_map<std::string, Creator>;
