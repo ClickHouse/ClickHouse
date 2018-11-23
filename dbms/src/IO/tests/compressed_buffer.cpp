@@ -55,7 +55,7 @@ int main(int, char **)
                 {
                     std::stringstream s;
                     s << "Failed!, read: " << x << ", expected: " << i;
-                    throw DB::Exception(s.str());
+                    throw DB::Exception(s.str(), 0);
                 }
             }
             stopwatch.stop();

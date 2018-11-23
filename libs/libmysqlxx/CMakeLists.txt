@@ -42,20 +42,29 @@ else ()
         find_library (ICONV_LIBRARY iconv)
         set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIBRARIES} ${STATIC_MYSQLCLIENT_LIB} ${ICONV_LIBRARY})
     elseif (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
+      if (0)
+        # old lib patcher (ubuntu trusty?)
         set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
+        message(STATUS "will patch mysql lib ${STATIC_MYSQLCLIENT_LIB} => ${MYSQLCLIENT_LIB}")
         add_custom_command (
             OUTPUT ${MYSQLCLIENT_LIB}
             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            DEPENDS ${STATIC_MYSQLCLIENT_LIB}
             COMMENT "Patching mysqlclient library.")
         add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
         add_dependencies (mysqlxx our_mysql_client)
         set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIB})
+      else()
+        set (MYSQLCLIENT_LIBRARIES ${STATIC_MYSQLCLIENT_LIB})
+      endif()
     endif ()
 endif ()
 
-target_link_libraries (mysqlxx common ${Poco_Util_LIBRARY} ${MYSQLCLIENT_LIBRARIES} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
-target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_link_libraries (mysqlxx common ${Poco_Util_LIBRARY} ${MYSQLCLIENT_LIBRARIES} ${Boost_SYSTEM_LIBRARY} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
+if (NOT USE_INTERNAL_MYSQL_LIBRARY)
+    target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

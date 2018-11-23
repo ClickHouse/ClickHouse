@@ -59,7 +59,6 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Analyzers)
 add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
@@ -87,7 +86,6 @@ list (APPEND dbms_sources
     src/AggregateFunctions/AggregateFunctionFactory.cpp
     src/AggregateFunctions/AggregateFunctionCombinatorFactory.cpp
     src/AggregateFunctions/AggregateFunctionState.cpp
-    src/AggregateFunctions/FactoryHelpers.cpp
     src/AggregateFunctions/parseAggregateFunctionParameters.cpp)
 
 list (APPEND dbms_headers
@@ -121,7 +119,7 @@ endif ()
 
 if (USE_EMBEDDED_COMPILER)
     llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
-    target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
+    target_link_libraries (dbms PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
@@ -152,33 +150,48 @@ if (NOT ARCH_ARM AND CPUID_LIBRARY)
 endif()
 
 target_link_libraries (clickhouse_common_io
+        PUBLIC
     common
+        PRIVATE
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
     ${LZ4_LIBRARY}
     ${ZSTD_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
+    pocoext
+        PUBLIC
     ${Poco_Net_LIBRARY}
     ${Poco_Util_LIBRARY}
     ${Poco_Foundation_LIBRARY}
+    ${RE2_LIBRARY}
+    ${RE2_ST_LIBRARY}
+    ${CITYHASH_LIBRARIES}
+        PRIVATE
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
     ${ELF_LIBRARY}
+        PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+        PRIVATE
     apple_rt
     ${CMAKE_DL_LIBS}
 )
 
 target_link_libraries (dbms
+        PRIVATE
     clickhouse_parsers
     clickhouse_common_config
+        PUBLIC
     clickhouse_common_io
+    pocoext
+        PUBLIC
     ${MYSQLXX_LIBRARY}
-    ${RE2_LIBRARY}
-    ${RE2_ST_LIBRARY}
+        PRIVATE
     ${BTRIE_LIBRARIES}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
+        PUBLIC
+    ${Boost_SYSTEM_LIBRARY}
 )
 
 if (NOT USE_INTERNAL_RE2_LIBRARY)
@@ -195,8 +208,8 @@ if (Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
 endif()
 
 if (USE_POCO_SQLODBC)
-    target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
-    target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
+    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_SQL_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
         target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIR})
         target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} PUBLIC ${Poco_SQL_INCLUDE_DIR})
@@ -210,48 +223,44 @@ if (Poco_Data_FOUND)
 endif()
 
 if (USE_POCO_DATAODBC)
-    target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
-    target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
+    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_Data_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
         target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
     endif()
 endif()
 
 if (USE_POCO_MONGODB)
-    target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${Poco_MongoDB_LIBRARY})
 endif()
 
 if (USE_POCO_NETSSL)
-    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
-    target_link_libraries (dbms ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
-target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
+target_link_libraries (dbms PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
-    target_link_libraries (dbms ${ICU_LIBS})
+    target_link_libraries (dbms PRIVATE ${ICU_LIBS})
     target_include_directories (dbms SYSTEM PRIVATE ${ICU_INCLUDE_DIR})
 endif ()
 
 if (USE_CAPNP)
-    target_link_libraries (dbms ${CAPNP_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARY})
     if (NOT USE_INTERNAL_CAPNP_LIBRARY)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
     endif ()
 endif ()
 
 if (USE_RDKAFKA)
-    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${RDKAFKA_LIBRARY})
     if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
 endif ()
 
-target_link_libraries(dbms ${OPENSSL_CRYPTO_LIBRARY})
-
-target_link_libraries (dbms
-    Threads::Threads
-)
+target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
@@ -287,6 +296,6 @@ if (ENABLE_TESTS)
     # attach all dbms gtest sources
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
-    target_link_libraries(unit_tests_dbms gtest_main dbms)
+    target_link_libraries(unit_tests_dbms PRIVATE gtest_main dbms clickhouse_common_zookeeper)
     add_check(unit_tests_dbms)
 endif ()

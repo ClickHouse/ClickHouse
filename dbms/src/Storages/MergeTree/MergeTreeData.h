@@ -192,7 +192,7 @@ public:
             {
                 rollback();
             }
-            catch(...)
+            catch (...)
             {
                 tryLogCurrentException("~MergeTreeData::Transaction");
             }
@@ -480,6 +480,9 @@ public:
         const ASTPtr & new_primary_key,
         bool skip_sanity_checks);
 
+    /// Freezes all parts.
+    void freezeAll(const String & with_name, const Context & context);
+
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
     {
@@ -720,6 +723,10 @@ private:
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+
+    /// Common part for |freezePartition()| and |freezeAll()|.
+    using MatcherFn = std::function<bool(const DataPartPtr &)>;
+    void freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context);
 };
 
 }

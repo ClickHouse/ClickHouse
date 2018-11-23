@@ -28,11 +28,13 @@ class ShellCommand
 private:
     pid_t pid;
     bool wait_called = false;
+    bool terminate_in_destructor;
 
-    ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd)
-        : pid(pid), in(in_fd), out(out_fd), err(err_fd) {}
+    Poco::Logger * log;
 
-    static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only);
+    ShellCommand(pid_t pid, int in_fd, int out_fd, int err_fd, bool terminate_in_destructor_);
+
+    static std::unique_ptr<ShellCommand> executeImpl(const char * filename, char * const argv[], bool pipe_stdin_only, bool terminate_in_destructor);
 
 public:
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
@@ -41,11 +43,13 @@ public:
 
     ~ShellCommand();
 
-    /// Run the command using /bin/sh -c
-    static std::unique_ptr<ShellCommand> execute(const std::string & command, bool pipe_stdin_only = false);
+    /// Run the command using /bin/sh -c.
+    /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
+    static std::unique_ptr<ShellCommand> execute(const std::string & command, bool pipe_stdin_only = false, bool terminate_in_destructor = false);
 
     /// Run the executable with the specified arguments. `arguments` - without argv[0].
-    static std::unique_ptr<ShellCommand> executeDirect(const std::string & path, const std::vector<std::string> & arguments);
+    /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
+    static std::unique_ptr<ShellCommand> executeDirect(const std::string & path, const std::vector<std::string> & arguments, bool terminate_in_destructor = false);
 
     /// Wait for the process to end, throw an exception if the code is not 0 or if the process was not completed by itself.
     void wait();

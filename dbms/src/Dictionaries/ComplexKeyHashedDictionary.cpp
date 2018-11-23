@@ -376,9 +376,9 @@ void ComplexKeyHashedDictionary::loadData()
 template <typename T>
 void ComplexKeyHashedDictionary::addAttributeSize(const Attribute & attribute)
 {
-    const auto & map_ref = std::get<ContainerPtrType<T>>(attribute.maps);
-    bytes_allocated += sizeof(ContainerType<T>) + map_ref->getBufferSizeInBytes();
-    bucket_count = map_ref->getBufferSizeInCells();
+    const auto & map_ref = std::get<ContainerType<T>>(attribute.maps);
+    bytes_allocated += sizeof(ContainerType<T>) + map_ref.getBufferSizeInBytes();
+    bucket_count = map_ref.getBufferSizeInCells();
 }
 
 void ComplexKeyHashedDictionary::calculateBytesAllocated()
@@ -421,8 +421,8 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
 template <typename T>
 void ComplexKeyHashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<ContainerPtrType<T>>(attribute.maps) = std::make_unique<ContainerType<T>>();
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.maps.emplace<ContainerType<T>>();
 }
 
 ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -449,8 +449,8 @@ ComplexKeyHashedDictionary::Attribute ComplexKeyHashedDictionary::createAttribut
 
         case AttributeUnderlyingType::String:
         {
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<ContainerPtrType<StringRef>>(attr.maps) = std::make_unique<ContainerType<StringRef>>();
+            attr.null_values = null_value.get<String>();
+            attr.maps.emplace<ContainerType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }
@@ -497,7 +497,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
-    const auto & attr = *std::get<ContainerPtrType<AttributeType>>(attribute.maps);
+    const auto & attr = std::get<ContainerType<AttributeType>>(attribute.maps);
 
     const auto keys_size = key_columns.size();
     StringRefs keys(keys_size);
@@ -523,7 +523,7 @@ void ComplexKeyHashedDictionary::getItemsImpl(
 template <typename T>
 bool ComplexKeyHashedDictionary::setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value)
 {
-    auto & map = *std::get<ContainerPtrType<T>>(attribute.maps);
+    auto & map = std::get<ContainerType<T>>(attribute.maps);
     const auto pair = map.insert({ key, value });
     return pair.second;
 }
@@ -550,7 +550,7 @@ bool ComplexKeyHashedDictionary::setAttributeValue(Attribute & attribute, const 
 
         case AttributeUnderlyingType::String:
         {
-            auto & map = *std::get<ContainerPtrType<StringRef>>(attribute.maps);
+            auto & map = std::get<ContainerType<StringRef>>(attribute.maps);
             const auto & string = value.get<String>();
             const auto string_in_arena = attribute.string_arena->insert(string.data(), string.size());
             const auto pair = map.insert({ key, StringRef{string_in_arena, string.size()} });
@@ -596,7 +596,7 @@ StringRef ComplexKeyHashedDictionary::placeKeysInPool(
 template <typename T>
 void ComplexKeyHashedDictionary::has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const
 {
-    const auto & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
+    const auto & attr = std::get<ContainerType<T>>(attribute.maps);
     const auto keys_size = key_columns.size();
     StringRefs keys(keys_size);
     Arena temporary_keys_pool;
@@ -646,7 +646,7 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 template <typename T>
 std::vector<StringRef> ComplexKeyHashedDictionary::getKeys(const Attribute & attribute) const
 {
-    const ContainerType<T> & attr = *std::get<ContainerPtrType<T>>(attribute.maps);
+    const ContainerType<T> & attr = std::get<ContainerType<T>>(attribute.maps);
     std::vector<StringRef> keys;
     keys.reserve(attr.size());
     for (const auto & key : attr)

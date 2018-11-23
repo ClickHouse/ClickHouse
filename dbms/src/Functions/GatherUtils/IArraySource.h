@@ -3,7 +3,15 @@
 #include <Columns/ColumnArray.h>
 #include <Functions/GatherUtils/ArraySourceVisitor.h>
 
-namespace DB::GatherUtils
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace GatherUtils
 {
 
 struct IArraySource
@@ -18,11 +26,13 @@ struct IArraySource
 
     virtual void accept(ArraySourceVisitor &)
     {
-        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()));
+        throw Exception("Accept not implemented for " + demangle(typeid(*this).name()), ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 
 template <typename Derived>
 class ArraySourceImpl : public Visitable<Derived, IArraySource, ArraySourceVisitor> {};
+
+}
 
 }

@@ -305,7 +305,7 @@ void PoolWithFailoverBase<TNestedPool>::reportError(const Entry & entry)
             return;
         }
     }
-    throw DB::Exception("Can't find pool to report error.");
+    throw DB::Exception("Can't find pool to report error", DB::ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename TNestedPool>
