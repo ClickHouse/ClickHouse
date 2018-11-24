@@ -554,7 +554,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     {
         std::lock_guard lock(state_mutex);
 
-        for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end(); )
+        for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
         {
             const ReplicatedMergeTreeMutationEntry & entry = *it->second.entry;
             if (!entries_in_zk_set.count(entry.znode_name))

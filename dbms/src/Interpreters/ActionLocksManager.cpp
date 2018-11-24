@@ -76,10 +76,10 @@ void ActionLocksManager::cleanExpired()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end(); )
+    for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end();)
     {
         auto & locks = it_storage->second;
-        for (auto it_lock = locks.begin(); it_lock != locks.end(); )
+        for (auto it_lock = locks.begin(); it_lock != locks.end();)
         {
             if (it_lock->second.expired())
                 it_lock = locks.erase(it_lock);

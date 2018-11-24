@@ -982,7 +982,7 @@ public:
 
         bool executed_with_nums = callOnBasicTypes<true, true, true, true>(left_id, right_id, call);
 
-        if (!( executed_with_nums
+        if (!(executed_with_nums
             || executeTyped<UInt128, UInt128>(cond_col, block, arguments, result, input_rows_count)
             || executeString(cond_col, block, arguments, result)
             || executeGenericArray(cond_col, block, arguments, result)

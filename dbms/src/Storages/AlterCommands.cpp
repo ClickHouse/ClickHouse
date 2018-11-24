@@ -223,7 +223,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         const auto find_column = [this] (NamesAndTypesList & columns)
         {
             const auto it = std::find_if(columns.begin(), columns.end(),
-                std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
+                std::bind(namesEqual, std::cref(column_name), std::placeholders::_1));
             if (it == columns.end())
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to modify",
                                 ErrorCodes::ILLEGAL_COLUMN);

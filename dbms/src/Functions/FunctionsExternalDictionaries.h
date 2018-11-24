@@ -713,7 +713,7 @@ private:
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (arguments.size() == 4 )
+        if (arguments.size() == 4)
         {
             const auto range_argument = arguments[3].get();
             if (!(range_argument->isValueRepresentedByInteger() &&
@@ -1215,7 +1215,7 @@ private:
             throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (arguments.size() == 4 )
+        if (arguments.size() == 4)
         {
             const auto range_argument = arguments[3].type.get();
             if (!(range_argument->isValueRepresentedByInteger() &&

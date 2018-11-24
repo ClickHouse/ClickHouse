@@ -410,8 +410,7 @@ BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
     return std::make_shared<SquashingBlockInputStream>(
         stream,
         std::numeric_limits<size_t>::max(),
-        std::numeric_limits<size_t>::max()
-    );
+        std::numeric_limits<size_t>::max());
 }
 
 Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)

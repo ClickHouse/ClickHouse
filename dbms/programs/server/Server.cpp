@@ -559,10 +559,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this, /* secure= */ true ),
-                                                                  server_pool,
-                                                                  socket,
-                                                                  new Poco::Net::TCPServerParams));
+                        new TCPHandlerFactory(*this, /* secure= */ true),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_secure: " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",

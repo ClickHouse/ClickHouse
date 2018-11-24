@@ -139,7 +139,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
 
     if (arguments.size() == 1)
     {
-        if (!( executeNumber<UInt8>(first_array, first_null_map, res_values)
+        if (!(executeNumber<UInt8>(first_array, first_null_map, res_values)
             || executeNumber<UInt16>(first_array, first_null_map, res_values)
             || executeNumber<UInt32>(first_array, first_null_map, res_values)
             || executeNumber<UInt64>(first_array, first_null_map, res_values)

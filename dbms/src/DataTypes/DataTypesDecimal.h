@@ -152,7 +152,7 @@ public:
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
-    T scaleFactorFor(const DataTypeDecimal<U> & x, bool ) const
+    T scaleFactorFor(const DataTypeDecimal<U> & x, bool) const
     {
         if (getScale() < x.getScale())
             throw Exception("Decimal result's scale is less then argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);

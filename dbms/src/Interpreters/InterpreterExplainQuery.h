@@ -14,7 +14,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 class InterpreterExplainQuery : public IInterpreter
 {
 public:
-    InterpreterExplainQuery(const ASTPtr & query_, const Context & )
+    InterpreterExplainQuery(const ASTPtr & query_, const Context &)
         : query(query_)
     {}
 

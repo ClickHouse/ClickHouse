@@ -265,7 +265,7 @@ public:
     static size_t getNumberOfArguments() { return 2; }
 
     /// Check the type of function arguments.
-    static void checkArguments( const DataTypes &  arguments )
+    static void checkArguments(const DataTypes & arguments)
     {
         SplitByStringImpl::checkArguments(arguments);
     }
