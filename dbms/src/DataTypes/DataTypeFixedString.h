@@ -82,6 +82,7 @@ public:
     size_t getSizeOfValueInMemory() const override { return n; }
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }
