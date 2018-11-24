@@ -190,8 +190,8 @@ bool FunctionArrayReverse::executeNumber(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = nullable_col->getNullMapData();
+            auto & res_null_map = nullable_res_col->getNullMapData();
             res_null_map.resize(src_data.size());
             do_reverse(src_null_map, src_offsets, res_null_map);
         }
@@ -242,8 +242,8 @@ bool FunctionArrayReverse::executeFixedString(
         if ((nullable_col) && (nullable_res_col))
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = nullable_col->getNullMapData();
+            auto & res_null_map = nullable_res_col->getNullMapData();
             res_null_map.resize(src_null_map.size());
 
             ColumnArray::Offset src_prev_offset = 0;
@@ -319,11 +319,11 @@ bool FunctionArrayReverse::executeString(
             src_array_prev_offset = src_array_offsets[i];
         }
 
-        if ((nullable_col) && (nullable_res_col))
+        if (nullable_col && nullable_res_col)
         {
             /// Make a reverted null map.
-            const auto & src_null_map = static_cast<const ColumnUInt8 &>(nullable_col->getNullMapColumn()).getData();
-            auto & res_null_map = static_cast<ColumnUInt8 &>(nullable_res_col->getNullMapColumn()).getData();
+            const auto & src_null_map = nullable_col->getNullMapData();
+            auto & res_null_map = nullable_res_col->getNullMapData();
             res_null_map.resize(src_string_offsets.size());
 
             size_t size = src_string_offsets.size();
