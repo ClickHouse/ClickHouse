@@ -51,6 +51,7 @@ public:
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
+    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }

@@ -61,6 +61,7 @@ public:
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }
