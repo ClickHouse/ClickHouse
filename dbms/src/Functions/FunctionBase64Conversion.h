@@ -27,7 +27,7 @@ struct Base64Encode
     static constexpr auto name = "base64Encode";
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
-        return ( ( string_length - string_count ) / 3  + string_count  ) * 4 + string_count ;
+        return ((string_length - string_count) / 3 + string_count) * 4 + string_count;
     }
 };
 
@@ -37,7 +37,7 @@ struct Base64Decode
 
     static size_t getBufferSize(size_t string_length, size_t string_count)
     {
-        return ( ( string_length - string_count) / 4 + string_count) * 3 + string_count;
+        return ((string_length - string_count) / 4 + string_count) * 3 + string_count;
     }
 };
 

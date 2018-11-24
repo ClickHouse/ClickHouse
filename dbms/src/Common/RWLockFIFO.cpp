@@ -134,7 +134,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
     }
 
     /// Wait a notification
-    it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); } );
+    it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
     it_client->start_time = time(nullptr);
     finalize_metrics();

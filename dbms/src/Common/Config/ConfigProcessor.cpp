@@ -260,10 +260,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     /// Substitute <layer> for the number extracted from the hostname only if there is an
     /// empty <layer> tag without attributes in the original file.
-    if ( node->nodeName() == "layer" &&
-        !node->hasAttributes() &&
-        !node->hasChildNodes() &&
-         node->nodeValue().empty())
+    if (node->nodeName() == "layer"
+        && !node->hasAttributes()
+        && !node->hasChildNodes()
+        && node->nodeValue().empty())
     {
         NodePtr new_node = config->createTextNode(layerFromHost());
         node->appendChild(new_node);

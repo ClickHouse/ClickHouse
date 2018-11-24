@@ -123,7 +123,7 @@ void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename T>
-void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double ) const
+void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double) const
 {
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     size_t initial_size = x.size();

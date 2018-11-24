@@ -990,7 +990,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->columns = all_columns;
         Names source_column_names = source_part->columns.getNames();
         NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
-        for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end(); )
+        for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end();)
         {
             if (source_columns_name_set.count(it->name) || in_header.has(it->name))
                 ++it;

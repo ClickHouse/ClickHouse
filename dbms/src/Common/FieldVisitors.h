@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 stringToUUID(const String & );
+UInt128 stringToUUID(const String &);
 
 
 /** StaticVisitor (and its descendants) - class with overloaded operator() for all types of fields.

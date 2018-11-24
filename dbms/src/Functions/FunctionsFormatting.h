@@ -56,14 +56,14 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)))
+        if (!(executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
@@ -149,16 +149,16 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!(    executeType<UInt8>(block, arguments, result)
-            ||    executeType<UInt16>(block, arguments, result)
-            ||    executeType<UInt32>(block, arguments, result)
-            ||    executeType<UInt64>(block, arguments, result)
-            ||    executeType<Int8>(block, arguments, result)
-            ||    executeType<Int16>(block, arguments, result)
-            ||    executeType<Int32>(block, arguments, result)
-            ||    executeType<Int64>(block, arguments, result)
-            ||    executeType<Float32>(block, arguments, result)
-            ||    executeType<Float64>(block, arguments, result)))
+        if (!(executeType<UInt8>(block, arguments, result)
+            || executeType<UInt16>(block, arguments, result)
+            || executeType<UInt32>(block, arguments, result)
+            || executeType<UInt64>(block, arguments, result)
+            || executeType<Int8>(block, arguments, result)
+            || executeType<Int16>(block, arguments, result)
+            || executeType<Int32>(block, arguments, result)
+            || executeType<Int64>(block, arguments, result)
+            || executeType<Float32>(block, arguments, result)
+            || executeType<Float64>(block, arguments, result)))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                 + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);

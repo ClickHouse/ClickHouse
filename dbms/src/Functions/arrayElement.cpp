@@ -647,7 +647,7 @@ bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & 
     if (builder)
         builder.initSink(index_data.size());
 
-    if (!( executeNumber<IndexType, UInt8>(block, arguments, result, index_data, builder)
+    if (!(executeNumber<IndexType, UInt8>(block, arguments, result, index_data, builder)
         || executeNumber<IndexType, UInt16>(block, arguments, result, index_data, builder)
         || executeNumber<IndexType, UInt32>(block, arguments, result, index_data, builder)
         || executeNumber<IndexType, UInt64>(block, arguments, result, index_data, builder)
@@ -859,7 +859,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
         if (index == 0u)
             throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-        if (!( executeNumberConst<UInt8>(block, arguments, result, index, builder)
+        if (!(executeNumberConst<UInt8>(block, arguments, result, index, builder)
             || executeNumberConst<UInt16>(block, arguments, result, index, builder)
             || executeNumberConst<UInt32>(block, arguments, result, index, builder)
             || executeNumberConst<UInt64>(block, arguments, result, index, builder)

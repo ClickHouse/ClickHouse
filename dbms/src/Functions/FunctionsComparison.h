@@ -1148,7 +1148,7 @@ public:
 
         if (left_is_num && right_is_num)
         {
-            if (!( executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+            if (!(executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
