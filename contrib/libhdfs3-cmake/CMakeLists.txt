@@ -19,15 +19,14 @@ include(Options)
 
 # prefer shared libraries
 set(CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_SHARED_LIBRARY_SUFFIX})
-find_package(CURL REQUIRED)
+#find_package(CURL REQUIRED)
 find_package(GSasl REQUIRED)
 find_package(KERBEROS REQUIRED)
 find_package(LibXml2 REQUIRED)
-find_package(LibUUID REQUIRED)
 
 # source
 set(PROTO_FILES
-    ${HDFS3_SOURCE_DIR}/proto/encryption.proto
+    #${HDFS3_SOURCE_DIR}/proto/encryption.proto
     ${HDFS3_SOURCE_DIR}/proto/ClientDatanodeProtocol.proto
     ${HDFS3_SOURCE_DIR}/proto/hdfs.proto
     ${HDFS3_SOURCE_DIR}/proto/Security.proto
@@ -46,7 +45,6 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/network/TcpSocket.cpp
     ${HDFS3_SOURCE_DIR}/network/DomainSocket.cpp
     ${HDFS3_SOURCE_DIR}/network/BufferedSocketReader.cpp
-    ${HDFS3_SOURCE_DIR}/client/EncryptionZoneIterator.cpp
     ${HDFS3_SOURCE_DIR}/client/ReadShortCircuitInfo.cpp
     ${HDFS3_SOURCE_DIR}/client/Pipeline.cpp
     ${HDFS3_SOURCE_DIR}/client/Hdfs.cpp
@@ -59,19 +57,16 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/client/RemoteBlockReader.cpp
     ${HDFS3_SOURCE_DIR}/client/Permission.cpp
     ${HDFS3_SOURCE_DIR}/client/FileSystemImpl.cpp
-    ${HDFS3_SOURCE_DIR}/client/CryptoCodec.cpp
     ${HDFS3_SOURCE_DIR}/client/DirectoryIterator.cpp
     ${HDFS3_SOURCE_DIR}/client/FileSystemKey.cpp
     ${HDFS3_SOURCE_DIR}/client/DataTransferProtocolSender.cpp
     ${HDFS3_SOURCE_DIR}/client/LeaseRenewer.cpp
-    ${HDFS3_SOURCE_DIR}/client/HttpClient.cpp
     ${HDFS3_SOURCE_DIR}/client/PeerCache.cpp
     ${HDFS3_SOURCE_DIR}/client/InputStream.cpp
     ${HDFS3_SOURCE_DIR}/client/FileSystem.cpp
     ${HDFS3_SOURCE_DIR}/client/InputStreamImpl.cpp
     ${HDFS3_SOURCE_DIR}/client/Token.cpp
     ${HDFS3_SOURCE_DIR}/client/PacketPool.cpp
-    ${HDFS3_SOURCE_DIR}/client/KmsClientProvider.cpp
     ${HDFS3_SOURCE_DIR}/client/OutputStream.cpp
     ${HDFS3_SOURCE_DIR}/rpc/RpcChannelKey.cpp
     ${HDFS3_SOURCE_DIR}/rpc/RpcProtocolInfo.cpp
@@ -112,17 +107,12 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/client/FileSystem.h
     ${HDFS3_SOURCE_DIR}/client/ReadShortCircuitInfo.h
     ${HDFS3_SOURCE_DIR}/client/InputStreamInter.h
-    ${HDFS3_SOURCE_DIR}/client/HttpClient.h
     ${HDFS3_SOURCE_DIR}/client/FileSystemImpl.h
-    ${HDFS3_SOURCE_DIR}/client/FileEncryptionInfo.h
     ${HDFS3_SOURCE_DIR}/client/PacketPool.h
     ${HDFS3_SOURCE_DIR}/client/Pipeline.h
-    ${HDFS3_SOURCE_DIR}/client/EncryptionZoneInfo.h
     ${HDFS3_SOURCE_DIR}/client/OutputStreamInter.h
     ${HDFS3_SOURCE_DIR}/client/RemoteBlockReader.h
-    ${HDFS3_SOURCE_DIR}/client/CryptoCodec.h
     ${HDFS3_SOURCE_DIR}/client/Token.h
-    ${HDFS3_SOURCE_DIR}/client/EncryptionZoneIterator.h
     ${HDFS3_SOURCE_DIR}/client/KerberosName.h
     ${HDFS3_SOURCE_DIR}/client/DirectoryIterator.h
     ${HDFS3_SOURCE_DIR}/client/hdfs.h
@@ -144,7 +134,6 @@ set(SRCS
     ${HDFS3_SOURCE_DIR}/client/PeerCache.h
     ${HDFS3_SOURCE_DIR}/client/OutputStream.h
     ${HDFS3_SOURCE_DIR}/client/FileStatus.h
-    ${HDFS3_SOURCE_DIR}/client/KmsClientProvider.h
     ${HDFS3_SOURCE_DIR}/client/DataTransferProtocol.h
     ${HDFS3_SOURCE_DIR}/client/BlockLocation.h
     ${HDFS3_SOURCE_DIR}/rpc/RpcConfig.h
@@ -203,17 +192,17 @@ target_include_directories(hdfs3 PRIVATE ${HDFS3_SOURCE_DIR})
 target_include_directories(hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
 target_include_directories(hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-target_include_directories(hdfs3 PRIVATE ${CURL_INCLUDE_DIR})
+#target_include_directories(hdfs3 PRIVATE ${CURL_INCLUDE_DIR})
 target_include_directories(hdfs3 PRIVATE ${GSASL_INCLUDE_DIR})
 target_include_directories(hdfs3 PRIVATE ${KERBEROS_INCLUDE_DIRS})
 target_include_directories(hdfs3 PRIVATE ${LIBXML2_INCLUDE_DIR})
-target_include_directories(hdfs3 PRIVATE ${LIBUUID_INCLUDE_DIRS})
+#target_include_directories(hdfs3 PRIVATE ${LIBUUID_INCLUDE_DIRS})
 
-target_link_libraries(hdfs3 ${CURL_LIBRARIES})
+#target_link_libraries(hdfs3 ${CURL_LIBRARIES})
 target_link_libraries(hdfs3 ${GSASL_LIBRARIES})
 target_link_libraries(hdfs3 ${KERBEROS_LIBRARIES})
 target_link_libraries(hdfs3 ${LIBXML2_LIBRARIES})
-target_link_libraries(hdfs3 ${LIBUUID_LIBRARIES})
+#target_link_libraries(hdfs3 ${LIBUUID_LIBRARIES})
 
 # inherit from parent cmake
 target_include_directories(hdfs3 PRIVATE ${Boost_INCLUDE_DIRS})
