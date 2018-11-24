@@ -10,3 +10,6 @@ SELECT reverse([(1, 'Hello', []), (nan, 'World', [NULL])]);
 SELECT reverse(NULL);
 SELECT reverse([]);
 SELECT reverse([[[[]]]]);
+
+SET send_logs_level = 'none';
+SELECT '[RE7', ( SELECT '\0' ) AS riwwq, ( SELECT reverse([( SELECT bitTestAll(NULL) ) , ( SELECT '\0' ) AS ddfweeuy]) ) AS xuvv, '', ( SELECT * FROM mysql() ) AS wqgdswyc, ( SELECT * FROM mysql() ); -- { serverError 42 }

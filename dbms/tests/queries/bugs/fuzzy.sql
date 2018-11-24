@@ -18,4 +18,3 @@ SELECT subtractDays((CAST((-5263074.47) AS DateTime)), -737895);
 SELECT quantileDeterministic([], findClusterIndex(( SELECT subtractDays((CAST((566450.398706) AS DateTime)), 54) ) )), '\0', [];
 SELECT addDays((CAST((96.338) AS DateTime)), -3);
 SELECT arrayEnumerateDense([], [sequenceCount(NULL)]);
-SELECT '[RE7', ( SELECT '\0' ) AS riwwq, ( SELECT reverse([( SELECT bitTestAll(NULL) ) , ( SELECT '\0' ) AS ddfweeuy]) ) AS xuvv, '', ( SELECT * FROM mysql() ) AS wqgdswyc, ( SELECT * FROM mysql() );
