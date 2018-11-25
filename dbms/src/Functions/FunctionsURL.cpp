@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsURL.h>
 #include <Functions/FunctionsStringSearch.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 
 namespace DB
 {
@@ -84,8 +84,8 @@ void ExtractProtocol::execute(Pos data, size_t size, Pos & res_data, size_t & re
 }
 
 
-void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
-    ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
+void DecodeURLComponentImpl::vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+    ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
 {
     res_data.resize(data.size());
     size_t size = offsets.size();
@@ -109,7 +109,7 @@ void DecodeURLComponentImpl::vector(const ColumnString::Chars_t & data, const Co
 }
 
 
-void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
+void DecodeURLComponentImpl::vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
 {
     throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
 }

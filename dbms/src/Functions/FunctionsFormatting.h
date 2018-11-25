@@ -94,13 +94,13 @@ private:
             auto col_to = ColumnString::create();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
+            ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
 
-            WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
+            WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -173,13 +173,13 @@ private:
             auto col_to = ColumnString::create();
 
             const typename ColumnVector<T>::Container & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
+            ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
             data_to.resize(size * 2);
             offsets_to.resize(size);
 
-            WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
+            WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
 
             for (size_t i = 0; i < size; ++i)
             {

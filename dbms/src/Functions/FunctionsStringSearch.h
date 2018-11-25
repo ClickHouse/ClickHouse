@@ -173,7 +173,7 @@ public:
         {
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             Impl::vector(col->getChars(), col->getOffsets(), col_needle->getValue<String>(), vec_res, offsets_res);
 

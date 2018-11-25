@@ -225,9 +225,9 @@ struct ArrayElementStringImpl
 {
     template <bool negative>
     static void vectorConst(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const ColumnArray::Offset index,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
+        ColumnString::Chars & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
@@ -279,9 +279,9 @@ struct ArrayElementStringImpl
       */
     template <typename TIndex>
     static void vector(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const PaddedPODArray<TIndex> & indices,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
+        ColumnString::Chars & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();

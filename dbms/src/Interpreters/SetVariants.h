@@ -68,7 +68,7 @@ struct SetMethodString
     struct State
     {
         const ColumnString::Offsets * offsets;
-        const ColumnString::Chars_t * chars;
+        const ColumnString::Chars * chars;
 
         void init(const ColumnRawPtrs & key_columns)
         {
@@ -108,7 +108,7 @@ struct SetMethodFixedString
     struct State
     {
         size_t n;
-        const ColumnFixedString::Chars_t * chars;
+        const ColumnFixedString::Chars * chars;
 
         void init(const ColumnRawPtrs & key_columns)
         {

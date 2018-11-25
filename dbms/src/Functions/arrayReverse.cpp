@@ -165,8 +165,8 @@ bool FunctionArrayReverse::executeFixedString(const IColumn & src_data, const Co
     if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
     {
         const size_t n = src_data_concrete->getN();
-        const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
-        ColumnFixedString::Chars_t & res_chars = typeid_cast<ColumnFixedString &>(res_data).getChars();
+        const ColumnFixedString::Chars & src_data = src_data_concrete->getChars();
+        ColumnFixedString::Chars & res_chars = typeid_cast<ColumnFixedString &>(res_data).getChars();
         size_t size = src_offsets.size();
         res_chars.resize(src_data.size());
 
@@ -205,8 +205,8 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
         const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
         ColumnString::Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_data).getOffsets();
 
-        const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
-        ColumnString::Chars_t & res_chars = typeid_cast<ColumnString &>(res_data).getChars();
+        const ColumnString::Chars & src_data = src_data_concrete->getChars();
+        ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res_data).getChars();
 
         size_t size = src_array_offsets.size();
         res_string_offsets.resize(src_string_offsets.size());

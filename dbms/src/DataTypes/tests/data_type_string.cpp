@@ -25,7 +25,7 @@ try
 
     {
         auto column = ColumnString::create();
-        ColumnString::Chars_t & data = column->getChars();
+        ColumnString::Chars & data = column->getChars();
         ColumnString::Offsets & offsets = column->getOffsets();
 
         data.resize(n * size);
