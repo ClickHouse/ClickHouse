@@ -19,6 +19,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageHDFS::StorageHDFS(const String & uri_,
@@ -59,28 +61,26 @@ namespace
 
             std::vector<String> fuzzyNameList = parseDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',' , 100/* hard coded max files */);
 
-            std::vector<std::vector<String> > fileNames;
-
-            for(auto fuzzyName : fuzzyNameList)
-                fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
+            // Don't support | for globs compatible
+            //std::vector<std::vector<String> > fileNames;
+            //for(auto fuzzyName : fuzzyNameList)
+            //    fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
 
             BlockInputStreams inputs;
 
-            for (auto & vecNames : fileNames)
+            //for (auto & vecNames : fileNames)
+            for (auto & name: fuzzyNameList)
             {
-                for (auto & name: vecNames)
-                {
-                    std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
+                std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
 
-                    inputs.emplace_back(
-                        std::make_shared<OwningBlockInputStream<ReadBuffer>>(
-                            FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size),
-                            std::move(read_buf)));
-                }
+                inputs.emplace_back(
+                    std::make_shared<OwningBlockInputStream<ReadBuffer>>(
+                        FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size),
+                        std::move(read_buf)));
             }
 
             if (inputs.size() == 0)
-                throw Exception("StorageHDFS inputs interpreter error");
+                throw Exception("StorageHDFS inputs interpreter error", ErrorCodes::BAD_ARGUMENTS);
 
             if (inputs.size() == 1)
             {
@@ -149,7 +149,7 @@ void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new
 
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
-    throw Exception("StorageHDFS write is not supported yet");
+    throw Exception("StorageHDFS write is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
     return {};
 }
 

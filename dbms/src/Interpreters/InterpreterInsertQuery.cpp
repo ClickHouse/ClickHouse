@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMETNS;
 }
 
 
@@ -182,43 +183,40 @@ BlockIO InterpreterInsertQuery::execute()
 
         std::vector<String> fuzzyNameList = parseDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',', 100/* hard coded max files */);
 
-        std::vector<std::vector<String> > fileNames;
+        //std::vector<std::vector<String> > fileNames;
 
-        for (const auto & fuzzyName : fuzzyNameList)
-            fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
+        //for (const auto & fuzzyName : fuzzyNameList)
+        //    fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
 
         BlockInputStreams inputs;
 
-        for (const auto & vecNames : fileNames)
+        for (const auto & name : fuzzyNameList)
         {
-            for (const auto & name : vecNames)
+            std::unique_ptr<ReadBuffer> read_buf;
+
+            if (scheme.empty() || scheme == "file")
             {
-                std::unique_ptr<ReadBuffer> read_buf;
-
-                if (scheme.empty() || scheme == "file")
-                {
-                    read_buf = std::make_unique<ReadBufferFromFile>(Poco::URI(uriPrefix + name).getPath());
-                }
-                else if (scheme == "hdfs")
-                {
-                    read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
-                }
-                else
-                {
-                    throw Exception("URI scheme " + scheme + " is not supported with insert statement yet");
-                }
-
-                inputs.emplace_back(
-                    std::make_shared<OwningBlockInputStream<ReadBuffer>>(
-                        context.getInputFormat(format, *read_buf,
-                                               res.out->getHeader(), // sample_block
-                                               settings.max_insert_block_size),
-                        std::move(read_buf)));
+                read_buf = std::make_unique<ReadBufferFromFile>(Poco::URI(uriPrefix + name).getPath());
             }
+            else if (scheme == "hdfs")
+            {
+                read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
+            }
+            else
+            {
+                throw Exception("URI scheme " + scheme + " is not supported with insert statement yet", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            inputs.emplace_back(
+                std::make_shared<OwningBlockInputStream<ReadBuffer>>(
+                    context.getInputFormat(format, *read_buf,
+                                           res.out->getHeader(), // sample_block
+                                           settings.max_insert_block_size),
+                    std::move(read_buf)));
         }
 
         if (inputs.size() == 0)
-            throw Exception("Inputs interpreter error");
+            throw Exception("Inputs interpreter error", ErrorCodes::BAD_ARGUMENTS);
 
         auto stream = inputs[0];
         if (inputs.size() > 1)
