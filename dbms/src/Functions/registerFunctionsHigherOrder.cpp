@@ -1,7 +1,7 @@
-#include <Functions/FunctionFactory.h>
-
 namespace DB
 {
+
+class FunctionFactory;
 
 void registerFunctionArrayMap(FunctionFactory &);
 void registerFunctionArrayFilter(FunctionFactory &);
