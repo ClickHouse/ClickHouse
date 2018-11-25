@@ -1,22 +1,21 @@
 # Kafka
 
-This engine works with [Apache Kafka](http://kafka.apache.org/).
+此引擎与 [Apache Kafka](http://kafka.apache.org/) 结合使用。
 
-Kafka lets you:
+Kafka 特性：
 
-- Publish or subscribe to data flows.
-- Organize fault-tolerant storage.
-- Process streams as they become available.
+- 发布或者订阅数据流。
+- 容错存储机制。
+- 处理流数据。
 
-
-Old format:
+老版格式：
 
 ```
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
       [, kafka_row_delimiter, kafka_schema, kafka_num_consumers])
 ```
 
-New format:
+新版格式：
 
 ```
 Kafka SETTINGS
@@ -29,20 +28,20 @@ Kafka SETTINGS
   kafka_num_consumers = 2
 ```
 
-Required parameters:
+必要参数：
 
-- `kafka_broker_list` – A comma-separated list of brokers (`localhost:9092`).
-- `kafka_topic_list` – A list of Kafka topics (`my_topic`).
-- `kafka_group_name` – A group of Kafka consumers (`group1`). Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
-- `kafka_format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section.
+- `kafka_broker_list` – 以逗号分隔的 brokers 列表 (`localhost:9092`)。
+- `kafka_topic_list` – topic 列表 (`my_topic`)。
+- `kafka_group_name` – Kafka 消费组名称 (`group1`)。如果不希望消息在集群中重复，请在每个分片中使用相同的组名。
+- `kafka_format` – 消息体格式。使用与 SQL 部分的 `FORMAT` 函数相同表示方法，例如 `JSONEachRow`。了解详细信息，请参考 `Formats` 部分。
 
-Optional parameters:
+可选参数：
 
-- `kafka_row_delimiter` - Character-delimiter of records (rows), which ends the message.
-- `kafka_schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
+- `kafka_row_delimiter` - 每个消息体（记录）之间的分隔符。
+- `kafka_schema` – 如果解析格式需要一个 schema 时，此参数必填。例如，[Cap'n Proto](https://capnproto.org/) 需要 schema 文件路径以及根对象 `schema.capnp:Message` 的名字。
+- `kafka_num_consumers` – 单个表的消费者数量。默认值是：`1`，如果一个消费者的吞吐量不足，则指定更多的消费者。消费者的总数不应该超过 topic 中分区的数量，因为每个分区只能分配一个消费者。
 
-Examples:
+示例：
 
 ``` sql
   CREATE TABLE queue (
@@ -72,19 +71,19 @@ Examples:
                        kafka_num_consumers = 4;
 ```
 
-The delivered messages are tracked automatically, so each message in a group is only counted once. If you want to get the data twice, then create a copy of the table with another group name.
+消费的消息会被自动追踪，因此每个消息在不同的消费组里只会记录一次。如果希望获得两次数据，则使用另一个组名创建副本。
 
-Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. Read more about this at [http://kafka.apache.org/intro](http://kafka.apache.org/intro).
+消费组可以灵活配置并且在集群之间同步。例如，如果群集中有10个主题和5个表副本，则每个副本将获得2个主题。 如果副本数量发生变化，主题将自动在副本中重新分配。了解更多信息请访问 [http://kafka.apache.org/intro](http://kafka.apache.org/intro)。
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
+`SELECT` 查询对于读取消息并不是很有用（调试除外），因为每条消息只能被读取一次。使用物化视图创建实时线程更实用。您可以这样做：
 
-1. Use the engine to create a Kafka consumer and consider it a data stream.
-2. Create a table with the desired structure.
-3. Create a materialized view that converts data from the engine and puts it into a previously created table.
+1. 使用引擎创建一个 Kafka 消费者并作为一条数据流。
+2. 创建一个结构表。
+3. 创建物化视图，改视图会在后台转换引擎中的数据并将其放入之前创建的表中。
 
-When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Kafka and convert them to the required format using `SELECT`
+当 `MATERIALIZED VIEW` 添加至引擎，它将会在后台收集数据。可以持续不断地从 Kafka 收集数据并通过 `SELECT` 将数据转换为所需要的格式。
 
-Example:
+示例：
 
 ``` sql
   CREATE TABLE queue (
@@ -106,20 +105,20 @@ Example:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../settings/settings.md#settings-settings_stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+为了提高性能，接受的消息被分组为 [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size) 大小的块。如果未在 [stream_flush_interval_ms](../settings/settings.md#settings-settings_stream_flush_interval_ms) 毫秒内形成块，则不关心块的完整性，都会将数据刷新到表中。
 
-To stop receiving topic data or to change the conversion logic, detach the materialized view:
+停止接收主题数据或更改转换逻辑，请 detach 物化视图：
 
 ```
   DETACH TABLE consumer;
   ATTACH MATERIALIZED VIEW consumer;
 ```
 
-If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+如果使用 `ALTER` 更改目标表，为了避免目标表与视图中的数据之间存在差异，推荐停止物化视图。
 
-## Configuration
+## 配置
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
+与 `GraphiteMergeTree` 类似，Kafka 引擎支持使用ClickHouse配置文件进行扩展配置。可以使用两个配置键：全局 (`kafka`) 和 主题级别 (`kafka_*`)。首先应用全局配置，然后应用主题级配置（如果存在）。
 
 ```xml
   <!--  Global configuration options for all tables of Kafka engine type -->
@@ -135,6 +134,6 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
   </kafka_logs>
 ```
 
-For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+有关详细配置选项列表，请参阅 [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/kafka/) <!--hide-->

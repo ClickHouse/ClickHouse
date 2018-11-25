@@ -1,30 +1,27 @@
-<a name="table_engines-mysql"></a>
-
 # MySQL
 
-The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
+MySQL 引擎可以对存储在远程 MySQL 服务器上的数据执行 `SELECT` 查询。
 
-Call format:
+调用格式：
 
 ```
 MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-**Call parameters**
+**调用参数**
 
-- `host:port` — Address of the MySQL server.
-- `database` — Database name on the MySQL server.
-- `table` — Name of the table.
-- `user` — The MySQL User.
-- `password` — User password.
-- `replace_query` — Flag that sets query substitution `INSERT INTO` to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
-- `'on_duplicate_clause'` — Adds the `ON DUPLICATE KEY UPDATE 'on_duplicate_clause'` expression to the `INSERT` query. For example: `impression = VALUES(impression) + impression`. To specify `'on_duplicate_clause'` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `'on_duplicate_clause'`, ClickHouse generates an exception.
+- `host:port` — MySQL 服务器地址。
+- `database` — 数据库的名称。
+- `table` — 表名称。
+- `user` — 数据库用户。
+- `password` — 用户密码。
+- `replace_query` — 将 `INSERT INTO` 查询是否替换为 `REPLACE INTO` 的标志。如果 `replace_query=1`，则替换查询
+- `'on_duplicate_clause'` — 将 `ON DUPLICATE KEY UPDATE 'on_duplicate_clause'` 表达式添加到 `INSERT` 查询语句中。例如：`impression = VALUES(impression) + impression`。如果需要指定 `'on_duplicate_clause'`，则需要设置 `replace_query=0`。如果同时设置 `replace_query = 1` 和 `'on_duplicate_clause'`，则会抛出异常。
 
-At this time, simple `WHERE`  clauses such as ` =, !=, >, >=, <, <=` are executed on the MySQL server.
+此时，简单的 `WHERE` 子句（例如 ` =, !=, >, >=, <, <=`）是在 MySQL 服务器上执行。
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+其余条件以及 `LIMIT` 采样约束语句仅在对MySQL的查询完成后才在ClickHouse中执行。
 
-The `MySQL` engine does not support the [Nullable](../../data_types/nullable.md#data_type-nullable) data type, so when reading data from MySQL tables, `NULL` is converted to default values for the specified column type (usually 0 or an empty string).
+`MySQL` 引擎不支持 [Nullable](../../data_types/nullable.md#data_type-nullable) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
 
-
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/mysql/) <!--hide-->
