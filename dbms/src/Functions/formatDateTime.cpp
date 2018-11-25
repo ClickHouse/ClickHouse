@@ -10,7 +10,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <common/DateLUTImpl.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 
 #include <type_traits>
 

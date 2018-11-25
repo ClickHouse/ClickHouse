@@ -105,7 +105,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
@@ -214,7 +214,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
@@ -425,7 +425,7 @@ public:
             auto & vec_res = col_res->getChars();
             vec_res.resize(col_in->size() * ipv6_bytes_length);
 
-            const ColumnString::Chars_t & vec_src = col_in->getChars();
+            const ColumnString::Chars & vec_src = col_in->getChars();
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
 
@@ -538,7 +538,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
             vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
@@ -622,7 +622,7 @@ public:
             ColumnUInt32::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
 
-            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Chars & vec_src = col->getChars();
             const ColumnString::Offsets & offsets_src = col->getOffsets();
             size_t prev_offset = 0;
 
@@ -752,7 +752,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
             vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
@@ -863,7 +863,7 @@ public:
             ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
 
-            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Chars & vec_src = col->getChars();
             const ColumnString::Offsets & offsets_src = col->getOffsets();
             size_t prev_offset = 0;
 
@@ -938,7 +938,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (uuid_text_length + 1));
             offsets_res.resize(size);
@@ -1034,7 +1034,7 @@ public:
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
 
             size_t src_offset = 0;
@@ -1071,7 +1071,7 @@ public:
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
 
             size_t src_offset = 0;
@@ -1193,7 +1193,7 @@ public:
         if (col_vec)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
@@ -1247,10 +1247,10 @@ public:
         if (col_str_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_str_in->getChars();
+            const ColumnString::Chars & in_vec = col_str_in->getChars();
             const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
             size_t size = in_offsets.size();
@@ -1291,10 +1291,10 @@ public:
         if (col_fstr_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
+            const ColumnString::Chars & in_vec = col_fstr_in->getChars();
 
             size_t size = col_fstr_in->size();
 
@@ -1403,10 +1403,10 @@ public:
         {
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & out_vec = col_res->getChars();
+            ColumnString::Chars & out_vec = col_res->getChars();
             ColumnString::Offsets & out_offsets = col_res->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col->getChars();
+            const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets & in_offsets = col->getOffsets();
 
             size_t size = in_offsets.size();
@@ -1557,10 +1557,10 @@ public:
         if (col_str_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_str_in->getChars();
+            const ColumnString::Chars & in_vec = col_str_in->getChars();
             const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
             size_t size = in_offsets.size();
@@ -1604,10 +1604,10 @@ public:
         if (col_fstr_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
+            const ColumnString::Chars & in_vec = col_fstr_in->getChars();
 
             size_t size = col_fstr_in->size();
 

@@ -248,7 +248,7 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
 
     auto res = ColumnFixedString::create(n);
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
 
     res_chars.resize(n * limit);
 
@@ -274,7 +274,7 @@ ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, siz
 
     auto res = ColumnFixedString::create(n);
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
 
     res_chars.resize(n * limit);
 
@@ -296,7 +296,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
     if (0 == col_size)
         return res;
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     res_chars.resize(n * offsets.back());
 
     Offset curr_offset = 0;

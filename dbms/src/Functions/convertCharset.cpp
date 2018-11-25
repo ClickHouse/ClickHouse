@@ -86,8 +86,8 @@ private:
     }
 
     void convert(const String & from_charset, const String & to_charset,
-        const ColumnString::Chars_t & from_chars, const ColumnString::Offsets & from_offsets,
-        ColumnString::Chars_t & to_chars, ColumnString::Offsets & to_offsets)
+        const ColumnString::Chars & from_chars, const ColumnString::Offsets & from_offsets,
+        ColumnString::Chars & to_chars, ColumnString::Offsets & to_offsets)
     {
         auto converter_from = getConverter(from_charset);
         auto converter_to = getConverter(to_charset);

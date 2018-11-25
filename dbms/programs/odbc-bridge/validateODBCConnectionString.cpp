@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 #include <Poco/String.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include "validateODBCConnectionString.h"

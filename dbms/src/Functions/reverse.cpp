@@ -21,9 +21,9 @@ namespace ErrorCodes
   */
 struct ReverseImpl
 {
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
@@ -40,7 +40,7 @@ struct ReverseImpl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
     {
         res_data.resize(data.size());
         size_t size = data.size() / n;

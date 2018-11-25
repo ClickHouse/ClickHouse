@@ -142,13 +142,13 @@ namespace
             if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
             {
                 const size_t n = src_data_concrete->getN();
-                const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
+                const ColumnFixedString::Chars & src_data = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
                 if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
-                ColumnFixedString::Chars_t & res_data = concrete_res_data->getChars();
+                ColumnFixedString::Chars & res_data = concrete_res_data->getChars();
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
                 res_data.reserve(src_data.size());
@@ -215,12 +215,12 @@ namespace
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
-                const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
+                const ColumnString::Chars & src_data = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                ColumnString::Chars_t & res_data = concrete_res_data->getChars();
+                ColumnString::Chars & res_data = concrete_res_data->getChars();
 
                 size_t size = src_array_offsets.size();
                 res_array_offsets.resize(size);

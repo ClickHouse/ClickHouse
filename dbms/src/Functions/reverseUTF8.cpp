@@ -19,9 +19,9 @@ namespace ErrorCodes
   */
 struct ReverseUTF8Impl
 {
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
@@ -61,7 +61,7 @@ struct ReverseUTF8Impl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
+    static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Cannot apply function reverseUTF8 to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
     }

@@ -437,11 +437,11 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
     auto res = ColumnArray::create(data->cloneEmpty());
 
     const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
-    const ColumnString::Chars_t & src_chars = src_string.getChars();
+    const ColumnString::Chars & src_chars = src_string.getChars();
     const Offsets & src_string_offsets = src_string.getOffsets();
     const Offsets & src_offsets = getOffsets();
 
-    ColumnString::Chars_t & res_chars = typeid_cast<ColumnString &>(res->getData()).getChars();
+    ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res->getData()).getChars();
     Offsets & res_string_offsets = typeid_cast<ColumnString &>(res->getData()).getOffsets();
     Offsets & res_offsets = res->getOffsets();
 
@@ -781,11 +781,11 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
     ColumnArray & res_ = static_cast<ColumnArray &>(*res);
 
     const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
-    const ColumnString::Chars_t & src_chars = src_string.getChars();
+    const ColumnString::Chars & src_chars = src_string.getChars();
     const Offsets & src_string_offsets = src_string.getOffsets();
     const Offsets & src_offsets = getOffsets();
 
-    ColumnString::Chars_t & res_chars = typeid_cast<ColumnString &>(res_.getData()).getChars();
+    ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res_.getData()).getChars();
     Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_.getData()).getOffsets();
     Offsets & res_offsets = res_.getOffsets();
 

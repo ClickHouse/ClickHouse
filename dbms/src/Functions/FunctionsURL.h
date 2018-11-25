@@ -4,12 +4,11 @@
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <common/StringRef.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/FunctionsStringArray.h>
-#include <port/memrchr.h>
 
 
 namespace DB
@@ -89,7 +88,7 @@ inline StringRef getURLHost(const char * data, size_t size)
     Pos pos = data;
     Pos end = data + size;
 
-    if (nullptr == (pos = strchr(pos, '/')))
+    if (end == (pos = find_first_symbols<'/'>(pos, end)))
         return {};
 
     if (pos != data)
@@ -269,16 +268,18 @@ struct ExtractTopLevelDomain
             if (host.data[host.size - 1] == '.')
                 host.size -= 1;
 
-            Pos last_dot = reinterpret_cast<Pos>(memrchr(host.data, '.', host.size));
+            auto host_end = host.data + host.size;
 
+            Pos last_dot = find_last_symbols_or_null<'.'>(host.data, host_end);
             if (!last_dot)
                 return;
+
             /// For IPv4 addresses select nothing.
             if (last_dot[1] <= '9')
                 return;
 
             res_data = last_dot + 1;
-            res_size = (host.data + host.size) - res_data;
+            res_size = host_end - res_data;
         }
     }
 };
@@ -295,12 +296,12 @@ struct ExtractPath
         Pos pos = data;
         Pos end = pos + size;
 
-        if (nullptr != (pos = strchr(data, '/')) && pos[1] == '/' && nullptr != (pos = strchr(pos + 2, '/')))
+        if (end != (pos = find_first_symbols<'/'>(pos, end)) && pos[1] == '/' && end != (pos = find_first_symbols<'/'>(pos + 2, end)))
         {
-            Pos query_string_or_fragment = strpbrk(pos, "?#");
+            Pos query_string_or_fragment = find_first_symbols<'?', '#'>(pos, end);
 
             res_data = pos;
-            res_size = (query_string_or_fragment ? query_string_or_fragment : end) - res_data;
+            res_size = query_string_or_fragment - res_data;
         }
     }
 };
@@ -317,7 +318,7 @@ struct ExtractPathFull
         Pos pos = data;
         Pos end = pos + size;
 
-        if (nullptr != (pos = strchr(data, '/')) && pos[1] == '/' && nullptr != (pos = strchr(pos + 2, '/')))
+        if (end != (pos = find_first_symbols<'/'>(pos, end)) && pos[1] == '/' && end != (pos = find_first_symbols<'/'>(pos + 2, end)))
         {
             res_data = pos;
             res_size = end - res_data;
@@ -338,12 +339,12 @@ struct ExtractQueryString
         Pos pos = data;
         Pos end = pos + size;
 
-        if (nullptr != (pos = strchr(data, '?')))
+        if (end != (pos = find_first_symbols<'?'>(pos, end)))
         {
-            Pos fragment = strchr(pos, '#');
+            Pos fragment = find_first_symbols<'#'>(pos, end);
 
             res_data = pos + (without_leading_char ? 1 : 0);
-            res_size = (fragment ? fragment : end) - res_data;
+            res_size = fragment - res_data;
         }
     }
 };
@@ -361,7 +362,7 @@ struct ExtractFragment
         Pos pos = data;
         Pos end = pos + size;
 
-        if (nullptr != (pos = strchr(data, '#')))
+        if (end != (pos = find_first_symbols<'#'>(pos, end)))
         {
             res_data = pos + (without_leading_char ? 1 : 0);
             res_size = end - res_data;
@@ -382,12 +383,12 @@ struct ExtractQueryStringAndFragment
         Pos pos = data;
         Pos end = pos + size;
 
-        if (nullptr != (pos = strchr(data, '?')))
+        if (end != (pos = find_first_symbols<'?'>(pos, end)))
         {
             res_data = pos + (without_leading_char ? 1 : 0);
             res_size = end - res_data;
         }
-        else if (nullptr != (pos = strchr(data, '#')))
+        else if (end != (pos = find_first_symbols<'#'>(pos, end)))
         {
             res_data = pos;
             res_size = end - res_data;
@@ -406,7 +407,7 @@ struct ExtractWWW
         Pos pos = data;
         Pos end = pos + size;
 
-        if (nullptr != (pos = strchr(pos, '/')))
+        if (end != (pos = find_first_symbols<'/'>(pos, end)))
         {
             if (pos != data)
             {
@@ -442,64 +443,76 @@ struct ExtractWWW
 
 struct ExtractURLParameterImpl
 {
-    static void vector(const ColumnString::Chars_t & data,
-                        const ColumnString::Offsets & offsets,
-                        std::string pattern,
-                        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
+    static void vector(const ColumnString::Chars & data,
+        const ColumnString::Offsets & offsets,
+        std::string pattern,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
-        res_data.reserve(data.size()  / 5);
+        res_data.reserve(data.size() / 5);
         res_offsets.resize(offsets.size());
 
         pattern += '=';
         const char * param_str = pattern.c_str();
         size_t param_len = pattern.size();
 
-        size_t prev_offset = 0;
-        size_t res_offset = 0;
+        ColumnString::Offset prev_offset = 0;
+        ColumnString::Offset res_offset = 0;
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            size_t cur_offset = offsets[i];
+            ColumnString::Offset cur_offset = offsets[i];
 
             const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
+            const char * end = reinterpret_cast<const char *>(&data[cur_offset]);
 
-            const char * pos = nullptr;
-            const char * begin = strpbrk(str, "?#");
-            if (begin)
+            /// Find query string or fragment identifier.
+            /// Note that we support parameters in fragment identifier in the same way as in query string.
+
+            const char * const query_string_begin = find_first_symbols<'?', '#'>(str, end);
+
+            /// Will point to the beginning of "name=value" pair. Then it will be reassigned to the beginning of "value".
+            const char * param_begin = nullptr;
+
+            if (query_string_begin + 1 < end)
             {
-                pos = begin + 1;
+                param_begin = query_string_begin + 1;
+
                 while (true)
                 {
-                    pos = strstr(pos, param_str);
+                    param_begin = strstr(param_begin, param_str);
 
-                    if (pos == nullptr)
+                    if (!param_begin)
                         break;
 
-                    if (pos[-1] != '?' && pos[-1] != '#' && pos[-1] != '&')
+                    if (param_begin[-1] != '?' && param_begin[-1] != '#' && param_begin[-1] != '&')
                     {
-                        pos += param_len;
+                        /// Parameter name is different but has the same suffix.
+                        param_begin += param_len;
                         continue;
                     }
                     else
                     {
-                        pos += param_len;
+                        param_begin += param_len;
                         break;
                     }
                 }
             }
 
-            if (pos)
+            if (param_begin)
             {
-                const char * end = strpbrk(pos, "&#");
-                if (end == nullptr)
-                    end = pos + strlen(pos);
+                const char * param_end = find_first_symbols<'&', '#'>(param_begin, end);
+                if (param_end == end)
+                    param_end = param_begin + strlen(param_begin);
 
-                res_data.resize(res_offset + (end - pos) + 1);
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], pos, end - pos);
-                res_offset += end - pos;
+                size_t param_size = param_end - param_begin;
+
+                res_data.resize(res_offset + param_size + 1);
+                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], param_begin, param_size);
+                res_offset += param_size;
             }
             else
             {
+                /// No parameter found, put empty string in result.
                 res_data.resize(res_offset + 1);
             }
 
@@ -515,10 +528,10 @@ struct ExtractURLParameterImpl
 
 struct CutURLParameterImpl
 {
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
                         const ColumnString::Offsets & offsets,
                         std::string pattern,
-                        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
+                        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size());
         res_offsets.resize(offsets.size());
@@ -541,11 +554,11 @@ struct CutURLParameterImpl
 
             do
             {
-                const char * begin = strpbrk(url_begin, "?#");
-                if (begin == nullptr)
+                const char * query_string_begin = find_first_symbols<'?', '#'>(url_begin, url_end);
+                if (query_string_begin == url_end)
                     break;
 
-                const char * pos = strstr(begin + 1, param_str);
+                const char * pos = strstr(query_string_begin + 1, param_str);
                 if (pos == nullptr)
                     break;
 
@@ -628,8 +641,8 @@ public:
         if (first)
         {
             first = false;
-            pos = strpbrk(pos, "?#");
-            if (pos == nullptr)
+            pos = find_first_symbols<'?', '#'>(pos, end);
+            if (pos == end)
                 return false;
             ++pos;
         }
@@ -637,8 +650,8 @@ public:
         while (true)
         {
             token_begin = pos;
-            pos = strpbrk(pos, "=&#?");
-            if (pos == nullptr)
+            pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
+            if (pos == end)
                 return false;
 
             if (*pos == '?')
@@ -657,8 +670,8 @@ public:
         else
         {
             ++pos;
-            pos = strpbrk(pos, "&#");
-            if (pos == nullptr)
+            pos = find_first_symbols<'&', '#'>(pos, end);
+            if (pos == end)
                 token_end = end;
             else
                 token_end = pos++;
@@ -713,12 +726,12 @@ public:
         if (first)
         {
             first = false;
-            pos = strpbrk(pos, "?#");
+            pos = find_first_symbols<'?', '#'>(pos, end);
         }
         else
-            pos = strpbrk(pos, "&#");
+            pos = find_first_symbols<'&', '#'>(pos, end);
 
-        if (pos == nullptr)
+        if (pos == end)
             return false;
         ++pos;
 
@@ -726,8 +739,8 @@ public:
         {
             token_begin = pos;
 
-            pos = strpbrk(pos, "=&#?");
-            if (pos == nullptr)
+            pos = find_first_symbols<'=', '&', '#', '?'>(pos, end);
+            if (pos == end)
                 return false;
             else
                 token_end = pos;
@@ -936,8 +949,8 @@ public:
 template <typename Extractor>
 struct ExtractSubstringImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         size_t size = offsets.size();
         res_offsets.resize(size);
@@ -973,7 +986,7 @@ struct ExtractSubstringImpl
         res_data.assign(start, length);
     }
 
-    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
+    static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -985,8 +998,8 @@ struct ExtractSubstringImpl
 template <typename Extractor>
 struct CutSubstringImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size());
         size_t size = offsets.size();
@@ -1028,7 +1041,7 @@ struct CutSubstringImpl
         res_data.append(start + length, data.data() + data.size());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t &, size_t, ColumnString::Chars_t &)
+    static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -1038,14 +1051,14 @@ struct CutSubstringImpl
 /// Percent decode of url data.
 struct DecodeURLComponentImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
-        ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets);
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets);
 
     static void constant(const std::string & data,
         std::string & res_data);
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n,
-        ColumnString::Chars_t & res_data);
+    static void vector_fixed(const ColumnString::Chars & data, size_t n,
+        ColumnString::Chars & res_data);
 };
 
 }

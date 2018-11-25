@@ -73,7 +73,7 @@ struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 
 struct StringSink
 {
-    typename ColumnString::Chars_t & elements;
+    typename ColumnString::Chars & elements;
     typename ColumnString::Offsets & offsets;
 
     size_t row_num = 0;
@@ -112,7 +112,7 @@ struct StringSink
 
 struct FixedStringSink
 {
-    typename ColumnString::Chars_t & elements;
+    typename ColumnString::Chars & elements;
     size_t string_size;
 
     size_t row_num = 0;

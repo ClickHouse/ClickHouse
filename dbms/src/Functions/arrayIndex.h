@@ -278,7 +278,7 @@ template <typename IndexConv>
 struct ArrayIndexStringNullImpl
 {
     static void vector_const(
-        const ColumnString::Chars_t & /*data*/, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & /*string_offsets*/,
+        const ColumnString::Chars & /*data*/, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & /*string_offsets*/,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
     {
@@ -310,7 +310,7 @@ template <typename IndexConv>
 struct ArrayIndexStringImpl
 {
     static void vector_const(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const String & value,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data)
@@ -349,8 +349,8 @@ struct ArrayIndexStringImpl
     }
 
     static void vector_vector(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
-        const ColumnString::Chars_t & item_values, const ColumnString::Offsets & item_offsets,
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars & item_values, const ColumnString::Offsets & item_offsets,
         PaddedPODArray<typename IndexConv::ResultType> & result,
         const PaddedPODArray<UInt8> * null_map_data,
         const PaddedPODArray<UInt8> * null_map_item)

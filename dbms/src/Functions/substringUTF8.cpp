@@ -21,11 +21,11 @@ namespace ErrorCodes
   */
 struct SubstringUTF8Impl
 {
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         size_t start,
         size_t length,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size());

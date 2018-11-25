@@ -20,7 +20,7 @@ target_link_libraries (local_date_time_comparison common)
 add_check(multi_version)
 add_check(local_date_time_comparison)
 
-add_executable (unit_tests_libcommon gtest_json_test.cpp gtest_strong_typedef.cpp)
+add_executable (unit_tests_libcommon gtest_json_test.cpp gtest_strong_typedef.cpp gtest_find_symbols.cpp)
 target_link_libraries (unit_tests_libcommon common ${GTEST_MAIN_LIBRARIES})
 add_check(unit_tests_libcommon)
 
