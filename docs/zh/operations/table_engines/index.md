@@ -1,18 +1,14 @@
-<a name="table_engines"></a>
+# 表引擎
 
-# Table engines
+表引擎（即表的类型）决定了：
 
-The table engine (type of table) determines:
+* 数据的存储方式和位置，写到哪里以及从哪里读取数据
+* 支持哪些查询以及如何支持。
+* 并发数据访问。
+* 索引的使用（如果存在）。
+* 是否可以执行多线程请求。
+* 数据复制参数。
 
-- How and where data is stored, where to write it to, and where to read it from.
-- Which queries are supported, and how.
-- Concurrent data access.
-- Use of indexes, if present.
-- Whether multithreaded request execution is possible.
-- Data replication parameters.
+在读取时，引擎只需要输出所请求的列，但在某些情况下，引擎可以在响应请求时部分处理数据。
 
-When reading, the engine is only required to output the requested columns, but in some cases the engine can partially process data when responding to the request.
-
-For most serious tasks, you should use engines from the `MergeTree` family.
-
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/) <!--hide-->
+对于大多数正式的任务，应该使用MergeTree族中的引擎。
