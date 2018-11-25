@@ -8,7 +8,7 @@ namespace DB
 struct NameCutFragment { static constexpr auto name = "cutFragment"; };
 using FunctionCutFragment = FunctionStringToString<CutSubstringImpl<ExtractFragment<false>>, NameCutFragment>;
 
-void registerFunctionsURL(FunctionFactory & factory)
+void registerFunctionsCutFragment(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionCutFragment>();
 }
