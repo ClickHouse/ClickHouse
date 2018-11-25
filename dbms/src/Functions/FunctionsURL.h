@@ -9,6 +9,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionStringToString.h>
 #include <Functions/FunctionsStringArray.h>
+#include <cstring>
 
 
 namespace DB
@@ -479,7 +480,7 @@ struct ExtractURLParameterImpl
 
                 while (true)
                 {
-                    param_begin = strstr(param_begin, param_str);
+                    param_begin = static_cast<const char *>(memmem(param_begin, end - param_begin, param_str, param_len));
 
                     if (!param_begin)
                         break;
@@ -558,7 +559,7 @@ struct CutURLParameterImpl
                 if (query_string_begin + 1 >= url_end)
                     break;
 
-                const char * pos = strstr(query_string_begin + 1, param_str);
+                const char * pos = static_cast<const char *>(memmem(query_string_begin + 1, url_end - query_string_begin - 1, param_str, param_len));
                 if (pos == nullptr)
                     break;
 
