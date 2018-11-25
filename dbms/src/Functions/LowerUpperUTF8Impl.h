@@ -96,14 +96,6 @@ struct LowerUpperUTF8Impl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void constant(const std::string & data, std::string & res_data)
-    {
-        res_data.resize(data.size());
-        array(reinterpret_cast<const UInt8 *>(data.data()),
-            reinterpret_cast<const UInt8 *>(data.data() + data.size()),
-            reinterpret_cast<UInt8 *>(res_data.data()));
-    }
-
     /** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
      *    `src` and `dst` are incremented by corresponding sequence lengths. */
     static void toCase(const UInt8 *& src, const UInt8 * src_end, UInt8 *& dst)
