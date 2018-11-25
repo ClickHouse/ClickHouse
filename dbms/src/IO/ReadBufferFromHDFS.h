@@ -10,6 +10,11 @@
 
 namespace DB
 {
+    namespace ErrorCodes
+    {
+        extern const int BAD_ARGUMENTS;
+        extern const int NETWORK_ERROR;
+    }
     /** Accepts path to file and opens it, or pre-opened file descriptor.
      * Closes file by himself (thus "owns" a file descriptor).
      */
@@ -30,7 +35,7 @@ namespace DB
                 auto & path = uri.getPath();
                 if (host.empty() || port == 0 || path.empty())
                 {
-                    throw Exception("Illegal HDFS URI: " + hdfs_uri);
+                    throw Exception("Illegal HDFS URI: " + hdfs_uri, ErrorCodes::BAD_ARGUMENTS);
                 }
                 // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
                 /// TODO Allow to tune from query Settings.
@@ -43,7 +48,7 @@ namespace DB
 
                 if (fs == nullptr)
                 {
-                    throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()));
+                    throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
                 }
 
                 fin = hdfsOpenFile(fs, path.c_str(), O_RDONLY, 0, 0, 0);
@@ -68,7 +73,7 @@ namespace DB
                 int bytes_read = hdfsRead(fs, fin, internal_buffer.begin(), internal_buffer.size());
                 if (bytes_read < 0)
                 {
-                    throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + String(hdfsGetLastError()));
+                    throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + String(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
                 }
 
                 if (bytes_read)
