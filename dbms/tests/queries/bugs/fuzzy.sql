@@ -6,9 +6,6 @@ SELECT globalNotIn(['"wh'], [NULL]);
 SELECT globalIn([''], [NULL])
 SELECT ( SELECT toDecimal128([], rowNumberInBlock()) ) , lcm('', [[(CAST(('>A') AS String))]]);
 SELECT truncate(895, -16);
-SELECT (CAST((lowerUTF8('a7\xwK>-')) AS String)), [6935];
-SELECT upperUTF8(sipHash128('\0')), [], ['xD2jG'];
-SELECT upperUTF8(SHA256(''));
 SELECT arrayEnumerateUniq(anyHeavy([]), []);
 SELECT notIn([['']], [[NULL]]);
 SELECT subtractDays((CAST((-5263074.47) AS DateTime)), -737895);
