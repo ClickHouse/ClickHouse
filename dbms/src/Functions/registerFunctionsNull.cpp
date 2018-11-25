@@ -1,7 +1,7 @@
-#include <Functions/FunctionFactory.h>
-
 namespace DB
 {
+
+class FunctionFactory;
 
 void registerFunctionIsNull(FunctionFactory & factory);
 void registerFunctionIsNotNull(FunctionFactory & factory);
