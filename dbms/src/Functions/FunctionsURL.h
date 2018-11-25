@@ -555,7 +555,7 @@ struct CutURLParameterImpl
             do
             {
                 const char * query_string_begin = find_first_symbols<'?', '#'>(url_begin, url_end);
-                if (query_string_begin == url_end)
+                if (query_string_begin + 1 >= url_end)
                     break;
 
                 const char * pos = strstr(query_string_begin + 1, param_str);
@@ -642,7 +642,7 @@ public:
         {
             first = false;
             pos = find_first_symbols<'?', '#'>(pos, end);
-            if (pos == end)
+            if (pos + 1 >= end)
                 return false;
             ++pos;
         }
@@ -731,7 +731,7 @@ public:
         else
             pos = find_first_symbols<'&', '#'>(pos, end);
 
-        if (pos == end)
+        if (pos + 1 >= end)
             return false;
         ++pos;
 
