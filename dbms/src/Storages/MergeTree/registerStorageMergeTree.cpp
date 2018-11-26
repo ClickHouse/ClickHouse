@@ -116,8 +116,8 @@ static void appendGraphitePattern(
         {
             pattern.retentions.emplace_back(
                 Graphite::Retention{
-                    .age        = config.getUInt(config_element + "." + key + ".age"),
-                    .precision  = config.getUInt(config_element + "." + key + ".precision")});
+                    .age = config.getUInt(config_element + "." + key + ".age"),
+                    .precision = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
@@ -183,6 +183,8 @@ static void setGraphitePatternsFromConfig(const Context & context,
 
 static String getMergeTreeVerboseHelp(bool is_extended_syntax)
 {
+    using namespace std::string_literals;
+
     String help = R"(
 
 MergeTree is a family of storage engines.
@@ -226,14 +228,14 @@ Next parameter is index (primary key) granularity. Good value is 8192. You have 
 )";
 
     help += R"(
-For the Collapsing mode, the last parameter is the name of a sign column - a special column that is used to 'collapse' rows with the same primary key while merging.
+For the Collapsing mode, the )" + (is_extended_syntax ? "only"s : "last"s) + R"( parameter is the name of a sign column - a special column that is used to 'collapse' rows with the same primary key while merging.
 
-For the Summing mode, the optional last parameter is a list of columns to sum while merging. This list is passed in round brackets, like (PageViews, Cost).
+For the Summing mode, the optional )" + (is_extended_syntax ? ""s : "last "s) + R"(parameter is a list of columns to sum while merging. This list is passed in round brackets, like (PageViews, Cost).
 If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
 
-For the Replacing mode, the optional last parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
+For the Replacing mode, the optional )" + (is_extended_syntax ? ""s : "last "s) + R"(parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
 
-For VersionedCollapsing mode, the last 2 parameters are the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
+For VersionedCollapsing mode, the )" + (is_extended_syntax ? ""s : "last "s) + R"(2 parameters are the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
 )";
 
     if (is_extended_syntax)

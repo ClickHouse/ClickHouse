@@ -1,3 +1,5 @@
+#include <Storages/StorageMaterializedView.h>
+
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -9,7 +11,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
 
 #include <Common/typeid_cast.h>
@@ -239,28 +240,10 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
-void StorageMaterializedView::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+void StorageMaterializedView::partition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->dropPartition(query, partition, detach, context);
-}
-
-void StorageMaterializedView::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->clearColumnInPartition(partition, column_name, context);
-}
-
-void StorageMaterializedView::attachPartition(const ASTPtr & partition, bool part, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->attachPartition(partition, part, context);
-}
-
-void StorageMaterializedView::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->freezePartition(partition, with_name, context);
+    getTargetTable()->partition(query, commands, context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)

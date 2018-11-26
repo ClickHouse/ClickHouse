@@ -216,12 +216,9 @@ public:
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value>
-    using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
-    template <typename Value>
-    using ContainerType = Value[];
-    template <typename Value>
-    using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+    template <typename Value> using MapType = HashMapWithSavedHash<StringRef, Value, StringRefHash>;
+    template <typename Value> using ContainerType = Value[];
+    template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
 
     struct CellMetadata final
     {

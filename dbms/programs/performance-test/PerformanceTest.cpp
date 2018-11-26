@@ -49,10 +49,10 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 static String pad(size_t padding)
@@ -156,7 +156,7 @@ struct StopConditionsSet
             else if (key == "average_speed_not_changing_for_ms")
                 average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
             else
-                throw DB::Exception("Met unkown stop condition: " + key);
+                throw DB::Exception("Met unkown stop condition: " + key, DB::ErrorCodes::LOGICAL_ERROR);
 
             ++initialized_count;
         }
@@ -521,7 +521,7 @@ public:
     {
         if (input_files.size() < 1)
         {
-            throw DB::Exception("No tests were specified", 0);
+            throw DB::Exception("No tests were specified", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         std::string name;
@@ -694,7 +694,7 @@ private:
                 size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
                 size_t actual_ram = getMemoryAmount();
                 if (!actual_ram)
-                    throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
+                    throw DB::Exception("ram_size precondition not available on this platform", DB::ErrorCodes::NOT_IMPLEMENTED);
 
                 if (ram_size_needed > actual_ram)
                 {
@@ -868,12 +868,12 @@ private:
 
         if (!test_config->has("query") && !test_config->has("query_file"))
         {
-            throw DB::Exception("Missing query fields in test's config: " + test_name);
+            throw DB::Exception("Missing query fields in test's config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("query") && test_config->has("query_file"))
         {
-            throw DB::Exception("Found both query and query_file fields. Choose only one");
+            throw DB::Exception("Found both query and query_file fields. Choose only one", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("query"))
@@ -885,7 +885,7 @@ private:
         {
             const String filename = test_config->getString("query_file");
             if (filename.empty())
-                throw DB::Exception("Empty file name");
+                throw DB::Exception("Empty file name", DB::ErrorCodes::BAD_ARGUMENTS);
 
             bool tsv = fs::path(filename).extension().string() == ".tsv";
 
@@ -909,7 +909,7 @@ private:
 
         if (queries.empty())
         {
-            throw DB::Exception("Did not find any query to execute: " + test_name);
+            throw DB::Exception("Did not find any query to execute: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("substitutions"))
@@ -929,7 +929,7 @@ private:
 
         if (!test_config->has("type"))
         {
-            throw DB::Exception("Missing type property in config: " + test_name);
+            throw DB::Exception("Missing type property in config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         String config_exec_type = test_config->getString("type");
@@ -938,7 +938,7 @@ private:
         else if (config_exec_type == "once")
             exec_type = ExecutionType::Once;
         else
-            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name);
+            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
 
         times_to_run = test_config->getUInt("times_to_run", 1);
 
@@ -951,7 +951,7 @@ private:
         }
 
         if (stop_conditions_template.empty())
-            throw DB::Exception("No termination conditions were found in config");
+            throw DB::Exception("No termination conditions were found in config", DB::ErrorCodes::BAD_ARGUMENTS);
 
         for (size_t i = 0; i < times_to_run * queries.size(); ++i)
             stop_conditions_by_run.push_back(stop_conditions_template);
@@ -978,7 +978,7 @@ private:
         else
         {
             if (lite_output)
-                throw DB::Exception("Specify main_metric for lite output");
+                throw DB::Exception("Specify main_metric for lite output", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (metrics.size() > 0)
@@ -1023,22 +1023,14 @@ private:
         if (exec_type == ExecutionType::Loop)
         {
             for (const String & metric : metrics)
-            {
                 if (std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric) != non_loop_metrics.end())
-                {
-                    throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")");
-                }
-            }
+                   throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")", DB::ErrorCodes::BAD_ARGUMENTS);
         }
         else
         {
             for (const String & metric : metrics)
-            {
                 if (std::find(loop_metrics.begin(), loop_metrics.end(), metric) != loop_metrics.end())
-                {
-                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")");
-                }
-            }
+                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", DB::ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -1439,7 +1431,7 @@ try
         if (input_files.empty())
         {
             std::cerr << std::endl;
-            throw DB::Exception("Did not find any xml files");
+            throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
         }
         else
             std::cerr << " found " << input_files.size() << " files." << std::endl;
@@ -1454,7 +1446,7 @@ try
             fs::path file(filename);
 
             if (!fs::exists(file))
-                throw DB::Exception("File '" + filename + "' does not exist");
+                throw DB::Exception("File '" + filename + "' does not exist", DB::ErrorCodes::FILE_DOESNT_EXIST);
 
             if (fs::is_directory(file))
             {
@@ -1463,7 +1455,7 @@ try
             else
             {
                 if (file.extension().string() != ".xml")
-                    throw DB::Exception("File '" + filename + "' does not have .xml extension");
+                    throw DB::Exception("File '" + filename + "' does not have .xml extension", DB::ErrorCodes::BAD_ARGUMENTS);
                 collected_files.push_back(filename);
             }
         }

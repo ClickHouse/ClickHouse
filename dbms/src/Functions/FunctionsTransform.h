@@ -549,7 +549,7 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         const auto & table = *table_num_to_string;
         size_t size = src.size();
@@ -568,8 +568,8 @@ private:
 
     template <typename T>
     void executeImplNumToStringWithNonConstDefault(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets,
-        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets,
+        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
     {
         const auto & table = *table_num_to_string;
         size_t size = src.size();
@@ -599,7 +599,7 @@ private:
 
     template <typename U>
     void executeImplStringToNumWithConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
         PaddedPODArray<U> & dst, U dst_default)
     {
         const auto & table = *table_string_to_num;
@@ -620,7 +620,7 @@ private:
 
     template <typename U, typename V>
     void executeImplStringToNumWithNonConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
+        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
         PaddedPODArray<U> & dst, const PaddedPODArray<V> & dst_default)
     {
         const auto & table = *table_string_to_num;
@@ -641,8 +641,8 @@ private:
 
     template <bool with_default>
     void executeImplStringToStringWithOrWithoutConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
+        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         const auto & table = *table_string_to_string;
         size_t size = src_offsets.size();
@@ -665,23 +665,23 @@ private:
     }
 
     void executeImplStringToString(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets)
+        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets)
     {
         executeImplStringToStringWithOrWithoutConstDefault<false>(src_data, src_offsets, dst_data, dst_offsets, {});
     }
 
     void executeImplStringToStringWithConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
+        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets, StringRef dst_default)
     {
         executeImplStringToStringWithOrWithoutConstDefault<true>(src_data, src_offsets, dst_data, dst_offsets, dst_default);
     }
 
     void executeImplStringToStringWithNonConstDefault(
-        const ColumnString::Chars_t & src_data, const ColumnString::Offsets & src_offsets,
-        ColumnString::Chars_t & dst_data, ColumnString::Offsets & dst_offsets,
-        const ColumnString::Chars_t & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
+        const ColumnString::Chars & src_data, const ColumnString::Offsets & src_offsets,
+        ColumnString::Chars & dst_data, ColumnString::Offsets & dst_offsets,
+        const ColumnString::Chars & dst_default_data, const ColumnString::Offsets & dst_default_offsets)
     {
         const auto & table = *table_string_to_string;
         size_t size = src_offsets.size();

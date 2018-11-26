@@ -604,7 +604,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
                     if (query.group_by_with_rollup)
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                    else if(query.group_by_with_cube)
+                    else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
                 }
                 else if (expressions.has_having)

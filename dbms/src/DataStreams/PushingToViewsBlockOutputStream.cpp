@@ -91,7 +91,8 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             pool.schedule([=]
             {
                 setThreadName("PushingToViewsBlockOutputStream");
-                CurrentThread::attachToIfDetached(thread_group);
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
                 process(block, view_num);
             });
         }

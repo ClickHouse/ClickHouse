@@ -32,6 +32,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -141,13 +142,13 @@ namespace
             if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
             {
                 const size_t n = src_data_concrete->getN();
-                const ColumnFixedString::Chars_t & src_data = src_data_concrete->getChars();
+                const ColumnFixedString::Chars & src_data = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
                 if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
 
-                ColumnFixedString::Chars_t & res_data = concrete_res_data->getChars();
+                ColumnFixedString::Chars & res_data = concrete_res_data->getChars();
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
                 res_data.reserve(src_data.size());
@@ -214,12 +215,12 @@ namespace
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
-                const ColumnString::Chars_t & src_data = src_data_concrete->getChars();
+                const ColumnString::Chars & src_data = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_data)
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
-                ColumnString::Chars_t & res_data = concrete_res_data->getChars();
+                ColumnString::Chars & res_data = concrete_res_data->getChars();
 
                 size_t size = src_array_offsets.size();
                 res_array_offsets.resize(size);
@@ -349,7 +350,7 @@ namespace
             const NullMap * src_null_map,
             NullMap * res_null_map)
         {
-            if (!( executeNumber<UInt8, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
+            if (!(executeNumber<UInt8, nullable>  (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeNumber<UInt16, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeNumber<UInt32, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
                 || executeNumber<UInt64, nullable> (src_data, src_array_offsets, res_data_col, res_array_offsets, src_null_map, res_null_map)
