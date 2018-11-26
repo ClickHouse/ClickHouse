@@ -2,7 +2,8 @@
 
 # کتابخانه های توسعه دهندگان third-party
 
-کتابخانه هایی برای کار با ClickHouse وجود دارد:
+!!! warning "سلب مسئولیت"
+    Yandex نه حفظ کتابخانه ها در زیر ذکر شده و نشده انجام هر آزمایش های گسترده ای برای اطمینان از کیفیت آنها.
 
 - Python
     - [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)

@@ -1,6 +1,7 @@
 # Libraries from Third-party Developers
 
-We have not tested the libraries listed below.
+!!! warning "Disclaimer"
+    Yandex does **not** maintain the libraries listed below and haven't done any extensive testing to ensure their quality.
 
 - Python
     - [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
