@@ -47,4 +47,4 @@
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_client_libraries/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/client_libraries/) <!--hide-->

@@ -50,4 +50,4 @@
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_client_libraries/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
