@@ -25,8 +25,8 @@ nav:
   - '输入输出格式': 'interfaces/formats.md'
   - 'JDBC 驱动': 'interfaces/jdbc.md'
   - 'ODBC 驱动': 'interfaces/odbc.md'
-  - '第三方开发的库': 'interfaces/third-party_client_libraries.md'
-  - '第三方开发的可视化界面': 'interfaces/third-party_gui.md'
+  - '第三方开发的库': 'interfaces/third-party/client_libraries.md'
+  - '第三方开发的可视化界面': 'interfaces/third-party/gui.md'
 
 - '数据类型':
   - '介绍': 'data_types/index.md'
