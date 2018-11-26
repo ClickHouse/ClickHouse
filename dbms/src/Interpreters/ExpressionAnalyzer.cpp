@@ -392,10 +392,8 @@ bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
 {
-    bool is_conditional_tree = !isThereArrayJoin(ast) && settings.enable_conditional_computation && !only_consts;
-
     LogAST log;
-    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, is_conditional_tree, subquery_depth,
+    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
     actions_visitor.visit(ast);
@@ -406,10 +404,9 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
 void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions)
 {
     bool only_consts = false;
-    bool is_conditional_tree = !isThereArrayJoin(query) && settings.enable_conditional_computation && !only_consts;
 
     LogAST log;
-    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, is_conditional_tree, subquery_depth,
+    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
 
