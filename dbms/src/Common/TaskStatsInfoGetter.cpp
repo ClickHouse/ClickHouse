@@ -1,4 +1,4 @@
-#include <Common/TaskStatsInfoGetter.h>
+#include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
 #include <Core/Types.h>
 
@@ -6,6 +6,7 @@
 
 #if defined(__linux__)
 
+#include "hasLinuxCapability.h"
 #include <common/unaligned.h>
 
 #include <errno.h>
@@ -185,18 +186,8 @@ UInt16 getFamilyIdImpl(int fd)
 
 bool checkPermissionsImpl()
 {
-    /// See man getcap.
-    __user_cap_header_struct request{};
-    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
-    request.pid = getpid();
-
-    __user_cap_data_struct response{};
-
-    /// Avoid dependency on 'libcap'.
-    if (0 != syscall(SYS_capget, &request, &response))
-        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
-
-    if (!((1 << CAP_NET_ADMIN) & response.effective))
+    static bool res = hasLinuxCapability(CAP_NET_ADMIN);
+    if (!res)
         return false;
 
     /// Check that we can successfully initialize TaskStatsInfoGetter.

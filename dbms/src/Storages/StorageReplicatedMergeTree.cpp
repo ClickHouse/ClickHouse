@@ -635,7 +635,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     if (insane && !skip_sanity_checks)
     {
         std::stringstream why;
-        why << "The local set of parts of table " << database_name  << "." << table_name << " doesn't look like the set of parts "
+        why << "The local set of parts of table " << database_name << "." << table_name << " doesn't look like the set of parts "
             << "in ZooKeeper: "
             << formatReadableQuantity(total_suspicious_rows) << " rows of " << formatReadableQuantity(total_rows_on_filesystem)
             << " total rows in filesystem are suspicious.";
@@ -900,7 +900,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
     else
     {
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
     }
 
     if (do_fetch)
@@ -1039,7 +1039,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
-        throw Exception("Future merged part name `" + future_merged_part.name +  "` differs from part name in log entry: `"
+        throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
                         + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
     }
 
@@ -1692,7 +1692,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         if (replica.empty())
         {
-            LOG_DEBUG(log, "Part " <<  part_desc->new_part_name << " is not found on remote replicas");
+            LOG_DEBUG(log, "Part " << part_desc->new_part_name << " is not found on remote replicas");
 
             /// Fallback to covering part
             replica = findReplicaHavingCoveringPart(part_desc->new_part_name, true, found_part_name);
@@ -1700,7 +1700,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (replica.empty())
             {
                 /// It is not fail, since adjacent parts could cover current part
-                LOG_DEBUG(log, "Parts covering " <<  part_desc->new_part_name << " are not found on remote replicas");
+                LOG_DEBUG(log, "Parts covering " << part_desc->new_part_name << " are not found on remote replicas");
                 continue;
             }
         }
@@ -1748,7 +1748,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 if (!prev.found_new_part_info.isDisjoint(curr.found_new_part_info))
                 {
                     throw Exception("Intersected final parts detected: " + prev.found_new_part_name
-                                    + " and " + curr.found_new_part_name + ". It should be investigated.");
+                        + " and " + curr.found_new_part_name + ". It should be investigated.", ErrorCodes::INCORRECT_DATA);
                 }
             }
         }
@@ -1919,7 +1919,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         LogEntry log_entry;
         log_entry.type = LogEntry::GET_PART;
-        log_entry.source_replica =  "";
+        log_entry.source_replica = "";
         log_entry.new_part_name = name;
         log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
 
@@ -2829,7 +2829,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         shutdown();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
@@ -3269,6 +3269,58 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     LOG_DEBUG(log, "ALTER finished");
 }
 
+void StorageReplicatedMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+{
+    for (const PartitionCommand & command : commands)
+    {
+        switch (command.type)
+        {
+            case PartitionCommand::DROP_PARTITION:
+                checkPartitionCanBeDropped(command.partition);
+                dropPartition(query, command.partition, command.detach, context);
+                break;
+
+            case PartitionCommand::ATTACH_PARTITION:
+                attachPartition(command.partition, command.part, context);
+                break;
+
+            case PartitionCommand::REPLACE_PARTITION:
+            {
+                checkPartitionCanBeDropped(command.partition);
+                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                auto from_storage = context.getTable(from_database, command.from_table);
+                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+            }
+            break;
+
+            case PartitionCommand::FETCH_PARTITION:
+                fetchPartition(command.partition, command.from_zookeeper_path, context);
+                break;
+
+            case PartitionCommand::FREEZE_PARTITION:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezePartition(command.partition, command.with_name, context);
+            }
+            break;
+
+            case PartitionCommand::CLEAR_COLUMN:
+                clearColumnInPartition(command.partition, command.column_name, context);
+                break;
+
+            case PartitionCommand::FREEZE_ALL_PARTITIONS:
+            {
+                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                data.freezeAll(command.with_name, context);
+            }
+            break;
+
+            default:
+                IStorage::partition(query, commands, context); // should throw an exception.
+        }
+    }
+}
+
 
 /// If new version returns ordinary name, else returns part name containing the first and last month of the month
 static String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info)
@@ -3367,6 +3419,8 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     if (!is_leader)
     {
+        // TODO: we can manually reconstruct the query from outside the |dropPartition()| and remove the |query| argument from interface.
+        //       It's the only place where we need this argument.
         sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
     }
@@ -3414,6 +3468,8 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 
 void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
+    // TODO: should get some locks to prevent race with 'alter … modify column'
+
     assertNotReadonly();
 
     String partition_id;
@@ -4143,12 +4199,6 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
 }
 
 
-void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    data.freezePartition(partition, with_name, context);
-}
-
-
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     /// Overview of the mutation algorithm.
@@ -4843,6 +4893,36 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     return true;
+}
+
+Names StorageReplicatedMergeTree::getSamplingExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.sampling_expression;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.begin(), names.end());
+}
+
+Names StorageReplicatedMergeTree::getPrimaryExpressionNames() const
+{
+    return data.getPrimarySortColumns();
+}
+
+Names StorageReplicatedMergeTree::getOrderExpressionNames() const
+{
+    return data.getSortColumns();
+}
+
+Names StorageReplicatedMergeTree::getPartitionExpressionNames() const
+{
+    NameOrderedSet names;
+    const auto & expr = data.partition_expr_ast;
+    if (expr)
+        expr->collectIdentifierNames(names);
+
+    return Names(names.cbegin(), names.cend());
 }
 
 }

@@ -157,6 +157,7 @@ nav:
     - 'Server settings': 'operations/server_settings/settings.md'
   - 'Settings':
     - 'Introduction': 'operations/settings/index.md'
+    - 'Permissions for queries': 'operations/settings/permissions_for_queries.md'
     - 'Restrictions on query complexity': 'operations/settings/query_complexity.md'
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'

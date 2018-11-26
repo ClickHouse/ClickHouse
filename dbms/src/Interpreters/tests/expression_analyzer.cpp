@@ -10,10 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 
-#include <Analyzers/CollectAliases.h>
-#include <Analyzers/ExecuteTableFunctions.h>
-#include <Analyzers/CollectTables.h>
-
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 
@@ -23,6 +19,14 @@
 
 
 using namespace DB;
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int SYNTAX_ERROR;
+    }
+}
 
 struct TestEntry
 {
@@ -35,15 +39,8 @@ struct TestEntry
     {
         ASTPtr ast = parse(query);
 
-        auto res =  SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
-
-        if (!checkAliases(*res))
-        {
-            collectWithAnalysers(context, ast);
-            return false;
-        }
-
-        return true;
+        auto res = SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
+        return checkAliases(*res);
     }
 
 private:
@@ -78,23 +75,7 @@ private:
         auto text = query.data();
         if (ASTPtr ast = tryParseQuery(parser, text, text + query.size(), message, false, "", false, 0))
             return ast;
-        throw Exception(message);
-    }
-
-    void collectWithAnalysers(const Context & context, ASTPtr ast) const
-    {
-        ReadBufferFromFileDescriptor in(STDIN_FILENO);
-        WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-
-        CollectAliases collect_aliases;
-        collect_aliases.process(ast);
-
-        ExecuteTableFunctions execute_table_functions;
-        execute_table_functions.process(ast, context);
-
-        CollectTables collect_tables;
-        collect_tables.process(ast, context, collect_aliases, execute_table_functions);
-        collect_tables.dump(out);
+        throw Exception(message, ErrorCodes::SYNTAX_ERROR);
     }
 };
 

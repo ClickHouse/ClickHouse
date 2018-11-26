@@ -392,10 +392,8 @@ bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
 {
-    bool is_conditional_tree = !isThereArrayJoin(ast) && settings.enable_conditional_computation && !only_consts;
-
     LogAST log;
-    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, is_conditional_tree, subquery_depth,
+    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
     actions_visitor.visit(ast);
@@ -406,10 +404,9 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, 
 void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions)
 {
     bool only_consts = false;
-    bool is_conditional_tree = !isThereArrayJoin(query) && settings.enable_conditional_computation && !only_consts;
 
     LogAST log;
-    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, is_conditional_tree, subquery_depth,
+    ActionsVisitor actions_visitor(context, settings.size_limits_for_set, subquery_depth,
                                    source_columns, actions, prepared_sets, subqueries_for_sets,
                                    no_subqueries, only_consts, !isRemoteStorage(), log.stream());
 
@@ -909,7 +906,7 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     {
         String result_name = asts[i]->getAliasOrColumnName();
         if (required_result_columns.empty()
-            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) !=  required_result_columns.end())
+            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) != required_result_columns.end())
         {
             result_columns.emplace_back(asts[i]->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);
@@ -1071,7 +1068,7 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 
     joined_block_actions = analyzedJoin().createJoinedBlockActions(
-            columns_added_by_join, select_query, context, required_columns_from_joined_table);
+        columns_added_by_join, select_query, context, required_columns_from_joined_table);
 
     /// Some columns from right join key may be used in query. This columns will be appended to block during join.
     for (const auto & right_key_name : analyzedJoin().key_names_right)
@@ -1120,7 +1117,9 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 
     if (!unknown_required_source_columns.empty())
-        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin(), ErrorCodes::UNKNOWN_IDENTIFIER);
+        throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
+            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : ""),
+            ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
 

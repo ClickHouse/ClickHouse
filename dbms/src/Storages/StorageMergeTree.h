@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Core/Names.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -42,15 +43,8 @@ public:
     const ColumnsDescription & getColumns() const override { return data.getColumns(); }
     void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
-    NameAndTypePair getColumn(const String & column_name) const override
-    {
-        return data.getColumn(column_name);
-    }
-
-    bool hasColumn(const String & column_name) const override
-    {
-        return data.hasColumn(column_name);
-    }
+    NameAndTypePair getColumn(const String & column_name) const override { return data.getColumn(column_name); }
+    bool hasColumn(const String & column_name) const override { return data.hasColumn(column_name); }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -66,11 +60,7 @@ public:
       */
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -98,6 +88,17 @@ public:
 
     Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForFinal(); }
 
+    ASTPtr getPartitionExpression() const override { return data.partition_expr_ast; }
+
+    ASTPtr getOrderExpression() const override { return data.secondary_sort_expr_ast; }
+
+    Names getSamplingExpressionNames() const override;
+
+    Names getPrimaryExpressionNames() const override;
+
+    Names getPartitionExpressionNames() const override;
+
+    Names getOrderExpressionNames() const override;
 private:
     String path;
     String database_name;
@@ -148,12 +149,18 @@ private:
 
     void clearOldMutations();
 
+    // Partition helpers
+    void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;
 
 protected:
-    /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *

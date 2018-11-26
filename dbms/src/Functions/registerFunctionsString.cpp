@@ -1,7 +1,9 @@
-#include <Functions/FunctionFactory.h>
+#include <Common/config.h>
 
 namespace DB
 {
+
+class FunctionFactory;
 
 void registerFunctionEmpty(FunctionFactory &);
 void registerFunctionNotEmpty(FunctionFactory &);
@@ -19,6 +21,12 @@ void registerFunctionSubstringUTF8(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
+
+#if USE_BASE64
+void registerFunctionBase64Encode(FunctionFactory &);
+void registerFunctionBase64Decode(FunctionFactory &);
+void registerFunctionTryBase64Decode(FunctionFactory &);
+#endif
 
 void registerFunctionsString(FunctionFactory & factory)
 {
@@ -38,6 +46,11 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
+#if USE_BASE64
+    registerFunctionBase64Encode(factory);
+    registerFunctionBase64Decode(factory);
+    registerFunctionTryBase64Decode(factory);
+#endif
 }
 
 }

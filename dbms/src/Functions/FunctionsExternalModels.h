@@ -1,7 +1,7 @@
 #pragma once
 #include <Functions/IFunction.h>
 
-namespace  DB
+namespace DB
 {
 
 class ExternalModels;

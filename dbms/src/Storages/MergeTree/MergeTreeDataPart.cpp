@@ -506,7 +506,7 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
     String calculated_partition_id = partition.getID(storage);
     if (calculated_partition_id != info.partition_id)
         throw Exception(
-            "While loading part "  + getFullPath() + ": calculated partition ID: " + calculated_partition_id
+            "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id
             + " differs from partition ID in part name: " + info.partition_id,
             ErrorCodes::CORRUPTED_DATA);
 }

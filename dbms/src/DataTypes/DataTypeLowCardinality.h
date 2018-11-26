@@ -96,7 +96,7 @@ public:
         serializeImpl(column, row_num, ostr, &IDataType::serializeText, settings);
     }
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &  settings) const override
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         serializeImpl(column, row_num, ostr, &IDataType::serializeTextJSON, settings);
     }

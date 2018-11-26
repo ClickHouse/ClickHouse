@@ -179,8 +179,9 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
             auto thread_group = CurrentThread::getGroup();
             reading_pool->schedule([&child, thread_group]
             {
-                CurrentThread::attachToIfDetached(thread_group);
                 setThreadName("MergeAggReadThr");
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                 child->readPrefix();
             });
@@ -197,7 +198,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
           */
 
         for (size_t i = 0; i < merging_threads; ++i)
-            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); } );
+            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); });
     }
 }
 
@@ -485,8 +486,9 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
                 auto thread_group = CurrentThread::getGroup();
                 reading_pool->schedule([&input, &read_from_input, thread_group]
                 {
-                    CurrentThread::attachToIfDetached(thread_group);
                     setThreadName("MergeAggReadThr");
+                    if (thread_group)
+                        CurrentThread::attachToIfDetached(thread_group);
                     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                     read_from_input(input);
                 });

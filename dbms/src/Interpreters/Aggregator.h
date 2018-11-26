@@ -201,7 +201,7 @@ struct AggregationMethodString
     struct State
     {
         const ColumnString::Offsets * offsets;
-        const ColumnString::Chars_t * chars;
+        const ColumnString::Chars * chars;
 
         void init(ColumnRawPtrs & key_columns)
         {
@@ -272,7 +272,7 @@ struct AggregationMethodFixedString
     struct State
     {
         size_t n;
-        const ColumnFixedString::Chars_t * chars;
+        const ColumnFixedString::Chars * chars;
 
         void init(ColumnRawPtrs & key_columns)
         {

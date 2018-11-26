@@ -229,8 +229,8 @@ public:
     void setHasZero() { has_zero = true; }
     void clearHasZero() { has_zero = false; }
 
-    Cell * zeroValue()              { return reinterpret_cast<Cell*>(&zero_value_storage); }
-    const Cell * zeroValue() const  { return reinterpret_cast<const Cell*>(&zero_value_storage); }
+    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
+    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
 };
 
 template <typename Cell>
@@ -240,8 +240,8 @@ struct ZeroValueStorage<false, Cell>
     void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
     void clearHasZero() {}
 
-    Cell * zeroValue()              { return nullptr; }
-    const Cell * zeroValue() const  { return nullptr; }
+    Cell * zeroValue()             { return nullptr; }
+    const Cell * zeroValue() const { return nullptr; }
 };
 
 
@@ -494,10 +494,33 @@ public:
         alloc(grower);
     }
 
+    HashTable(HashTable && rhs)
+        : buf(nullptr)
+    {
+        *this = std::move(rhs);
+    }
+
     ~HashTable()
     {
         destroyElements();
         free();
+    }
+
+    HashTable & operator= (HashTable && rhs)
+    {
+        destroyElements();
+        free();
+
+        std::swap(buf, rhs.buf);
+        std::swap(m_size, rhs.m_size);
+        std::swap(grower, rhs.grower);
+
+        Hash::operator=(std::move(rhs));
+        Allocator::operator=(std::move(rhs));
+        Cell::State::operator=(std::move(rhs));
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(std::move(rhs));
+
+        return *this;
     }
 
     class Reader final : private Cell::State
