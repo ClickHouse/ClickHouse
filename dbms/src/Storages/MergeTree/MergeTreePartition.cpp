@@ -5,6 +5,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/hex.h>
@@ -94,18 +96,20 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
     else
     {
-        writeChar('(', out);
+        DataTypes types;
+        Columns columns;
         for (size_t i = 0; i < key_size; ++i)
         {
-            if (i > 0)
-                writeCString(", ", out);
-
-            const DataTypePtr & type = storage.partition_key_sample.getByPosition(i).type;
+            const auto & type = storage.partition_key_sample.getByPosition(i).type;
+            types.push_back(type);
             auto column = type->createColumn();
             column->insert(value[i]);
-            type->serializeTextQuoted(*column, 0, out, format_settings);
+            columns.push_back(std::move(column));
         }
-        writeChar(')', out);
+
+        DataTypeTuple tuple_type(types);
+        auto tuple_column = ColumnTuple::create(columns);
+        tuple_type.serializeText(*tuple_column, 0, out, format_settings);
     }
 }
 
