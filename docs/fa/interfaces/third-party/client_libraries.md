@@ -49,4 +49,4 @@
 ما این کتابخانه ها را تست نکردیم. آنها به صورت تصادفی انتخاب شده اند.
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party_client_libraries/) <!--hide-->
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party/client_libraries/) <!--hide-->
