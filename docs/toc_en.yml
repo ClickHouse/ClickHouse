@@ -27,6 +27,7 @@ nav:
   - 'ODBC driver': 'interfaces/odbc.md'
   - 'Third-party':
     - 'Client libraries': 'interfaces/third-party/client_libraries.md'
+    - 'Integrations': 'interfaces/third-party/integrations.md'
     - 'Visual Interfaces': 'interfaces/third-party/gui.md'
 
 - 'Data types':

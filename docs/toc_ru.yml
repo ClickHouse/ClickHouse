@@ -27,6 +27,7 @@ nav:
   - 'ODBC-драйвер': 'interfaces/odbc.md'
   - 'От сторонних разработчиков':
     - 'Клиентские библиотеки': 'interfaces/third-party/client_libraries.md'
+    - 'Интеграции': 'interfaces/third-party/integrations.md'
     - 'Визуальные интерфейсы': 'interfaces/third-party/gui.md'
 
 - 'Типы данных':
