@@ -240,10 +240,10 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
-void StorageMaterializedView::partition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
+void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->partition(query, commands, context);
+    getTargetTable()->alterPartition(query, commands, context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
