@@ -22,11 +22,12 @@ nav:
   - 'Command-line client': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP interface': 'interfaces/http_interface.md'
+  - 'Input and output formats': 'interfaces/formats.md'
   - 'JDBC driver': 'interfaces/jdbc.md'
   - 'ODBC driver': 'interfaces/odbc.md'
-  - 'Libraries from third-party developers': 'interfaces/third-party/client_libraries.md'
-  - 'Visual interfaces from third-party developers': 'interfaces/third-party/gui.md'
-  - 'Input and output formats': 'interfaces/formats.md'
+  - 'Third-party':
+    - 'Client libraries': 'interfaces/third-party/client_libraries.md'
+    - 'Visual Interfaces': 'interfaces/third-party/gui.md'
 
 - 'Data types':
   - 'Introduction': 'data_types/index.md'

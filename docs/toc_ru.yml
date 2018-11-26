@@ -25,8 +25,9 @@ nav:
   - 'Форматы входных и выходных данных': 'interfaces/formats.md'
   - 'JDBC-драйвер': 'interfaces/jdbc.md'
   - 'ODBC-драйвер': 'interfaces/odbc.md'
-  - 'Библиотеки от сторонних разработчиков': 'interfaces/third-party/client_libraries.md'
-  - 'Визуальные интерфейсы от сторонних разработчиков': 'interfaces/third-party/gui.md'
+  - 'От сторонних разработчиков':
+    - 'Клиентские библиотеки': 'interfaces/third-party/client_libraries.md'
+    - 'Визуальные интерфейсы': 'interfaces/third-party/gui.md'
 
 - 'Типы данных':
   - 'Введение': 'data_types/index.md'
