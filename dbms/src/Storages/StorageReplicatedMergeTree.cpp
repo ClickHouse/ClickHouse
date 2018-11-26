@@ -749,7 +749,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     if (insane && !skip_sanity_checks)
     {
         std::stringstream why;
-        why << "The local set of parts of table " << database_name  << "." << table_name << " doesn't look like the set of parts "
+        why << "The local set of parts of table " << database_name << "." << table_name << " doesn't look like the set of parts "
             << "in ZooKeeper: "
             << formatReadableQuantity(total_suspicious_rows) << " rows of " << formatReadableQuantity(total_rows_on_filesystem)
             << " total rows in filesystem are suspicious.";
@@ -1014,7 +1014,7 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     }
     else
     {
-        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)));
+        throw Exception("Unexpected log entry type: " + toString(static_cast<int>(entry.type)), ErrorCodes::LOGICAL_ERROR);
     }
 
     if (do_fetch)
@@ -1153,7 +1153,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
-        throw Exception("Future merged part name `" + future_merged_part.name +  "` differs from part name in log entry: `"
+        throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
                         + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
     }
 
@@ -1806,7 +1806,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         if (replica.empty())
         {
-            LOG_DEBUG(log, "Part " <<  part_desc->new_part_name << " is not found on remote replicas");
+            LOG_DEBUG(log, "Part " << part_desc->new_part_name << " is not found on remote replicas");
 
             /// Fallback to covering part
             replica = findReplicaHavingCoveringPart(part_desc->new_part_name, true, found_part_name);
@@ -1814,7 +1814,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             if (replica.empty())
             {
                 /// It is not fail, since adjacent parts could cover current part
-                LOG_DEBUG(log, "Parts covering " <<  part_desc->new_part_name << " are not found on remote replicas");
+                LOG_DEBUG(log, "Parts covering " << part_desc->new_part_name << " are not found on remote replicas");
                 continue;
             }
         }
@@ -1862,7 +1862,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 if (!prev.found_new_part_info.isDisjoint(curr.found_new_part_info))
                 {
                     throw Exception("Intersected final parts detected: " + prev.found_new_part_name
-                                    + " and " + curr.found_new_part_name + ". It should be investigated.");
+                        + " and " + curr.found_new_part_name + ". It should be investigated.", ErrorCodes::INCORRECT_DATA);
                 }
             }
         }
@@ -2033,7 +2033,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         LogEntry log_entry;
         log_entry.type = LogEntry::GET_PART;
-        log_entry.source_replica =  "";
+        log_entry.source_replica = "";
         log_entry.new_part_name = name;
         log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
 
@@ -2943,7 +2943,7 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         shutdown();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }

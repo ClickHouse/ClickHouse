@@ -511,10 +511,10 @@ void SettingCompressionMethod::write(WriteBuffer & buf) const
 
 DistributedProductMode SettingDistributedProductMode::getDistributedProductMode(const String & s)
 {
-    if (s == "deny")   return DistributedProductMode::DENY;
-    if (s == "local")  return DistributedProductMode::LOCAL;
+    if (s == "deny") return DistributedProductMode::DENY;
+    if (s == "local") return DistributedProductMode::LOCAL;
     if (s == "global") return DistributedProductMode::GLOBAL;
-    if (s == "allow")  return DistributedProductMode::ALLOW;
+    if (s == "allow") return DistributedProductMode::ALLOW;
 
     throw Exception("Unknown distributed product mode: '" + s + "', must be one of 'deny', 'local', 'global', 'allow'",
         ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE);
@@ -632,8 +632,8 @@ void SettingChar::write(WriteBuffer & buf) const
 
 SettingDateTimeInputFormat::Value SettingDateTimeInputFormat::getValue(const String & s)
 {
-    if (s == "basic")  return Value::Basic;
-    if (s == "best_effort")  return Value::BestEffort;
+    if (s == "basic") return Value::Basic;
+    if (s == "best_effort") return Value::BestEffort;
 
     throw Exception("Unknown DateTime input format: '" + s + "', must be one of 'basic', 'best_effort'", ErrorCodes::BAD_ARGUMENTS);
 }

@@ -1,5 +1,5 @@
 add_executable (hashes_test hashes_test.cpp)
-target_link_libraries (hashes_test PRIVATE dbms)
+target_link_libraries (hashes_test PRIVATE dbms ${OPENSSL_CRYPTO_LIBRARY})
 
 add_executable (sip_hash sip_hash.cpp)
 target_link_libraries (sip_hash PRIVATE clickhouse_common_io)

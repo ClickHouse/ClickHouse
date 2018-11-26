@@ -14,6 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_DIFFERS_TOO_MUCH;
+}
+
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
 
 
@@ -213,7 +218,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 auto zk_columns = NamesAndTypesList::parse(
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/columns"));
                 if (part->columns != zk_columns)
-                    throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
+                    throw Exception("Columns of local part " + part_name + " are different from ZooKeeper", ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
 
                 checkDataPart(
                     storage.data.getFullPath() + part_name,

@@ -1,6 +1,3 @@
-add_executable (exception exception.cpp)
-target_link_libraries (exception PRIVATE clickhouse_common_io)
-
 add_executable (string_pool string_pool.cpp)
 target_link_libraries (string_pool PRIVATE clickhouse_common_io)
 target_include_directories (string_pool SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})

@@ -55,6 +55,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Revision;
+    extern const Metric VersionInteger;
 }
 
 namespace DB
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
 }
 
@@ -74,7 +76,7 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty");
+        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -109,6 +111,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerStorages();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
+    CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -556,10 +559,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this, /* secure= */ true ),
-                                                                  server_pool,
-                                                                  socket,
-                                                                  new Poco::Net::TCPServerParams));
+                        new TCPHandlerFactory(*this, /* secure= */ true),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_secure: " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -634,7 +637,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
-                << " threads = " <<  std::thread::hardware_concurrency() << ".";
+                << " threads = " << std::thread::hardware_concurrency() << ".";
             LOG_INFO(log, message.str());
         }
 

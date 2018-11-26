@@ -554,7 +554,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     {
         std::lock_guard lock(state_mutex);
 
-        for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end(); )
+        for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
         {
             const ReplicatedMergeTreeMutationEntry & entry = *it->second.entry;
             if (!entries_in_zk_set.count(entry.znode_name))
@@ -1609,7 +1609,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
             if (blocks_count)
             {
                 LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "
-                    << "in partition ID " << partition_id  << " there are still "
+                    << "in partition ID " << partition_id << " there are still "
                     << blocks_count << " uncommitted blocks.");
                 return false;
             }

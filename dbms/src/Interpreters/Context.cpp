@@ -50,6 +50,7 @@
 
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
 
 
@@ -198,6 +199,9 @@ struct ContextShared
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     pcg64 rng{randomSeed()};
+
+    /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
+    std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
 
     Context::ConfigReloadCallback config_reload_callback;
 
@@ -1843,6 +1847,13 @@ void Context::dropCompiledExpressionCache() const
 }
 
 #endif
+
+
+void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd)
+{
+    auto lock = getLock();
+    shared->bridge_commands.emplace_back(std::move(cmd));
+}
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {

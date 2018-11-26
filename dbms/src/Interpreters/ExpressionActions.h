@@ -81,10 +81,6 @@ public:
     /// If COPY_COLUMN can replace the result column.
     bool can_replace = false;
 
-    /// For conditional projections (projections on subset of rows)
-    std::string row_projection_column;
-    bool is_row_projection_complementary = false;
-
     /// For ADD_COLUMN.
     ColumnPtr added_column;
 
@@ -112,12 +108,9 @@ public:
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
-        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "",
-        const std::string & row_projection_column = "");
+        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
-    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_,
-                                      const std::string & row_projection_column,
-                                      bool is_row_projection_complementary);
+    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
     static ExpressionAction removeColumn(const std::string & removed_name);
     static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace = false);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
@@ -143,8 +136,7 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings);
-    size_t getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
-    void execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
+    void execute(Block & block) const;
     void executeOnTotals(Block & block) const;
 };
 

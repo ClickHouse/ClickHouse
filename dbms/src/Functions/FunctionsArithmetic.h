@@ -1238,7 +1238,7 @@ class FunctionBinaryArithmetic : public IFunction
         auto column_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
         column_to->reserve(input_rows_count);
 
-        for(size_t i = 0; i < input_rows_count; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             column_to->insertFrom(columns[0]->getData()[i]);
             column_to->insertMergeFrom(columns[1]->getData()[i]);

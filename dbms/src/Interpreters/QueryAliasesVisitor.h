@@ -35,8 +35,8 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
 
-    void visit(const ASTTableExpression &, const ASTPtr & ) const {}
-    void visit(const ASTSelectWithUnionQuery &, const ASTPtr & ) const {}
+    void visit(const ASTTableExpression &, const ASTPtr &) const {}
+    void visit(const ASTSelectWithUnionQuery &, const ASTPtr &) const {}
 
     void visit(ASTSubquery & subquery, const ASTPtr & ast) const;
     void visit(const ASTArrayJoin &, const ASTPtr & ast) const;

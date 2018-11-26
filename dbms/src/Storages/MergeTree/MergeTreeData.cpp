@@ -193,7 +193,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ExpressionAction & action : expr.getActions())
     {
         if (action.type == ExpressionAction::ARRAY_JOIN)
-            throw Exception(key_name + " key cannot contain array joins");
+            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
         if (action.type == ExpressionAction::APPLY_FUNCTION)
         {
@@ -346,7 +346,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
         if (miss_column)
-            throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
+            throw Exception("Sign column " + sign_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
     /// that if the version_column column is needed, it exists and is of unsigned integer type.
@@ -375,7 +375,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
         if (miss_column)
-            throw Exception("Version column " + version_column + " does not exist in table declaration.");
+            throw Exception("Version column " + version_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
     if (mode == MergingParams::Collapsing)
@@ -392,7 +392,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
                 throw Exception(
-                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
     }
 
@@ -419,7 +419,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Aggregating:   return "Aggregating";
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
-        case VersionedCollapsing:  return "VersionedCollapsing";
+        case VersionedCollapsing: return "VersionedCollapsing";
 
         default:
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
@@ -919,6 +919,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 
     for (const AlterCommand & command : commands)
     {
+        if (!command.is_mutable())
+        {
+            continue;
+        }
+
         if (columns_alter_forbidden.count(command.column_name))
             throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 
@@ -1016,7 +1021,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// This is temporary name for expression. TODO Invent the name more safely.
                 const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }, "", false));
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
                 const auto & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(

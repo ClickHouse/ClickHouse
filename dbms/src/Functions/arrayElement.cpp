@@ -225,9 +225,9 @@ struct ArrayElementStringImpl
 {
     template <bool negative>
     static void vectorConst(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const ColumnArray::Offset index,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
+        ColumnString::Chars & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
@@ -279,9 +279,9 @@ struct ArrayElementStringImpl
       */
     template <typename TIndex>
     static void vector(
-        const ColumnString::Chars_t & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
+        const ColumnString::Chars & data, const ColumnArray::Offsets & offsets, const ColumnString::Offsets & string_offsets,
         const PaddedPODArray<TIndex> & indices,
-        ColumnString::Chars_t & result_data, ColumnArray::Offsets & result_offsets,
+        ColumnString::Chars & result_data, ColumnArray::Offsets & result_offsets,
         ArrayImpl::NullMapBuilder & builder)
     {
         size_t size = offsets.size();
@@ -647,7 +647,7 @@ bool FunctionArrayElement::executeArgument(Block & block, const ColumnNumbers & 
     if (builder)
         builder.initSink(index_data.size());
 
-    if (!( executeNumber<IndexType, UInt8>(block, arguments, result, index_data, builder)
+    if (!(executeNumber<IndexType, UInt8>(block, arguments, result, index_data, builder)
         || executeNumber<IndexType, UInt16>(block, arguments, result, index_data, builder)
         || executeNumber<IndexType, UInt32>(block, arguments, result, index_data, builder)
         || executeNumber<IndexType, UInt64>(block, arguments, result, index_data, builder)
@@ -859,7 +859,7 @@ void FunctionArrayElement::perform(Block & block, const ColumnNumbers & argument
         if (index == 0u)
             throw Exception("Array indices is 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
 
-        if (!( executeNumberConst<UInt8>(block, arguments, result, index, builder)
+        if (!(executeNumberConst<UInt8>(block, arguments, result, index, builder)
             || executeNumberConst<UInt16>(block, arguments, result, index, builder)
             || executeNumberConst<UInt32>(block, arguments, result, index, builder)
             || executeNumberConst<UInt64>(block, arguments, result, index, builder)
