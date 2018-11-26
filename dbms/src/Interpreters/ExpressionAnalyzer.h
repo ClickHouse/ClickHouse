@@ -113,7 +113,6 @@ private:
         /// for ExpressionAnalyzer
         const bool asterisk_left_columns_only;
         const bool use_index_for_in_with_subqueries;
-        const bool enable_conditional_computation;
         const bool join_use_nulls;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_join;
@@ -127,7 +126,6 @@ private:
             enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression),
             asterisk_left_columns_only(settings.asterisk_left_columns_only),
             use_index_for_in_with_subqueries(settings.use_index_for_in_with_subqueries),
-            enable_conditional_computation(settings.enable_conditional_computation),
             join_use_nulls(settings.join_use_nulls),
             size_limits_for_set(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode),
             size_limits_for_join(settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode),
