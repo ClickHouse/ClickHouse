@@ -241,7 +241,4 @@ private:
     BlockPtr saved_block;
 };
 
-//class DictionaryFactory;
-//void registerDictionaryFlat(DictionaryFactory & factory);
-
 }
