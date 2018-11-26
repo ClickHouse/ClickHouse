@@ -32,13 +32,6 @@ generate_function_register(Arithmetic
     FunctionIntExp10
 )
 
-generate_function_register(Projection
-    FunctionOneOrZero
-    FunctionProject
-    FunctionBuildProjectionComposition
-    FunctionRestoreProjection
-)
-
 
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
