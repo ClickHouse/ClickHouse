@@ -310,7 +310,7 @@ public:
     }
 
     /// slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-    static void ipv6_scan(const char *  src, unsigned char * dst)
+    static void ipv6_scan(const char * src, unsigned char * dst)
     {
         const auto clear_dst = [dst]
         {

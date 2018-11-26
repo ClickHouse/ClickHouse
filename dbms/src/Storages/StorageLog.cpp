@@ -536,7 +536,7 @@ void StorageLog::truncate(const ASTPtr &)
     for (auto & file : data_files)
         file.remove(false);
 
-    for (const auto  & column : getColumns().getAllPhysical())
+    for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     file_checker = FileChecker{table_dir + "/" + "sizes.json"};

@@ -160,7 +160,7 @@ private:
     friend struct CurrentlyMergingPartsTagger;
 
 protected:
-    /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *

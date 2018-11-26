@@ -63,9 +63,9 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container & res_values);
+    bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values);
 
-    bool executeString(const ColumnArray * array,  const IColumn * null_map, ColumnUInt32::Container & res_values);
+    bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values);
 
     bool execute128bit(
         const ColumnArray::Offsets & offsets,

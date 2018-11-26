@@ -925,7 +925,7 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     {
         String result_name = asts[i]->getAliasOrColumnName();
         if (required_result_columns.empty()
-            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) !=  required_result_columns.end())
+            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) != required_result_columns.end())
         {
             result_columns.emplace_back(asts[i]->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);

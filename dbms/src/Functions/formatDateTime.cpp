@@ -285,7 +285,7 @@ public:
         if (!executeType<UInt32>(block, arguments, result)
             && !executeType<UInt16>(block, arguments, result))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                            + "  of function " + getName() + ", must be Date or DateTime",
+                            + " of function " + getName() + ", must be Date or DateTime",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 

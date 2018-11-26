@@ -419,7 +419,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Aggregating:   return "Aggregating";
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
-        case VersionedCollapsing:  return "VersionedCollapsing";
+        case VersionedCollapsing: return "VersionedCollapsing";
 
         default:
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);

@@ -1609,7 +1609,7 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
             if (blocks_count)
             {
                 LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "
-                    << "in partition ID " << partition_id  << " there are still "
+                    << "in partition ID " << partition_id << " there are still "
                     << blocks_count << " uncommitted blocks.");
                 return false;
             }

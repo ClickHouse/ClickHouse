@@ -696,7 +696,7 @@ void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
-    auto ip_address =  resolved_address.host().toString();
+    auto ip_address = resolved_address.host().toString();
 
     if (host != ip_address)
         description += ", " + ip_address;

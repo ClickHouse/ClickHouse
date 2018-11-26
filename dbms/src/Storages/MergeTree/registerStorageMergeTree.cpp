@@ -138,8 +138,8 @@ static void appendGraphitePattern(
         {
             pattern.retentions.emplace_back(
                 Graphite::Retention{
-                    .age        = config.getUInt(config_element + "." + key + ".age"),
-                    .precision  = config.getUInt(config_element + "." + key + ".precision")});
+                    .age = config.getUInt(config_element + "." + key + ".age"),
+                    .precision = config.getUInt(config_element + "." + key + ".precision")});
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);

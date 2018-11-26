@@ -12,7 +12,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace  DB::GatherUtils
+namespace DB::GatherUtils
 {
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
