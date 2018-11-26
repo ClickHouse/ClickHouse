@@ -30,8 +30,6 @@ namespace DB
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
 
-extern std::string main_config_path; /// For cutting prerpocessed path to this base
-
 class ConfigProcessor
 {
 public:
@@ -94,6 +92,9 @@ public:
     /// Save preprocessed config to specified directory.
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
+
+    /// Set path of main config.xml . It will be cutted from all configs placed to preprocessed_configs/
+    void setConfigPath(const std::string & config_path);
 
 public:
     using Files = std::vector<std::string>;

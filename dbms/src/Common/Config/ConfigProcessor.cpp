@@ -23,6 +23,7 @@ using namespace Poco::XML;
 namespace DB
 {
 
+/// For cutting prerpocessed path to this base
 std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
@@ -598,6 +599,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
     }
+}
+
+void ConfigProcessor::setConfigPath(const std::string & config_path)
+{
+    main_config_path = config_path;
 }
 
 }

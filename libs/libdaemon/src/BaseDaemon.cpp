@@ -586,9 +586,9 @@ void BaseDaemon::reloadConfiguration()
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
     config_path = config().getString("config-file", "config.xml");
-    loaded_config = DB::ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
-
-    DB::main_config_path = Poco::Path(config_path).makeParent().toString();
+    DB::ConfigProcessor config_processor(config_path, false, true);
+    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);

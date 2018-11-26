@@ -116,8 +116,8 @@ try
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
         const auto config_path = config().getString("config-file", "config.xml");
-        main_config_path = Poco::Path(config_path).makeParent().toString();
         ConfigProcessor config_processor(config_path, false, true);
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
         auto loaded_config = config_processor.loadConfig();
         config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", DBMS_DEFAULT_PATH));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
