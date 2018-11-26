@@ -204,4 +204,14 @@ public:
     }
 };
 
+
+struct PositiveMonotonicity
+{
+    static bool has() { return true; }
+    static IFunction::Monotonicity get(const Field &, const Field &)
+    {
+        return { true };
+    }
+};
+
 }
