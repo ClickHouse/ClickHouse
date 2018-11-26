@@ -1,5 +1,4 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 add_headers_and_sources(clickhouse_dictionaries_embedded .)
 add_headers_and_sources(clickhouse_dictionaries_embedded GeodataProviders)
 add_library(clickhouse_dictionaries_embedded ${LINK_MODE} ${clickhouse_dictionaries_embedded_sources})

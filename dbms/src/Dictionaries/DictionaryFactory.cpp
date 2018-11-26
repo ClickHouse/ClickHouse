@@ -10,9 +10,6 @@ namespace ErrorCodes
 {
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int TOO_SMALL_BUFFER_SIZE;
-    extern const int BAD_ARGUMENTS;
 }
 
 void DictionaryFactory::registerLayout(const std::string & layout_type, Creator create_layout)
@@ -50,6 +47,5 @@ DictionaryPtr DictionaryFactory::create(
 
     throw Exception {name + ": unknown dictionary layout type: " + layout_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
-
 
 }
