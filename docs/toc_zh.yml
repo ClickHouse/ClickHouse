@@ -20,12 +20,13 @@ nav:
 - '客户端':
   - '介绍': 'interfaces/index.md'
   - '命令行客户端接口': 'interfaces/cli.md'
-  - 'HTTP 客户端接口': 'interfaces/http_interface.md'
-  - 'JDBC 驱动': 'interfaces/jdbc.md'
   - '原生客户端接口 (TCP)': 'interfaces/tcp.md'
+  - 'HTTP 客户端接口': 'interfaces/http_interface.md'
+  - '输入输出格式': 'interfaces/formats.md'
+  - 'JDBC 驱动': 'interfaces/jdbc.md'
+  - 'ODBC 驱动': 'interfaces/odbc.md'
   - '第三方开发的库': 'interfaces/third-party_client_libraries.md'
   - '第三方开发的可视化界面': 'interfaces/third-party_gui.md'
-  - '输入输出格式': 'interfaces/formats.md'
 
 - '数据类型':
   - '介绍': 'data_types/index.md'
