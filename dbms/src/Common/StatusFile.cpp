@@ -59,7 +59,7 @@ StatusFile::StatusFile(const std::string & path_)
         if (-1 == flock_ret)
         {
             if (errno == EWOULDBLOCK)
-                throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.");
+                throw Exception("Cannot lock file " + path + ". Another server instance in same directory is already running.", ErrorCodes::CANNOT_OPEN_FILE);
             else
                 throwFromErrno("Cannot lock file " + path, ErrorCodes::CANNOT_OPEN_FILE);
         }

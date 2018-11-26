@@ -400,6 +400,7 @@ namespace ErrorCodes
     extern const int CANNOT_GETTIMEOFDAY = 423;
     extern const int CANNOT_LINK = 424;
     extern const int SYSTEM_ERROR = 425;
+    extern const int NULL_POINTER_DEREFERENCE = 426;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

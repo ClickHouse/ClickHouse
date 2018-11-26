@@ -86,7 +86,7 @@ static void authenticate(Poco::MongoDB::Connection & connection,
         Poco::MD5Engine md5;
         md5.update(first);
         std::string digest_first(Poco::DigestEngine::digestToHex(md5.digest()));
-        std::string second    =  nonce + user + digest_first;
+        std::string second = nonce + user + digest_first;
         md5.reset();
         md5.update(second);
         std::string digest_second(Poco::DigestEngine::digestToHex(md5.digest()));

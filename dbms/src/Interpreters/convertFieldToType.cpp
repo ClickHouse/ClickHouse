@@ -31,6 +31,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 
@@ -123,7 +124,7 @@ DayNum stringToDate(const String & s)
 
     readDateText(date, in);
     if (!in.eof())
-        throw Exception("String is too long for Date: " + s);
+        throw Exception("String is too long for Date: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     return date;
 }
@@ -135,7 +136,7 @@ UInt64 stringToDateTime(const String & s)
 
     readDateTimeText(date_time, in);
     if (!in.eof())
-        throw Exception("String is too long for DateTime: " + s);
+        throw Exception("String is too long for DateTime: " + s, ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     return UInt64(date_time);
 }
@@ -162,7 +163,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
         if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
         if (which_type.isUInt64()) return convertNumericType<UInt64>(src, type);
-        if (which_type.isInt8())  return convertNumericType<Int8>(src, type);
+        if (which_type.isInt8()) return convertNumericType<Int8>(src, type);
         if (which_type.isInt16()) return convertNumericType<Int16>(src, type);
         if (which_type.isInt32()) return convertNumericType<Int32>(src, type);
         if (which_type.isInt64()) return convertNumericType<Int64>(src, type);

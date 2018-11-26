@@ -188,6 +188,16 @@ void StorageMergeTree::alter(
     const String & table_name,
     const Context & context)
 {
+    if (!params.is_mutable())
+    {
+        auto table_soft_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+        auto new_columns = getColumns();
+        params.apply(new_columns);
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+        setColumns(std::move(new_columns));
+        return;
+    }
+
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 

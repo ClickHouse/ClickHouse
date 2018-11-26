@@ -117,7 +117,7 @@ private:
 
     template <typename T>
     static void fill(const PaddedPODArray<T> & src,
-        ColumnString::Chars_t & dst_chars,
+        ColumnString::Chars & dst_chars,
         ColumnString::Offsets & dst_offsets,
         Int64 min,
         Int64 max,
