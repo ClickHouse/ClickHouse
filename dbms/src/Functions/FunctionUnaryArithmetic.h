@@ -57,6 +57,9 @@ struct FunctionUnaryArithmeticMonotonicity;
 template <typename> struct AbsImpl;
 template <typename> struct NegateImpl;
 
+/// Used to indicate undefined operation
+struct InvalidType;
+
 
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
