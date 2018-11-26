@@ -24,8 +24,8 @@ nav:
   - 'HTTP interface': 'interfaces/http_interface.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
-  - ' کتابخانه های توسعه دهندگان third-party': 'interfaces/third-party_client_libraries.md'
-  - 'interface های visual توسعه دهندگان third-party': 'interfaces/third-party_gui.md'
+  - ' کتابخانه های توسعه دهندگان third-party': 'interfaces/third-party/client_libraries.md'
+  - 'interface های visual توسعه دهندگان third-party': 'interfaces/third-party/gui.md'
   - ' فرمت های Input و Output': 'interfaces/formats.md'
 
 - 'Data types':
