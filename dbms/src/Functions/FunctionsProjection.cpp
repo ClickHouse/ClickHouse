@@ -147,7 +147,7 @@ void FunctionBuildProjectionComposition::executeImpl(
     }
     if (current_reserve_index != second_projection_column->size())
     {
-        throw Exception("Second argument size is not appropriate: " + std::to_string(second_projection_column->size()) + " instead of  "
+        throw Exception("Second argument size is not appropriate: " + std::to_string(second_projection_column->size()) + " instead of "
                 + std::to_string(current_reserve_index),
             ErrorCodes::BAD_ARGUMENTS);
     }

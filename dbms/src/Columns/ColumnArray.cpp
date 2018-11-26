@@ -697,20 +697,20 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
     if (replicate_offsets.empty())
         return cloneEmpty();
 
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))     return replicateNumber<UInt8>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))    return replicateNumber<UInt16>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))    return replicateNumber<UInt32>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))    return replicateNumber<UInt64>(replicate_offsets);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))      return replicateNumber<Int8>(replicate_offsets);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))     return replicateNumber<Int16>(replicate_offsets);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))     return replicateNumber<Int32>(replicate_offsets);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))     return replicateNumber<Int64>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))   return replicateNumber<Float32>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))   return replicateNumber<Float64>(replicate_offsets);
-    if (typeid_cast<const ColumnString *>(data.get()))    return replicateString(replicate_offsets);
-    if (typeid_cast<const ColumnConst *>(data.get()))     return replicateConst(replicate_offsets);
-    if (typeid_cast<const ColumnNullable *>(data.get()))  return replicateNullable(replicate_offsets);
-    if (typeid_cast<const ColumnTuple *>(data.get()))     return replicateTuple(replicate_offsets);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))    return replicateNumber<UInt8>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))   return replicateNumber<UInt16>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))   return replicateNumber<UInt32>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))   return replicateNumber<UInt64>(replicate_offsets);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))     return replicateNumber<Int8>(replicate_offsets);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))    return replicateNumber<Int16>(replicate_offsets);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))    return replicateNumber<Int32>(replicate_offsets);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))    return replicateNumber<Int64>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))  return replicateNumber<Float32>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))  return replicateNumber<Float64>(replicate_offsets);
+    if (typeid_cast<const ColumnString *>(data.get()))   return replicateString(replicate_offsets);
+    if (typeid_cast<const ColumnConst *>(data.get()))    return replicateConst(replicate_offsets);
+    if (typeid_cast<const ColumnNullable *>(data.get())) return replicateNullable(replicate_offsets);
+    if (typeid_cast<const ColumnTuple *>(data.get()))    return replicateTuple(replicate_offsets);
     return replicateGeneric(replicate_offsets);
 }
 

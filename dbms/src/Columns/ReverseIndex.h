@@ -83,7 +83,7 @@ namespace
 
 
     template <typename IndexType, typename Hash, typename HashTable, typename ColumnType, bool string_hash, bool has_base_index>
-    struct  ReverseIndexHashTableCell
+    struct ReverseIndexHashTableCell
         : public HashTableCell<IndexType, Hash, ReverseIndexHashTableState<ColumnType, string_hash, has_base_index>>
     {
         using Base = HashTableCell<IndexType, Hash, ReverseIndexHashTableState<ColumnType, string_hash, has_base_index>>;

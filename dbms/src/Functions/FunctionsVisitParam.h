@@ -233,7 +233,7 @@ struct ExtractParamToStringImpl
                        ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         /// Constant 5 is taken from a function that performs a similar task FunctionsStringSearch.h::ExtractImpl
-        res_data.reserve(data.size()  / 5);
+        res_data.reserve(data.size() / 5);
         res_offsets.resize(offsets.size());
 
         /// We are looking for a parameter simply as a substring of the form "name"

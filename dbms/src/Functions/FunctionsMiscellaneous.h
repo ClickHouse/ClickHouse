@@ -104,7 +104,7 @@ public:
 
         return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
 
-        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) +  ") -> "
+        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) + ") -> "
                + function_return_type->getName();
     }
 

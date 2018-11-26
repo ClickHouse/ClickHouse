@@ -38,16 +38,16 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F &&
 {
     switch (field.getType())
     {
-        case Field::Types::Null:    return visitor(field.template get<Null>());
-        case Field::Types::UInt64:  return visitor(field.template get<UInt64>());
+        case Field::Types::Null: return visitor(field.template get<Null>());
+        case Field::Types::UInt64: return visitor(field.template get<UInt64>());
         case Field::Types::UInt128: return visitor(field.template get<UInt128>());
-        case Field::Types::Int64:   return visitor(field.template get<Int64>());
+        case Field::Types::Int64: return visitor(field.template get<Int64>());
         case Field::Types::Float64: return visitor(field.template get<Float64>());
-        case Field::Types::String:  return visitor(field.template get<String>());
-        case Field::Types::Array:   return visitor(field.template get<Array>());
-        case Field::Types::Tuple:   return visitor(field.template get<Tuple>());
-        case Field::Types::Decimal32:  return visitor(field.template get<DecimalField<Decimal32>>());
-        case Field::Types::Decimal64:  return visitor(field.template get<DecimalField<Decimal64>>());
+        case Field::Types::String: return visitor(field.template get<String>());
+        case Field::Types::Array: return visitor(field.template get<Array>());
+        case Field::Types::Tuple: return visitor(field.template get<Tuple>());
+        case Field::Types::Decimal32: return visitor(field.template get<DecimalField<Decimal32>>());
+        case Field::Types::Decimal64: return visitor(field.template get<DecimalField<Decimal64>>());
         case Field::Types::Decimal128: return visitor(field.template get<DecimalField<Decimal128>>());
 
         default:

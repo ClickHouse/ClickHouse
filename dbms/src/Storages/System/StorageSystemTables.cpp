@@ -104,7 +104,7 @@ protected:
                 break;
             }
 
-            /// This is for temporary tables.  They are output in single block regardless to max_block_size.
+            /// This is for temporary tables. They are output in single block regardless to max_block_size.
             if (database_idx >= databases->size())
             {
                 if (context.hasSessionContext())

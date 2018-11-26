@@ -197,7 +197,7 @@ inline ASTs & getFunctionOperands(ASTFunction * or_function)
 
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
-    const auto & equalities =  chain.second;
+    const auto & equalities = chain.second;
     const auto & equality_functions = equalities.functions;
 
     /// We eliminate too short chains.

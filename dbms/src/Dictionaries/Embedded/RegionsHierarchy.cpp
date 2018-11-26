@@ -45,7 +45,7 @@ void RegionsHierarchy::reload()
     RegionParents new_continent(initial_size);
     RegionParents new_top_continent(initial_size);
     RegionPopulations new_populations(initial_size);
-    RegionDepths  new_depths(initial_size);
+    RegionDepths new_depths(initial_size);
     RegionTypes types(initial_size);
 
     RegionID max_region_id = 0;

@@ -56,7 +56,7 @@ void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, S
     path.pop_back();
 }
 
-struct  KeysSerializationVersion
+struct KeysSerializationVersion
 {
     enum Value
     {
