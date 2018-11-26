@@ -22,11 +22,12 @@ nav:
   - ' کلاینت Command-line': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP interface': 'interfaces/http_interface.md'
+  - ' فرمت های Input و Output': 'interfaces/formats.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
-  - ' کتابخانه های توسعه دهندگان third-party': 'interfaces/third-party/client_libraries.md'
-  - 'interface های visual توسعه دهندگان third-party': 'interfaces/third-party/gui.md'
-  - ' فرمت های Input و Output': 'interfaces/formats.md'
+  - 'Third-party':
+    - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
+    - 'رابط های بصری': 'interfaces/third-party/gui.md'
 
 - 'Data types':
   - 'Introduction': 'data_types/index.md'
