@@ -1,23 +1,5 @@
 #include "DictionaryFactory.h"
 #include "DictionarySourceFactory.h"
-/*
-#include "ClickHouseDictionarySource.h"
-#include "ExecutableDictionarySource.h"
-#include "FileDictionarySource.h"
-#include "HTTPDictionarySource.h"
-#include "LibraryDictionarySource.h"
-#include "MongoDBDictionarySource.h"
-#include "MySQLDictionarySource.h"
-#include "XDBCDictionarySource.h"
-
-#include "CacheDictionary.h"
-#include "ComplexKeyCacheDictionary.h"
-#include "ComplexKeyHashedDictionary.h"
-#include "FlatDictionary.h"
-#include "HashedDictionary.h"
-#include "RangeHashedDictionary.h"
-#include "TrieDictionary.h"
-*/
 
 namespace DB
 {

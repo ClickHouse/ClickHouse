@@ -222,6 +222,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     MySQLBlockInputStream block_input_stream(pool.Get(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
+#endif
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 {
@@ -237,11 +238,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                          ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     };
-    //DB::DictionarySourceFactory::instance()
     factory.registerSource("mysql", createTableSource);
 }
 
-
 }
-
-#endif

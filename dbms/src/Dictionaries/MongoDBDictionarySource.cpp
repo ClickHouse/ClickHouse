@@ -315,7 +315,6 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                          ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     };
-    //DB::DictionarySourceFactory::instance()
     factory.registerSource("mongodb", createTableSource);
 }
 
