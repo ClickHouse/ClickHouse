@@ -93,12 +93,12 @@ template <> struct BinaryOperationImpl<Int32, Int32, DivideIntegralImpl<Int32, I
 template <> struct BinaryOperationImpl<Int32, Int64, DivideIntegralImpl<Int32, Int64>> : DivideIntegralByConstantImpl<Int32, Int64> {};
 
 
-struct NameDivideIntegral { static constexpr auto name = "intDiv"; };
-using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral, false>;
+struct NameIntDiv { static constexpr auto name = "intDiv"; };
+using FunctionIntDiv = FunctionBinaryArithmetic<DivideIntegralImpl, NameIntDiv, false>;
 
-void registerFunctionDivideIntegral(FunctionFactory & factory)
+void registerFunctionIntDiv(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionDivideIntegral>();
+    factory.registerFunction<FunctionIntDiv>();
 }
 
 }

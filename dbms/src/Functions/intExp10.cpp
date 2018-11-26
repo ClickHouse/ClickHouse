@@ -1,5 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
+#include <Common/FieldVisitors.h>
+#include <common/intExp.h>
 
 namespace DB
 {

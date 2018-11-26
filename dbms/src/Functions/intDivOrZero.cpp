@@ -20,12 +20,12 @@ struct DivideIntegralOrZeroImpl
 #endif
 };
 
-struct NameDivideIntegralOrZero { static constexpr auto name = "intDivOrZero"; };
-using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero>;
+struct NameIntDivOrZero { static constexpr auto name = "intDivOrZero"; };
+using FunctionIntDivOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameIntDivOrZero>;
 
-void registerFunctionDivideIntegralOrZero(FunctionFactory & factory)
+void registerFunctionIntDivOrZero(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionDivideIntegralOrZero>();
+    factory.registerFunction<FunctionIntDivOrZero>();
 }
 
 }
