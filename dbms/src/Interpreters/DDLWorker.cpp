@@ -301,7 +301,11 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     for (const HostID & host : task->entry.hosts)
     {
         auto maybe_secure_port = context.getTCPPortSecure();
-        bool is_local_port = maybe_secure_port ? host.isLocalAddress(*maybe_secure_port) : host.isLocalAddress(context.getTCPPort());
+
+        /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
+        bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
+            || host.isLocalAddress(context.getTCPPort());
+
         if (!is_local_port)
             continue;
 
@@ -1196,7 +1200,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
                     bool has_shard_default_db = !addr.default_database.empty();
                     use_shard_default_db |= has_shard_default_db;
                     use_local_default_db |= !has_shard_default_db;
-                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database );
+                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database);
                 }
                 else
                     databases_to_access.emplace(database);

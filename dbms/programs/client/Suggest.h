@@ -184,7 +184,7 @@ public:
             }
             catch (...)
             {
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false) << "\n";
+                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
             }
 
             /// Note that keyword suggestions are available even if we cannot load data from server.

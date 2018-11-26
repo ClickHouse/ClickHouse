@@ -279,8 +279,8 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
     /// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
     /// into the construction transform(expr, src, dest, branchN)
     /// where:
-    /// src  = [val[0], val[1], ..., val[N-1]]
-    /// dest = [branch[0], ..., branch[N-1]]
+    /// src = [val[0], val[1], ..., val[N-1]]
+    /// dst = [branch[0], ..., branch[N-1]]
     /// then we perform it.
 
     /// Create the arrays required by the transform function.

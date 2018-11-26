@@ -713,7 +713,7 @@ private:
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (arguments.size() == 4 )
+        if (arguments.size() == 4)
         {
             const auto range_argument = arguments[3].get();
             if (!(range_argument->isValueRepresentedByInteger() &&
@@ -1145,6 +1145,219 @@ using FunctionDictGetDateOrDefault = FunctionDictGetOrDefault<DataTypeDate, Name
 using FunctionDictGetDateTimeOrDefault = FunctionDictGetOrDefault<DataTypeDateTime, NameDictGetDateTimeOrDefault>;
 using FunctionDictGetUUIDOrDefault = FunctionDictGetOrDefault<DataTypeUUID, NameDictGetUUIDOrDefault>;
 
+#define FOR_DICT_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Float32) \
+    M(Float64) \
+    M(Date) \
+    M(DateTime) \
+    M(UUID)
+
+/// This variant of function derives the result type automatically.
+class FunctionDictGetNoType final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGet";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDictGetNoType>(context.getExternalDictionaries(), context);
+    }
+
+    FunctionDictGetNoType(const ExternalDictionaries & dictionaries, const Context & context) : dictionaries(dictionaries), context(context) {}
+
+    String getName() const override { return name; }
+
+private:
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
+
+    bool isInjective(const Block & sample_block) override
+    {
+        return isDictGetFunctionInjective(dictionaries, sample_block);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 3 && arguments.size() != 4)
+            throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+        String dict_name;
+        if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+        {
+            dict_name = name_col->getValue<String>();
+        }
+        else
+            throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
+                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        String attr_name;
+        if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+        {
+            attr_name = name_col->getValue<String>();
+        }
+        else
+            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
+                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!WhichDataType(arguments[2].type).isUInt64() &&
+            !isTuple(arguments[2].type))
+            throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
+                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (arguments.size() == 4)
+        {
+            const auto range_argument = arguments[3].type.get();
+            if (!(range_argument->isValueRepresentedByInteger() &&
+                   range_argument->getSizeOfValueInMemory() <= sizeof(Int64)))
+                throw Exception{"Illegal type " + range_argument->getName() + " of fourth argument of function " + getName()
+                    + ", must be convertible to " + TypeName<Int64>::get() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+
+        auto dict = dictionaries.getDictionary(dict_name);
+        const DictionaryStructure & structure = dict->getStructure();
+
+        for (const auto idx : ext::range(0, structure.attributes.size()))
+        {
+            const DictionaryAttribute & attribute = structure.attributes[idx];
+            if (attribute.name == attr_name)
+            {
+                WhichDataType dt = attribute.type;
+                if (dt.idx == TypeIndex::String)
+                    impl = FunctionDictGetString::create(context);
+#define DISPATCH(TYPE) \
+                else if (dt.idx == TypeIndex::TYPE) \
+                    impl = FunctionDictGet<DataType##TYPE, NameDictGet##TYPE>::create(context);
+                FOR_DICT_TYPES(DISPATCH)
+#undef DISPATCH
+                else
+                    throw Exception("Unknown dictGet type", ErrorCodes::UNKNOWN_TYPE);
+                return attribute.type;
+            }
+        }
+        throw Exception{"No such attribute '" + attr_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    }
+
+    bool isDeterministic() const override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        impl->executeImpl(block, arguments, result, input_rows_count);
+    }
+
+private:
+    const ExternalDictionaries & dictionaries;
+    const Context & context;
+    mutable FunctionPtr impl; // underlying function used by dictGet function without explicit type info
+};
+
+
+class FunctionDictGetNoTypeOrDefault final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetOrDefault";
+
+    static FunctionPtr create(const Context & context)
+    {
+        return std::make_shared<FunctionDictGetNoTypeOrDefault>(context.getExternalDictionaries(), context);
+    }
+
+    FunctionDictGetNoTypeOrDefault(const ExternalDictionaries & dictionaries, const Context & context) : dictionaries(dictionaries), context(context) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 4; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
+
+    bool isInjective(const Block & sample_block) override
+    {
+        return isDictGetFunctionInjective(dictionaries, sample_block);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        String dict_name;
+        if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+        {
+            dict_name = name_col->getValue<String>();
+        }
+        else
+            throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
+                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        String attr_name;
+        if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+        {
+            attr_name = name_col->getValue<String>();
+        }
+        else
+            throw Exception{"Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName()
+                + ", expected a const string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!WhichDataType(arguments[2].type).isUInt64() &&
+            !isTuple(arguments[2].type))
+            throw Exception{"Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName()
+                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        auto dict = dictionaries.getDictionary(dict_name);
+        const DictionaryStructure & structure = dict->getStructure();
+
+        for (const auto idx : ext::range(0, structure.attributes.size()))
+        {
+            const DictionaryAttribute & attribute = structure.attributes[idx];
+            if (attribute.name == attr_name)
+            {
+                WhichDataType dt = attribute.type;
+                if (dt.idx == TypeIndex::String)
+                {
+                    if (!isString(arguments[3].type))
+                        throw Exception{"Illegal type " + arguments[3].type->getName() + " of fourth argument of function " + getName() +
+                            ", must be String.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                    impl = FunctionDictGetStringOrDefault::create(context);
+                }
+#define DISPATCH(TYPE) \
+                else if (dt.idx == TypeIndex::TYPE) \
+                { \
+                    if (!checkAndGetDataType<DataType##TYPE>(arguments[3].type.get())) \
+                        throw Exception{"Illegal type " + arguments[3].type->getName() + " of fourth argument of function " + getName() \
+                            + ", must be " + String(DataType##TYPE{}.getFamilyName()) + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT}; \
+                    impl = FunctionDictGetOrDefault<DataType##TYPE, NameDictGet##TYPE ## OrDefault>::create(context); \
+                }
+                FOR_DICT_TYPES(DISPATCH)
+#undef DISPATCH
+                else
+                    throw Exception("Unknown dictGetOrDefault type", ErrorCodes::UNKNOWN_TYPE);
+                return attribute.type;
+            }
+        }
+        throw Exception{"No such attribute '" + attr_name + "'", ErrorCodes::BAD_ARGUMENTS};
+    }
+
+    bool isDeterministic() const override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        impl->executeImpl(block, arguments, result, input_rows_count);
+    }
+
+private:
+    const ExternalDictionaries & dictionaries;
+    const Context & context;
+    mutable FunctionPtr impl; // underlying function used by dictGet function without explicit type info
+};
 
 /// Functions to work with hierarchies.
 
