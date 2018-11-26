@@ -10,7 +10,9 @@
 #endif
 
 
-/** Allow to search for next character from the set of 'symbols...' in a string.
+/** find_first_symbols<c1, c2, ...>(begin, end):
+  *
+  * Allow to search for next character from the set of 'symbols...' in a string.
   * It is similar to 'strpbrk', 'strcspn' (and 'strchr', 'memchr' in the case of one symbol and '\0'),
   * but with the following differencies:
   * - works with any memory ranges, including containing zero bytes;
@@ -24,6 +26,11 @@
   * In the case of parsing tab separated dump with short strings, there is no performance degradation over trivial loop.
   *
   * Note: the optimal threshold to choose between SSE 2 and SSE 4.2 may depend on CPU model.
+  *
+  * find_last_symbols_or_null<c1, c2, ...>(begin, end):
+  *
+  * Allow to search for the last matching character in a string.
+  * If no such characters, returns nullptr.
   */
 
 namespace detail
@@ -82,6 +89,31 @@ inline const char * find_first_symbols_sse2(const char * begin, const char * end
 }
 
 
+template <char... symbols>
+inline const char * find_last_symbols_or_null_sse2(const char * begin, const char * end)
+{
+#if __SSE2__
+    for (; end - 16 >= begin; end -= 16)     /// Assuming the pointer cannot overflow. Assuming we can compare these pointers.
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(end - 16));
+
+        __m128i eq = mm_is_in<symbols...>(bytes);
+
+        uint16_t bit_mask = _mm_movemask_epi8(eq);
+        if (bit_mask)
+            return end - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
+    }
+#endif
+
+    --end;
+    for (; end >= begin; --end)
+        if (is_in<symbols...>(*end))
+            return end;
+
+    return nullptr;
+}
+
+
 template <size_t num_chars,
     char c01,     char c02 = 0, char c03 = 0, char c04 = 0,
     char c05 = 0, char c06 = 0, char c07 = 0, char c08 = 0,
@@ -131,6 +163,8 @@ inline const char * find_first_symbols_sse42(const char * begin, const char * en
     return find_first_symbols_sse42_impl<sizeof...(symbols), symbols...>(begin, end);
 }
 
+/// NOTE No SSE 4.2 implementation for find_last_symbols_or_null. Not worth to do.
+
 template <char... symbols>
 inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
 {
@@ -157,4 +191,17 @@ template <char... symbols>
 inline char * find_first_symbols(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_first_symbols_dispatch<symbols...>(begin, end));
+}
+
+
+template <char... symbols>
+inline const char * find_last_symbols_or_null(const char * begin, const char * end)
+{
+    return detail::find_last_symbols_or_null_sse2<symbols...>(begin, end);
+}
+
+template <char... symbols>
+inline char * find_last_symbols_or_null(char * begin, char * end)
+{
+    return const_cast<char *>(detail::find_last_symbols_or_null_sse2<symbols...>(begin, end));
 }

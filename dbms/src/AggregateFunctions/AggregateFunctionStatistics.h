@@ -274,7 +274,7 @@ public:
 
         ++count;
 
-        left_mean +=  left_delta / count;
+        left_mean += left_delta / count;
         right_mean += right_delta / count;
         co_moment += (left_val - left_mean) * (right_val - old_right_mean);
 

@@ -111,7 +111,7 @@ public:
         try
         {
             for (size_t i = 0; i < max_threads; ++i)
-                threads.emplace_back([=] () { thread(thread_group, i); } );
+                threads.emplace_back([=] () { thread(thread_group, i); });
         }
         catch (...)
         {

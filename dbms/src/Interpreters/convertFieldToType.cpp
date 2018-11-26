@@ -163,7 +163,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
         if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
         if (which_type.isUInt64()) return convertNumericType<UInt64>(src, type);
-        if (which_type.isInt8())  return convertNumericType<Int8>(src, type);
+        if (which_type.isInt8()) return convertNumericType<Int8>(src, type);
         if (which_type.isInt16()) return convertNumericType<Int16>(src, type);
         if (which_type.isInt32()) return convertNumericType<Int32>(src, type);
         if (which_type.isInt64()) return convertNumericType<Int64>(src, type);

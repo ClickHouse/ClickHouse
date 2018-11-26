@@ -42,6 +42,7 @@ add_library (common ${LINK_MODE}
     include/common/ThreadPool.h
     include/common/demangle.h
     include/common/SetTerminalEcho.h
+    include/common/find_symbols.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
