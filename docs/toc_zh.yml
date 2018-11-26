@@ -27,6 +27,7 @@ nav:
   - 'ODBC 驱动': 'interfaces/odbc.md'
   - '第三方':
     - '客户端库': 'interfaces/third-party/client_libraries.md'
+    - '集成': 'interfaces/third-party/integrations.md'
     - '可视界面': 'interfaces/third-party/gui.md'
 
 - '数据类型':

@@ -27,6 +27,7 @@ nav:
   - ' درایور ODBC': 'interfaces/odbc.md'
   - 'Third-party':
     - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
+    - 'یکپارچگی': 'interfaces/third-party/integrations.md'
     - 'رابط های بصری': 'interfaces/third-party/gui.md'
 
 - 'Data types':

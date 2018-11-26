@@ -1,11 +1,10 @@
-# Библиотеки от сторонних разработчиков
+# Клиентские библиотеки от сторонних разработчиков
 
 !!! warning "Disclaimer"
     Яндекс не поддерживает перечисленные ниже библиотеки и не проводит тщательного тестирования для проверки их качества.
 
 - Python:
     - [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
-    - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse)
     - [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     - [clickhouse-client](https://github.com/yurial/clickhouse-client)
     - [aiochclient](https://github.com/maximdanilchenko/aiochclient)
@@ -31,21 +30,19 @@
 - R
     - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+- Java
+    - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
 - Scala
     - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
-- .NET
+- Kotlin
+    - [AORM](https://github.com/TanVD/AORM)
+- C#
     - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-    - [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 - C++
     - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
 - Elixir
     - [clickhousex](https://github.com/appodeal/clickhousex/)
-    - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
-- Java
-    - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
-- Kotlin
-    - [AORM](https://github.com/TanVD/AORM)
 - Nim
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
