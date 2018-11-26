@@ -1,6 +1,7 @@
 # 第三方开发的库
 
-以下都是适用于 ClickHouse 的第三方库：
+!!! warning "放弃"
+    Yandex不维护下面列出的库，也没有进行任何广泛的测试以确保其质量。
 
 - Python
     - [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
