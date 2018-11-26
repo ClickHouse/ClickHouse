@@ -20,9 +20,10 @@ nav:
 - 'Interfaces':
   - 'Introduction': 'interfaces/index.md'
   - 'Command-line client': 'interfaces/cli.md'
+  - 'Native interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP interface': 'interfaces/http_interface.md'
   - 'JDBC driver': 'interfaces/jdbc.md'
-  - 'Native interface (TCP)': 'interfaces/tcp.md'
+  - 'ODBC driver': 'interfaces/odbc.md'
   - 'Libraries from third-party developers': 'interfaces/third-party_client_libraries.md'
   - 'Visual interfaces from third-party developers': 'interfaces/third-party_gui.md'
   - 'Input and output formats': 'interfaces/formats.md'

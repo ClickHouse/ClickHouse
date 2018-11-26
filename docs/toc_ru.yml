@@ -20,12 +20,13 @@ nav:
 - 'Интерфейсы':
   - 'Введение': 'interfaces/index.md'
   - 'Клиент командной строки': 'interfaces/cli.md'
+  - 'Нативный интерфейс (TCP)': 'interfaces/tcp.md'
   - 'HTTP-интерфейс': 'interfaces/http_interface.md'
+  - 'Форматы входных и выходных данных': 'interfaces/formats.md'
   - 'JDBC-драйвер': 'interfaces/jdbc.md'
-  - 'Родной интерфейс (TCP)': 'interfaces/tcp.md'
+  - 'ODBC-драйвер': 'interfaces/odbc.md'
   - 'Библиотеки от сторонних разработчиков': 'interfaces/third-party_client_libraries.md'
   - 'Визуальные интерфейсы от сторонних разработчиков': 'interfaces/third-party_gui.md'
-  - 'Форматы входных и выходных данных': 'interfaces/formats.md'
 
 - 'Типы данных':
   - 'Введение': 'data_types/index.md'
