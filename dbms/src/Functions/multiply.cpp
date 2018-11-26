@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <common/arithmeticOverflow.h>
 
 namespace DB
 {

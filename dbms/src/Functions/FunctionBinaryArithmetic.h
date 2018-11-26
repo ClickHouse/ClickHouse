@@ -16,7 +16,6 @@
 #include <DataTypes/NumberTraits.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
-#include <common/arithmeticOverflow.h>
 #include <Functions/intDiv.h>
 #include <Functions/castTypeToEither.h>
 #include <Common/config.h>
