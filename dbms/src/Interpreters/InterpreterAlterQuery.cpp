@@ -57,7 +57,7 @@ BlockIO InterpreterAlterQuery::execute()
     if (!partition_commands.empty())
     {
         partition_commands.validate(*table);
-        table->partition(query_ptr, partition_commands, context);
+        table->alterPartition(query_ptr, partition_commands, context);
     }
 
     if (!alter_commands.empty())
