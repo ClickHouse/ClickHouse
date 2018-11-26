@@ -8,7 +8,7 @@
 #include "DictionarySourceHelpers.h"
 #include <DataStreams/IBlockOutputStream.h>
 #include <common/logger_useful.h>
-#include "DictionarySourceFactory.h" 
+#include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
 

@@ -9,7 +9,7 @@
 #include "DictionarySourceHelpers.h"
 #include <common/logger_useful.h>
 #include <IO/ConnectionTimeouts.h>
-#include "DictionarySourceFactory.h" 
+#include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
 

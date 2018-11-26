@@ -9,7 +9,7 @@
 #include <memory>
 #include <ext/range.h>
 #include <IO/ConnectionTimeouts.h>
-#include "DictionarySourceFactory.h" 
+#include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
 

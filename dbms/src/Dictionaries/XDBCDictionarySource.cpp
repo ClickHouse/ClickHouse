@@ -14,7 +14,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Formats/FormatFactory.h>
 #include <Common/XDBCBridgeHelper.h>
-#include "DictionarySourceFactory.h" 
+#include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 
 #include <Common/config.h>
