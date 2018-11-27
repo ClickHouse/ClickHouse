@@ -33,7 +33,7 @@ See [above](#permissions_for_queries) for the division of queries into groups.
 
 After setting `readonly = 1`, a user can't change `readonly` and `allow_ddl` settings in the current session.
 
-When using the `GET` method in the [HTTP interface](../../interfaces/http_interface.md#http_interface), `readonly = 1` is set automatically. To modify data use the `POST` method.
+When using the `GET` method in the [HTTP interface](../../interfaces/http.md#http_interface), `readonly = 1` is set automatically. To modify data use the `POST` method.
 
 <a name="settings_allow_ddl"></a>
 
