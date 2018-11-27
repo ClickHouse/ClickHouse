@@ -21,7 +21,7 @@ nav:
   - 'Interface ها': 'interfaces/index.md'
   - ' کلاینت Command-line': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
-  - 'HTTP interface': 'interfaces/http_interface.md'
+  - 'HTTP interface': 'interfaces/http.md'
   - ' فرمت های Input و Output': 'interfaces/formats.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
