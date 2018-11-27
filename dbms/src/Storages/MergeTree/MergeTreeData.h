@@ -503,10 +503,16 @@ public:
       */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-    bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
-    bool hasSortingKey() const { return !sorting_key_columns.empty(); }
+    Names getColumnsRequiredForPartitionKey() const { return (partition_key_expr ? partition_key_expr->getRequiredColumns() : Names{}); }
 
-    Names getColumnsRequiredForFinal() const { return sorting_key_expr->getRequiredColumns(); }
+    bool hasSortingKey() const { return !sorting_key_columns.empty(); }
+    bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
+
+    ASTPtr getSortingKeyAST() const { return sorting_key_expr_ast; }
+    ASTPtr getPrimaryKeyAST() const { return primary_key_expr_ast; }
+
+    Names getColumnsRequiredForSortingKey() const { return sorting_key_expr->getRequiredColumns(); }
+    Names getColumnsRequiredForPrimaryKey() const { return primary_key_expr->getRequiredColumns(); }
 
     bool supportsSampling() const { return sample_by_ast != nullptr; }
     ASTPtr getSamplingExpression() const { return sample_by_ast; }
@@ -575,10 +581,12 @@ public:
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;
+    ASTPtr sorting_key_expr_ast;
     ExpressionActionsPtr sorting_key_expr;
 
     /// Names of columns for primary key.
     Names primary_key_columns;
+    ASTPtr primary_key_expr_ast;
     ExpressionActionsPtr primary_key_expr;
     Block primary_key_sample;
     DataTypes primary_key_data_types;
