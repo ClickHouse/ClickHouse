@@ -1,4 +1,4 @@
-#include "RWLockFIFO.h"
+#include "RWLock.h"
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Poco/Ext/ThreadNumber.h>
@@ -33,15 +33,15 @@ namespace ErrorCodes
 }
 
 
-class RWLockFIFO::LockHandlerImpl
+class RWLockImpl::LockHandlerImpl
 {
-    RWLockFIFOPtr parent;
+    RWLock parent;
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
     ThreadToHandler::iterator it_handler;
     CurrentMetrics::Increment active_client_increment;
 
-    LockHandlerImpl(RWLockFIFOPtr && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
+    LockHandlerImpl(RWLock && parent, GroupsContainer::iterator it_group, ClientsContainer::iterator it_client);
 
 public:
 
@@ -49,11 +49,11 @@ public:
 
     ~LockHandlerImpl();
 
-    friend class RWLockFIFO;
+    friend class RWLockImpl;
 };
 
 
-RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::Client client)
+RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::Client client)
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     CurrentMetrics::Increment waiting_client_increment((type == Read) ? CurrentMetrics::RWLockWaitingReaders
@@ -142,24 +142,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
 }
 
 
-RWLockFIFO::Clients RWLockFIFO::getClientsInTheQueue() const
-{
-    std::unique_lock<std::mutex> lock(mutex);
-
-    Clients res;
-    for (const auto & group : queue)
-    {
-        for (const auto & client : group.clients)
-        {
-            res.emplace_back(client);
-        }
-    }
-
-    return res;
-}
-
-
-RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
+RWLockImpl::LockHandlerImpl::~LockHandlerImpl()
 {
     std::unique_lock<std::mutex> lock(parent->mutex);
 
@@ -183,10 +166,10 @@ RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
 }
 
 
-RWLockFIFO::LockHandlerImpl::LockHandlerImpl(RWLockFIFOPtr && parent, RWLockFIFO::GroupsContainer::iterator it_group,
-                                             RWLockFIFO::ClientsContainer::iterator it_client)
+RWLockImpl::LockHandlerImpl::LockHandlerImpl(RWLock && parent, RWLockImpl::GroupsContainer::iterator it_group,
+                                             RWLockImpl::ClientsContainer::iterator it_client)
     : parent{std::move(parent)}, it_group{it_group}, it_client{it_client},
-      active_client_increment{(it_client->type == RWLockFIFO::Read) ? CurrentMetrics::RWLockActiveReaders
+      active_client_increment{(it_client->type == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
                                                                     : CurrentMetrics::RWLockActiveWriters}
 {}
 
