@@ -8,9 +8,9 @@ TableStructureReadLock::TableStructureReadLock(StoragePtr storage_, bool lock_st
     : storage(storage_)
 {
     if (lock_data)
-        data_lock = storage->data_lock->getLock(RWLockFIFO::Read, who);
+        data_lock = storage->data_lock->getLock(RWLockImpl::Read, who);
     if (lock_structure)
-        structure_lock = storage->structure_lock->getLock(RWLockFIFO::Read, who);
+        structure_lock = storage->structure_lock->getLock(RWLockImpl::Read, who);
 }
 
 }

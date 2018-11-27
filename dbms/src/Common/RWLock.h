@@ -12,19 +12,19 @@
 namespace DB
 {
 
-class RWLockFIFO;
-using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
+class RWLockImpl;
+using RWLock = std::shared_ptr<RWLockImpl>;
 
 
 /// Implements shared lock with FIFO service
-/// You could call it recursively (several calls from the same thread) in Read mode
-class RWLockFIFO : public std::enable_shared_from_this<RWLockFIFO>
+/// Can be acquired recursively (several calls from the same thread) in Read mode
+class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
     enum Type
     {
         Read,
-        Write
+        Write,
     };
 
 private:
@@ -44,11 +44,7 @@ private:
     };
 
 public:
-    static RWLockFIFOPtr create()
-    {
-        return RWLockFIFOPtr(new RWLockFIFO);
-    }
-
+    static RWLock create() { return RWLock(new RWLockImpl); }
 
     /// Just use LockHandler::reset() to release the lock
     class LockHandlerImpl;
@@ -58,19 +54,10 @@ public:
 
     /// Waits in the queue and returns appropriate lock
     LockHandler getLock(Type type, Client client = Client{});
-
-    LockHandler getLock(Type type, const std::string & who)
-    {
-        return getLock(type, Client(who));
-    }
-
-    using Clients = std::vector<Client>;
-
-    /// Returns list of executing and waiting clients
-    Clients getClientsInTheQueue() const;
+    LockHandler getLock(Type type, const std::string & who) { return getLock(type, Client(who)); }
 
 private:
-    RWLockFIFO() = default;
+    RWLockImpl() = default;
 
     struct Group;
     using GroupsContainer = std::list<Group>;

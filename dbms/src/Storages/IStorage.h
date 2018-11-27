@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Common/Exception.h>
-#include <Common/RWLockFIFO.h>
+#include <Common/RWLock.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -27,9 +27,6 @@ namespace ErrorCodes
 class Context;
 class IBlockInputStream;
 class IBlockOutputStream;
-
-class RWLockFIFO;
-using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
 
 using StorageActionBlockType = size_t;
 
@@ -64,8 +61,8 @@ private:
 
     StoragePtr storage;
     /// Order is important.
-    RWLockFIFO::LockHandler data_lock;
-    RWLockFIFO::LockHandler structure_lock;
+    RWLockImpl::LockHandler data_lock;
+    RWLockImpl::LockHandler structure_lock;
 
 public:
     TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data, const std::string & who);
@@ -75,8 +72,8 @@ public:
 using TableStructureReadLockPtr = std::shared_ptr<TableStructureReadLock>;
 using TableStructureReadLocks = std::vector<TableStructureReadLockPtr>;
 
-using TableStructureWriteLock = RWLockFIFO::LockHandler;
-using TableDataWriteLock = RWLockFIFO::LockHandler;
+using TableStructureWriteLock = RWLockImpl::LockHandler;
+using TableDataWriteLock = RWLockImpl::LockHandler;
 using TableFullWriteLock = std::pair<TableDataWriteLock, TableStructureWriteLock>;
 
 
@@ -148,7 +145,7 @@ public:
       */
     TableDataWriteLock lockDataForAlter(const std::string & who = "Alter")
     {
-        auto res = data_lock->getLock(RWLockFIFO::Write, who);
+        auto res = data_lock->getLock(RWLockImpl::Write, who);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -156,7 +153,7 @@ public:
 
     TableStructureWriteLock lockStructureForAlter(const std::string & who = "Alter")
     {
-        auto res = structure_lock->getLock(RWLockFIFO::Write, who);
+        auto res = structure_lock->getLock(RWLockImpl::Write, who);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -367,7 +364,7 @@ private:
       *  2) all changes to the data after releasing the lock will be based on the structure of the table at the time after the lock was released.
       * You need to take for read for the entire time of the operation that changes the data.
       */
-    mutable RWLockFIFOPtr data_lock = RWLockFIFO::create();
+    mutable RWLock data_lock = RWLockImpl::create();
 
     /** Lock for multiple columns and path to table. It is taken for write at RENAME, ALTER (for ALTER MODIFY for a while) and DROP.
       * It is taken for read for the whole time of SELECT, INSERT and merge parts (for MergeTree).
@@ -376,7 +373,7 @@ private:
       * That is, if this lock is taken for write, you should not worry about `parts_writing_lock`.
       * parts_writing_lock is only needed for cases when you do not want to take `table_structure_lock` for long operations (ALTER MODIFY).
       */
-    mutable RWLockFIFOPtr structure_lock = RWLockFIFO::create();
+    mutable RWLock structure_lock = RWLockImpl::create();
 };
 
 /// table name -> table
