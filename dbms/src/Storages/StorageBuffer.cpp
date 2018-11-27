@@ -184,7 +184,7 @@ BlockInputStreams StorageBuffer::read(
         {
             /// Add streams to convert read blocks from the destination table.
             auto header = getSampleBlock();
-            for (auto& stream_from_dst : streams_from_dst)
+            for (auto & stream_from_dst : streams_from_dst)
             {
                 stream_from_dst = std::make_shared<AddingDefaultBlockInputStream>(
                             stream_from_dst, header, getColumns().defaults, context);
