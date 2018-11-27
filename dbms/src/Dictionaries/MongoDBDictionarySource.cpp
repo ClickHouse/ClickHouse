@@ -2,6 +2,38 @@
 #include "DictionaryStructure.h"
 #include "MongoDBDictionarySource.h"
 
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & /* context */) -> DictionarySourcePtr {
+#if USE_POCO_MONGODB
+        return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        throw Exception {"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
+                         ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    };
+    factory.registerSource("mongodb", createTableSource);
+}
+
+}
+
+
 #if USE_POCO_MONGODB
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -292,30 +324,6 @@ std::string MongoDBDictionarySource::toString() const
     return "MongoDB: " + db + '.' + collection + ',' + (user.empty() ? " " : " " + user + '@') + host + ':' + DB::toString(port);
 }
 
-
-
 }
 
 #endif
-
-namespace DB
-{
-
-void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
-{
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
-                                 const Poco::Util::AbstractConfiguration & config,
-                                 const std::string & config_prefix,
-                                 Block & sample_block,
-                                 const Context & /* context */) -> DictionarySourcePtr {
-#if USE_POCO_MONGODB
-        return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
-#else
-        throw Exception {"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
-                         ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-    };
-    factory.registerSource("mongodb", createTableSource);
-}
-
-}
