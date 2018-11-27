@@ -51,10 +51,6 @@ def concatenate(lang, docs_path, single_page_file):
                     sharp_pos = link.find('#')
                     if sharp_pos > -1:
                         return '[' + text + '](' + link[sharp_pos:] + ')'
-                    else:
-                        raise RuntimeError(
-                            'ERROR: Link [' + text + '](' + link + ') in file ' +
-                            path + ' has no anchor. Please provide it.')
 
             for l in f:
                 # Processing links in a string
