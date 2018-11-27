@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM yandex/clickhouse-deb-builder
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -31,4 +31,4 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb; \
     service zookeeper start; sleep 5; \
-    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper 2>&1 | tee test_output/test_result.txt
+    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper $SKIP_TESTS_OPTION 2>&1 | tee test_output/test_result.txt
