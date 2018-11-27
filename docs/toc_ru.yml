@@ -21,7 +21,7 @@ nav:
   - 'Введение': 'interfaces/index.md'
   - 'Клиент командной строки': 'interfaces/cli.md'
   - 'Нативный интерфейс (TCP)': 'interfaces/tcp.md'
-  - 'HTTP-интерфейс': 'interfaces/http_interface.md'
+  - 'HTTP-интерфейс': 'interfaces/http.md'
   - 'Форматы входных и выходных данных': 'interfaces/formats.md'
   - 'JDBC-драйвер': 'interfaces/jdbc.md'
   - 'ODBC-драйвер': 'interfaces/odbc.md'

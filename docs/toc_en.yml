@@ -21,7 +21,7 @@ nav:
   - 'Introduction': 'interfaces/index.md'
   - 'Command-line client': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
-  - 'HTTP interface': 'interfaces/http_interface.md'
+  - 'HTTP interface': 'interfaces/http.md'
   - 'Input and output formats': 'interfaces/formats.md'
   - 'JDBC driver': 'interfaces/jdbc.md'
   - 'ODBC driver': 'interfaces/odbc.md'
