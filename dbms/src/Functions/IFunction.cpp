@@ -656,11 +656,14 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
             arg.type = recursiveRemoveLowCardinality(arg.type);
         }
 
+        auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
+
         if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
-            && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0)
-            return std::make_shared<DataTypeLowCardinality>(getReturnTypeWithoutLowCardinality(args_without_low_cardinality));
+            && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0
+            && type_without_low_cardinality->canBeInsideLowCardinality())
+            return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);
         else
-            return getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
+            return type_without_low_cardinality;
     }
 
     return getReturnTypeWithoutLowCardinality(arguments);

@@ -387,7 +387,7 @@ public:
         {
             auto col_to = ColumnFixedString::create(Impl::length);
 
-            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             auto & chars_to = col_to->getChars();
             const auto size = offsets.size();
@@ -558,7 +558,7 @@ private:
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
-            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
@@ -579,7 +579,7 @@ private:
         }
         else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
         {
-            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Chars & data = col_from->getChars();
             size_t n = col_from->getN();
             size_t size = data.size() / n;
 

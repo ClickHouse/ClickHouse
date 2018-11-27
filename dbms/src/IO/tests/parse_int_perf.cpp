@@ -19,7 +19,7 @@ UInt64 rdtsc()
 {
 #if __x86_64__
     UInt64 val;
-    __asm__ __volatile__("rdtsc" : "=A" (val) : );
+    __asm__ __volatile__("rdtsc" : "=A" (val) :);
     return val;
 #else
     // TODO: make for arm
@@ -84,9 +84,9 @@ int main(int argc, char ** argv)
                 << n / watch.elapsedSeconds() << " num/s., "
                 << wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
                 << watch.elapsed() / n << " ns/num., "
-                << tsc / n  << " ticks/num., "
+                << tsc / n << " ticks/num., "
                 << watch.elapsed() / wb.count() << " ns/byte., "
-                << tsc / wb.count()  << " ticks/byte."
+                << tsc / wb.count() << " ticks/byte."
                 << std::endl;
         }
 

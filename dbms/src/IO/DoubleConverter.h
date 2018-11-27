@@ -29,7 +29,7 @@ template <bool emit_decimal_point>
 class DoubleConverter
 {
     DoubleConverter(const DoubleConverter &) = delete;
-    DoubleConverter & operator=(const DoubleConverter &)  = delete;
+    DoubleConverter & operator=(const DoubleConverter &) = delete;
 
     DoubleConverter() = default;
 

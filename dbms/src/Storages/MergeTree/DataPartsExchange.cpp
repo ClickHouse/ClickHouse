@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -240,7 +241,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readPODBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path);
+            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path,
+                ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")

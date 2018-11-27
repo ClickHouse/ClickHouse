@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <stdlib.h>
 #include <Common/memcpySmall.h>
 
@@ -74,7 +74,7 @@ UInt128 stringToUUID(const String & str)
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out <<  "Cannot parse input: expected " << escape << s;
+    out << "Cannot parse input: expected " << escape << s;
 
     if (buf.eof())
         out << " at end of stream.";

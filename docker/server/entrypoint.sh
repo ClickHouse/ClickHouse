@@ -30,5 +30,11 @@ chown -R $USER:$GROUP \
     "$TMP_DIR" \
     "$USER_PATH"
 
-# execute CMD
-exec gosu clickhouse "$@"
+
+# if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
+if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
+    exec gosu clickhouse /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG "$@"
+fi
+
+# Otherwise, we assume the user want to run his own process, for example a `bash` shell to explore this image
+exec "$@"

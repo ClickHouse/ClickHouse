@@ -198,7 +198,7 @@ void StorageCatBoostPool::parseColumnDescription()
         }
 
         if (num_id >= columns_description.size())
-            throw Exception("Invalid index at row  " + str_line_num + ": " + str_id
+            throw Exception("Invalid index at row " + str_line_num + ": " + str_id
                             + ", expected in range [0, " + std::to_string(columns_description.size()) + ")",
                             ErrorCodes::CANNOT_PARSE_TEXT);
 
