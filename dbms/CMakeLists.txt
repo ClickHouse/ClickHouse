@@ -259,6 +259,13 @@ if (USE_RDKAFKA)
     endif ()
 endif ()
 
+if (USE_PARQUET)
+    target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY} ${ARROW_LIBRARY})
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY)
+        target_include_directories (dbms BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
+    endif ()
+endif ()
+
 target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})

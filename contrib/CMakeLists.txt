@@ -137,6 +137,19 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
     target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
 
+if (USE_INTERNAL_PARQUET_LIBRARY)
+    set (ARROW_COMPUTE ON CACHE INTERNAL "")
+    set (ARROW_PARQUET ON CACHE INTERNAL "")
+    set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
+    set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
+    set (ARROW_BUILD_STATIC ON CACHE INTERNAL "")
+
+    # Because Arrow uses CMAKE_SOURCE_DIR as a project path
+    # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
+    set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
+    add_subdirectory (arrow/cpp)
+endif ()
+
 if (USE_INTERNAL_POCO_LIBRARY)
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
