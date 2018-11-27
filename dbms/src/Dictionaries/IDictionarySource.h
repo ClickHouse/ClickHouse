@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
+#include <string>
 #include <vector>
 
 namespace DB
