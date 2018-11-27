@@ -19,13 +19,13 @@ INSERT INTO test.buffer VALUES (4, 400);
 SELECT 'alt';
 SELECT * FROM test.dst ORDER BY y;
 SELECT '-';
-SELECT * FROM test.buffer ORDER BY x;
+SELECT * FROM test.buffer ORDER BY y;
 
 OPTIMIZE TABLE test.buffer;
 SELECT 'opt';
 SELECT * FROM test.dst ORDER BY y;
 SELECT '-';
-SELECT * FROM test.buffer ORDER BY x;
+SELECT * FROM test.buffer ORDER BY y;
 
 SET send_logs_level = 'warning';
 DROP TABLE IF EXISTS test.dst;

@@ -3,6 +3,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataStreams/AddingDefaultBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
@@ -147,34 +148,50 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        const Block structure_of_destination_table =
-            allow_materialized ? destination->getSampleBlock() : destination->getSampleBlockNonMaterialized();
-
-        bool can_read_from_destination = true;
+        /// Collect columns from the destination tables which can be requested.
+        /// Find out if there is a struct mismatch and we need to convert read blocks from the destination tables.
+        Names columns_intersection;
+        bool struct_mismatch = false;
         for (const String & column_name : column_names)
         {
-           if (!structure_of_destination_table.has(column_name))
-           {
-               LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
-                   << " doesn't have column " << column_name << ". Data from destination table is skipped.");
-               can_read_from_destination = false;
-               break;
-           }
-           auto col = getColumn(column_name);
-           auto dst_col = structure_of_destination_table.getByName(column_name);
-           if (!dst_col.type->equals(*col.type))
-           {
-               LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
-                   << " has different type of column " << backQuoteIfNeed(column_name) << " ("
-                   << col.type->getName() << " != " << dst_col.type->getName()
-                   << "). Data from destination table is skipped.");
-               can_read_from_destination = false;
-               break;
-           }
+            if (destination->hasColumn(column_name))
+            {
+                columns_intersection.emplace_back(column_name);
+                if (!destination->getColumn(column_name).type->equals(*getColumn(column_name).type))
+                {
+                    LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                        << " has different type of column " << backQuoteIfNeed(column_name) << " ("
+                        << destination->getColumn(column_name).type->getName() << " != " << getColumn(column_name).type->getName()
+                        << "). Data from destination table is converted.");
+                    struct_mismatch = true;
+                }
+            }
+            else
+            {
+                LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                    << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
+                struct_mismatch = true;
+            }
         }
 
-        if (can_read_from_destination)
-            streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+        if (columns_intersection.empty())
+            LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                << " has no common columns with block in buffer. Block of data is skipped.");
+        else
+            streams_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+
+        if (struct_mismatch && !streams_from_dst.empty())
+        {
+            /// Add streams to convert read blocks from the destination table.
+            auto header = getSampleBlock();
+            for (auto& stream_from_dst : streams_from_dst)
+            {
+                stream_from_dst = std::make_shared<AddingDefaultBlockInputStream>(
+                            stream_from_dst, header, getColumns().defaults, context);
+                stream_from_dst = std::make_shared<ConvertingBlockInputStream>(
+                            context, stream_from_dst, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+            }
+        }
     }
 
     BlockInputStreams streams_from_buffers;
@@ -589,7 +606,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
             {
                 LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
                     << " have different type of column " << backQuoteIfNeed(column.name) << " ("
-                    << column.type->getName() << " != " << dst_col.type->getName()
+                    << dst_col.type->getName() << " != " << column.type->getName()
                     << "). Block of data is converted.");
                 column.column = castColumn(column, dst_col.type, context);
                 column.type = dst_col.type;
