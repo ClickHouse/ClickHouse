@@ -4895,34 +4895,4 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
     return true;
 }
 
-Names StorageReplicatedMergeTree::getSamplingExpressionNames() const
-{
-    NameOrderedSet names;
-    const auto & expr = data.sampling_expression;
-    if (expr)
-        expr->collectIdentifierNames(names);
-
-    return Names(names.begin(), names.end());
-}
-
-Names StorageReplicatedMergeTree::getPrimaryExpressionNames() const
-{
-    return data.getPrimarySortColumns();
-}
-
-Names StorageReplicatedMergeTree::getOrderExpressionNames() const
-{
-    return data.getSortColumns();
-}
-
-Names StorageReplicatedMergeTree::getPartitionExpressionNames() const
-{
-    NameOrderedSet names;
-    const auto & expr = data.partition_expr_ast;
-    if (expr)
-        expr->collectIdentifierNames(names);
-
-    return Names(names.cbegin(), names.cend());
-}
-
 }

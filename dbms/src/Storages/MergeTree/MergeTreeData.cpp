@@ -331,10 +331,12 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
         order_by_ast = new_order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);
+        sorting_key_expr_ast = std::move(new_sorting_key_expr_list);
         sorting_key_expr = std::move(new_sorting_key_expr);
 
         primary_key_ast = new_primary_key_ast;
         primary_key_columns = std::move(new_primary_key_columns);
+        primary_key_expr_ast = std::move(new_primary_key_expr_list);
         primary_key_expr = std::move(new_primary_key_expr);
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);

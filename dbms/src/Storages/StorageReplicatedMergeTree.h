@@ -189,17 +189,16 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getPartitionKeyAST() const override { return data.partition_by_ast; }
+    ASTPtr getSortingKeyAST() const override { return data.getSortingKeyAST(); }
+    ASTPtr getPrimaryKeyAST() const override { return data.getPrimaryKeyAST(); }
+    ASTPtr getSamplingKeyAST() const override { return data.getSamplingExpression(); }
+
+    Names getColumnsRequiredForPartitionKey() const override { return data.getColumnsRequiredForPartitionKey(); }
+    Names getColumnsRequiredForSortingKey() const override { return data.getColumnsRequiredForSortingKey(); }
+    Names getColumnsRequiredForPrimaryKey() const override { return data.getColumnsRequiredForPrimaryKey(); }
     Names getColumnsRequiredForSampling() const override { return data.getColumnsRequiredForSampling(); }
-
-    Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForFinal(); }
-
-    Names getSamplingExpressionNames() const override;
-
-    Names getPrimaryExpressionNames() const override;
-
-    Names getOrderExpressionNames() const override;
-
-    Names getPartitionExpressionNames() const override;
+    Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForSortingKey(); }
 
 private:
     /// Delete old parts from disk and from ZooKeeper.

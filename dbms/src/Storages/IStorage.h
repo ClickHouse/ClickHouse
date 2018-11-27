@@ -326,29 +326,32 @@ public:
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
 
-    /// Returns additional columns that need to be read for sampling to work.
+    /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
+    virtual ASTPtr getPartitionKeyAST() const { return nullptr; }
+
+    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
+    virtual ASTPtr getSortingKeyAST() const { return nullptr; }
+
+    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
+    virtual ASTPtr getPrimaryKeyAST() const { return nullptr; }
+
+    /// Returns sampling expression AST for storage or nullptr if there is none.
+    virtual ASTPtr getSamplingKeyAST() const { return nullptr; }
+
+    /// Returns additional columns that need to be read to calculate partition key.
+    virtual Names getColumnsRequiredForPartitionKey() const { return {}; }
+
+    /// Returns additional columns that need to be read to calculate sorting key.
+    virtual Names getColumnsRequiredForSortingKey() const { return {}; }
+
+    /// Returns additional columns that need to be read to calculate primary key.
+    virtual Names getColumnsRequiredForPrimaryKey() const { return {}; }
+
+    /// Returns additional columns that need to be read to calculate sampling key.
     virtual Names getColumnsRequiredForSampling() const { return {}; }
 
     /// Returns additional columns that need to be read for FINAL to work.
     virtual Names getColumnsRequiredForFinal() const { return {}; }
-
-    /// Returns partition expression for storage or nullptr if there is no.
-    virtual ASTPtr getPartitionExpression() const { return nullptr; }
-
-    /// Returns secondary expression for storage or nullptr if there is no.
-    virtual ASTPtr getOrderExpression() const { return nullptr; }
-
-    /// Returns sampling key names for storage or empty vector if there is no.
-    virtual Names getSamplingExpressionNames() const { return {}; }
-
-    /// Returns primary key names for storage or empty vector if there is no.
-    virtual Names getPrimaryExpressionNames() const { return {}; }
-
-    /// Returns partition key names for storage or empty vector if there is no.
-    virtual Names getPartitionExpressionNames() const { return {}; }
-
-    /// Returns order key names for storage or empty vector if there is no.
-    virtual Names getOrderExpressionNames() const { return {}; }
 
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
