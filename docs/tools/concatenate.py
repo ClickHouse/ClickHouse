@@ -44,13 +44,15 @@ def concatenate(lang, docs_path, single_page_file):
 
             # function is passed into re.sub() to process links
             def link_proc(matchObj):
-                text, link = matchObj.group().strip('[)').split('](')
-                if link.startswith('http') or '.jpeg' in link or '.jpg' in link or '.png' in link or '.gif' in link:
+                text, link = matchObj.group().strip('[)').split('](', 1)
+                if link.startswith('http:') or link.startswith('https:') or '.jpeg' in link or '.jpg' in link or '.png' in link or '.gif' in link:
                     return '[' + text + '](' + link + ')'
                 else:
                     sharp_pos = link.find('#')
                     if sharp_pos > -1:
                         return '[' + text + '](' + link[sharp_pos:] + ')'
+                    else:
+                        return '[' + text + '](#' + link.replace('../', '').replace('/index.md', '').replace('.md', '') + ')'
 
             for l in f:
                 # Processing links in a string
