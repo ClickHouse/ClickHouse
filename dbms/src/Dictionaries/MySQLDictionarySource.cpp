@@ -1,7 +1,10 @@
+#include "MySQLDictionarySource.h"
+
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/config.h>
+
 
 namespace DB
 {
@@ -36,8 +39,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
 
 #if USE_MYSQL
-#include "MySQLDictionarySource.h"
-
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
