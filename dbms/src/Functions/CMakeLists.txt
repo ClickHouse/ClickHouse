@@ -35,8 +35,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
 endif ()
 
 if (USE_ICU)
-    target_link_libraries(clickhouse_functions PRIVATE ${ICU_LIBS})
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIR})
+    target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
 endif ()
 
 if (USE_VECTORCLASS)

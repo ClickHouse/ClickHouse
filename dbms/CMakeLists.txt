@@ -242,8 +242,7 @@ endif()
 target_link_libraries (dbms PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
-    target_link_libraries (dbms PRIVATE ${ICU_LIBS})
-    target_include_directories (dbms SYSTEM PRIVATE ${ICU_INCLUDE_DIR})
+    target_link_libraries (dbms PRIVATE ${ICU_LIBRARIES})
 endif ()
 
 if (USE_CAPNP)
