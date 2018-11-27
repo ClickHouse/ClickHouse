@@ -3,7 +3,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
@@ -14,11 +13,12 @@ void CacheDictionary::get@NAME@(const std::string & attribute_name, const Padded
 {
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::@NAME@))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
-    
+        throw Exception {name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                         ErrorCodes::TYPE_MISMATCH};
+
     const auto null_value = std::get<TYPE>(attribute.null_values);
-    
-    getItemsNumber<TYPE>(attribute, ids, out, [&] (const size_t) { return null_value; });
+
+    getItemsNumber<TYPE>(attribute, ids, out, [&](const size_t) { return null_value; });
 }
 
 }
