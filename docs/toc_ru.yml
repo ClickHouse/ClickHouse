@@ -84,14 +84,13 @@ nav:
     - 'Функции для работы с IP-адресами': 'query_language/functions/ip_address_functions.md'
     - 'Функции для работы с JSON.': 'query_language/functions/json_functions.md'
     - 'Функции высшего порядка': 'query_language/functions/higher_order_functions.md'
-    - 'Прочие функции': 'query_language/functions/other_functions.md'
     - 'Функции для работы с внешними словарями': 'query_language/functions/ext_dict_functions.md'
     - 'Функции для работы со словарями Яндекс.Метрики': 'query_language/functions/ym_dict_functions.md'
     - 'Функции для реализации оператора IN.': 'query_language/functions/in_functions.md'
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
     - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
-
+    - 'Прочие функции': 'query_language/functions/other_functions.md'
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
     - 'Справочник функций': 'query_language/agg_functions/reference.md'
