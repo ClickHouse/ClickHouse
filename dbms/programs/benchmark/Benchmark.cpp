@@ -486,7 +486,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             options["host"].as<std::string>(),
             options["port"].as<UInt16>(),
-            options["secure"].as<bool>(),
+            options.count("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
