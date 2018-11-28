@@ -30,7 +30,9 @@
 #include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
+#include <Poco/Util/Application.h>
 #include <Common/InterruptListener.h>
+#include <Common/Config/configReadClient.h>
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -487,7 +489,7 @@ struct Stats
 double Stats::avg_rows_speed_precision = 0.001;
 double Stats::avg_bytes_speed_precision = 0.001;
 
-class PerformanceTest
+class PerformanceTest : public Poco::Util::Application
 {
 public:
     using Strings = std::vector<String>;
@@ -524,7 +526,21 @@ public:
         {
             throw DB::Exception("No tests were specified", DB::ErrorCodes::BAD_ARGUMENTS);
         }
+    }
 
+    void initialize(Poco::Util::Application & self)
+    {
+        //Poco::Util::Application::initialize(self);
+
+        std::string home_path;
+        const char * home_path_cstr = getenv("HOME");
+        if (home_path_cstr)
+            home_path = home_path_cstr;
+        configReadClient(Poco::Util::Application::instance().config(), home_path);
+    }
+
+    int main(const std::vector < std::string > & /* args */)
+    {
         std::string name;
         UInt64 version_major;
         UInt64 version_minor;
@@ -538,6 +554,7 @@ public:
 
         processTestsConfigurations(input_files);
     }
+
 
 private:
     String test_name;
@@ -1376,7 +1393,6 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
     }
 }
 
-
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
@@ -1390,7 +1406,7 @@ try
         ("profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")
         ("host,h", value<String>()->default_value("localhost"), "")
         ("port", value<UInt16>()->default_value(9000), "")
-        ("secure", "Use TLS connection")
+        ("secure,s", "Use TLS connection")
         ("database", value<String>()->default_value("default"), "")
         ("user", value<String>()->default_value("default"), "")
         ("password", value<String>()->default_value(""), "")
@@ -1482,7 +1498,7 @@ try
 
     DB::UseSSL use_ssl;
 
-    DB::PerformanceTest performanceTest(
+    DB::PerformanceTest performance_test(
         options["host"].as<String>(),
         options["port"].as<UInt16>(),
         options.count("secure"),
@@ -1499,8 +1515,7 @@ try
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
         timeouts);
-
-    return 0;
+    return performance_test.run();
 }
 catch (...)
 {
