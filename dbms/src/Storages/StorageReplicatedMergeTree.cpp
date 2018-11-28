@@ -393,8 +393,13 @@ void StorageReplicatedMergeTree::checkTableStructure(bool skip_sanity_checks, bo
         {
             LOG_WARNING(log, "Table structure in ZooKeeper is a little different from local table structure. Assuming ALTER.");
 
-            /// Without any locks, because table has not been created yet.
-            setTableStructure(std::move(columns_from_zk), metadata_diff);
+            /// We delay setting table structure till startup() because otherwise new table metadata file can
+            /// be overwritten in DatabaseOrdinary::createTable.
+            set_table_structure_at_startup = [columns_from_zk, metadata_diff, this]()
+            {
+                /// Without any locks, because table has not been created yet.
+                setTableStructure(std::move(columns_from_zk), metadata_diff);
+            };
         }
         else
         {
@@ -2784,6 +2789,9 @@ void StorageReplicatedMergeTree::startup()
 {
     if (is_readonly)
         return;
+
+    if (set_table_structure_at_startup)
+        set_table_structure_at_startup();
 
     queue.initialize(
         zookeeper_path, replica_path,

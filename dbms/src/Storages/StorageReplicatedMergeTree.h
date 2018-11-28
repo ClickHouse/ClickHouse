@@ -241,12 +241,16 @@ private:
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
-    /** Version node /columns in ZooKeeper corresponding to the current data.columns.
+    /** Version of the /columns node in ZooKeeper corresponding to the current data.columns.
       * Read and modify along with the data.columns - under TableStructureLock.
       */
     int columns_version = -1;
 
+    /// Version of the /metadata node in ZooKeeper.
     int metadata_version = -1;
+
+    /// Used to delay setting table structure till startup() in case of an offline ALTER.
+    std::function<void()> set_table_structure_at_startup;
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
@@ -332,6 +336,7 @@ private:
 
     /** Verify that the list of columns and table settings match those specified in ZK (/metadata).
       * If not, throw an exception.
+      * Must be called before startup().
       */
     void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
 

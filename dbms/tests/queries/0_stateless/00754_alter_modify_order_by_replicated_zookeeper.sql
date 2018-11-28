@@ -39,5 +39,11 @@ SELECT * FROM test.summing_r2 FINAL ORDER BY x, y, z;
 SELECT '*** Check SHOW CREATE TABLE ***';
 SHOW CREATE TABLE test.summing_r2;
 
+DETACH TABLE test.summing_r2;
+ALTER TABLE test.summing_r1 ADD COLUMN t UInt32 AFTER z, MODIFY ORDER BY (x, y, t * t); -- { serverError 341 }
+ATTACH TABLE test.summing_r2;
+SELECT '*** Check SHOW CREATE TABLE after offline ALTER ***';
+SHOW CREATE TABLE test.summing_r2;
+
 DROP TABLE test.summing_r1;
 DROP TABLE test.summing_r2;
