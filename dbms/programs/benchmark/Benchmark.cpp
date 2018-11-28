@@ -89,15 +89,14 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector < std::string > & args)
+    int main(const std::vector<std::string> &)
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-        {
             Poco::File(json_path).remove();
-        }
 
         readQueries();
         runBenchmark();
+        return 0;
     }
 
 private:
