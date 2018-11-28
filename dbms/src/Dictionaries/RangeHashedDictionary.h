@@ -1,11 +1,11 @@
 #pragma once
 
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryStructure.h"
-#include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <Common/HashTable/HashMap.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 
 #include <atomic>
 #include <memory>
@@ -14,13 +14,15 @@
 
 namespace DB
 {
-
 class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
     RangeHashedDictionary(
-        const std::string & dictionary_name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime, bool require_nonempty);
+        const std::string & dictionary_name,
+        const DictionaryStructure & dict_struct,
+        DictionarySourcePtr source_ptr,
+        const DictionaryLifetime dict_lifetime,
+        bool require_nonempty);
 
     RangeHashedDictionary(const RangeHashedDictionary & other);
 
@@ -50,10 +52,7 @@ public:
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
-    {
-        return creation_time;
-    }
+    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -65,11 +64,11 @@ public:
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name,\
-        const PaddedPODArray<Key> & ids,\
-        const PaddedPODArray<RangeStorageType> & dates,\
+#define DECLARE_MULTIPLE_GETTER(TYPE)                   \
+    void get##TYPE(                                     \
+        const std::string & attribute_name,             \
+        const PaddedPODArray<Key> & ids,                \
+        const PaddedPODArray<RangeStorageType> & dates, \
         ResultArrayType<TYPE> & out) const;
     DECLARE_MULTIPLE_GETTER(UInt8)
     DECLARE_MULTIPLE_GETTER(UInt16)
@@ -88,7 +87,9 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 
     void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<RangeStorageType> & dates,
+        const std::string & attribute_name,
+        const PaddedPODArray<Key> & ids,
+        const PaddedPODArray<RangeStorageType> & dates,
         ColumnString * out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
@@ -99,7 +100,7 @@ public:
         RangeStorageType right;
 
         static bool isCorrectDate(const RangeStorageType & date);
-        bool contains(const RangeStorageType& value) const;
+        bool contains(const RangeStorageType & value) const;
     };
 
 private:
@@ -110,25 +111,51 @@ private:
         T value;
     };
 
-    template <typename T> using Values = std::vector<Value<T>>;
-    template <typename T> using Collection = HashMap<UInt64, Values<T>>;
-    template <typename T> using Ptr = std::unique_ptr<Collection<T>>;
+    template <typename T>
+    using Values = std::vector<Value<T>>;
+    template <typename T>
+    using Collection = HashMap<UInt64, Values<T>>;
+    template <typename T>
+    using Ptr = std::unique_ptr<Collection<T>>;
 
     struct Attribute final
     {
     public:
         AttributeUnderlyingType type;
-        std::variant<UInt8, UInt16, UInt32, UInt64,
-                   UInt128,
-                   Int8, Int16, Int32, Int64,
-                   Decimal32, Decimal64, Decimal128,
-                   Float32, Float64,
-                   String> null_values;
-        std::variant<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
-                   Ptr<UInt128>,
-                   Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
-                   Ptr<Decimal32>, Ptr<Decimal64>, Ptr<Decimal128>,
-                   Ptr<Float32>, Ptr<Float64>, Ptr<StringRef>> maps;
+        std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            String>
+            null_values;
+        std::variant<
+            Ptr<UInt8>,
+            Ptr<UInt16>,
+            Ptr<UInt32>,
+            Ptr<UInt64>,
+            Ptr<UInt128>,
+            Ptr<Int8>,
+            Ptr<Int16>,
+            Ptr<Int32>,
+            Ptr<Int64>,
+            Ptr<Decimal32>,
+            Ptr<Decimal64>,
+            Ptr<Decimal128>,
+            Ptr<Float32>,
+            Ptr<Float64>,
+            Ptr<StringRef>>
+            maps;
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -172,12 +199,14 @@ private:
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     template <typename RangeType>
-    void getIdsAndDates(PaddedPODArray<Key> & ids,
-                        PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(PaddedPODArray<Key> & ids, PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename T, typename RangeType>
-    void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
-                        PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+    void getIdsAndDates(
+        const Attribute & attribute,
+        PaddedPODArray<Key> & ids,
+        PaddedPODArray<RangeType> & start_dates,
+        PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
