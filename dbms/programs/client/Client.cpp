@@ -18,7 +18,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -86,9 +86,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
@@ -529,7 +526,7 @@ private:
 
         if (max_client_network_bandwidth)
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
             connection->setThrottler(throttler);
         }
 

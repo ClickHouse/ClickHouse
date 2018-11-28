@@ -191,3 +191,6 @@ if (USE_INTERNAL_LLVM_LIBRARY)
     add_subdirectory (llvm/llvm)
 endif ()
 
+if (USE_BASE64)
+    add_subdirectory (base64-cmake)
+endif()

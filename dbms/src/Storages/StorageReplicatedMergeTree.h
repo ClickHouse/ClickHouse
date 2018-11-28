@@ -116,12 +116,7 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
-    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -196,6 +191,14 @@ public:
     ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
 
     ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
+
+    Names getSamplingExpressionNames() const override;
+
+    Names getPrimaryExpressionNames() const override;
+
+    Names getOrderExpressionNames() const override;
+
+    Names getPartitionExpressionNames() const override;
 
 private:
     /// Delete old parts from disk and from ZooKeeper.
@@ -513,6 +516,13 @@ private:
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 	
     const Cluster::Address & findClusterAddress(ReplicatedMergeTreeAddress & leader_address);
+
+    // Partition helpers
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context);
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context);
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
