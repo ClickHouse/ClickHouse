@@ -494,6 +494,7 @@ public:
 
     PerformanceTest(const String & host_,
         const UInt16 port_,
+        const bool & secure_,
         const String & default_database_,
         const String & user_,
         const String & password_,
@@ -507,7 +508,7 @@ public:
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
         const ConnectionTimeouts & timeouts)
-        : connection(host_, port_, default_database_, user_, password_, timeouts),
+        : connection(host_, port_, default_database_, user_, password_, timeouts, "performance-test", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
           gotSIGINT(false),
           lite_output(lite_output_),
           profiles_file(profiles_file_),
@@ -1385,7 +1386,10 @@ try
     boost::program_options::options_description desc("Allowed options");
     desc.add_options()("help", "produce help message")("lite", "use lite version of output")(
         "profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")(
-        "host,h", value<String>()->default_value("localhost"), "")("port", value<UInt16>()->default_value(9000), "")(
+        "host,h", value<String>()->default_value("localhost"), "")
+        ("port", value<UInt16>()->default_value(9000), "")
+        ("secure", value<bool>()->default_value(false), "use secure connection")
+        (
         "database", value<String>()->default_value("default"), "")("user", value<String>()->default_value("default"), "")(
         "password", value<String>()->default_value(""), "")("tags", value<Strings>()->multitoken(), "Run only tests with tag")(
         "skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")("names",
@@ -1476,6 +1480,7 @@ try
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),
+        options["secure"].as<bool>(),
         options["database"].as<String>(),
         options["user"].as<String>(),
         options["password"].as<String>(),
