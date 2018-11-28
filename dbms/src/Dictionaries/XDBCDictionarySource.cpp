@@ -19,7 +19,7 @@
 
 #include <Common/config.h>
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-#include <Poco/Data/ODBC/Connector.h>
+#    include <Poco/Data/ODBC/Connector.h>
 #endif
 
 namespace DB

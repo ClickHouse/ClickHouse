@@ -3,11 +3,11 @@
 #include <Common/config.h>
 #if USE_MYSQL
 
-#include <common/LocalDateTime.h>
-#include <mysqlxx/PoolWithFailover.h>
-#include "DictionaryStructure.h"
-#include "ExternalQueryBuilder.h"
-#include "IDictionarySource.h"
+#    include <common/LocalDateTime.h>
+#    include <mysqlxx/PoolWithFailover.h>
+#    include "DictionaryStructure.h"
+#    include "ExternalQueryBuilder.h"
+#    include "IDictionarySource.h"
 
 
 namespace Poco

@@ -3,8 +3,8 @@
 #include <Common/config.h>
 #if USE_POCO_MONGODB
 
-#include "DictionaryStructure.h"
-#include "IDictionarySource.h"
+#    include "DictionaryStructure.h"
+#    include "IDictionarySource.h"
 
 namespace Poco
 {

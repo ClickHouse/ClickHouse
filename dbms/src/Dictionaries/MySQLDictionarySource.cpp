@@ -38,14 +38,14 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
 
 #if USE_MYSQL
-#include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteHelpers.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
-#include "MySQLBlockInputStream.h"
-#include "readInvalidateQuery.h"
+#    include <Columns/ColumnString.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/WriteHelpers.h>
+#    include <common/LocalDateTime.h>
+#    include <common/logger_useful.h>
+#    include "MySQLBlockInputStream.h"
+#    include "readInvalidateQuery.h"
 
 
 namespace DB

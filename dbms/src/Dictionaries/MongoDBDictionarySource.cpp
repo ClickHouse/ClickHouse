@@ -35,22 +35,22 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 
 #if USE_POCO_MONGODB
 
-#include <Poco/MongoDB/Array.h>
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Database.h>
-#include <Poco/MongoDB/ObjectId.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Version.h>
+#    include <Poco/MongoDB/Array.h>
+#    include <Poco/MongoDB/Connection.h>
+#    include <Poco/MongoDB/Cursor.h>
+#    include <Poco/MongoDB/Database.h>
+#    include <Poco/MongoDB/ObjectId.h>
+#    include <Poco/Util/AbstractConfiguration.h>
+#    include <Poco/Version.h>
 
 // only after poco
 // naming conflict:
 // Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
-#include <IO/WriteHelpers.h>
-#include <Common/FieldVisitors.h>
-#include <ext/enumerate.h>
-#include "MongoDBBlockInputStream.h"
+#    include <IO/WriteHelpers.h>
+#    include <Common/FieldVisitors.h>
+#    include <ext/enumerate.h>
+#    include "MongoDBBlockInputStream.h"
 
 
 namespace DB
@@ -66,7 +66,7 @@ namespace ErrorCodes
 static const size_t max_block_size = 8192;
 
 
-#if POCO_VERSION < 0x01070800
+#    if POCO_VERSION < 0x01070800
 /// See https://pocoproject.org/forum/viewtopic.php?f=10&t=6326&p=11426&hilit=mongodb+auth#p11485
 static void
 authenticate(Poco::MongoDB::Connection & connection, const std::string & database, const std::string & user, const std::string & password)
@@ -164,7 +164,7 @@ authenticate(Poco::MongoDB::Connection & connection, const std::string & databas
         }
     }
 }
-#endif
+#    endif
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
@@ -190,12 +190,12 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 {
     if (!user.empty())
     {
-#if POCO_VERSION >= 0x01070800
+#    if POCO_VERSION >= 0x01070800
         Poco::MongoDB::Database poco_db(db);
         poco_db.authenticate(*connection, user, password, method.empty() ? Poco::MongoDB::Database::AUTH_SCRAM_SHA1 : method);
-#else
+#    else
         authenticate(*connection, db, user, password);
-#endif
+#    endif
     }
 }
 
