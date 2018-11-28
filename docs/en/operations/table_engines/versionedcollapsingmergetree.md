@@ -2,11 +2,14 @@
 
 # VersionedCollapsingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm.
+The engine:
 
-`VersionedCollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#versionedcollapsingmergetree-collapsing) section of the document.
+- Allows quick writing of continually changing states of objects.
+- Deletes old states of objects in the background. It causes to significant reduction of the volume of storage.
 
-The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
+See the section [Collapsing](#versionedcollapsingmergetree-collapsing) for details.
+
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm. `VersionedCollapsingMergeTree` solves the same problem as the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) but uses another algorithm of collapsing. It allows inserting the data in any order with multiple threads. `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table
 
