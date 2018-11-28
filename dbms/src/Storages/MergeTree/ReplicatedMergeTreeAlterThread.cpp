@@ -62,16 +62,16 @@ void ReplicatedMergeTreeAlterThread::run()
         auto zookeeper = storage.getZooKeeper();
 
         String columns_path = storage.zookeeper_path + "/columns";
-        auto columns_result = zk_node_cache.get(columns_path, task->getWatchCallback());
-        if (!columns_result.exists)
+        auto columns_znode = zk_node_cache.get(columns_path, task->getWatchCallback());
+        if (!columns_znode.exists)
             throw Exception(columns_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-        int32_t columns_version = columns_result.stat.version;
+        int32_t columns_version = columns_znode.stat.version;
 
         String metadata_path = storage.zookeeper_path + "/metadata";
-        auto metadata_result = zk_node_cache.get(metadata_path, task->getWatchCallback());
-        if (!metadata_result.exists)
+        auto metadata_znode = zk_node_cache.get(metadata_path, task->getWatchCallback());
+        if (!metadata_znode.exists)
             throw Exception(metadata_path + " doesn't exist", ErrorCodes::NOT_FOUND_NODE);
-        int32_t metadata_version = metadata_result.stat.version;
+        int32_t metadata_version = metadata_znode.stat.version;
 
         const bool changed_columns_version = (columns_version != storage.columns_version);
         const bool changed_metadata_version = (metadata_version != storage.metadata_version);
@@ -79,10 +79,10 @@ void ReplicatedMergeTreeAlterThread::run()
         if (!(changed_columns_version || changed_metadata_version || force_recheck_parts))
             return;
 
-        const String & columns_str = columns_result.contents;
+        const String & columns_str = columns_znode.contents;
         auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
-        const String & metadata_str = metadata_result.contents;
+        const String & metadata_str = metadata_znode.contents;
         auto metadata_in_zk = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
         auto metadata_diff = ReplicatedMergeTreeTableMetadata(storage.data).checkAndFindDiff(metadata_in_zk, /* allow_alter = */ true);
 

@@ -37,15 +37,15 @@ public:
     ZooKeeperNodeCache(const ZooKeeperNodeCache &) = delete;
     ZooKeeperNodeCache(ZooKeeperNodeCache &&) = default;
 
-    struct GetResult
+    struct ZNode
     {
         bool exists = false;
         std::string contents;
         Coordination::Stat stat;
     };
 
-    GetResult get(const std::string & path, EventPtr watch_event);
-    GetResult get(const std::string & path, Coordination::WatchCallback watch_callback);
+    ZNode get(const std::string & path, EventPtr watch_event);
+    ZNode get(const std::string & path, Coordination::WatchCallback watch_callback);
 
 private:
     GetZooKeeper get_zookeeper;
@@ -59,7 +59,7 @@ private:
 
     std::shared_ptr<Context> context;
 
-    std::unordered_map<std::string, GetResult> node_cache;
+    std::unordered_map<std::string, ZNode> path_to_cached_znode;
 };
 
 }
