@@ -96,7 +96,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path")) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -129,7 +129,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
             main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
@@ -160,7 +160,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 #endif
 
-    std::string path = getCanonicalPath(config().getString("path"));
+    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
     global_context->setPath(path);
@@ -301,6 +301,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
+        config().getString("path", ""),
         std::move(main_config_zk_node_cache),
         [&](ConfigurationPtr config)
         {
@@ -322,6 +323,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
         include_from_path,
+        config().getString("path", ""),
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
