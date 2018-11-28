@@ -24,6 +24,8 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
+RUN mkdir /docker-entrypoint-initdb.d
+
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
 ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64 /bin/gosu
