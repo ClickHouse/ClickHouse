@@ -30,6 +30,36 @@ chown -R $USER:$GROUP \
     "$TMP_DIR" \
     "$USER_PATH"
 
+if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
+    gosu clickhouse /usr/bin/clickhouse-server --config-file=$CLICKHOUSE_CONFIG &
+    pid="$!"
+    sleep 1
+
+    clickhouseclient=( clickhouse client )
+    echo
+    for f in /docker-entrypoint-initdb.d/*; do
+        case "$f" in
+            *.sh)
+                if [ -x "$f" ]; then
+                    echo "$0: running $f"
+                    "$f"
+                else
+                    echo "$0: sourcing $f"
+                    . "$f"
+                fi
+                ;;
+            *.sql)    echo "$0: running $f"; cat "$f" | "${clickhouseclient[@]}" ; echo ;;
+            *.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${clickhouseclient[@]}"; echo ;;
+            *)        echo "$0: ignoring $f" ;;
+        esac
+        echo
+    done
+
+    if ! kill -s TERM "$pid" || ! wait "$pid"; then
+        echo >&2 'ClickHouse init process failed.'
+        exit 1
+    fi
+fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
