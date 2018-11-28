@@ -57,7 +57,4 @@ private:
     const Context & context;
 };
 
-//class DictionarySourceFactory;
-//void registerDictionarySourceExecutable(DictionarySourceFactory & factory);
-
 }

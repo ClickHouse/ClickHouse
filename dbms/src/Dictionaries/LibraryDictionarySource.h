@@ -79,7 +79,4 @@ private:
     void * lib_data = nullptr;
 };
 
-//class DictionarySourceFactory;
-//void registerDictionarySourceLibrary(DictionarySourceFactory & factory);
-
 }

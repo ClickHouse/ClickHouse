@@ -82,7 +82,4 @@ private:
     const Context & global_context;
 };
 
-//class DictionarySourceFactory;
-//void registerDictionarySourceXDBC(DictionarySourceFactory & factory);
-//void registerDictionarySourceJDBC(DictionarySourceFactory & factory);
 }

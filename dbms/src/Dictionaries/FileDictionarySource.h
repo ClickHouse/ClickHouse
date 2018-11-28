@@ -56,7 +56,4 @@ private:
     Poco::Timestamp last_modification;
 };
 
-//class DictionarySourceFactory;
-//void registerDictionarySourceFile(DictionarySourceFactory & factory);
-
 }

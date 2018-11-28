@@ -60,7 +60,4 @@ private:
     ConnectionTimeouts timeouts;
 };
 
-//class DictionarySourceFactory;
-//void registerDictionarySourceHTTP(DictionarySourceFactory & factory);
-
 }
