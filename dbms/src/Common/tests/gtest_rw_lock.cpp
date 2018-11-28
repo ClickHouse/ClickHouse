@@ -38,7 +38,7 @@ TEST(Common, RWLock_1)
             auto type = (std::uniform_int_distribution<>(0, 9)(gen) >= round) ? RWLockImpl::Read : RWLockImpl::Write;
             auto sleep_for = std::chrono::duration<int, std::micro>(std::uniform_int_distribution<>(1, 100)(gen));
 
-            auto lock = fifo_lock->getLock(type, "RW");
+            auto lock = fifo_lock->getLock(type);
 
             if (type == RWLockImpl::Write)
             {
