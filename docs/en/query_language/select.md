@@ -361,6 +361,8 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 - `FULL OUTER JOIN`
 - `CROSS JOIN`
 
+You may skip the `OUTER` keyword it is implied by default.
+
 **`ANY` or `ALL` strictness**
 
 If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
@@ -374,9 +376,9 @@ When using a normal `JOIN`, the query is sent to remote servers. Subqueries are 
 
 When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#queries-distributed-subquries).
+Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#queries-distributed-subqueries).
 
-**Peculiar properties of use**
+**Usage Recommendations**
 
 All columns that are not needed for the `JOIN` are deleted from the subquery.
 
@@ -848,7 +850,7 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<a name="queries-distributed-subquries"></a>
+<a name="queries-distributed-subqueries"></a>
 
 #### Distributed Subqueries
 
