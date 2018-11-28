@@ -27,7 +27,6 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-
 namespace CurrentMetrics
 {
     extern const Metric SendExternalTables;

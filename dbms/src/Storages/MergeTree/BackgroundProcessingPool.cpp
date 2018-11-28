@@ -30,13 +30,14 @@ constexpr double BackgroundProcessingPool::sleep_seconds_random_part;
 
 void BackgroundProcessingPoolTaskInfo::wake()
 {
-    if (removed)
-        return;
-
     Poco::Timestamp current_time;
 
     {
         std::unique_lock lock(pool.tasks_mutex);
+
+        /// This will ensure that iterator is valid. Must be done under the same mutex when the iterator is invalidated.
+        if (removed)
+            return;
 
         auto next_time_to_execute = iterator->first;
         auto this_task_handle = iterator->second;
@@ -93,6 +94,7 @@ void BackgroundProcessingPool::removeTask(const TaskHandle & task)
     {
         std::unique_lock lock(tasks_mutex);
         tasks.erase(task->iterator);
+        /// Note that the task may be still accessible through TaskHandle (shared_ptr).
     }
 }
 

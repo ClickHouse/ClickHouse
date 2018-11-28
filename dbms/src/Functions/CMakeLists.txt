@@ -1,43 +1,8 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
-
-set (FUNCTIONS_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/)
-
-generate_function_register(Arithmetic
-    FunctionPlus
-    FunctionMinus
-    FunctionMultiply
-    FunctionDivideFloating
-    FunctionDivideIntegral
-    FunctionDivideIntegralOrZero
-    FunctionModulo
-    FunctionNegate
-    FunctionAbs
-    FunctionBitAnd
-    FunctionBitOr
-    FunctionBitXor
-    FunctionBitNot
-    FunctionBitShiftLeft
-    FunctionBitShiftRight
-    FunctionBitRotateLeft
-    FunctionBitRotateRight
-    FunctionLeast
-    FunctionGreatest
-    FunctionBitTest
-    FunctionBitTestAny
-    FunctionBitTestAll
-    FunctionGCD
-    FunctionLCM
-    FunctionIntExp2
-    FunctionIntExp10
-)
-
 
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions ./Conditional)
-#add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
-add_headers_and_sources(clickhouse_functions ${FUNCTIONS_GENERATED_DIR})
 
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
@@ -59,8 +24,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
 endif ()
 
 if (USE_ICU)
-    #target_link_libraries (clickhouse_functions ${ICU_LIBS})
-    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIR})
+    target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
 endif ()
 
 if (USE_VECTORCLASS)
