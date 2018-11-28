@@ -19,31 +19,14 @@ namespace ErrorCodes
 namespace
 {
 
-template <StreamUnionMode mode>
-struct OutputData;
-
 /// A block or an exception.
-template <>
-struct OutputData<StreamUnionMode::Basic>
+struct OutputData
 {
     Block block;
     std::exception_ptr exception;
 
     OutputData() {}
     OutputData(Block & block_) : block(block_) {}
-    OutputData(std::exception_ptr & exception_) : exception(exception_) {}
-};
-
-/// Block + additional information or an exception.
-template <>
-struct OutputData<StreamUnionMode::ExtraInfo>
-{
-    Block block;
-    BlockExtraInfo extra_info;
-    std::exception_ptr exception;
-
-    OutputData() {}
-    OutputData(Block & block_, BlockExtraInfo & extra_info_) : block(block_), extra_info(extra_info_) {}
     OutputData(std::exception_ptr & exception_) : exception(exception_) {}
 };
 
@@ -58,20 +41,12 @@ struct OutputData<StreamUnionMode::ExtraInfo>
   * - with the help of ParallelInputsProcessor in several threads it takes out blocks from the sources;
   * - the completed blocks are added to a limited queue of finished blocks;
   * - the main thread takes out completed blocks from the queue of finished blocks;
-  * - if the StreamUnionMode::ExtraInfo mode is specified, in addition to the UnionBlockInputStream
-  *   extracts blocks information; In this case all sources should support such mode.
   */
-
-template <StreamUnionMode mode = StreamUnionMode::Basic>
 class UnionBlockInputStream final : public IProfilingBlockInputStream
 {
 public:
     using ExceptionCallback = std::function<void()>;
 
-private:
-    using Self = UnionBlockInputStream;
-
-public:
     UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,
         ExceptionCallback exception_callback_ = ExceptionCallback()) :
         output_queue(std::min(inputs.size(), max_threads)),
@@ -125,11 +100,6 @@ public:
         processor.cancel(kill);
     }
 
-    BlockExtraInfo getBlockExtraInfo() const override
-    {
-        return doGetBlockExtraInfo();
-    }
-
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
@@ -146,7 +116,7 @@ protected:
             /** Let's read everything up to the end, so that ParallelInputsProcessor is not blocked when trying to insert into the queue.
               * Maybe there is an exception in the queue.
               */
-            OutputData<mode> res;
+            OutputData res;
             while (true)
             {
                 //std::cerr << "popping\n";
@@ -230,20 +200,9 @@ protected:
     }
 
 private:
-    BlockExtraInfo doGetBlockExtraInfo() const
-    {
-        if constexpr (mode == StreamUnionMode::ExtraInfo)
-            return received_payload.extra_info;
-        else
-            throw Exception("Method getBlockExtraInfo is not supported for mode StreamUnionMode::Basic",
-                ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-private:
-    using Payload = OutputData<mode>;
+    using Payload = OutputData;
     using OutputQueue = ConcurrentBoundedQueue<Payload>;
 
-private:
     /** The queue of the finished blocks. Also, you can put an exception instead of a block.
       * When data is run out, an empty block is inserted into the queue.
       * Sooner or later, an empty block is always inserted into the queue (even after exception or query cancellation).
@@ -254,16 +213,11 @@ private:
 
     struct Handler
     {
-        Handler(Self & parent_) : parent(parent_) {}
+        Handler(UnionBlockInputStream & parent_) : parent(parent_) {}
 
         void onBlock(Block & block, size_t /*thread_num*/)
         {
             parent.output_queue.push(Payload(block));
-        }
-
-        void onBlock(Block & block, BlockExtraInfo & extra_info, size_t /*thread_num*/)
-        {
-            parent.output_queue.push(Payload(block, extra_info));
         }
 
         void onFinish()
@@ -287,11 +241,11 @@ private:
             parent.cancel(false);    /// Does not throw exceptions.
         }
 
-        Self & parent;
+        UnionBlockInputStream & parent;
     };
 
     Handler handler;
-    ParallelInputsProcessor<Handler, mode> processor;
+    ParallelInputsProcessor<Handler> processor;
 
     ExceptionCallback exception_callback;
 
