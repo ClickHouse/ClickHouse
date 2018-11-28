@@ -9,7 +9,7 @@ This engine:
 
 See the section [Collapsing](#versionedcollapsingmergetree-collapsing) for details.
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm. `VersionedCollapsingMergeTree` solves the same problem as the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) but uses another algorithm of collapsing. It allows inserting the data in any order with multiple threads. `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm. `VersionedCollapsingMergeTree` solves the same problem as the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) but uses another algorithm of collapsing. It allows inserting the data in any order with multiple threads. The particular `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table
 
@@ -42,7 +42,7 @@ VersionedCollapsingMergeTree(sign, version)
 
     Column data type should be `UInt*`.
 
-**Query clauses**
+**Query Clauses**
 
 When creating a `VersionedCollapsingMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
 
@@ -127,7 +127,7 @@ When ClickHouse merges data parts, it deletes each pair of rows having the same 
 
 When ClickHouse merges data parts, it orders rows by the primary key. If the `Version` column is not in the primary key, ClickHouse adds it to the primary key implicitly as the last field and use for ordering.
 
-## Selecting data
+## Selecting Data
 
 ClickHouse doesn't guarantee that all of the rows with the same primary key will be in the same resulting data part and even on the same physical server. It's true for writing the data and for subsequent merging of the data parts. Also, ClickHouse process `SELECT` queries with multiple threads, and it can not predict the order of rows in the result. So the aggregation is required if there is a need to get completely "collapsed" data from `VersionedCollapsingMergeTree` table.
 
@@ -137,7 +137,7 @@ The aggregates `count`, `sum` and `avg` could be calculated this way. The aggreg
 
 If you need to extract the data with "collapsing" but without of aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with big tables.
 
-## Example of use
+## Example of Use
 
 Example data:
 
