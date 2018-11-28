@@ -89,15 +89,14 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector<std::string> & /*args*/)
+    int main(const std::vector<std::string> &)
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-        {
             Poco::File(json_path).remove();
-        }
 
         readQueries();
         runBenchmark();
+        return 0;
     }
 
 private:
@@ -448,7 +447,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
             ("host,h",        value<std::string>()->default_value("localhost"), "")
             ("port",          value<UInt16>()->default_value(9000),             "")
-            ("secure,s",      "Use TLS connection")
+            ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
