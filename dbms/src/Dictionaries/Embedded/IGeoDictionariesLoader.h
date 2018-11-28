@@ -1,11 +1,18 @@
 #pragma once
 
-#include <Dictionaries/Embedded/RegionsHierarchies.h>
-#include <Dictionaries/Embedded/RegionsNames.h>
-
-#include <Poco/Util/AbstractConfiguration.h>
-
+#include "RegionsHierarchies.h"
+#include "RegionsNames.h"
 #include <memory>
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+
+    class Logger;
+}
 
 
 // Provides actual versions of geo dictionaries (regions hierarchies, regions names)

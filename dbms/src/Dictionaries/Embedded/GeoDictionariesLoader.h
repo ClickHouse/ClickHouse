@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
+#include "IGeoDictionariesLoader.h"
 
 
 // Default implementation of geo dictionaries loader used by native server application
