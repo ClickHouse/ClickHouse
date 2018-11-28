@@ -530,8 +530,6 @@ public:
 
     void initialize(Poco::Util::Application & self)
     {
-        //Poco::Util::Application::initialize(self);
-
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
@@ -554,7 +552,6 @@ public:
 
         processTestsConfigurations(input_files);
     }
-
 
 private:
     String test_name;
@@ -1392,6 +1389,7 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
             input_files.push_back(file.string());
     }
 }
+
 
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try

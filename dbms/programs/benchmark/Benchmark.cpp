@@ -80,7 +80,6 @@ public:
 
     void initialize(Poco::Util::Application & self)
     {
-        Poco::Util::Application::initialize(self);
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
