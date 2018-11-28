@@ -1477,7 +1477,9 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     alter_command.column_name = entry.column_name;
 
     auto new_columns = getColumns();
-    alter_command.apply(new_columns);
+    ASTPtr ignored_order_by_ast;
+    ASTPtr ignored_primary_key_ast;
+    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast);
 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
@@ -3056,7 +3058,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         ColumnsDescription new_columns = data.getColumns();
         ASTPtr new_order_by_ast = data.order_by_ast;
         ASTPtr new_primary_key_ast = data.primary_key_ast;
-        params.apply(new_columns, &new_order_by_ast, &new_primary_key_ast);
+        params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
