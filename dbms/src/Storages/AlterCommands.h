@@ -60,8 +60,7 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast = nullptr, ASTPtr * primary_key_ast = nullptr) const;
-
+    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
     /// Checks that not only metadata touched by that command
     bool is_mutable() const;
 };
@@ -72,7 +71,10 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast = nullptr, ASTPtr * primary_key_ast = nullptr) const;
+    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+
+    /// For storages that don't support MODIFY_PRIMARY_KEY or MODIFY_ORDER_BY.
+    void apply(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);
     bool is_mutable() const;

@@ -983,7 +983,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     auto new_columns = getColumns();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    commands.apply(new_columns, &new_order_by_ast, &new_primary_key_ast);
+    commands.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;

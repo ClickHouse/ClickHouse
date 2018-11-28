@@ -208,7 +208,7 @@ void StorageMergeTree::alter(
     auto new_columns = data.getColumns();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    params.apply(new_columns, &new_order_by_ast, &new_primary_key_ast);
+    params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
     ASTPtr primary_expr_list_for_altering_parts;
     for (const AlterCommand & param : params)
@@ -715,7 +715,9 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     alter_command.column_name = get<String>(column_name);
 
     auto new_columns = getColumns();
-    alter_command.apply(new_columns);
+    ASTPtr ignored_order_by_ast;
+    ASTPtr ignored_primary_key_ast;
+    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)

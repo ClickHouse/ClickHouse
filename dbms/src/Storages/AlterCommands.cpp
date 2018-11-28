@@ -127,7 +127,7 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
     return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
-void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast, ASTPtr * primary_key_ast) const
+void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -273,33 +273,24 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr * orde
     }
     else if (type == MODIFY_PRIMARY_KEY)
     {
-        if (!primary_key_ast || !order_by_ast)
-            throw Exception("ALTER MODIFY PRIMARY KEY is not supported for this type of tables",
-                ErrorCodes::BAD_ARGUMENTS);
-
-        if (!(*primary_key_ast))
-            *order_by_ast = primary_key;
+        if (!primary_key_ast)
+            order_by_ast = primary_key;
         else
-            *primary_key_ast = primary_key;
+            primary_key_ast = primary_key;
     }
     else if (type == MODIFY_ORDER_BY)
     {
-        if (!primary_key_ast || !order_by_ast)
-            throw Exception("ALTER MODIFY PRIMARY KEY is not supported for this type of tables",
-                ErrorCodes::BAD_ARGUMENTS);
-
-        if (!(*primary_key_ast))
+        if (!primary_key_ast)
         {
             /// Primary and sorting key become independent after this ALTER so we have to
             /// save the old ORDER BY expression as the new primary key.
-            *primary_key_ast = (*order_by_ast)->clone();
+            primary_key_ast = order_by_ast->clone();
         }
 
-        *order_by_ast = order_by;
+        order_by_ast = order_by;
     }
     else if (type == COMMENT_COLUMN)
     {
-
         columns_description.comments[column_name] = comment;
     }
     else
@@ -316,14 +307,18 @@ bool AlterCommand::is_mutable() const
     return true;
 }
 
-void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr * order_by_ast, ASTPtr * primary_key_ast) const
+void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     auto new_columns_description = columns_description;
+    auto new_order_by_ast = order_by_ast;
+    auto new_primary_key_ast = primary_key_ast;
 
     for (const AlterCommand & command : *this)
-        command.apply(new_columns_description, order_by_ast, primary_key_ast);
+        command.apply(new_columns_description, new_order_by_ast, new_primary_key_ast);
 
     columns_description = std::move(new_columns_description);
+    order_by_ast = std::move(new_order_by_ast);
+    primary_key_ast = std::move(new_primary_key_ast);
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
@@ -509,6 +504,21 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             command_ptr->data_type = block.getByName(column_name).type;
         }
     }
+}
+
+void AlterCommands::apply(ColumnsDescription & columns_description) const
+{
+    auto out_columns_description = columns_description;
+    ASTPtr out_order_by;
+    ASTPtr out_primary_key;
+    apply(out_columns_description, out_order_by, out_primary_key);
+
+    if (out_order_by)
+        throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
+    if (out_primary_key)
+        throw Exception("Storage doesn't support modifying PRIMARY KEY expression", ErrorCodes::NOT_IMPLEMENTED);
+
+    columns_description = std::move(out_columns_description);
 }
 
 bool AlterCommands::is_mutable() const
