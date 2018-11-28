@@ -29,6 +29,7 @@ AllowShortFunctionsOnASingleLine: InlineOnly
 AlwaysBreakTemplateDeclarations: true
 IndentCaseLabels: true
 SpaceAfterTemplateKeyword: true
+SpaceBeforeCpp11BracedList: false
 SortIncludes: true
 IncludeCategories:
   - Regex: '^<[a-z_]+>'
