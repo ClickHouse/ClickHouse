@@ -25,6 +25,9 @@ namespace zkutil
     using EventPtr = std::shared_ptr<Poco::Event>;
 }
 
+namespace DB
+{
+
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
 
@@ -74,6 +77,7 @@ public:
         bool has_zk_includes;
         bool loaded_from_preprocessed;
         XMLDocumentPtr preprocessed_xml;
+        std::string config_path;
     };
 
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
@@ -88,7 +92,12 @@ public:
         const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
-    void savePreprocessedConfig(const LoadedConfig & loaded_config);
+    /// Save preprocessed config to specified directory.
+    /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
+    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
+
+    /// Set path of main config.xml . It will be cutted from all configs placed to preprocessed_configs/
+    void setConfigPath(const std::string & config_path);
 
 public:
     using Files = std::vector<std::string>;
@@ -102,7 +111,7 @@ public:
 
 private:
     const std::string path;
-    const std::string preprocessed_path;
+    std::string preprocessed_path;
 
     bool throw_on_bad_incl;
 
@@ -131,3 +140,5 @@ private:
             const zkutil::EventPtr & zk_changed_event,
             std::unordered_set<std::string> & contributing_zk_paths);
 };
+
+}

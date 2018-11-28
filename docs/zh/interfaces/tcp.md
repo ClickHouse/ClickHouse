@@ -1,6 +1,5 @@
 # 原生客户端接口（TCP）
 
-TCP 原生接口用于 `clickhouse-client` 命令行，它可以在分布式查询执行中和服务器进行交互，并且可以用在 C++ 程序中。我们讲解只覆盖命令行客户端。
-
+本机协议用于[命令行客户端](cli.md)，用于分布式查询处理期间的服务器间通信，以及其他C ++程序。 不幸的是，本机ClickHouse协议还没有正式的规范，但它可以从ClickHouse源代码进行逆向工程[从这里开始](https://github.com/yandex/ClickHouse/tree/master/dbms/src/Client)）和/或拦截和分析TCP流量。
 
 [来源文章](https://clickhouse.yandex/docs/zh/interfaces/tcp/) <!--hide-->

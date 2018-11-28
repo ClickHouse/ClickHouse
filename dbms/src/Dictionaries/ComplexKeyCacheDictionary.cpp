@@ -1,5 +1,5 @@
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "ComplexKeyCacheDictionary.h"
+#include "DictionaryBlockInputStream.h"
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
@@ -9,6 +9,7 @@
 #include <Common/CurrentMetrics.h>
 #include <ext/range.h>
 #include <ext/map.h>
+#include "DictionaryFactory.h"
 
 
 namespace ProfileEvents
@@ -39,6 +40,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_SMALL_BUFFER_SIZE;
 }
 
 
@@ -377,5 +379,33 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
+
+void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 DictionarySourcePtr source_ptr
+                                 ) -> DictionaryPtr {
+        if (!dict_struct.key)
+            throw Exception {"'key' is required for dictionary of layout 'complex_key_hashed'", ErrorCodes::BAD_ARGUMENTS};
+        const auto & layout_prefix = config_prefix + ".layout";
+        const auto size = config.getInt(layout_prefix + ".complex_key_cache.size_in_cells");
+        if (size == 0)
+            throw Exception {name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        if (require_nonempty)
+            throw Exception {name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
+                             ErrorCodes::BAD_ARGUMENTS};
+
+        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
+        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+    };
+    factory.registerLayout("complex_key_cache", create_layout);
+}
+
 
 }

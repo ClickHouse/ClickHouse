@@ -33,6 +33,7 @@ public:
     ConfigReloader(
             const std::string & path,
             const std::string & include_from_path,
+            const std::string & preprocessed_dir,
             zkutil::ZooKeeperNodeCache && zk_node_cache,
             const zkutil::EventPtr & zk_changed_event,
             Updater && updater,
@@ -71,6 +72,7 @@ private:
 
     std::string path;
     std::string include_from_path;
+    std::string preprocessed_dir;
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;
     zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();

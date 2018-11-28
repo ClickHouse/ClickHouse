@@ -3,9 +3,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Dictionaries/writeParenthesisedString.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include "writeParenthesisedString.h"
+#include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
 
 
 namespace DB

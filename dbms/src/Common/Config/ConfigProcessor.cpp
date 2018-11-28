@@ -20,6 +20,11 @@
 
 using namespace Poco::XML;
 
+namespace DB
+{
+
+/// For cutting prerpocessed path to this base
+std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
@@ -40,13 +45,6 @@ static std::string numberFromHost(const std::string & s)
     return "";
 }
 
-static std::string preprocessedConfigPath(const std::string & path)
-{
-    Poco::Path preprocessed_path(path);
-    preprocessed_path.setBaseName(preprocessed_path.getBaseName() + PREPROCESSED_SUFFIX);
-    return preprocessed_path.toString();
-}
-
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
     return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
@@ -59,7 +57,6 @@ ConfigProcessor::ConfigProcessor(
     bool log_to_console,
     const Substitutions & substitutions_)
     : path(path_)
-    , preprocessed_path(preprocessedConfigPath(path))
     , throw_on_bad_incl(throw_on_bad_incl_)
     , substitutions(substitutions_)
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
@@ -524,7 +521,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml};
+    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path};
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
@@ -559,11 +556,44 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml};
+    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config)
+void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
+    if (preprocessed_path.empty())
+    {
+        auto new_path = loaded_config.config_path;
+        if (new_path.substr(0, main_config_path.size()) == main_config_path)
+            new_path.replace(0, main_config_path.size(), "");
+        std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+        if (preprocessed_dir.empty())
+        {
+            if (!loaded_config.configuration->has("path"))
+            {
+                // Will use current directory
+                auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
+                preprocessed_dir = parent_path.toString();
+                Poco::Path poco_new_path(new_path);
+                poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
+                new_path = poco_new_path.toString();
+            }
+            else
+            {
+                preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
+            }
+        }
+        else
+        {
+            preprocessed_dir += "/preprocessed_configs/";
+        }
+
+        preprocessed_path = preprocessed_dir + new_path;
+        auto path = Poco::Path(preprocessed_path).makeParent();
+        if (!path.toString().empty())
+            Poco::File(path).createDirectories();
+    }
     try
     {
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
@@ -572,4 +602,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config)
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
     }
+}
+
+void ConfigProcessor::setConfigPath(const std::string & config_path)
+{
+    main_config_path = config_path;
+}
+
 }

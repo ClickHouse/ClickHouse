@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-
+#include "RegionsHierarchy.h"
+#include "GeodataProviders/IHierarchiesProvider.h"
 #include <Poco/Exception.h>
-
 #include <unordered_map>
 
 

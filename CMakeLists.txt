@@ -236,7 +236,7 @@ include(GNUInstallDirs)
 
 include (cmake/find_ssl.cmake)
 include (cmake/lib_name.cmake)
-include (cmake/find_icu4c.cmake)
+include (cmake/find_icu.cmake)
 include (cmake/find_boost.cmake)
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
