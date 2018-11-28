@@ -16,22 +16,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-/// A block or an exception.
-struct OutputData
-{
-    Block block;
-    std::exception_ptr exception;
-
-    OutputData() {}
-    OutputData(Block & block_) : block(block_) {}
-    OutputData(std::exception_ptr & exception_) : exception(exception_) {}
-};
-
-}
-
 /** Merges several sources into one.
   * Blocks from different sources are interleaved with each other in an arbitrary way.
   * You can specify the number of threads (max_threads),
@@ -44,6 +28,18 @@ struct OutputData
   */
 class UnionBlockInputStream final : public IProfilingBlockInputStream
 {
+private:
+    /// A block or an exception.
+    struct OutputData
+    {
+        Block block;
+        std::exception_ptr exception;
+
+        OutputData() {}
+        OutputData(Block & block_) : block(block_) {}
+        OutputData(std::exception_ptr & exception_) : exception(exception_) {}
+    };
+
 public:
     using ExceptionCallback = std::function<void()>;
 
