@@ -27,7 +27,6 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-
 namespace CurrentMetrics
 {
     extern const Metric SendExternalTables;
@@ -56,7 +55,7 @@ void Connection::connect()
             disconnect();
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
-        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
 
         if (static_cast<bool>(secure))
         {
@@ -108,14 +107,14 @@ void Connection::connect()
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -696,7 +695,7 @@ void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
-    auto ip_address =  resolved_address.host().toString();
+    auto ip_address = resolved_address.host().toString();
 
     if (host != ip_address)
         description += ", " + ip_address;

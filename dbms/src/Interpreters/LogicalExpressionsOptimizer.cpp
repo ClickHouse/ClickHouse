@@ -197,7 +197,7 @@ inline ASTs & getFunctionOperands(ASTFunction * or_function)
 
 bool LogicalExpressionsOptimizer::mayOptimizeDisjunctiveEqualityChain(const DisjunctiveEqualityChain & chain) const
 {
-    const auto & equalities =  chain.second;
+    const auto & equalities = chain.second;
     const auto & equality_functions = equalities.functions;
 
     /// We eliminate too short chains.
@@ -367,8 +367,8 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
             {
                 // The order of children matters if or is children of some function, e.g. minus
                 std::replace_if(parent->children.begin(), parent->children.end(),
-                                [or_function](const ASTPtr & ptr) { return ptr.get() == or_function; },
-                                operands[0] );
+                    [or_function](const ASTPtr & ptr) { return ptr.get() == or_function; },
+                    operands[0]);
             }
 
             /// If the OR node was the root of the WHERE, PREWHERE, or HAVING expression, then update this root.

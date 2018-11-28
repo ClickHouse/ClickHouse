@@ -39,7 +39,11 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"create_table_query", std::make_shared<DataTypeString>()},
-        {"engine_full", std::make_shared<DataTypeString>()}
+        {"engine_full", std::make_shared<DataTypeString>()},
+        {"primary_key", std::make_shared<DataTypeString>()},
+        {"order_key", std::make_shared<DataTypeString>()},
+        {"partition_key", std::make_shared<DataTypeString>()},
+        {"sample_key", std::make_shared<DataTypeString>()},
     }));
 }
 
@@ -50,7 +54,7 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     for (const auto & db : context.getDatabases())
         column->insert(db.first);
 
-    Block block { ColumnWithTypeAndName( std::move(column), std::make_shared<DataTypeString>(), "database" ) };
+    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
 }
@@ -65,7 +69,7 @@ public:
         size_t max_block_size,
         ColumnPtr databases,
         const Context & context)
-        : columns_mask(columns_mask), header(header), max_block_size(max_block_size), databases(std::move(databases)), context(context) {}
+        : columns_mask(std::move(columns_mask)), header(std::move(header)), max_block_size(max_block_size), databases(std::move(databases)), context(context) {}
 
     String getName() const override { return "Tables"; }
     Block getHeader() const override { return header; }
@@ -100,7 +104,7 @@ protected:
                 break;
             }
 
-            /// This is for temporary tables.  They are output in single block regardless to max_block_size.
+            /// This is for temporary tables. They are output in single block regardless to max_block_size.
             if (database_idx >= databases->size())
             {
                 if (context.hasSessionContext())
@@ -144,6 +148,18 @@ protected:
 
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -173,7 +189,7 @@ protected:
                     res_columns[res_index++]->insert(tables_it->table()->getName());
 
                 if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(0u);
+                    res_columns[res_index++]->insert(0u);  // is_temporary
 
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(tables_it->table()->getDataPath());
@@ -233,6 +249,42 @@ protected:
 
                         res_columns[res_index++]->insert(engine_full);
                     }
+                }
+                else
+                    src_index += 2;
+
+                const auto table_it = context.getTable(database_name, table_name);
+                ASTPtr expression_ptr;
+                if (columns_mask[src_index++])
+                {
+                    if ((expression_ptr = table_it->getPrimaryExpression()))
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if ((expression_ptr = table_it->getOrderExpression()))
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if ((expression_ptr = table_it->getPartitionExpression()))
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    if ((expression_ptr = table_it->getSamplingExpression()))
+                        res_columns[res_index++]->insert(queryToString(expression_ptr));
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
             }
         }

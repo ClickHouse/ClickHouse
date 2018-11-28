@@ -168,7 +168,7 @@ DictionarySourcePtr XDBCDictionarySource::clone() const
 
 std::string XDBCDictionarySource::toString() const
 {
-    return bridge_helper->getName() +  ": " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+    return bridge_helper->getName() + ": " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
 }
 
 bool XDBCDictionarySource::isModified() const
