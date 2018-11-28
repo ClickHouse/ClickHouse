@@ -80,7 +80,6 @@ public:
 
     void initialize(Poco::Util::Application & self)
     {
-        Poco::Util::Application::initialize(self);
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
         if (home_path_cstr)
@@ -447,7 +446,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
             ("host,h",        value<std::string>()->default_value("localhost"), "")
             ("port",          value<UInt16>()->default_value(9000),             "")
-            ("secure",                                                          "Use TLS connection")
+            ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
