@@ -31,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
+#include <Common/Config/configReadClient.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -46,7 +47,7 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
 }
 
-class Benchmark
+class Benchmark : public Poco::Util::Application
 {
 public:
     Benchmark(unsigned concurrency_, double delay_,
@@ -75,13 +76,28 @@ public:
         else
             throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
 
+    }
+
+    void initialize(Poco::Util::Application & self)
+    {
+        Poco::Util::Application::initialize(self);
+        std::string home_path;
+        const char * home_path_cstr = getenv("HOME");
+        if (home_path_cstr)
+            home_path = home_path_cstr;
+
+        configReadClient(config(), home_path);
+    }
+
+    int main(const std::vector < std::string > & args)
+    {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
         {
             Poco::File(json_path).remove();
         }
 
         readQueries();
-        run();
+        runBenchmark();
     }
 
 private:
@@ -220,7 +236,7 @@ private:
         return true;
     }
 
-    void run()
+    void runBenchmark()
     {
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
@@ -482,6 +498,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings),
             settings);
+        return benchmark.run();
     }
     catch (...)
     {
