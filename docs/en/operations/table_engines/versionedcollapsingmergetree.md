@@ -2,7 +2,7 @@
 
 # VersionedCollapsingMergeTree
 
-The engine:
+This engine:
 
 - Allows quick writing of continually changing states of objects.
 - Deletes old states of objects in the background. It causes to significant reduction of the volume of storage.
