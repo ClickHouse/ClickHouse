@@ -110,7 +110,6 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
-    extern const int INCONSISTENT_CLUSTER_DEFINITION;
 }
 
 namespace ActionLocks
@@ -3928,41 +3927,18 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     /// Query send with current user credentials
 
-    const Cluster::Address & address = findClusterAddress(leader_address);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        address.user, address.password, timeouts, "ClickHouse replica");
+        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output({});
 
     copyData(stream, output);
     return;
-}
-
-const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(ReplicatedMergeTreeAddress & leader_address)
-{
-    for(auto & iter : context.getClusters().getContainer())
-    {
-        const auto & shards = iter.second->getShardsAddresses();
-
-        for (size_t shard_num = 0; shard_num < shards.size(); ++shard_num)
-        {
-            for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
-            {
-                const Cluster::Address & address = shards[shard_num][replica_num];
-
-                if (address.host_name == leader_address.host && address.port == leader_address.queries_port)
-                {
-                    return address;
-                }
-            }
-        }
-    }
-    throw Exception("Not found replicate leader host " + leader_address.host + ":" + leader_address.queries_port, ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
 }
 
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
