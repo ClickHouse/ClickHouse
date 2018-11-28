@@ -50,13 +50,13 @@ class Benchmark
 {
 public:
     Benchmark(unsigned concurrency_, double delay_,
-            const String & host_, UInt16 port_, const String & default_database_,
+            const String & host_, UInt16 port_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, const ConnectionTimeouts & timeouts, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency),
-        connections(concurrency, host_, port_, default_database_, user_, password_, timeouts),
+        connections(concurrency, host_, port_, default_database_, user_, password_, timeouts, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
         randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
@@ -432,6 +432,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
             ("host,h",        value<std::string>()->default_value("localhost"), "")
             ("port",          value<UInt16>()->default_value(9000),             "")
+            ("secure",        value<bool>()->default_value(false),              "use secure connection")
             ("user",          value<std::string>()->default_value("default"),   "")
             ("password",      value<std::string>()->default_value(""),          "")
             ("database",      value<std::string>()->default_value("default"),   "")
@@ -470,6 +471,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             options["host"].as<std::string>(),
             options["port"].as<UInt16>(),
+            options["secure"].as<bool>(),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
