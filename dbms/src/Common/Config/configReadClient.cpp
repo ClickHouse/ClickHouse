@@ -19,8 +19,6 @@ bool configReadClient(Poco::Util::LayeredConfiguration & config, const std::stri
     else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
         config_path = "/etc/clickhouse-client/config.xml";
 
-DUMP(config_path);
-
     if (!config_path.empty())
     {
         ConfigProcessor config_processor(config_path);
@@ -30,5 +28,4 @@ DUMP(config_path);
     }
     return false;
 }
-
 }
