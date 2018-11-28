@@ -53,7 +53,7 @@ public:
 };
 
 
-RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::Client client)
+RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type)
 {
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     CurrentMetrics::Increment waiting_client_increment((type == Read) ? CurrentMetrics::RWLockWaitingReaders
@@ -78,15 +78,16 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::C
     {
         auto handler_ptr = it_handler->second.lock();
 
-        if (!handler_ptr)
-            throw Exception("Lock handler cannot be nullptr. This is a bug", ErrorCodes::LOGICAL_ERROR);
+        /// Lock may be released in another thread, but not yet deleted inside |~LogHandlerImpl()|
 
-        if (type != Read || handler_ptr->it_group->type != Read)
-            throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
+        if (handler_ptr)
+        {
+            /// XXX: it means we can't upgrade lock from read to write - with proper waiting!
+            if (type != Read || handler_ptr->it_group->type != Read)
+                throw Exception("Attempt to acquire exclusive lock recursively", ErrorCodes::LOGICAL_ERROR);
 
-        handler_ptr->it_client->info += "; " + client.info;
-
-        return handler_ptr;
+            return handler_ptr;
+        }
     }
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
@@ -104,7 +105,7 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::C
     auto & clients = it_group->clients;
     try
     {
-        it_client = clients.emplace(clients.end(), std::move(client));
+        it_client = clients.emplace(clients.end(), type);
     }
     catch (...)
     {
@@ -113,10 +114,6 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::C
             queue.erase(it_group);
         throw;
     }
-
-    it_client->thread_number = Poco::ThreadNumber::get();
-    it_client->enqueue_time = time(nullptr);
-    it_client->type = type;
 
     LockHandler res(new LockHandlerImpl(shared_from_this(), it_group, it_client));
 
@@ -128,7 +125,6 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::C
     /// If we are not the first client in the group, a notification could be already sent
     if (it_group == queue.begin())
     {
-        it_client->start_time = it_client->enqueue_time;
         finalize_metrics();
         return res;
     }
@@ -136,7 +132,6 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type, RWLockImpl::C
     /// Wait a notification
     it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
-    it_client->start_time = time(nullptr);
     finalize_metrics();
     return res;
 }
@@ -169,8 +164,8 @@ RWLockImpl::LockHandlerImpl::~LockHandlerImpl()
 RWLockImpl::LockHandlerImpl::LockHandlerImpl(RWLock && parent, RWLockImpl::GroupsContainer::iterator it_group,
                                              RWLockImpl::ClientsContainer::iterator it_client)
     : parent{std::move(parent)}, it_group{it_group}, it_client{it_client},
-      active_client_increment{(it_client->type == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
-                                                                    : CurrentMetrics::RWLockActiveWriters}
+      active_client_increment{(*it_client == RWLockImpl::Read) ? CurrentMetrics::RWLockActiveReaders
+                                                               : CurrentMetrics::RWLockActiveWriters}
 {}
 
 }

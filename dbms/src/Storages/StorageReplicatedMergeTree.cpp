@@ -1146,7 +1146,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_merge);
 
-    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
+    auto table_lock = lockStructure(false);
 
     MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
 
@@ -1276,7 +1276,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     /// Can throw an exception.
     DiskSpaceMonitor::ReservationPtr reserved_space = DiskSpaceMonitor::reserve(full_path, estimated_space_for_result);
 
-    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
+    auto table_lock = lockStructure(false);
 
     MergeTreeData::MutableDataPartPtr new_part;
     MergeTreeData::Transaction transaction(data);
@@ -1582,7 +1582,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
     /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
-    auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock_read_structure = lockStructure(false);
 
     auto zookeeper = getZooKeeper();
 
@@ -1683,7 +1683,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     PartDescriptions parts_to_add;
     MergeTreeData::DataPartsVector parts_to_remove;
 
-    auto structure_lock_dst_table = lockStructure(false, __PRETTY_FUNCTION__);
+    auto structure_lock_dst_table = lockStructure(false);
 
     for (size_t i = 0; i < entry_replace.new_part_names.size(); ++i)
     {
@@ -1745,7 +1745,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             return 0;
         }
 
-        structure_lock_src_table = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+        structure_lock_src_table = source_table->lockStructure(false);
 
         MergeTreeData::DataPartStates valid_states{MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed,
                                                    MergeTreeDataPartState::Outdated};
@@ -2767,7 +2767,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     TableStructureReadLockPtr table_lock;
     if (!to_detached)
-        table_lock = lockStructure(true, __PRETTY_FUNCTION__);
+        table_lock = lockStructure(true);
 
     /// Logging
     Stopwatch stopwatch;
@@ -3130,7 +3130,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
 
     {
         /// Just to read current structure. Alter will be done in separate thread.
-        auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
+        auto table_lock = lockStructure(false);
 
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
@@ -3312,7 +3312,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                auto lock = lockStructure(false);
                 data.freezePartition(command.partition, command.with_name, context);
             }
             break;
@@ -3323,7 +3323,7 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                auto lock = lockStructure(false);
                 data.freezeAll(command.with_name, context);
             }
             break;
@@ -4325,7 +4325,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
     /// Critical section is not required (since grabOldParts() returns unique part set on each call)
 
-    auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
+    auto table_lock = lockStructure(false);
     auto zookeeper = getZooKeeper();
 
     MergeTreeData::DataPartsVector parts = data.grabOldParts();
@@ -4600,8 +4600,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
                                                       const Context & context)
 {
-    auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
-    auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock1 = lockStructure(false);
+    auto lock2 = source_table->lockStructure(false);
 
     Stopwatch watch;
     MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);

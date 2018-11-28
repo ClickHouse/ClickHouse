@@ -27,23 +27,6 @@ public:
         Write,
     };
 
-private:
-    /// Client is that who wants to acquire the lock.
-    struct Client
-    {
-        explicit Client(const std::string & info = {}) : info{info} {}
-
-        bool isStarted() { return start_time != 0; }
-
-        /// TODO: delete extra info below if there is no need fot it already.
-        std::string info;
-        int thread_number = 0;
-        std::time_t enqueue_time = 0;
-        std::time_t start_time = 0;
-        Type type = Read;
-    };
-
-public:
     static RWLock create() { return RWLock(new RWLockImpl); }
 
     /// Just use LockHandler::reset() to release the lock
@@ -53,21 +36,21 @@ public:
 
 
     /// Waits in the queue and returns appropriate lock
-    LockHandler getLock(Type type, Client client = Client{});
-    LockHandler getLock(Type type, const std::string & who) { return getLock(type, Client(who)); }
+    LockHandler getLock(Type type);
 
 private:
     RWLockImpl() = default;
 
     struct Group;
     using GroupsContainer = std::list<Group>;
-    using ClientsContainer = std::list<Client>;
+    using ClientsContainer = std::list<Type>;
     using ThreadToHandler = std::map<std::thread::id, std::weak_ptr<LockHandlerImpl>>;
 
     /// Group of clients that should be executed concurrently
     /// i.e. a group could contain several readers, but only one writer
     struct Group
     {
+        // FIXME: there is only redundant |type| information inside |clients|.
         const Type type;
         ClientsContainer clients;
 

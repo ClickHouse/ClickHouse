@@ -65,7 +65,7 @@ private:
     RWLockImpl::LockHandler structure_lock;
 
 public:
-    TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data, const std::string & who);
+    TableStructureReadLock(StoragePtr storage_, bool lock_structure, bool lock_data);
 };
 
 
@@ -115,14 +115,13 @@ public:
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
       * This will take an extra lock that does not allow starting ALTER MODIFY.
-      * Parameter 'who' identifies a client of the lock (ALTER query, merge process, etc), used for diagnostic purposes.
       *
       * WARNING: You need to call methods from ITableDeclaration under such a lock. Without it, they are not thread safe.
       * WARNING: To avoid deadlocks, this method must not be called under lock of Context.
       */
-    TableStructureReadLockPtr lockStructure(bool will_modify_data, const std::string & who)
+    TableStructureReadLockPtr lockStructure(bool will_modify_data)
     {
-        TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data, who);
+        TableStructureReadLockPtr res = std::make_shared<TableStructureReadLock>(shared_from_this(), true, will_modify_data);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -130,11 +129,11 @@ public:
 
     /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP, TRUNCATE.
       */
-    TableFullWriteLock lockForAlter(const std::string & who = "Alter")
+    TableFullWriteLock lockForAlter()
     {
         /// The calculation order is important.
-        auto res_data_lock = lockDataForAlter(who);
-        auto res_structure_lock = lockStructureForAlter(who);
+        auto res_data_lock = lockDataForAlter();
+        auto res_structure_lock = lockStructureForAlter();
 
         return {std::move(res_data_lock), std::move(res_structure_lock)};
     }
@@ -143,17 +142,17 @@ public:
       * It is taken during write temporary data in ALTER MODIFY.
       * Under this lock, you can take lockStructureForAlter() to change the structure of the table.
       */
-    TableDataWriteLock lockDataForAlter(const std::string & who = "Alter")
+    TableDataWriteLock lockDataForAlter()
     {
-        auto res = data_lock->getLock(RWLockImpl::Write, who);
+        auto res = data_lock->getLock(RWLockImpl::Write);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
     }
 
-    TableStructureWriteLock lockStructureForAlter(const std::string & who = "Alter")
+    TableStructureWriteLock lockStructureForAlter()
     {
-        auto res = structure_lock->getLock(RWLockImpl::Write, who);
+        auto res = structure_lock->getLock(RWLockImpl::Write);
         if (is_dropped)
             throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
         return res;
@@ -243,7 +242,7 @@ public:
                 throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
         }
 
-        auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+        auto lock = lockStructureForAlter();
         auto new_columns = getColumns();
         params.apply(new_columns);
         context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
