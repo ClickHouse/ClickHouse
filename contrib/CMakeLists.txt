@@ -141,13 +141,40 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     set (ARROW_COMPUTE ON CACHE INTERNAL "")
     set (ARROW_PARQUET ON CACHE INTERNAL "")
     set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
-    set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
-    set (ARROW_BUILD_STATIC ON CACHE INTERNAL "")
+
+    if (${MAKE_STATIC_LIBRARIES})
+        set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
+        set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
+        set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
+    else()
+        set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
+        set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
+        set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
+    endif()
+
+    set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
+
+    #BOOST_ROOT           
+    set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
+    set (Boost_FOUND 1 CACHE INTERNAL "")
+
+    if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
+        set(_save_build_type ${CMAKE_BUILD_TYPE})
+        set(CMAKE_BUILD_TYPE RELEASE)
+    endif()
+    
+    #BOOST_LIBRARYDIR     
+    #Boost_NO_SYSTEM_PATHS
 
     # Because Arrow uses CMAKE_SOURCE_DIR as a project path
     # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
     set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
     add_subdirectory (arrow/cpp)
+
+    if(_save_build_type)
+        set(CMAKE_BUILD_TYPE ${_save_build_type})
+    endif()
+
 endif ()
 
 if (USE_INTERNAL_POCO_LIBRARY)

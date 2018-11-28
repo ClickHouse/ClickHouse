@@ -32,6 +32,8 @@ if (NOT Boost_SYSTEM_LIBRARY)
 
     set (Boost_INCLUDE_DIRS)
 
+    set (BOOST_ROOT "${ClickHouse_SOURCE_DIR}/contrib/boost")
+
     # For boost from github:
     file (GLOB Boost_INCLUDE_DIRS_ "${ClickHouse_SOURCE_DIR}/contrib/boost/libs/*/include")
     list (APPEND Boost_INCLUDE_DIRS ${Boost_INCLUDE_DIRS_})

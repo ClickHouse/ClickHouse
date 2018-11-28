@@ -19,8 +19,14 @@ elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY)
     # TODO: is it required?
     # set (ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
     # set (PARQUET_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet")
-    set (ARROW_LIBRARY arrow_static)
-    set (PARQUET_LIBRARY parquet_static)
+    if (${USE_STATIC_LIBRARIES})
+        set (ARROW_LIBRARY arrow_static)
+        set (PARQUET_LIBRARY parquet_static)
+    else ()
+        set (ARROW_LIBRARY arrow_shared)
+        set (PARQUET_LIBRARY parquet_shared)
+    endif ()
+
     set (USE_PARQUET 1)
 endif ()
 
