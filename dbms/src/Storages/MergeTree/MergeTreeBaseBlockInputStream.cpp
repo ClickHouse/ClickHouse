@@ -183,12 +183,12 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
 void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 {
-    const auto rows = block.rows();
-
     /// add virtual columns
     /// Except _sample_factor, which is added from the outside.
     if (!virt_column_names.empty())
     {
+        const auto rows = block.rows();
+
         for (const auto & virt_column_name : virt_column_names)
         {
             if (virt_column_name == "_part")
