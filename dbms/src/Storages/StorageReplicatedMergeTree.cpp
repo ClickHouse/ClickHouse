@@ -3941,6 +3941,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     return;
 }
 
+
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
 {
     replica_name_ = replica_name;
