@@ -63,9 +63,6 @@ add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
-add_headers_and_sources(dbms src/Dictionaries)
-add_headers_and_sources(dbms src/Dictionaries/Embedded)
-add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
@@ -184,8 +181,11 @@ target_link_libraries (dbms
     clickhouse_common_config
         PUBLIC
     clickhouse_common_io
-    pocoext
+        PRIVATE
+    clickhouse_dictionaries
+    clickhouse_dictionaries_embedded
         PUBLIC
+    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}

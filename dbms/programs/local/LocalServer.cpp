@@ -30,6 +30,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 
@@ -142,6 +143,7 @@ try
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     /// Maybe useless
     if (config().has("macros"))

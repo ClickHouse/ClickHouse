@@ -259,7 +259,7 @@ void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_di
     if (limit == 0)
         limit = size();
 
-    size_t unique_limit = std::min(limit, getDictionary().size());
+    size_t unique_limit = getDictionary().size();
     Permutation unique_perm;
     getDictionary().getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
 
