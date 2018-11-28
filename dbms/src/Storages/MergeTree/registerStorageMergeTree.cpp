@@ -245,9 +245,13 @@ A common partitioning expression is some function of the event date column e.g. 
 Rows with different partition expression values are never merged together. That allows manipulating partitions with ALTER commands.
 Also it acts as a kind of index.
 
-Primary key is specified in the ORDER BY clause. It is mandatory for all MergeTree types.
-It is like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions in round brackets.
-If your primary key has just one element, you may omit round brackets.
+Sorting key is specified in the ORDER BY clause. It is mandatory for all MergeTree types.
+It is like (CounterID, EventDate, intHash64(UserID)) - a list of column names or functional expressions
+in round brackets.
+If your sorting key has just one element, you may omit round brackets.
+
+By default primary key is equal to the sorting key. You can specify a primary key that is a prefix of the
+sorting key in the PRIMARY KEY clause.
 
 Careful choice of the primary key is extremely important for processing short-time queries.
 
@@ -262,6 +266,8 @@ Examples:
 MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate) SETTINGS index_granularity = 8192
 
 MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) SAMPLE BY intHash32(UserID)
+
+MergeTree PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID), EventTime) PRIMARY KEY (CounterID, EventDate) SAMPLE BY intHash32(UserID)
 
 CollapsingMergeTree(Sign) PARTITION BY StartDate SAMPLE BY intHash32(UserID) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 
@@ -323,7 +329,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *
         * Alternatively, you can specify:
         *  - Partitioning expression in the PARTITION BY clause;
-        *  - Primary key in the ORDER BY clause;
+        *  - Sorting key in the ORDER BY clause;
+        *  - Primary key (if it is different from the sorting key) in the PRIMARY KEY clause;
         *  - Sampling expression in the SAMPLE BY clause;
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
