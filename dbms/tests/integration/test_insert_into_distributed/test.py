@@ -120,16 +120,16 @@ def test_inserts_batching(started_cluster):
     # Batches of max 3 rows are formed as min_insert_block_size_rows = 3.
     # Blocks:
     # 1. Failed batch that is retried with the same contents.
-    # 2. Full batch of inserts with (d, x) order of columns.
-    # 3. Full batch of inserts with (x, d) order of columns.
+    # 2. Full batch of inserts before ALTER.
+    # 3. Full batch of inserts before ALTER.
     # 4. Full batch of inserts after ALTER (that have different block structure).
-    # 5. What was left to insert with (d, x) order before ALTER.
+    # 5. What was left to insert with the column structure before ALTER.
     expected = '''\
 20000101_20000101_1_1_0\t[1]
-20000101_20000101_2_2_0\t[3,4,5]
-20000101_20000101_3_3_0\t[2,7,8]
+20000101_20000101_2_2_0\t[2,3,4]
+20000101_20000101_3_3_0\t[5,6,7]
 20000101_20000101_4_4_0\t[10,11,12]
-20000101_20000101_5_5_0\t[6,9]
+20000101_20000101_5_5_0\t[8,9]
 '''
     assert TSV(result) == TSV(expected)
 

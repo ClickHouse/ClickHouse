@@ -1309,7 +1309,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
     {
         unifyStreams(pipeline);
 
-        pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
+        pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
     }

@@ -27,7 +27,6 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-
 namespace CurrentMetrics
 {
     extern const Metric SendExternalTables;
@@ -730,14 +729,6 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
     return profile_info;
 }
 
-void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
-{
-    info.is_valid = true;
-    info.host = host;
-    info.resolved_address = getResolvedAddress().toString();
-    info.port = port;
-    info.user = user;
-}
 
 void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {

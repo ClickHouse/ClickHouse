@@ -88,8 +88,10 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
+
             auto table_lock = database_and_table.second->lockForAlter();
-            /// Delete table metdata and table itself from memory
+            /// Delete table metadata and table itself from memory
+
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             /// Delete table data
             database_and_table.second->drop();

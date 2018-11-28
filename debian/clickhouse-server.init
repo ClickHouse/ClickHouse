@@ -100,10 +100,6 @@ check_config()
 
 initdb()
 {
-    if [ -d ${SYSCONFDIR} ]; then
-        su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${SYSCONFDIR}" || chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${SYSCONFDIR}
-    fi
-
     if [ -x "$BINDIR/$EXTRACT_FROM_CONFIG" ]; then
         CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
         if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
@@ -128,7 +124,7 @@ initdb()
     fi
 
     if ! $(su -s $SHELL ${CLICKHOUSE_USER} -c "test -O \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\" && test -G \"${CLICKHOUSE_DATADIR_FROM_CONFIG}\""); then
-        if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") == "/" ]; then
+        if [ $(dirname "${CLICKHOUSE_DATADIR_FROM_CONFIG}") = "/" ]; then
             echo "Directory ${CLICKHOUSE_DATADIR_FROM_CONFIG} seems too dangerous to chown."
         else
             if [ ! -e "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ]; then

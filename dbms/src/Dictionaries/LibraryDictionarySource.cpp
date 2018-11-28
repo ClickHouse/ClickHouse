@@ -1,12 +1,15 @@
 #include <DataStreams/OneBlockInputStream.h>
-#include <Dictionaries/LibraryDictionarySource.h>
-#include <Dictionaries/LibraryDictionarySourceExternal.h>
+#include "LibraryDictionarySource.h"
+#include "LibraryDictionarySourceExternal.h"
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+
 
 namespace DB
 {
@@ -269,4 +272,17 @@ std::string LibraryDictionarySource::toString() const
 {
     return path;
 }
+
+void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & context) -> DictionarySourcePtr {
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context);
+    };
+    factory.registerSource("library", createTableSource);
+}
+
 }
