@@ -123,7 +123,7 @@ Why we need 2 rows for each change read in the "Algorithm" paragraph.
 
 ### Algorithm
 
-When ClickHouse merges data parts, it deletes each pair of rows that differs only by `Sign` independently of their order in the data.
+When ClickHouse merges data parts, it deletes each pair of rows having the same primary key and version and different `Sign`. The order of rows does not matter.
 
 When ClickHouse merges data parts, it orders rows by the primary key. If the `Version` column is not in the primary key, ClickHouse adds it to the primary key implicitly as the last field and use for ordering.
 
