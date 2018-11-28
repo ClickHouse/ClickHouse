@@ -15,11 +15,13 @@ constexpr decltype(ConfigReloader::reload_interval) ConfigReloader::reload_inter
 ConfigReloader::ConfigReloader(
         const std::string & path_,
         const std::string & include_from_path_,
+        const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_,
         bool already_loaded)
     : path(path_), include_from_path(include_from_path_)
+    , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
     , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
@@ -100,7 +102,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             tryLogCurrentException(log, "Error loading config from `" + path + "'");
             return;
         }
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, preprocessed_dir);
 
         /** We should remember last modification time if and only if config was sucessfully loaded
          * Otherwise a race condition could occur during config files update:

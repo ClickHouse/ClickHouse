@@ -3271,7 +3271,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     LOG_DEBUG(log, "ALTER finished");
 }
 
-void StorageReplicatedMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
 {
     for (const PartitionCommand & command : commands)
     {
@@ -3318,7 +3318,7 @@ void StorageReplicatedMergeTree::partition(const ASTPtr & query, const Partition
             break;
 
             default:
-                IStorage::partition(query, commands, context); // should throw an exception.
+                IStorage::alterPartition(query, commands, context); // should throw an exception.
         }
     }
 }

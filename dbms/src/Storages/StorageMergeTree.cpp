@@ -781,7 +781,7 @@ bool StorageMergeTree::optimize(
     return true;
 }
 
-void StorageMergeTree::partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
 {
     for (const PartitionCommand & command : commands)
     {
@@ -824,7 +824,7 @@ void StorageMergeTree::partition(const ASTPtr & query, const PartitionCommands &
             break;
 
             default:
-                IStorage::partition(query, commands, context); // should throw an exception.
+                IStorage::alterPartition(query, commands, context); // should throw an exception.
         }
     }
 }
