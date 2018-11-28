@@ -1482,9 +1482,10 @@ try
 
     DB::UseSSL use_ssl;
 
-    DB::PerformanceTest performanceTest(options["host"].as<String>(),
+    DB::PerformanceTest performanceTest(
+        options["host"].as<String>(),
         options["port"].as<UInt16>(),
-        options["secure"].as<bool>(),
+        options.count("secure"),
         options["database"].as<String>(),
         options["user"].as<String>(),
         options["password"].as<String>(),
