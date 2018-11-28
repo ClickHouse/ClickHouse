@@ -9,7 +9,7 @@ ZooKeeperNodeCache::ZooKeeperNodeCache(GetZooKeeper get_zookeeper_)
 {
 }
 
-ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, EventPtr watch_event)
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, EventPtr watch_event)
 {
     Coordination::WatchCallback watch_callback;
     if (watch_event)
@@ -18,7 +18,7 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, 
     return get(path, watch_callback);
 }
 
-ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
 {
     zkutil::ZooKeeperPtr zookeeper;
     std::unordered_set<std::string> invalidated_paths;
@@ -28,7 +28,7 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, 
         if (!context->zookeeper)
         {
             /// Possibly, there was a previous session and it has expired. Clear the cache.
-            node_cache.clear();
+            path_to_cached_znode.clear();
 
             context->zookeeper = get_zookeeper();
         }
@@ -41,10 +41,10 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, 
         throw DB::Exception("Could not get znode: `" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
 
     for (const auto & invalidated_path : invalidated_paths)
-        node_cache.erase(invalidated_path);
+        path_to_cached_znode.erase(invalidated_path);
 
-    auto cache_it = node_cache.find(path);
-    if (cache_it != node_cache.end())
+    auto cache_it = path_to_cached_znode.find(path);
+    if (cache_it != path_to_cached_znode.end())
         return cache_it->second;
 
     std::weak_ptr<Context> weak_context(context);
@@ -74,12 +74,12 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, 
             caller_watch_callback(response);
     };
 
-    GetResult result;
+    ZNode result;
 
     result.exists = zookeeper->tryGetWatch(path, result.contents, &result.stat, watch_callback);
     if (result.exists)
     {
-        node_cache.emplace(path, result);
+        path_to_cached_znode.emplace(path, result);
         return result;
     }
 
@@ -88,14 +88,14 @@ ZooKeeperNodeCache::GetResult ZooKeeperNodeCache::get(const std::string & path, 
     result.exists = zookeeper->existsWatch(path, &result.stat, watch_callback);
     if (!result.exists)
     {
-        node_cache.emplace(path, result);
+        path_to_cached_znode.emplace(path, result);
         return result;
     }
 
     /// Node was created between the two previous calls, try again. Watch is already set.
 
     result.exists = zookeeper->tryGet(path, result.contents, &result.stat);
-    node_cache.emplace(path, result);
+    path_to_cached_znode.emplace(path, result);
     return result;
 }
 
