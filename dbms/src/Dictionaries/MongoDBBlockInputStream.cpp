@@ -10,8 +10,8 @@
 #include <Poco/MongoDB/Element.h>
 #include <Poco/MongoDB/ObjectId.h>
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/MongoDBBlockInputStream.h>
+#include "DictionaryStructure.h"
+#include "MongoDBBlockInputStream.h"
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
