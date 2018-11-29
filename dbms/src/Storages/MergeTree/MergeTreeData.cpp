@@ -1224,7 +1224,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     if (expression)
     {
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-            *this, part, expression->getRequiredColumns(), false);
+            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
             part->bytes_on_disk,
