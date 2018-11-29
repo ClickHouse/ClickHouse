@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnArray.h>
 #include <Functions/FunctionsArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -9,6 +10,8 @@
 #include <type_traits>
 #include <array>
 #include <ext/bit_cast.h>
+
+#include <iostream>
 
 #if __SSE4_1__
     #include <smmintrin.h>
@@ -669,7 +672,7 @@ public:
 class FunctionRoundDown : public IFunction {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
 
 public:
     String getName() const override
@@ -681,17 +684,38 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override {
-        const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override {
+        return arguments[0];
+    }
 
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override {
+        std::cerr << "arguments.size() = " << arguments.size() << std::endl;
+        const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
+        std::cerr << "got array" << std::endl;
         if (!array)
             throw Exception{"Second argument of function " + getName() + " must be constant array.", ErrorCodes::ILLEGAL_COLUMN};
-
+        std::cerr << "checked array" << std::endl;
         const Array & boundaries = array->getValue<Array>();
-
-        const auto src = checkAndGetColumn<ColumnVector<Int32>>(block.getByPosition(arguments.front()).column.get())->getdata();
+        std::cerr << "got boundaries" << std::endl;
+        const auto in = block.getByPosition(arguments.front()).column.get();
+        std::cerr << "got in" << std::endl;
         auto column_result = block.getByPosition(result).type->createColumn();
-        auto dst = checkAndGetColumn<ColumnVector<Int32>>(column_result.get())->getData();
+        std::cerr << "got column result" << std::endl;
+        auto out = column_result.get();
+        std::cerr << "got out" << std::endl;
+
+        executeNum<Int32>(in, out, boundaries);
+        std::cerr << "executeNum done" << std::endl;
+
+        block.getByPosition(result).column = std::move(column_result);
+        std::cerr << "assigned result" << std::endl;
+    }
+
+private:
+    template <typename T>
+    void executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) {
+        const auto & src = checkAndGetColumn<ColumnVector<Int32>>(in_untyped)->getData();
+        auto & dst = typeid_cast<ColumnVector<T> *>(out_untyped)->getData();
 
         size_t size = src.size();
         size_t boundaries_size = boundaries.size();
@@ -717,9 +741,7 @@ public:
             }
         }
 
-        block.getByPosition(result).column = std::move(column_result);
     }
-
 };
 
 
