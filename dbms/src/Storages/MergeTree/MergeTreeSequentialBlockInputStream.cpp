@@ -28,20 +28,24 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
             << " rows starting from the beginning of the part");
 
     addTotalRowsApprox(data_part->rows_count);
-    injectRequiredColumns(storage, data_part, columns_to_read);
 
     header = storage.getSampleBlockForColumns(columns_to_read);
     fixHeader(header);
 
-    /// take columns from data_part (header was fixed by fixHeader)
-    NamesAndTypesList columns_for_reader = header.getNamesAndTypesList();
+    /// Add columns because we don't want to read empty blocks
+    injectRequiredColumns(storage, data_part, columns_to_read);
+    NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
         const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
         columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
+    else
+    {
+        /// take columns from data_part
+        columns_for_reader = data_part->columns.addTypes(columns_to_read);
+    }
 
-    /// Add columns because we don't want to read empty blocks
     reader = std::make_unique<MergeTreeReader>(
         data_part->getFullPath(), data_part, columns_for_reader, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), /* save_marks_in_cache = */ false, storage,
