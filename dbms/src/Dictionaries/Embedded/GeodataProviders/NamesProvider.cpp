@@ -1,6 +1,6 @@
-#include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
-#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
+#include "NamesProvider.h"
 
+#include "NamesFormatReader.h"
 #include <IO/ReadBufferFromFile.h>
 
 

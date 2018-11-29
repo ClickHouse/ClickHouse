@@ -535,13 +535,6 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 }
 
 
-ParserExpressionInCastExpression::ParserExpressionInCastExpression(bool allow_alias_without_as_keyword)
-    : impl(std::make_unique<ParserCastExpressionWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                                   allow_alias_without_as_keyword, false))
-{
-}
-
-
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(

@@ -1,6 +1,7 @@
-# ClickHouse features that can be considered disadvantages
+# ClickHouse Features that Can be Considered Disadvantages
 
-1. No transactions.
-2. For aggregation, query results must fit in the RAM on a single server. However, the volume of source data for a query may be indefinitely large.
-3. Lack of full-fledged UPDATE/DELETE implementation.
+1. No full-fledged transactions.
+2. Lack of ability to modify or delete already inserted data with high rate and low latency. There are batch deletes and updates available to clean up or modify data, for example to comply with [GDPR](https://gdpr-info.eu).
+3. The sparse index makes ClickHouse not really suitable for point queries retrieving single rows by their keys.
 
+[Original article](https://clickhouse.yandex/docs/en/introduction/features_considered_disadvantages/) <!--hide-->

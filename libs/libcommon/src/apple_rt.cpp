@@ -5,9 +5,10 @@
   * To use, include this file with -include compiler parameter.
   */
 
-#include <common/apple_rt.h>
+#include <port/clock.h>
 
-#if APPLE_SIERRA_OR_NEWER == 0
+#ifdef __APPLE__
+#if !APPLE_HAVE_CLOCK_GETTIME
 
 #include <time.h>
 #include <stdlib.h>
@@ -47,4 +48,5 @@ int clock_gettime(int clk_id, struct timespec* t) {
     return 0;
 }
 
+#endif
 #endif

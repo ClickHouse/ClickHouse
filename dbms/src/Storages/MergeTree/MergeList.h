@@ -29,6 +29,7 @@ struct MergeInfo
     std::string table;
     std::string result_part_name;
     Array source_part_names;
+    std::string partition_id;
     Float64 elapsed;
     Float64 progress;
     UInt64 num_parts;
@@ -49,6 +50,7 @@ struct MergeListElement : boost::noncopyable
     const std::string database;
     const std::string table;
     const std::string result_part_name;
+    std::string partition_id;
     Stopwatch watch;
     std::atomic<Float64> progress{};
     UInt64 num_parts{};
@@ -65,8 +67,9 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    MemoryTracker memory_tracker;
-    MemoryTracker * background_pool_task_memory_tracker;
+    MemoryTracker memory_tracker{VariableContext::Process};
+    MemoryTracker * background_thread_memory_tracker;
+    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
     /// Poco thread number used in logs
     UInt32 thread_number;
@@ -100,6 +103,7 @@ public:
     ~MergeListEntry();
 
     MergeListElement * operator->() { return &*it; }
+    const MergeListElement * operator->() const { return &*it; }
 };
 
 

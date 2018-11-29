@@ -27,6 +27,9 @@ enum class AttributeUnderlyingType
     Int64,
     Float32,
     Float64,
+    Decimal32,
+    Decimal64,
+    Decimal128,
     String
 };
 
@@ -74,6 +77,13 @@ struct DictionarySpecialAttribute final
     DictionarySpecialAttribute(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 };
 
+struct DictionaryTypedSpecialAttribute final
+{
+    const std::string name;
+    const std::string expression;
+    const DataTypePtr type;
+};
+
 
 /// Name of identifier plus list of attributes
 struct DictionaryStructure final
@@ -81,8 +91,8 @@ struct DictionaryStructure final
     std::optional<DictionarySpecialAttribute> id;
     std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
-    std::optional<DictionarySpecialAttribute> range_min;
-    std::optional<DictionarySpecialAttribute> range_max;
+    std::optional<DictionaryTypedSpecialAttribute> range_min;
+    std::optional<DictionaryTypedSpecialAttribute> range_max;
     bool has_expressions = false;
 
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);

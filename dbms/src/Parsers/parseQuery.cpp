@@ -6,6 +6,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <common/find_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -30,7 +31,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
     size_t line = 0;
 
     const char * nl;
-    while (nullptr != (nl = reinterpret_cast<const char *>(memchr(begin, '\n', pos - begin))))
+    while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
         begin = nl + 1;
@@ -137,8 +138,8 @@ void writeCommonErrorMessage(
         out << " (end of query)";
 
     /// If query is multiline.
-    const char * nl = reinterpret_cast<const char *>(memchr(begin, '\n', end - begin));
-    if (nullptr != nl && nl + 1 != end)
+    const char * nl = find_first_symbols<'\n'>(begin, end);
+    if (nl + 1 < end)
     {
         size_t line = 0;
         size_t col = 0;
@@ -213,9 +214,10 @@ ASTPtr tryParseQuery(
     std::string & out_error_message,
     bool hilite,
     const std::string & query_description,
-    bool allow_multi_statements)
+    bool allow_multi_statements,
+    size_t max_query_size)
 {
-    Tokens tokens(pos, end);
+    Tokens tokens(pos, end, max_query_size);
     TokenIterator token_iterator(tokens);
 
     if (token_iterator->isEnd()
@@ -294,10 +296,11 @@ ASTPtr parseQueryAndMovePosition(
     const char * & pos,
     const char * end,
     const std::string & query_description,
-    bool allow_multi_statements)
+    bool allow_multi_statements,
+    size_t max_query_size)
 {
     std::string error_message;
-    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements);
+    ASTPtr res = tryParseQuery(parser, pos, end, error_message, false, query_description, allow_multi_statements, max_query_size);
 
     if (res)
         return res;
@@ -310,25 +313,27 @@ ASTPtr parseQuery(
     IParser & parser,
     const char * begin,
     const char * end,
-    const std::string & query_description)
+    const std::string & query_description,
+    size_t max_query_size)
 {
     auto pos = begin;
-    return parseQueryAndMovePosition(parser, pos, end, query_description, false);
+    return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size);
 }
 
 
 ASTPtr parseQuery(
     IParser & parser,
     const std::string & query,
-    const std::string & query_description)
+    const std::string & query_description,
+    size_t max_query_size)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), query_description);
+    return parseQuery(parser, query.data(), query.data() + query.size(), query_description, max_query_size);
 }
 
 
-ASTPtr parseQuery(IParser & parser, const std::string & query)
+ASTPtr parseQuery(IParser & parser, const std::string & query, size_t max_query_size)
 {
-    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName());
+    return parseQuery(parser, query.data(), query.data() + query.size(), parser.getName(), max_query_size);
 }
 
 
@@ -348,7 +353,7 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
     {
         begin = pos;
 
-        ast = parseQueryAndMovePosition(parser, pos, end, "", true);
+        ast = parseQueryAndMovePosition(parser, pos, end, "", true, 0);
         if (!ast)
             break;
 

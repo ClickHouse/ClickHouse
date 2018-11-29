@@ -10,6 +10,8 @@
 #include <vector>
 #include <utility>
 #include <string>
+#include <algorithm>
+
 
 namespace
 {
@@ -211,10 +213,7 @@ TestResult check(const TestEntry & entry)
 
         auto select_query = typeid_cast<DB::ASTSelectQuery *>(&*ast_input);
 
-        DB::Settings settings;
-        settings.optimize_min_equality_disjunction_chain_length = entry.limit;
-
-        DB::LogicalExpressionsOptimizer optimizer(select_query, settings);
+        DB::LogicalExpressionsOptimizer optimizer(select_query, entry.limit);
         optimizer.perform();
 
         /// Parse the expected result.
@@ -240,7 +239,7 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
     std::string message;
     auto begin = query.data();
     auto end = begin + query.size();
-    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false);
+    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0);
     return ast != nullptr;
 }
 

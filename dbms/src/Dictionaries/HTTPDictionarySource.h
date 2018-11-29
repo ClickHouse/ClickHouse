@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include <Poco/URI.h>
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 #include <common/LocalDateTime.h>
 #include <IO/ConnectionTimeouts.h>
 
@@ -43,7 +44,7 @@ public:
     std::string toString() const override;
 
 private:
-    std::string getUpdateFieldAndDate();
+    void getUpdateFieldAndDate(Poco::URI & uri);
 
     Poco::Logger * log;
 

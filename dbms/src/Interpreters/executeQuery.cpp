@@ -1,4 +1,3 @@
-#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
 
@@ -23,12 +22,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeQuery.h>
+#include "DNSCacheUpdater.h"
 
-
-namespace ProfileEvents
-{
-    extern const Event Query;
-}
 
 namespace DB
 {
@@ -38,6 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -50,6 +46,7 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
+/// NOTE This is wrong in case of single-line comments and in case of multiline string literals.
 static String joinLines(const String & query)
 {
     String res = query;
@@ -67,7 +64,6 @@ static void logQuery(const String & query, const Context & context)
 
     LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
     << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
-    << ", query_id: " << current_query_id
     << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
     << ") "
     << joinLines(query)
@@ -105,29 +101,31 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     /// Exception before the query execution.
     context.getQuota().addError();
 
-    bool log_queries = context.getSettingsRef().log_queries;
+    const Settings & settings = context.getSettingsRef();
 
     /// Log the start of query execution into the table if necessary.
-    if (log_queries)
-    {
-        QueryLogElement elem;
+    QueryLogElement elem;
 
-        elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
+    elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
 
-        elem.event_time = current_time;
-        elem.query_start_time = current_time;
+    elem.event_time = current_time;
+    elem.query_start_time = current_time;
 
-        elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
-        elem.exception = getCurrentExceptionMessage(false);
+    elem.query = query.substr(0, settings.log_queries_cut_to_length);
+    elem.exception = getCurrentExceptionMessage(false);
 
-        elem.client_info = context.getClientInfo();
+    elem.client_info = context.getClientInfo();
 
+    if (settings.calculate_text_stack_trace)
         setExceptionStackTrace(elem);
-        logException(context, elem);
+    logException(context, elem);
 
+    /// Update performance counters before logging to query_log
+    CurrentThread::finalizePerformanceCounters();
+
+    if (settings.log_queries)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
-    }
 }
 
 
@@ -138,14 +136,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage)
 {
-    ProfileEvents::increment(ProfileEvents::Query);
     time_t current_time = time(nullptr);
 
     context.setQueryContext(context);
+    CurrentThread::attachQueryContext(context);
 
     const Settings & settings = context.getSettingsRef();
 
-    ParserQuery parser(end);
+    ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
     size_t query_size;
 
@@ -157,16 +155,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "");
+        ast = parseQuery(parser, begin, end, "", max_query_size);
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
         if (!(begin <= ast->range.first && ast->range.second <= end))
             throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
         query_size = ast->range.second - begin;
-
-        if (max_query_size && query_size > max_query_size)
-            throw Exception("Query is too large (" + toString(query_size) + ")."
-                " max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
     }
     catch (...)
     {
@@ -201,21 +195,25 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ProcessList::EntryPtr process_list_entry;
         if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
         {
-            process_list_entry = context.getProcessList().insert(
-                query,
-                ast.get(),
-                context.getClientInfo(),
-                settings);
-
+            process_list_entry = context.getProcessList().insert(query, ast.get(), context);
             context.setProcessListElement(&process_list_entry->get());
         }
+
+        /// Load external tables if they were provided
+        context.initializeExternalTablesIfSet();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         res = interpreter->execute();
 
-        /// Delayed initialization of query streams (required for KILL QUERY purposes)
         if (process_list_entry)
-            (*process_list_entry)->setQueryStreams(res);
+        {
+            /// Query was killed before execution
+            if ((*process_list_entry)->isKilled())
+                throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
+                    ErrorCodes::QUERY_WAS_CANCELLED);
+            else
+                (*process_list_entry)->setQueryStreams(res);
+        }
 
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
@@ -267,6 +265,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Log into system table start of query execution, if need.
             if (log_queries)
             {
+                if (settings.log_query_settings)
+                    elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
+
                 if (auto query_log = context.getQueryLog())
                     query_log->add(elem);
             }
@@ -274,12 +275,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
             res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
-                ProcessListElement * process_list_elem = context.getProcessListElement();
+                QueryStatus * process_list_elem = context.getProcessListElement();
 
                 if (!process_list_elem)
                     return;
 
-                ProcessInfo info = process_list_elem->getInfo();
+                /// Update performance counters before logging to query_log
+                CurrentThread::finalizePerformanceCounters();
+
+                QueryStatusInfo info = process_list_elem->getInfo(true, context.getSettingsRef().log_profile_events);
 
                 double elapsed_seconds = info.elapsed_seconds;
 
@@ -300,18 +304,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (auto profiling_stream = dynamic_cast<const IProfilingBlockInputStream *>(stream_in))
                     {
-                        const BlockStreamProfileInfo & info = profiling_stream->getProfileInfo();
+                        const BlockStreamProfileInfo & stream_in_info = profiling_stream->getProfileInfo();
 
                         /// NOTE: INSERT SELECT query contains zero metrics
-                        elem.result_rows = info.rows;
-                        elem.result_bytes = info.bytes;
+                        elem.result_rows = stream_in_info.rows;
+                        elem.result_bytes = stream_in_info.bytes;
                     }
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
                     if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
-                        /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.
+                        /// NOTE: Redundancy. The same values coulld be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().rows;
                         elem.result_bytes = counting_stream->getProgress().bytes;
                     }
@@ -325,6 +329,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         << static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "
                         << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
                 }
+
+                elem.thread_numbers = std::move(info.thread_numbers);
+                elem.profile_counters = std::move(info.profile_counters);
 
                 if (log_queries)
                 {
@@ -343,11 +350,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception = getCurrentExceptionMessage(false);
 
-                ProcessListElement * process_list_elem = context.getProcessListElement();
+                QueryStatus * process_list_elem = context.getProcessListElement();
+                const Settings & current_settings = context.getSettingsRef();
+
+                /// Update performance counters before logging to query_log
+                CurrentThread::finalizePerformanceCounters();
 
                 if (process_list_elem)
                 {
-                    ProcessInfo info = process_list_elem->getInfo();
+                    QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
 
                     elem.query_duration_ms = info.elapsed_seconds * 1000;
 
@@ -355,11 +366,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.read_bytes = info.read_bytes;
 
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
+
+                    elem.thread_numbers = std::move(info.thread_numbers);
+                    elem.profile_counters = std::move(info.profile_counters);
                 }
 
-                setExceptionStackTrace(elem);
+                if (current_settings.calculate_text_stack_trace)
+                    setExceptionStackTrace(elem);
                 logException(context, elem);
 
+                /// In case of exception we log internal queries also
                 if (log_queries)
                 {
                     if (auto query_log = context.getQueryLog())
@@ -380,6 +396,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (!internal)
             onExceptionBeforeStart(query, context, current_time);
+
+        DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
 
         throw;
     }
@@ -417,7 +435,7 @@ void executeQuery(
 
     size_t max_query_size = context.getSettingsRef().max_query_size;
 
-    if (istr.buffer().end() - istr.position() >= static_cast<ssize_t>(max_query_size))
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
@@ -427,9 +445,9 @@ void executeQuery(
     else
     {
         /// If not - copy enough data into 'parse_buf'.
-        parse_buf.resize(max_query_size);
-        parse_buf.resize(istr.read(&parse_buf[0], max_query_size));
-        begin = &parse_buf[0];
+        parse_buf.resize(max_query_size + 1);
+        parse_buf.resize(istr.read(parse_buf.data(), max_query_size + 1));
+        begin = parse_buf.data();
         end = begin + parse_buf.size();
     }
 

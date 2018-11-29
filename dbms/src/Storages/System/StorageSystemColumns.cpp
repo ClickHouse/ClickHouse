@@ -1,3 +1,4 @@
+#include <optional>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMergeTree.h>
@@ -6,19 +7,26 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Databases/IDatabase.h>
 
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 StorageSystemColumns::StorageSystemColumns(const std::string & name_)
     : name(name_)
 {
-    setColumns(ColumnsDescription({
+    setColumns(ColumnsDescription(
+    {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
@@ -28,24 +36,238 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
+        { "comment",                    std::make_shared<DataTypeString>() },
+        { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_order_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_partition_key", std::make_shared<DataTypeUInt8>() },
+        { "is_in_sample_key", std::make_shared<DataTypeUInt8>() },
     }));
 }
+
+
+namespace
+{
+    using Storages = std::map<std::pair<std::string, std::string>, StoragePtr>;
+}
+
+
+class ColumnsBlockInputStream : public IProfilingBlockInputStream
+{
+public:
+    ColumnsBlockInputStream(
+        const std::vector<UInt8> & columns_mask,
+        const Block & header,
+        size_t max_block_size,
+        ColumnPtr databases,
+        ColumnPtr tables,
+        Storages storages)
+        : columns_mask(columns_mask), header(header), max_block_size(max_block_size),
+        databases(databases), tables(tables), storages(std::move(storages)), total_tables(tables->size()) {}
+
+    String getName() const override { return "Columns"; }
+    Block getHeader() const override { return header; }
+
+protected:
+    Block readImpl() override
+    {
+        if (db_table_num >= total_tables)
+            return {};
+
+        Block res = header;
+        MutableColumns res_columns = header.cloneEmptyColumns();
+        size_t rows_count = 0;
+
+        while (rows_count < max_block_size && db_table_num < total_tables)
+        {
+            const std::string database_name = (*databases)[db_table_num].get<std::string>();
+            const std::string table_name = (*tables)[db_table_num].get<std::string>();
+            ++db_table_num;
+
+            NamesAndTypesList columns;
+            ColumnDefaults column_defaults;
+            ColumnComments column_comments;
+            Names partition_key_names;
+            Names order_key_names;
+            Names primary_key_names;
+            Names sampling_key_names;
+            MergeTreeData::ColumnSizeByName column_sizes;
+
+            {
+                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
+                TableStructureReadLockPtr table_lock;
+
+                try
+                {
+                    table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+                }
+                catch (const Exception & e)
+                {
+                    /** There are case when IStorage::drop was called,
+                    *  but we still own the object.
+                    * Then table will throw exception at attempt to lock it.
+                    * Just skip the table.
+                    */
+                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        continue;
+                    else
+                        throw;
+                }
+
+                columns = storage->getColumns().getAll();
+                column_defaults = storage->getColumns().defaults;
+                column_comments = storage->getColumns().comments;
+
+                partition_key_names = storage->getPartitionExpressionNames();
+                order_key_names = storage->getOrderExpressionNames();
+                primary_key_names = storage->getPrimaryExpressionNames();
+                sampling_key_names = storage->getSamplingExpressionNames();
+
+                /** Info about sizes of columns for tables of MergeTree family.
+                * NOTE: It is possible to add getter for this info to IStorage interface.
+                */
+                if (auto storage_concrete_plain = dynamic_cast<StorageMergeTree *>(storage.get()))
+                {
+                    column_sizes = storage_concrete_plain->getData().getColumnSizes();
+                }
+                else if (auto storage_concrete_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+                {
+                    column_sizes = storage_concrete_replicated->getData().getColumnSizes();
+                }
+            }
+
+            for (const auto & column : columns)
+            {
+                size_t src_index = 0;
+                size_t res_index = 0;
+
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(database_name);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(table_name);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(column.name);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(column.type->getName());
+
+                {
+                    const auto it = column_defaults.find(column.name);
+                    if (it == std::end(column_defaults))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(toString(it->second.kind));
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(queryToString(it->second.expression));
+                    }
+                }
+
+                {
+                    const auto it = column_sizes.find(column.name);
+                    if (it == std::end(column_sizes))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.data_compressed);
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.data_uncompressed);
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second.marks);
+                    }
+                }
+
+                {
+                    const auto it = column_comments.find(column.name);
+                    if (it == std::end(column_comments))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert(it->second);
+                    }
+                }
+
+                {
+                    auto find_in_vector = [&key = column.name](const Names& names)
+                    {
+                        return std::find(names.cbegin(), names.cend(), key) != names.end();
+                    };
+
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(primary_key_names));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(order_key_names));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(partition_key_names));
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(find_in_vector(sampling_key_names));
+                }
+
+                ++rows_count;
+            }
+        }
+
+        res.setColumns(std::move(res_columns));
+        return res;
+    }
+
+private:
+    std::vector<UInt8> columns_mask;
+    Block header;
+    size_t max_block_size;
+    ColumnPtr databases;
+    ColumnPtr tables;
+    Storages storages;
+    size_t db_table_num = 0;
+    size_t total_tables;
+};
 
 
 BlockInputStreams StorageSystemColumns::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
+
+    /// Create a mask of what columns are needed in the result.
+
+    NameSet names_set(column_names.begin(), column_names.end());
+
+    Block sample_block = getSampleBlock();
+    Block res_block;
+
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.count(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            res_block.insert(sample_block.getByPosition(i));
+        }
+    }
 
     Block block_to_filter;
-
-    std::map<std::pair<std::string, std::string>, StoragePtr> storages;
+    Storages storages;
 
     {
         Databases databases = context.getDatabases();
@@ -53,16 +275,20 @@ BlockInputStreams StorageSystemColumns::read(
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
-            database_column_mut->insert(database.first);
+        {
+            if (context.hasDatabaseAccessRights(database.first))
+                database_column_mut->insert(database.first);
+        }
+
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
         if (!block_to_filter.rows())
-            return BlockInputStreams();
+            return {std::make_shared<NullBlockInputStream>(res_block)};
 
-        ColumnPtr database_column = block_to_filter.getByName("database").column;
+        ColumnPtr & database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
 
         /// Add `table` column.
@@ -81,16 +307,11 @@ BlockInputStreams StorageSystemColumns::read(
                     std::forward_as_tuple(database_name, table_name),
                     std::forward_as_tuple(iterator->table()));
                 table_column_mut->insert(table_name);
-                offsets[i] += 1;
+                ++offsets[i];
             }
         }
 
-        for (size_t i = 0; i < block_to_filter.columns(); ++i)
-        {
-            ColumnPtr & column = block_to_filter.safeGetByPosition(i).column;
-            column = column->replicate(offsets);
-        }
-
+        database_column = database_column->replicate(offsets);
         block_to_filter.insert(ColumnWithTypeAndName(std::move(table_column_mut), std::make_shared<DataTypeString>(), "table"));
     }
 
@@ -98,103 +319,14 @@ BlockInputStreams StorageSystemColumns::read(
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
     if (!block_to_filter.rows())
-        return BlockInputStreams();
+        return {std::make_shared<NullBlockInputStream>(res_block)};
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
     ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
 
-    /// We compose the result.
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
-    size_t rows = filtered_database_column->size();
-    for (size_t i = 0; i < rows; ++i)
-    {
-        const std::string database_name = (*filtered_database_column)[i].get<std::string>();
-        const std::string table_name = (*filtered_table_column)[i].get<std::string>();
-
-        NamesAndTypesList columns;
-        ColumnDefaults column_defaults;
-        MergeTreeData::ColumnSizes column_sizes;
-
-        {
-            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-            TableStructureReadLockPtr table_lock;
-
-            try
-            {
-                table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
-            }
-            catch (const Exception & e)
-            {
-                /** There are case when IStorage::drop was called,
-                  *  but we still own the object.
-                  * Then table will throw exception at attempt to lock it.
-                  * Just skip the table.
-                  */
-                if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
-                    continue;
-                else
-                    throw;
-            }
-
-            columns = storage->getColumns().getAll();
-            column_defaults = storage->getColumns().defaults;
-
-            /** Info about sizes of columns for tables of MergeTree family.
-              * NOTE: It is possible to add getter for this info to IStorage interface.
-              */
-            if (auto storage_concrete = dynamic_cast<StorageMergeTree *>(storage.get()))
-            {
-                column_sizes = storage_concrete->getData().getColumnSizes();
-            }
-            else if (auto storage_concrete = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
-            {
-                column_sizes = storage_concrete->getData().getColumnSizes();
-            }
-        }
-
-        for (const auto & column : columns)
-        {
-            size_t i = 0;
-
-            res_columns[i++]->insert(database_name);
-            res_columns[i++]->insert(table_name);
-            res_columns[i++]->insert(column.name);
-            res_columns[i++]->insert(column.type->getName());
-
-            {
-                const auto it = column_defaults.find(column.name);
-                if (it == std::end(column_defaults))
-                {
-                    res_columns[i++]->insertDefault();
-                    res_columns[i++]->insertDefault();
-                }
-                else
-                {
-                    res_columns[i++]->insert(toString(it->second.kind));
-                    res_columns[i++]->insert(queryToString(it->second.expression));
-                }
-            }
-
-            {
-                const auto it = column_sizes.find(column.name);
-                if (it == std::end(column_sizes))
-                {
-                    res_columns[i++]->insertDefault();
-                    res_columns[i++]->insertDefault();
-                    res_columns[i++]->insertDefault();
-                }
-                else
-                {
-                    res_columns[i++]->insert(static_cast<UInt64>(it->second.data_compressed));
-                    res_columns[i++]->insert(static_cast<UInt64>(it->second.data_uncompressed));
-                    res_columns[i++]->insert(static_cast<UInt64>(it->second.marks));
-                }
-            }
-        }
-    }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
+    return {std::make_shared<ColumnsBlockInputStream>(
+        std::move(columns_mask), std::move(res_block), max_block_size,
+        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages))};
 }
 
 }

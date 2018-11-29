@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <IO/LZ4_decompress_faster.h>
 
 
 namespace DB
@@ -23,6 +24,8 @@ protected:
 
     /// Don't checksum on decompressing.
     bool disable_checksum = false;
+
+    LZ4::PerformanceStatistics lz4_stat;
 
 
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.

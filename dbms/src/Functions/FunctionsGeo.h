@@ -20,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
@@ -61,7 +63,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeFloat64>(arg))
+            if (!WhichDataType(arg).isFloat64())
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -117,9 +119,9 @@ private:
     }
 
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto size = block.rows();
+        const auto size = input_rows_count;
 
         bool result_is_const{};
         auto instrs = getInstructions(block, arguments, result_is_const);
@@ -200,20 +202,21 @@ private:
         if (arguments.size() < 6 || arguments.size() % 4 != 2)
         {
             throw Exception(
-                "Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).");
+                "Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         /// For array on stack, see below.
         if (arguments.size() > 10000)
         {
             throw Exception(
-                "Number of arguments of function " + getName() + " is too large.");
+                "Number of arguments of function " + getName() + " is too large.", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
         }
 
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeFloat64>(arg))
+            if (!WhichDataType(arg).isFloat64())
             {
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
@@ -224,9 +227,9 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto size = block.rows();
+        const auto size = input_rows_count;
 
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;
@@ -293,7 +296,7 @@ private:
                 const auto col_const_y = static_cast<const ColumnConst *> (col_y);
                 size_t start_index = 0;
                 UInt8 res = isPointInEllipses(col_const_x->getValue<Float64>(), col_const_y->getValue<Float64>(), ellipses, ellipses_count, start_index);
-                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, UInt64(res));
+                block.getByPosition(result).column = DataTypeUInt8().createColumnConst(size, res);
             }
             else
             {

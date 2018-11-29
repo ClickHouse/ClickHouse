@@ -79,7 +79,7 @@ int main(int argc, char ** argv)
 
         Aggregator::Params params(
             stream->getHeader(), {0, 1}, aggregate_descriptions,
-            false, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, false, "");
+            false, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, false, "", 1);
 
         Aggregator aggregator(params);
 

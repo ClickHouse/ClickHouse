@@ -17,6 +17,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+}
+
 namespace Nested
 {
 
@@ -179,6 +185,45 @@ NamesAndTypesList collect(const NamesAndTypesList & names_and_types)
             std::make_shared<DataTypeTuple>(name_elems.second.getTypes(), name_elems.second.getNames())));
 
     return res;
+}
+
+
+void validateArraySizes(const Block & block)
+{
+    /// Nested prefix -> position of first column in block.
+    std::map<std::string, size_t> nested;
+
+    for (size_t i = 0, size = block.columns(); i < size; ++i)
+    {
+        const auto & elem = block.getByPosition(i);
+
+        if (isArray(elem.type))
+        {
+            if (!typeid_cast<const ColumnArray *>(elem.column.get()))
+                throw Exception("Column with Array type is not represented by ColumnArray column: " + elem.column->dumpStructure(), ErrorCodes::ILLEGAL_COLUMN);
+
+            auto splitted = splitName(elem.name);
+
+            /// Is it really a column of Nested data structure.
+            if (!splitted.second.empty())
+            {
+                auto [it, inserted] = nested.emplace(splitted.first, i);
+
+                /// It's not the first column of Nested data structure.
+                if (!inserted)
+                {
+                    const ColumnArray & first_array_column = static_cast<const ColumnArray &>(*block.getByPosition(it->second).column);
+                    const ColumnArray & another_array_column = static_cast<const ColumnArray &>(*elem.column);
+
+                    if (!first_array_column.hasEqualOffsets(another_array_column))
+                        throw Exception("Elements '" + block.getByPosition(it->second).name
+                            + "' and '" + elem.name
+                            + "' of Nested data structure '" + splitted.first
+                            + "' (Array columns) have different array sizes.", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
+                }
+            }
+        }
+    }
 }
 
 }

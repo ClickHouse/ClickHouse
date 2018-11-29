@@ -38,6 +38,13 @@ class myHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.send_error(404,'File Not Found: %s' % self.path)
 
     def do_POST(self):
+        #if self.headers.getheader('Transfer-Encoding') == 'chunked':
+        # todo
+        #else:
+        content_len = int(self.headers.getheader('Content-Length', 0))
+
+        post_body = self.rfile.read(content_len)
+        #print('post:', content_len, post_body)
         self.do_GET()
         return
 

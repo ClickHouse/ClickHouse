@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,25 +12,17 @@ class Context;
 
 /** Implements `zookeeper` system table, which allows you to view the data in ZooKeeper for debugging purposes.
   */
-class StorageSystemZooKeeper : public ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorage
+class StorageSystemZooKeeper : public ext::shared_ptr_helper<StorageSystemZooKeeper>, public IStorageSystemOneBlock<StorageSystemZooKeeper>
 {
 public:
     std::string getName() const override { return "SystemZooKeeper"; }
-    std::string getTableName() const override { return name; }
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-private:
-    const std::string name;
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    StorageSystemZooKeeper(const std::string & name_);
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

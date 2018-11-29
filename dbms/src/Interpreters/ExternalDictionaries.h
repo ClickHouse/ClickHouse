@@ -31,6 +31,11 @@ public:
         return std::static_pointer_cast<IDictionaryBase>(getLoadable(name));
     }
 
+    DictPtr tryGetDictionary(const std::string & name) const
+    {
+        return std::static_pointer_cast<IDictionaryBase>(tryGetLoadable(name));
+    }
+
 protected:
 
     std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,

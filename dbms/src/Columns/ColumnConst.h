@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 
 /** ColumnConst contains another column with single element,
-  *  but looks like a column with arbitary amount of same elements.
+  *  but looks like a column with arbitrary amount of same elements.
   */
 class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 {
@@ -29,12 +29,14 @@ private:
     ColumnConst(const ColumnConst & src) = default;
 
 public:
-    MutableColumnPtr convertToFullColumn() const;
+    ColumnPtr convertToFullColumn() const;
 
-    MutableColumnPtr convertToFullColumnIfConst() const override
+    ColumnPtr convertToFullColumnIfConst() const override
     {
         return convertToFullColumn();
     }
+
+    ColumnPtr removeLowCardinality() const;
 
     std::string getName() const override
     {
@@ -91,6 +93,11 @@ public:
         return data->getInt(0);
     }
 
+    bool getBool(size_t) const override
+    {
+        return data->getBool(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -145,9 +152,10 @@ public:
         data->updateHashWithValue(0, hash);
     }
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    MutableColumnPtr replicate(const Offsets & offsets) const override;
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
 
     size_t byteSize() const override
@@ -188,6 +196,7 @@ public:
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
+    StringRef getRawData() const override { return data->getRawData(); }
 
     /// Not part of the common interface.
 
@@ -200,7 +209,7 @@ public:
     Field getField() const { return getDataColumn()[0]; }
 
     template <typename T>
-    T getValue() const { return getField().safeGet<typename NearestFieldType<T>::Type>(); }
+    T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };
 
 }

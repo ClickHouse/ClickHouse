@@ -22,11 +22,6 @@ public:
     }
 
     String getName() const override { return "PartialSorting"; }
-
-    bool isGroupedOutput() const override { return true; }
-    bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
-
     Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:

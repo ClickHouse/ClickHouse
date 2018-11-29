@@ -1,7 +1,7 @@
 Build clickhouse without tcmalloc. cmake -D ENABLE_TCMALLOC=0
 
 Copy clickhouse binary to your server.
-scp dbms/src/Server/clickhouse server:~
+scp dbms/programs/clickhouse server:~
 
 ssh to your server
 

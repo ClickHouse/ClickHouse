@@ -21,7 +21,7 @@ public:
     bool not_like{false};
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "ShowTables"; };
+    String getID() const override { return "ShowTables"; }
 
     ASTPtr clone() const override
     {

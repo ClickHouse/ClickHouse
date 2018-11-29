@@ -210,7 +210,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                 UInt8 hour_or_day_of_month = 0;
                 if (num_digits == 2)
                     readDecimalNumber<2>(hour_or_day_of_month, digits);
-                else if (num_digits == 1)
+                else if (num_digits == 1)   //-V547
                     readDecimalNumber<1>(hour_or_day_of_month, digits);
                 else
                     return on_error("Cannot read DateTime: logical error, unexpected branch in code", ErrorCodes::LOGICAL_ERROR);

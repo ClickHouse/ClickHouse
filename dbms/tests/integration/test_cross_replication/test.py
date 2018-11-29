@@ -5,7 +5,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import TSV
+from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -56,14 +56,14 @@ CREATE TABLE distributed(date Date, id UInt32, shard_id UInt32)
 
 def test(started_cluster):
     # Check that the data has been inserted into correct tables.
-    assert node1.query("SELECT id FROM shard_0.replicated") == '111\n'
-    assert node1.query("SELECT id FROM shard_2.replicated") == '333\n'
+    assert_eq_with_retry(node1, "SELECT id FROM shard_0.replicated", '111')
+    assert_eq_with_retry(node1, "SELECT id FROM shard_2.replicated", '333')
 
-    assert node2.query("SELECT id FROM shard_0.replicated") == '111\n'
-    assert node2.query("SELECT id FROM shard_1.replicated") == '222\n'
+    assert_eq_with_retry(node2, "SELECT id FROM shard_0.replicated", '111')
+    assert_eq_with_retry(node2, "SELECT id FROM shard_1.replicated", '222')
 
-    assert node3.query("SELECT id FROM shard_1.replicated") == '222\n'
-    assert node3.query("SELECT id FROM shard_2.replicated") == '333\n'
+    assert_eq_with_retry(node3, "SELECT id FROM shard_1.replicated", '222')
+    assert_eq_with_retry(node3, "SELECT id FROM shard_2.replicated", '333')
 
     # Check that SELECT from the Distributed table works.
     expected_from_distributed = '''\
@@ -71,20 +71,20 @@ def test(started_cluster):
 2017-06-16	222	1
 2017-06-16	333	2
 '''
-    assert TSV(node1.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
-    assert TSV(node2.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
-    assert TSV(node3.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
+    assert_eq_with_retry(node1, "SELECT * FROM distributed ORDER BY id", expected_from_distributed)
+    assert_eq_with_retry(node2, "SELECT * FROM distributed ORDER BY id", expected_from_distributed)
+    assert_eq_with_retry(node3, "SELECT * FROM distributed ORDER BY id", expected_from_distributed)
 
     # Now isolate node3 from other nodes and check that SELECTs on other nodes still work.
     with PartitionManager() as pm:
         pm.partition_instances(node3, node1, action='REJECT --reject-with tcp-reset')
         pm.partition_instances(node3, node2, action='REJECT --reject-with tcp-reset')
 
-        assert TSV(node1.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
-        assert TSV(node2.query("SELECT * FROM distributed ORDER BY id")) == TSV(expected_from_distributed)
+        assert_eq_with_retry(node1, "SELECT * FROM distributed ORDER BY id", expected_from_distributed)
+        assert_eq_with_retry(node2, "SELECT * FROM distributed ORDER BY id", expected_from_distributed)
 
         with pytest.raises(Exception):
-            print node3.query("SELECT * FROM distributed ORDER BY id")
+            print node3.query_with_retry("SELECT * FROM distributed ORDER BY id", retry_count=5)
 
 
 if __name__ == '__main__':

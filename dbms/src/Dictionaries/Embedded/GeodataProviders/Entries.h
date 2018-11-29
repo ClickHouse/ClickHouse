@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/Types.h>
+#include "Types.h"
+#include <string>
 
 struct RegionEntry
 {

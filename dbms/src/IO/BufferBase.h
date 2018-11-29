@@ -38,7 +38,7 @@ public:
 
         inline Position begin() const { return begin_pos; }
         inline Position end() const { return end_pos; }
-        inline size_t size() const { return end_pos - begin_pos; }
+        inline size_t size() const { return size_t(end_pos - begin_pos); }
         inline void resize(size_t size) { end_pos = begin_pos + size; }
 
         inline void swap(Buffer & other)
@@ -72,10 +72,20 @@ public:
     inline Buffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
-    inline Position & position() { return pos; };
+    inline Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    inline size_t offset() const { return pos - working_buffer.begin(); }
+    inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
+
+    /// How many bytes are available for read/write
+    inline size_t available() const { return size_t(working_buffer.end() - pos); }
+
+    inline void swap(BufferBase & other)
+    {
+        internal_buffer.swap(other.internal_buffer);
+        working_buffer.swap(other.working_buffer);
+        std::swap(pos, other.pos);
+    }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
     size_t count() const
@@ -87,6 +97,11 @@ public:
     bool ALWAYS_INLINE hasPendingData() const
     {
         return pos != working_buffer.end();
+    }
+
+    bool isPadded() const
+    {
+        return padded;
     }
 
 protected:
@@ -107,6 +122,9 @@ protected:
 
     /// A reference to a piece of memory for the buffer.
     Buffer internal_buffer;
+
+    /// Indicator of 15 bytes pad_right
+    bool padded{false};
 };
 
 

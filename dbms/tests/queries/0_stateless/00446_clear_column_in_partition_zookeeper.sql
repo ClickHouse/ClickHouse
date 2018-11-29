@@ -19,10 +19,11 @@ DROP TABLE test.clear_column;
 
 SELECT '===Replicated case===';
 
+SYSTEM STOP MERGES;
 DROP TABLE IF EXISTS test.clear_column1;
 DROP TABLE IF EXISTS test.clear_column2;
-CREATE TABLE test.clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/clear_column', '1', d, d, 8192);
-CREATE TABLE test.clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/clear_column', '2', d, d, 8192);
+CREATE TABLE test.clear_column1 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192);
+CREATE TABLE test.clear_column2 (d Date, i Int64) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192);
 
 INSERT INTO test.clear_column1 (d) VALUES ('2000-01-01'), ('2000-02-01');
 
@@ -57,15 +58,14 @@ SELECT sum(data_uncompressed_bytes) FROM system.columns WHERE database='test' AN
 ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200001';
 ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200002';
 
+-- Merges cannot be blocked after all manipulations
+SET optimize_throw_if_noop = 1;
+SYSTEM START MERGES;
+OPTIMIZE TABLE test.clear_column1 PARTITION '200001';
+OPTIMIZE TABLE test.clear_column1 PARTITION '200002';
+
+
 -- clear column in empty partition should be Ok
 ALTER TABLE test.clear_column1 CLEAR COLUMN s IN PARTITION '200012', CLEAR COLUMN i IN PARTITION '200012';
 -- Drop empty partition also Ok
 ALTER TABLE test.clear_column1 DROP PARTITION '200012', DROP PARTITION '200011';
-
-
--- check optimize for non-leader replica (it is not related with CLEAR COLUMN)
-OPTIMIZE TABLE test.clear_column1;
-OPTIMIZE TABLE test.clear_column2;
-
-DROP TABLE IF EXISTS test.clear_column1;
-DROP TABLE IF EXISTS test.clear_column2;

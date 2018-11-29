@@ -33,7 +33,7 @@ class FunctionReinterpretAsStringImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsStringImpl>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsStringImpl>(); }
 
     String getName() const override
     {
@@ -54,7 +54,7 @@ public:
     void executeToString(const IColumn & src, ColumnString & dst)
     {
         size_t rows = src.size();
-        ColumnString::Chars_t & data_to = dst.getChars();
+        ColumnString::Chars & data_to = dst.getChars();
         ColumnString::Offsets & offsets_to = dst.getOffsets();
         offsets_to.resize(rows);
 
@@ -78,7 +78,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn & src = *block.getByPosition(arguments[0]).column;
         MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
@@ -98,7 +98,7 @@ class FunctionReinterpretAsFixedStringImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsFixedStringImpl>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsFixedStringImpl>(); }
 
     String getName() const override
     {
@@ -119,7 +119,7 @@ public:
     void executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
         size_t rows = src.size();
-        ColumnFixedString::Chars_t & data_to = dst.getChars();
+        ColumnFixedString::Chars & data_to = dst.getChars();
         data_to.resize(n * rows);
 
         ColumnFixedString::Offset offset = 0;
@@ -133,7 +133,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn & src = *block.getByPosition(arguments[0]).column;
         MutableColumnPtr dst = block.getByPosition(result).type->createColumn();
@@ -153,7 +153,7 @@ class FunctionReinterpretStringAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretStringAs>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretStringAs>(); }
 
     using ToFieldType = typename ToDataType::FieldType;
 
@@ -167,7 +167,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const IDataType & type = *arguments[0];
-        if (!type.isStringOrFixedString())
+        if (!isStringOrFixedString(type))
             throw Exception("Cannot reinterpret " + type.getName() + " as " + ToDataType().getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<ToDataType>();
@@ -175,13 +175,13 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (const ColumnString * col_from = typeid_cast<const ColumnString *>(block.getByPosition(arguments[0]).column.get()))
         {
             auto col_res = ColumnVector<ToFieldType>::create();
 
-            const ColumnString::Chars_t & data_from = col_from->getChars();
+            const ColumnString::Chars & data_from = col_from->getChars();
             const ColumnString::Offsets & offsets_from = col_from->getOffsets();
             size_t size = offsets_from.size();
             typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();
@@ -202,7 +202,7 @@ public:
         {
             auto col_res = ColumnVector<ToFieldType>::create();
 
-            const ColumnString::Chars_t & data_from = col_from->getChars();
+            const ColumnString::Chars & data_from = col_from->getChars();
             size_t step = col_from->getN();
             size_t size = data_from.size() / step;
             typename ColumnVector<ToFieldType>::Container & vec_res = col_res->getData();

@@ -4,52 +4,75 @@ Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
-               gcc-7, g++-7,
+               ninja-build,
+               gcc-7 [amd64 i386] | gcc-8 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386],
+               clang-6.0 [arm64 armhf] | clang-5.0 [arm64 armhf] | clang-7 [arm64 armhf],
                libc6-dev,
-               libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
-               libltdl-dev,
-               libreadline-dev,
-               libssl-dev,
-               unixodbc-dev
-Standards-Version: 3.8.0
+               libreadline-dev
+Standards-Version: 3.9.8
 
 Package: clickhouse-client
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
-Description: Client binary for clickhouse
+Description: Client binary for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides clickhouse-client , clickhouse-local and clickhouse-benchmark
 
-Package: clickhouse-server-base
+Package: clickhouse-common-static
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
-Description: Server binary for clickhouse
+Depends: ${shlibs:Depends}, ${misc:Depends}, tzdata
+Replaces: clickhouse-server-base
+Provides: clickhouse-server-base
+Description: Common files for ClickHouse
+ Yandex ClickHouse is a column-oriented database management system
+ that allows generating analytical data reports in real time.
+ .
+ This package provides common files for both clickhouse server and client
+
+Package: clickhouse-server
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser
+Replaces: clickhouse-server-common, clickhouse-server-base
+Provides: clickhouse-server-common
+Description: Server binary for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides clickhouse common configuration files
 
-Package: clickhouse-server-common
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
-Description: clickhouse-server-common
- Common configuration files for clickhouse-server-base package
-
-Package: clickhouse-common-dbg
+Package: clickhouse-common-static-dbg
 Architecture: any
 Section: debug
-Priority: extra
-Depends: ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
-Description: debugging symbols for clickhouse-server-base
- This package contains the debugging symbols for clickhouse-server-base.
+Priority: optional
+Depends: ${misc:Depends}
+Replaces: clickhouse-common-dbg
+Conflicts: clickhouse-common-dbg
+Description: debugging symbols for clickhouse-common-static
+ This package contains the debugging symbols for clickhouse-common.
 
 Package: clickhouse-test
-Priority: extra
+Priority: optional
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet
+Description: ClickHouse tests
+
+
+
+# TODO: Remove:
+
+Package: clickhouse-server-base
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl
-Description: Clickhouse tests
+Priority: optional
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
+Description: DEPRECATED PACKAGE (use clickhouse-common-static): Server binary for clickhouse
+
+Package: clickhouse-server-common
+Architecture: all
+Priority: optional
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
+Description: DEPRECATED PACKAGE (use clickhouse-server): Common configuration files for clickhouse-server-base package

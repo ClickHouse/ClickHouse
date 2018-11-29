@@ -1,0 +1,20 @@
+<yandex>
+    <users>
+        <default>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+        <test_allow>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <allow_databases>
+                <database>default</database>
+            </allow_databases>
+        </test_allow>
+    </users>
+</yandex>

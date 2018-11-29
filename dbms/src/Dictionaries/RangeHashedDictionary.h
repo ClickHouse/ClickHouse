@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 #include <Common/HashTable/HashMap.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.h>
+
 #include <atomic>
 #include <memory>
-#include <tuple>
+#include <variant>
 
 
 namespace DB
@@ -18,14 +19,14 @@ class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
     RangeHashedDictionary(
-        const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
+        const std::string & dictionary_name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
         const DictionaryLifetime dict_lifetime, bool require_nonempty);
 
     RangeHashedDictionary(const RangeHashedDictionary & other);
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
-    std::string getName() const override { return name; }
+    std::string getName() const override { return dictionary_name; }
 
     std::string getTypeName() const override { return "RangeHashed"; }
 
@@ -59,10 +60,17 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    typedef Int64 RangeStorageType;
+
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,\
-        PaddedPODArray<TYPE> & out) const;
+        const std::string & attribute_name,\
+        const PaddedPODArray<Key> & ids,\
+        const PaddedPODArray<RangeStorageType> & dates,\
+        ResultArrayType<TYPE> & out) const;
     DECLARE_MULTIPLE_GETTER(UInt8)
     DECLARE_MULTIPLE_GETTER(UInt16)
     DECLARE_MULTIPLE_GETTER(UInt32)
@@ -74,36 +82,24 @@ public:
     DECLARE_MULTIPLE_GETTER(Int64)
     DECLARE_MULTIPLE_GETTER(Float32)
     DECLARE_MULTIPLE_GETTER(Float64)
+    DECLARE_MULTIPLE_GETTER(Decimal32)
+    DECLARE_MULTIPLE_GETTER(Decimal64)
+    DECLARE_MULTIPLE_GETTER(Decimal128)
 #undef DECLARE_MULTIPLE_GETTER
 
     void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
+        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<RangeStorageType> & dates,
         ColumnString * out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
-    struct Range : std::pair<UInt16, UInt16>
+    struct Range
     {
-        using std::pair<UInt16, UInt16>::pair;
+        RangeStorageType left;
+        RangeStorageType right;
 
-        static bool isCorrectDate(const UInt16 date) { return 0 < date && date <= DATE_LUT_MAX_DAY_NUM; }
-
-        bool contains(const UInt16 date) const
-        {
-            const auto & left = first;
-            const auto & right = second;
-
-            if (left <= date && date <= right)
-                return true;
-
-            const auto has_left_bound = isCorrectDate(left);
-            const auto has_right_bound = isCorrectDate(right);
-
-            if ((!has_left_bound || left <= date) && (!has_right_bound || date <= right))
-                return true;
-
-            return false;
-        }
+        static bool isCorrectDate(const RangeStorageType & date);
+        bool contains(const RangeStorageType& value) const;
     };
 
 private:
@@ -122,14 +118,16 @@ private:
     {
     public:
         AttributeUnderlyingType type;
-        std::tuple<UInt8, UInt16, UInt32, UInt64,
+        std::variant<UInt8, UInt16, UInt32, UInt64,
                    UInt128,
                    Int8, Int16, Int32, Int64,
+                   Decimal32, Decimal64, Decimal128,
                    Float32, Float64,
                    String> null_values;
-        std::tuple<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
+        std::variant<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
                    Ptr<UInt128>,
                    Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
+                   Ptr<Decimal32>, Ptr<Decimal64>, Ptr<Decimal128>,
                    Ptr<Float32>, Ptr<Float64>, Ptr<StringRef>> maps;
         std::unique_ptr<Arena> string_arena;
     };
@@ -153,14 +151,14 @@ private:
     void getItems(
         const Attribute & attribute,
         const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<UInt16> & dates,
+        const PaddedPODArray<RangeStorageType> & dates,
         PaddedPODArray<OutputType> & out) const;
 
     template <typename AttributeType, typename OutputType>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<UInt16> & dates,
+        const PaddedPODArray<RangeStorageType> & dates,
         PaddedPODArray<OutputType> & out) const;
 
 
@@ -173,14 +171,20 @@ private:
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
+    template <typename RangeType>
     void getIdsAndDates(PaddedPODArray<Key> & ids,
-                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+                        PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
-    template <typename T>
+    template <typename T, typename RangeType>
     void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
-                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+                        PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
-    const std::string name;
+    template <typename RangeType>
+    BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
+
+    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
+
+    const std::string dictionary_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

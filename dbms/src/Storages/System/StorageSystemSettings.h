@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,25 +12,17 @@ class Context;
 
 /** implements system table "settings", which allows to get information about the current settings.
   */
-class StorageSystemSettings : public ext::shared_ptr_helper<StorageSystemSettings>, public IStorage
+class StorageSystemSettings : public ext::shared_ptr_helper<StorageSystemSettings>, public IStorageSystemOneBlock<StorageSystemSettings>
 {
 public:
     std::string getName() const override { return "SystemSettings"; }
-    std::string getTableName() const override { return name; }
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-private:
-    const std::string name;
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    StorageSystemSettings(const std::string & name_);
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

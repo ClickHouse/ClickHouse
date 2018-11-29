@@ -79,13 +79,16 @@ struct MergeTreeDataPartChecksums
     /// Checksum from the set of checksums of .bin files (for deduplication).
     void computeTotalChecksumDataOnly(SipHash & hash) const;
 
+    /// SipHash of all all files hashes represented as hex string
+    String getTotalChecksumHex() const;
+
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 };
 
 
 /// A kind of MergeTreeDataPartChecksums intended to be stored in ZooKeeper (to save its RAM)
-/// MinimalisticDataPartChecksums and MergeTreeDataPartChecksums hasve the same serialization format
+/// MinimalisticDataPartChecksums and MergeTreeDataPartChecksums have the same serialization format
 ///  for versions less than MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS.
 struct MinimalisticDataPartChecksums
 {
@@ -96,6 +99,15 @@ struct MinimalisticDataPartChecksums
     uint128 hash_of_all_files {};
     uint128 hash_of_uncompressed_files {};
     uint128 uncompressed_hash_of_compressed_files {};
+
+    bool operator==(const MinimalisticDataPartChecksums & other) const
+    {
+        return num_compressed_files == other.num_compressed_files
+            && num_uncompressed_files == other.num_uncompressed_files
+            && hash_of_all_files == other.hash_of_all_files
+            && hash_of_uncompressed_files == other.hash_of_uncompressed_files
+            && uncompressed_hash_of_compressed_files == other.uncompressed_hash_of_compressed_files;
+    }
 
     /// Is set only for old formats
     std::unique_ptr<MergeTreeDataPartChecksums> full_checksums;

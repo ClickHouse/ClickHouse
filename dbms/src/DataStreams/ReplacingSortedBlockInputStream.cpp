@@ -35,13 +35,8 @@ Block ReplacingSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    if (children.size() == 1)
-        return children[0]->read();
-
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
@@ -49,14 +44,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return Block();
 
-    /// Additional initialization.
-    if (selected_row.empty())
-    {
-        if (!version_column.empty())
-            version_column_number = header.getPositionByName(version_column);
-    }
-
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -121,7 +109,8 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
     }
 
     /// We will write the data for the last primary key.
-    insertRow(merged_columns, merged_rows);
+    if (!selected_row.empty())
+        insertRow(merged_columns, merged_rows);
 
     finished = true;
 }

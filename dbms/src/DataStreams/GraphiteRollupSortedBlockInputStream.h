@@ -8,6 +8,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/AlignedBuffer.h>
 
 
 namespace DB
@@ -126,16 +127,12 @@ class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStrea
 {
 public:
     GraphiteRollupSortedBlockInputStream(
-        BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_,
-        const Graphite::Params & params, time_t time_of_merge)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-        params(params), time_of_merge(time_of_merge)
-    {
-    }
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        const Graphite::Params & params, time_t time_of_merge);
 
     String getName() const override { return "GraphiteRollupSorted"; }
 
-    ~GraphiteRollupSortedBlockInputStream()
+    ~GraphiteRollupSortedBlockInputStream() override
     {
         if (aggregate_state_created)
             current_pattern->function->destroy(place_for_aggregate_state.data());
@@ -190,7 +187,7 @@ private:
     time_t current_time_rounded = 0;
 
     const Graphite::Pattern * current_pattern = nullptr;
-    std::vector<char> place_for_aggregate_state;
+    AlignedBuffer place_for_aggregate_state;
     bool aggregate_state_created = false; /// Invariant: if true then current_pattern is not NULL.
 
     const Graphite::Pattern * selectPatternForPath(StringRef path) const;

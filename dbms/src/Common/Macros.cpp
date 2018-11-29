@@ -23,7 +23,7 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     }
 }
 
-String Macros::expand(const String & s, size_t level) const
+String Macros::expand(const String & s, size_t level, const String & database_name, const String & table_name) const
 {
     if (s.find('{') == String::npos)
         return s;
@@ -56,17 +56,37 @@ String Macros::expand(const String & s, size_t level) const
             throw Exception("Unbalanced { and } in string with macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
         String macro_name = s.substr(begin, end - begin);
-
         auto it = macros.find(macro_name);
-        if (it == macros.end())
-            throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
 
-        res += it->second;
+        /// Prefer explicit macros over implicit.
+        if (it != macros.end())
+            res += it->second;
+        else if (macro_name == "database" && !database_name.empty())
+            res += database_name;
+        else if (macro_name == "table" && !table_name.empty())
+            res += table_name;
+        else
+            throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
 
         pos = end + 1;
     }
 
-    return expand(res, level + 1);
+    return expand(res, level + 1, database_name, table_name);
 }
 
+String Macros::expand(const String & s, const String & database_name, const String & table_name) const
+{
+    return expand(s, 0, database_name, table_name);
+}
+
+Names Macros::expand(const Names & source_names, size_t level) const
+{
+    Names result_names;
+    result_names.reserve(source_names.size());
+
+    for (const String & name : source_names)
+        result_names.push_back(expand(name, level));
+
+    return result_names;
+}
 }

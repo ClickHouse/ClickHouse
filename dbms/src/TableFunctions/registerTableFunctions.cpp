@@ -11,9 +11,14 @@ void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionShardByHash(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
-#if Poco_DataODBC_FOUND
+void registerTableFunctionFile(TableFunctionFactory & factory);
+void registerTableFunctionURL(TableFunctionFactory & factory);
+
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 #endif
+
+void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -29,10 +34,13 @@ void registerTableFunctions()
     registerTableFunctionShardByHash(factory);
     registerTableFunctionNumbers(factory);
     registerTableFunctionCatBoostPool(factory);
+    registerTableFunctionFile(factory);
+    registerTableFunctionURL(factory);
 
-#if Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
 #endif
+    registerTableFunctionJDBC(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

@@ -10,6 +10,8 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
+#include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 
 
 namespace DB
@@ -27,9 +29,16 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserRenameQuery rename_p;
     ParserDropQuery drop_p;
     ParserCheckQuery check_p;
+    ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
 
     ASTPtr query;
+
+    ParserKeyword s_ast("AST");
+    bool explain_ast = false;
+
+    if (enable_explain && s_ast.ignore(pos, expected))
+        explain_ast = true;
 
     bool parsed = select_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
@@ -41,7 +50,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || rename_p.parse(pos, query, expected)
         || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
-        || kill_query_p.parse(pos, query, expected);
+        || kill_query_p.parse(pos, query, expected)
+        || optimize_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
@@ -66,12 +76,19 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (!format_p.parse(pos, query_with_output.format, expected))
             return false;
-        typeid_cast<ASTIdentifier &>(*(query_with_output.format)).kind = ASTIdentifier::Format;
+        typeid_cast<ASTIdentifier &>(*(query_with_output.format)).setSpecial();
 
         query_with_output.children.push_back(query_with_output.format);
     }
 
-    node = query;
+    if (explain_ast)
+    {
+        node = std::make_shared<ASTExplainQuery>();
+        node->children.push_back(query);
+    }
+    else
+        node = query;
+
     return true;
 }
 

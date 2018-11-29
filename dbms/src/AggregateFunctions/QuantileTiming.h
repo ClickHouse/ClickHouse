@@ -158,7 +158,7 @@ namespace detail
         void serialize(WriteBuffer & buf) const
         {
             writeBinary(elems.size(), buf);
-            buf.write(reinterpret_cast<const char *>(&elems[0]), elems.size() * sizeof(elems[0]));
+            buf.write(reinterpret_cast<const char *>(elems.data()), elems.size() * sizeof(elems[0]));
         }
 
         void deserialize(ReadBuffer & buf)
@@ -166,7 +166,7 @@ namespace detail
             size_t size = 0;
             readBinary(size, buf);
             elems.resize(size);
-            buf.readStrict(reinterpret_cast<char *>(&elems[0]), size * sizeof(elems[0]));
+            buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));
         }
 
         UInt16 get(double level) const
@@ -179,7 +179,7 @@ namespace detail
                     ? level * elems.size()
                     : (elems.size() - 1);
 
-        /// Sorting an array will not be considered a violation of constancy.
+                /// Sorting an array will not be considered a violation of constancy.
                 auto & array = const_cast<Array &>(elems);
                 std::nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
@@ -749,7 +749,7 @@ public:
         {
             medium.getMany(levels, levels_permutation, size, result);
         }
-        else if (kind == Kind::Large)
+        else /*if (kind == Kind::Large)*/
         {
             large->getMany(levels, levels_permutation, size, result);
         }

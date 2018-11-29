@@ -21,7 +21,7 @@ namespace ext
         return Collection<value_type>(
             boost::make_transform_iterator(std::begin(collection), mapper),
             boost::make_transform_iterator(std::end(collection), mapper));
-    };
+    }
 
     /** \brief Returns collection of specified container-type,
       *    with each element transformed by the application of `mapper`.
@@ -35,7 +35,7 @@ namespace ext
         return ResultCollection<value_type>(
             boost::make_transform_iterator(std::begin(collection), mapper),
             boost::make_transform_iterator(std::end(collection), mapper));
-    };
+    }
 
     /** \brief Returns collection of specified type,
       *    with each element transformed by the application of `mapper`.

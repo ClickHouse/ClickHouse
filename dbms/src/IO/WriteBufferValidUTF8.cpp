@@ -119,7 +119,7 @@ void WriteBufferValidUTF8::nextImpl()
     for (size_t i = 0; i < cnt; ++i)
         memory[i] = p[i];
 
-    working_buffer = Buffer(&memory[cnt], &memory[0] + memory.size());
+    working_buffer = Buffer(&memory[cnt], memory.data() + memory.size());
 }
 
 

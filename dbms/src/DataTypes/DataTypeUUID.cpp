@@ -1,40 +1,38 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
 {
 
-void DataTypeUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeUUID::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeText(UUID(static_cast<const ColumnUInt128 &>(column).getData()[row_num]), ostr);
 }
 
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readText(x, istr);
     static_cast<ColumnUInt128 &>(column).getData().push_back(x);
 }
 
-void DataTypeUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
-void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
-{
-    deserializeText(column, istr);
-}
-
-void DataTypeUUID::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeUUID::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
     writeChar('\'', ostr);
 }
 
-void DataTypeUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     assertChar('\'', istr);
@@ -43,14 +41,14 @@ void DataTypeUUID::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) co
     static_cast<ColumnUInt128 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
-void DataTypeUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeUUID::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
     writeChar('"', ostr);
 }
 
-void DataTypeUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     assertChar('"', istr);
@@ -59,14 +57,14 @@ void DataTypeUUID::deserializeTextJSON(IColumn & column, ReadBuffer & istr) cons
     static_cast<ColumnUInt128 &>(column).getData().push_back(x);
 }
 
-void DataTypeUUID::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeUUID::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
     writeChar('"', ostr);
 }
 
-void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
+void DataTypeUUID::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID value;
     readCSV(value, istr);

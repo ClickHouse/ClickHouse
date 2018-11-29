@@ -13,7 +13,6 @@
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
@@ -28,37 +27,28 @@
 namespace Poco { class TaskManager; }
 
 
-/// \brief Базовый класс для демонов
+/// \brief Base class for applications that can run as deamons.
 ///
 /// \code
-/// # Список возможных опций командной строки обрабатываемых демоном:
-/// #    --config-file или --config - имя файла конфигурации. По умолчанию - config.xml
-/// #    --pid-file - имя PID файла. По умолчанию - pid
-/// #    --log-file - имя лог файла
-/// #    --error-file - имя лог файла, в который будут помещаться только ошибки
-/// #    --daemon - запустить в режиме демона; если не указан - логгирование будет вестись на консоль
-/// <daemon_name> --daemon --config-file=localfile.xml --pid-file=pid.pid --log-file=log.log --errorlog-file=error.log
+/// # Some possible command line options:
+/// #    --config-file, -C or --config - path to configuration file. By default - config.xml in the current directory.
+/// #    --log-file
+/// #    --errorlog-file
+/// #    --daemon - run as daemon; without this option, the program will be attached to the terminal and also output logs to stderr.
+/// <daemon_name> --daemon --config-file=localfile.xml --log-file=log.log --errorlog-file=error.log
 /// \endcode
 ///
-/// Если неперехваченное исключение выкинуто в других потоках (не Task-и), то по-умолчанию
-/// используется KillingErrorHandler, который вызывает std::terminate.
-///
-/// Кроме того, класс позволяет достаточно гибко управлять журналированием. В методе initialize() вызывается метод
-/// buildLoggers() который и строит нужные логгеры. Эта функция ожидает увидеть в конфигурации определённые теги
-/// заключённые в секции "logger".
-/// Если нужно журналирование на консоль, нужно просто не использовать тег "log" или использовать --console.
-/// Теги уровней вывода использовать можно в любом случае
-
-
+/// You can configure different log options for different loggers used inside program
+///  by providing subsections to "logger" in configuration file.
 class BaseDaemon : public Poco::Util::ServerApplication
 {
     friend class SignalListener;
 
 public:
-    static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
+    static inline constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
-    ~BaseDaemon();
+    ~BaseDaemon() override;
 
     /// Загружает конфигурацию и "строит" логгеры на запись в файлы
     void initialize(Poco::Util::Application &) override;
@@ -145,6 +135,11 @@ public:
         return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
 
+    /// close all process FDs except
+    /// 0-2 -- stdin, stdout, stderr
+    /// also doesn't close global internal pipes for signal handling
+    void closeFDs();
+
 protected:
     /// Возвращает TaskManager приложения
     /// все методы task_manager следует вызывать из одного потока
@@ -158,6 +153,9 @@ protected:
 
     /// thread safe
     virtual void handleSignal(int signal_id);
+
+    /// initialize termination process and signal handlers
+    virtual void initializeTerminationAndSignalProcessing();
 
     /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()
@@ -175,7 +173,7 @@ protected:
 
     std::unique_ptr<Poco::TaskManager> task_manager;
 
-    /// Создание и автоматическое удаление pid файла.
+    /// RAII wrapper for pid file.
     struct PID
     {
         std::string file;
@@ -214,7 +212,7 @@ protected:
     /// Файлы с логами.
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
-    Poco::AutoPtr<Poco::SyslogChannel> syslog_channel;
+    Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 
@@ -226,7 +224,7 @@ protected:
     std::atomic_size_t sigint_signals_counter{0};
 
     std::string config_path;
-    ConfigProcessor::LoadedConfig loaded_config;
+    DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
 private:

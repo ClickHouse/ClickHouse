@@ -23,6 +23,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -32,6 +33,7 @@
 #include <future>
 #include <condition_variable>
 #include <mutex>
+
 
 
 namespace CurrentMetrics
@@ -51,6 +53,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_LINK;
 }
 
 
@@ -89,7 +93,7 @@ void DistributedBlockOutputStream::writeAsync(const Block & block)
         return writeSplitAsync(block);
 
     writeAsyncImpl(block);
-    ++blocks_inserted;
+    ++inserted_blocks;
 }
 
 
@@ -100,17 +104,17 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 
     buffer << "Insertion status:\n";
     for (auto & shard_jobs : per_shard_jobs)
-        for (JobInfo & job : shard_jobs)
+        for (JobReplica & job : shard_jobs.replicas_jobs)
         {
             buffer << "Wrote " << job.blocks_written << " blocks and " << job.rows_written << " rows"
                    << " on shard " << job.shard_index << " replica " << job.replica_index
                    << ", " << addresses[job.shard_index][job.replica_index].readableString();
 
             /// Performance statistics
-            if (job.bloks_started > 0)
+            if (job.blocks_started > 0)
             {
-                buffer << " (average " << job.elapsed_time_ms / job.bloks_started << " ms per block";
-                if (job.bloks_started > 1)
+                buffer << " (average " << job.elapsed_time_ms / job.blocks_started << " ms per block";
+                if (job.blocks_started > 1)
                     buffer << ", the slowest block " << job.max_elapsed_time_for_block_ms << " ms";
                 buffer << ")";
             }
@@ -122,10 +126,11 @@ std::string DistributedBlockOutputStream::getCurrentStateDescription()
 }
 
 
-void DistributedBlockOutputStream::initWritingJobs()
+void DistributedBlockOutputStream::initWritingJobs(const Block & first_block)
 {
     const auto & addresses_with_failovers = cluster->getShardsAddresses();
     const auto & shards_info = cluster->getShardsInfo();
+    size_t num_shards = shards_info.size();
 
     remote_jobs_count = 0;
     local_jobs_count = 0;
@@ -145,7 +150,7 @@ void DistributedBlockOutputStream::initWritingJobs()
             {
                 if (!replicas[replica_index].is_local)
                 {
-                    shard_jobs.emplace_back(shard_index, replica_index, false);
+                    shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
 
                     if (shard_info.hasInternalReplication())
@@ -156,9 +161,12 @@ void DistributedBlockOutputStream::initWritingJobs()
 
         if (shard_info.isLocal())
         {
-            shard_jobs.emplace_back(shard_index, 0, true);
+            shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
         }
+
+        if (num_shards > 1)
+            shard_jobs.shard_current_block_permuation.reserve(first_block.rows());
     }
 }
 
@@ -184,31 +192,50 @@ void DistributedBlockOutputStream::waitForJobs()
 }
 
 
-ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobInfo & job)
+ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
-    auto memory_tracker = current_memory_tracker;
-    return [this, memory_tracker, &job]()
+    auto thread_group = CurrentThread::getGroup();
+    return [this, thread_group, &job, &current_block]()
     {
-        SCOPE_EXIT({++finished_jobs_count;});
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
+        setThreadName("DistrOutStrProc");
 
-        Stopwatch watch;
-        ++job.bloks_started;
+        ++job.blocks_started;
 
         SCOPE_EXIT({
-            UInt64 elapsed_time_for_block_ms = watch.elapsedMilliseconds();
+            ++finished_jobs_count;
+
+            UInt64 elapsed_time_for_block_ms = watch_current_block.elapsedMilliseconds();
             job.elapsed_time_ms += elapsed_time_for_block_ms;
             job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
 
-        if (!current_memory_tracker)
+        const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
+        size_t num_shards = cluster->getShardsInfo().size();
+        auto & shard_job = per_shard_jobs[job.shard_index];
+        const auto & addresses = cluster->getShardsAddresses();
+
+        /// Generate current shard block
+        if (num_shards > 1)
         {
-            current_memory_tracker = memory_tracker;
-            setThreadName("DistrOutStrProc");
+            auto & shard_permutation = shard_job.shard_current_block_permuation;
+            size_t num_shard_rows = shard_permutation.size();
+
+            for (size_t j = 0; j < current_block.columns(); ++j)
+            {
+                auto & src_column = current_block.getByPosition(j).column;
+                auto & dst_column = job.current_shard_block.getByPosition(j).column;
+
+                /// Zero permutation size has special meaning in IColumn::permute
+                if (num_shard_rows)
+                    dst_column = src_column->permute(shard_permutation, num_shard_rows);
+                else
+                    dst_column = src_column->cloneEmpty();
+            }
         }
 
-        const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
-        const auto & addresses = cluster->getShardsAddresses();
-        Block & block = current_blocks.at(job.shard_index);
+        const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
 
         if (!job.is_local_job)
         {
@@ -217,7 +244,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (shard_info.hasInternalReplication())
                 {
                     /// Skip replica_index in case of internal replication
-                    if (per_shard_jobs[job.shard_index].size() != 1)
+                    if (shard_job.replicas_jobs.size() != 1)
                         throw Exception("There are several writing job for an automatically replicated shard", ErrorCodes::LOGICAL_ERROR);
 
                     /// TODO: it make sense to rewrite skip_unavailable_shards and max_parallel_replicas here
@@ -248,7 +275,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
-            job.stream->write(block);
+            job.stream->write(shard_block);
         }
         else
         {
@@ -265,21 +292,25 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             size_t num_repetitions = shard_info.getLocalNodeCount();
             for (size_t i = 0; i < num_repetitions; ++i)
-                job.stream->write(block);
+                job.stream->write(shard_block);
         }
 
         job.blocks_written += 1;
-        job.rows_written += block.rows();
+        job.rows_written += shard_block.rows();
     };
 }
 
 
 void DistributedBlockOutputStream::writeSync(const Block & block)
 {
+    const auto & shards_info = cluster->getShardsInfo();
+    size_t num_shards = shards_info.size();
+
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs();
+        initWritingJobs(block);
+
         pool.emplace(remote_jobs_count + local_jobs_count);
         query_string = queryToString(query_ast);
 
@@ -292,14 +323,25 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         watch.restart();
     }
 
-    const auto & shards_info = cluster->getShardsInfo();
-    current_blocks = shards_info.size() > 1 ? splitBlock(block) : Blocks({block});
+    watch_current_block.restart();
+
+    if (num_shards > 1)
+    {
+        auto current_selector = createSelector(block);
+
+        /// Prepare row numbers for each shard
+        for (size_t shard_index : ext::range(0, num_shards))
+            per_shard_jobs[shard_index].shard_current_block_permuation.resize(0);
+
+        for (size_t i = 0; i < block.rows(); ++i)
+            per_shard_jobs[current_selector[i]].shard_current_block_permuation.push_back(i);
+    }
 
     /// Run jobs in parallel for each block and wait them
     finished_jobs_count = 0;
-    for (size_t shard_index : ext::range(0, current_blocks.size()))
-        for (JobInfo & job : per_shard_jobs.at(shard_index))
-            pool->schedule(runWritingJob(job));
+    for (size_t shard_index : ext::range(0, shards_info.size()))
+        for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+            pool->schedule(runWritingJob(job, block));
 
     try
     {
@@ -311,44 +353,57 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         throw;
     }
 
-    ++blocks_inserted;
+    inserted_blocks += 1;
+    inserted_rows += block.rows();
 }
 
 
 void DistributedBlockOutputStream::writeSuffix()
 {
+    auto log_performance = [this] ()
+    {
+        double elapsed = watch.elapsedSeconds();
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
+                   << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
+                   << ". " << getCurrentStateDescription());
+    };
+
     if (insert_sync && pool)
     {
         finished_jobs_count = 0;
         for (auto & shard_jobs : per_shard_jobs)
-            for (JobInfo & job : shard_jobs)
+            for (JobReplica & job : shard_jobs.replicas_jobs)
             {
                 if (job.stream)
-                    pool->schedule([&job] () { job.stream->writeSuffix(); });
+                {
+                    pool->schedule([&job] ()
+                    {
+                        job.stream->writeSuffix();
+                    });
+                }
             }
 
         try
         {
             pool->wait();
+            log_performance();
         }
         catch (Exception & exception)
         {
+            log_performance();
             exception.addMessage(getCurrentStateDescription());
             throw;
         }
-
-        double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << blocks_inserted << " blocks"
-                       << " (average " << std::fixed << std::setprecision(1) << elapsed / blocks_inserted * 1000 << " ms. per block)"
-                       << ". " << getCurrentStateDescription());
     }
 }
 
 
-IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
+IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & source_block)
 {
-    storage.getShardingKeyExpr()->execute(block);
-    const auto & key_column = block.getByName(storage.getShardingKeyColumnName());
+    Block current_block_with_sharding_key_expr = source_block;
+    storage.getShardingKeyExpr()->execute(current_block_with_sharding_key_expr);
+
+    const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
     const auto & slot_to_shard = cluster->getSlotToShard();
 
 #define CREATE_FOR_TYPE(TYPE) \
@@ -372,12 +427,6 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(Block block)
 
 Blocks DistributedBlockOutputStream::splitBlock(const Block & block)
 {
-    const auto num_cols = block.columns();
-    /// cache column pointers for later reuse
-    std::vector<const IColumn *> columns(num_cols);
-    for (size_t i = 0; i < columns.size(); ++i)
-        columns[i] = block.safeGetByPosition(i).column.get();
-
     auto selector = createSelector(block);
 
     /// Split block to num_shard smaller block, using 'selector'.
@@ -409,7 +458,7 @@ void DistributedBlockOutputStream::writeSplitAsync(const Block & block)
         if (splitted_blocks[shard_idx].rows())
             writeAsyncImpl(splitted_blocks[shard_idx], shard_idx);
 
-    ++blocks_inserted;
+    ++inserted_blocks;
 }
 
 
@@ -509,7 +558,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path);
+            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path, ErrorCodes::CANNOT_LINK);
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads

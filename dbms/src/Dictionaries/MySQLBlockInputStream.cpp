@@ -1,9 +1,12 @@
 #include <Common/config.h>
 #if USE_MYSQL
 
-#include <Dictionaries/MySQLBlockInputStream.h>
+#include "MySQLBlockInputStream.h"
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <vector>
 
@@ -24,9 +27,7 @@ MySQLBlockInputStream::MySQLBlockInputStream(
         max_block_size{max_block_size}
 {
     if (sample_block.columns() != result.getNumFields())
-        throw Exception{
-            "mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " +
-                toString(sample_block.columns()) + " expected",
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " + toString(sample_block.columns()) + " expected",
             ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
     description.init(sample_block);
@@ -41,19 +42,20 @@ namespace
     {
         switch (type)
         {
-            case ValueType::UInt8: static_cast<ColumnUInt8 &>(column).insert(value.getUInt()); break;
-            case ValueType::UInt16: static_cast<ColumnUInt16 &>(column).insert(value.getUInt()); break;
-            case ValueType::UInt32: static_cast<ColumnUInt32 &>(column).insert(value.getUInt()); break;
-            case ValueType::UInt64: static_cast<ColumnUInt64 &>(column).insert(value.getUInt()); break;
-            case ValueType::Int8: static_cast<ColumnInt8 &>(column).insert(value.getInt()); break;
-            case ValueType::Int16: static_cast<ColumnInt16 &>(column).insert(value.getInt()); break;
-            case ValueType::Int32: static_cast<ColumnInt32 &>(column).insert(value.getInt()); break;
-            case ValueType::Int64: static_cast<ColumnInt64 &>(column).insert(value.getInt()); break;
-            case ValueType::Float32: static_cast<ColumnFloat32 &>(column).insert(value.getDouble()); break;
-            case ValueType::Float64: static_cast<ColumnFloat64 &>(column).insert(value.getDouble()); break;
+            case ValueType::UInt8: static_cast<ColumnUInt8 &>(column).insertValue(value.getUInt()); break;
+            case ValueType::UInt16: static_cast<ColumnUInt16 &>(column).insertValue(value.getUInt()); break;
+            case ValueType::UInt32: static_cast<ColumnUInt32 &>(column).insertValue(value.getUInt()); break;
+            case ValueType::UInt64: static_cast<ColumnUInt64 &>(column).insertValue(value.getUInt()); break;
+            case ValueType::Int8: static_cast<ColumnInt8 &>(column).insertValue(value.getInt()); break;
+            case ValueType::Int16: static_cast<ColumnInt16 &>(column).insertValue(value.getInt()); break;
+            case ValueType::Int32: static_cast<ColumnInt32 &>(column).insertValue(value.getInt()); break;
+            case ValueType::Int64: static_cast<ColumnInt64 &>(column).insertValue(value.getInt()); break;
+            case ValueType::Float32: static_cast<ColumnFloat32 &>(column).insertValue(value.getDouble()); break;
+            case ValueType::Float64: static_cast<ColumnFloat64 &>(column).insertValue(value.getDouble()); break;
             case ValueType::String: static_cast<ColumnString &>(column).insertData(value.data(), value.size()); break;
-            case ValueType::Date: static_cast<ColumnUInt16 &>(column).insert(UInt16{value.getDate().getDayNum()}); break;
-            case ValueType::DateTime: static_cast<ColumnUInt32 &>(column).insert(time_t{value.getDateTime()}); break;
+            case ValueType::Date: static_cast<ColumnUInt16 &>(column).insertValue(UInt16(value.getDate().getDayNum())); break;
+            case ValueType::DateTime: static_cast<ColumnUInt32 &>(column).insertValue(UInt32(value.getDateTime())); break;
+            case ValueType::UUID: static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size())); break;
         }
     }
 
@@ -81,9 +83,18 @@ Block MySQLBlockInputStream::readImpl()
         {
             const auto value = row[idx];
             if (!value.isNull())
-                insertValue(*columns[idx], description.types[idx], value);
+            {
+                if (description.types[idx].second)
+                {
+                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value);
+                    column_nullable.getNullMapData().emplace_back(0);
+                }
+                else
+                    insertValue(*columns[idx], description.types[idx].first, value);
+            }
             else
-                insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
+                insertDefaultValue(*columns[idx], *description.sample_block.getByPosition(idx).column);
         }
 
         ++num_rows;

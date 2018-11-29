@@ -86,7 +86,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
 
         handler_ptr->it_client->info += "; " + client.info;
 
-        return  handler_ptr;
+        return handler_ptr;
     }
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)
@@ -134,7 +134,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
     }
 
     /// Wait a notification
-    it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); } );
+    it_group->cv.wait(lock, [&] () { return it_group == queue.begin(); });
 
     it_client->start_time = time(nullptr);
     finalize_metrics();
@@ -172,11 +172,11 @@ RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
     /// Remove the group if we were the last client and notify the next group
     if (it_group->clients.empty())
     {
-        auto & queue = parent->queue;
-        queue.erase(it_group);
+        auto & parent_queue = parent->queue;
+        parent_queue.erase(it_group);
 
-        if (!queue.empty())
-            queue.front().cv.notify_all();
+        if (!parent_queue.empty())
+            parent_queue.front().cv.notify_all();
     }
 
     parent.reset();

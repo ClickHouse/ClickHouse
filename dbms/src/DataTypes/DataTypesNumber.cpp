@@ -22,13 +22,13 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
 
     /// These synonims are added for compatibility.
 
-    factory.registerSimpleDataType("TINYINT", [] { return DataTypePtr(std::make_shared<DataTypeInt8>()); }, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("SMALLINT", [] { return DataTypePtr(std::make_shared<DataTypeInt16>()); }, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("INT", [] { return DataTypePtr(std::make_shared<DataTypeInt32>()); }, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("INTEGER", [] { return DataTypePtr(std::make_shared<DataTypeInt32>()); }, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("BIGINT", [] { return DataTypePtr(std::make_shared<DataTypeInt64>()); }, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("FLOAT", [] { return DataTypePtr(std::make_shared<DataTypeFloat32>()); }, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("DOUBLE", [] { return DataTypePtr(std::make_shared<DataTypeFloat64>()); }, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYINT", "Int8", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("SMALLINT", "Int16", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INT", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("INTEGER", "Int32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BIGINT", "Int64", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("FLOAT", "Float32", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("DOUBLE", "Float64", DataTypeFactory::CaseInsensitive);
 }
 
 }

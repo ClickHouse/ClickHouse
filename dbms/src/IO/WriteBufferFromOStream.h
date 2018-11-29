@@ -2,8 +2,6 @@
 
 #include <iostream>
 
-#include <Common/Exception.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 
@@ -11,47 +9,23 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_WRITE_TO_OSTREAM;
-}
-
 class WriteBufferFromOStream : public BufferWithOwnMemory<WriteBuffer>
 {
-private:
-    std::ostream & ostr;
+protected:
+    std::ostream * ostr;
 
-    void nextImpl() override
-    {
-        if (!offset())
-            return;
+    void nextImpl() override;
 
-        ostr.write(working_buffer.begin(), offset());
-        ostr.flush();
-
-        if (!ostr.good())
-            throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
-    }
+    WriteBufferFromOStream(size_t size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0);
 
 public:
     WriteBufferFromOStream(
-            std::ostream & ostr_,
-            size_t size = DBMS_DEFAULT_BUFFER_SIZE,
-            char * existing_memory = nullptr,
-            size_t alignment = 0)
-        : BufferWithOwnMemory<WriteBuffer>(size, existing_memory, alignment), ostr(ostr_) {}
+        std::ostream & ostr_,
+        size_t size = DBMS_DEFAULT_BUFFER_SIZE,
+        char * existing_memory = nullptr,
+        size_t alignment = 0);
 
-    ~WriteBufferFromOStream() override
-    {
-        try
-        {
-            next();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
+    ~WriteBufferFromOStream() override;
 };
 
 }

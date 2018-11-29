@@ -1,3 +1,5 @@
+<a name="data_types-string"></a>
+
 # String
 
 Strings of an arbitrary length. The length is not limited. The value can contain an arbitrary set of bytes, including null bytes.
@@ -10,3 +12,5 @@ If you need to store texts, we recommend using UTF-8 encoding. At the very least
 Similarly, certain functions for working with strings have separate variations that work under the assumption that the string contains a set of bytes representing a UTF-8 encoded text.
 For example, the 'length' function calculates the string length in bytes, while the 'lengthUTF8' function calculates the string length in Unicode code points, assuming that the value is UTF-8 encoded.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/string/) <!--hide-->

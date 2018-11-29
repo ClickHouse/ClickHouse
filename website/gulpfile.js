@@ -22,11 +22,12 @@ var paths = {
         '!presentations/**/*.html',
         '!public/**/*.html'],
     reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
-    docs: [docsDir + '/build/docs/**/*'],
-    docstxt: ['docs/**/*.txt'],
+    docs: [docsDir + '/build/**/*'],
+    docstxt: ['docs/**/*.txt', 'docs/redirects.conf'],
     docsjson: ['docs/**/*.json'],
     docsxml: ['docs/**/*.xml'],
-    docssitemap: ['sitemap.xml'],
+    docspdf: ['docs/**/*.pdf'],
+    docssitemap: ['sitemap.xml', 'sitemap_static.xml'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',
@@ -39,10 +40,10 @@ var paths = {
         '!presentations/**/*.css',
         '!public/**/*.css'],
     images: [
-        '**/*.{jpg,jpeg,png,svg,ico}',
-        '!node_modules/**/*.{jpg,jpeg,png,svg,ico}',
-        '!presentations/**/*.{jpg,jpeg,png,svg,ico}',
-        '!public/**/*.{jpg,jpeg,png,svg,ico}'],
+        '**/*.{jpg,jpeg,png,gif,svg,ico}',
+        '!node_modules/**/*.{jpg,jpeg,png,gif,svg,ico}',
+        '!presentations/**/*.{jpg,jpeg,png,gif,svg,ico}',
+        '!public/**/*.{jpg,jpeg,png,gif,svg,ico}'],
     robotstxt: ['robots.txt'],
     presentations: ['presentations/**/*']
 };
@@ -58,7 +59,7 @@ gulp.task('reference', [], function () {
 });
 
 gulp.task('docs', [], function () {
-    run('cd ' + docsDir + '; ./build.sh');
+    run('cd ' + docsDir + '/tools; ./build.py');
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/../docs'))
 });
@@ -78,6 +79,11 @@ gulp.task('docsxml', ['docs'], function () {
         .pipe(gulp.dest(outputDir + '/docs'))
 });
 
+gulp.task('docspdf', ['docs'], function () {
+    return gulp.src(paths.docspdf)
+        .pipe(gulp.dest(outputDir + '/docs'))
+});
+
 gulp.task('docssitemap', [], function () {
     return gulp.src(paths.docssitemap)
         .pipe(gulp.dest(outputDir + '/docs'))
@@ -93,7 +99,7 @@ gulp.task('robotstxt', [], function () {
         .pipe(gulp.dest(outputDir))
 });
 
-gulp.task('htmls', ['docs', 'docstxt', 'docsjson', 'docsxml', 'docssitemap'], function () {
+gulp.task('htmls', ['docs', 'docstxt', 'docsjson', 'docsxml', 'docspdf', 'docssitemap'], function () {
     return gulp.src(paths.htmls)
         .pipe(htmlmin({collapseWhitespace: true}))
         .pipe(minifyInline())

@@ -15,5 +15,5 @@ INSERT INTO test.nums_buf (n) VALUES (5);
 SELECT n,m FROM test.nums ORDER BY n;
 SELECT n,m FROM test.nums_buf ORDER BY n;
 
-DROP TABLE IF EXISTS test.nums;
 DROP TABLE IF EXISTS test.nums_buf;
+DROP TABLE IF EXISTS test.nums;

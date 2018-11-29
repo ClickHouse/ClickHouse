@@ -59,6 +59,8 @@ namespace DB
     M(ErrorSingleExclamationMark) \
     M(ErrorSinglePipeMark) \
     M(ErrorWrongNumber) \
+    M(ErrorMaxQuerySizeExceeded) \
+
 
 enum class TokenType
 {
@@ -91,13 +93,16 @@ struct Token
 class Lexer
 {
 public:
-    Lexer(const char * begin, const char * end) : begin(begin), pos(begin), end(end) {}
+    Lexer(const char * begin, const char * end, size_t max_query_size = 0)
+            : begin(begin), pos(begin), end(end), max_query_size(max_query_size) {}
     Token nextToken();
 
 private:
     const char * const begin;
     const char * pos;
     const char * const end;
+
+    const size_t max_query_size;
 
     Token nextTokenImpl();
 

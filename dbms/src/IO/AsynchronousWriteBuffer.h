@@ -25,8 +25,7 @@ private:
     /// Swap the main and duplicate buffers.
     void swapBuffers()
     {
-        buffer().swap(out.buffer());
-        std::swap(position(), out.position());
+        swap(out);
     }
 
     void nextImpl() override

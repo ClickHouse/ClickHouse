@@ -1,0 +1,46 @@
+<dictionaries>
+    <dictionary>
+        <name>sqlite3_odbc_hashed</name>
+        <source>
+            <odbc>
+                <table>t2</table>
+                <connection_string>DSN=sqlite3_odbc</connection_string>
+                <invalidate_query>SELECT Z from t2 where X=1</invalidate_query>
+            </odbc>
+        </source>
+
+        <lifetime>
+            <min>1</min>
+            <max>1</max>
+        </lifetime>
+
+        <layout>
+            <hashed />
+        </layout>
+
+        <structure>
+            <id>
+                <name>X</name>
+            </id>
+
+            <attribute>
+                <name>X</name>
+                <type>Int64</type>
+                <null_value>1</null_value>
+            </attribute>
+
+            <attribute>
+                <name>Y</name>
+                <type>Int64</type>
+                <null_value>1</null_value>
+            </attribute>
+
+            <attribute>
+                <name>Z</name>
+                <type>UInt8</type>
+                <null_value>1</null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+</dictionaries>

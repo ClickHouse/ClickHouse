@@ -3,8 +3,9 @@
 
 #include <Databases/IDatabase.h>
 
+#include <DataTypes/DataTypeFactory.h>
+
 #include <Storages/StorageDistributed.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageFactory.h>
@@ -15,31 +16,33 @@
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
 #include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
 
+#include <IO/ReadHelpers.h>
+
 #include <Poco/DirectoryIterator.h>
 
 #include <memory>
-
 #include <boost/filesystem.hpp>
-#include <Parsers/ASTTablesInSelectQuery.h>
 
 
 namespace DB
@@ -53,35 +56,42 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
+    extern const int TYPE_MISMATCH;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
 namespace
 {
 
-/// select query has database and table names as AST pointers
-/// Creates a copy of query, changes database and table names.
-ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+/// select query has database, table and table function names as AST pointers
+/// Creates a copy of query, changes database, table and table function names.
+ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table, ASTPtr table_function_ptr = nullptr)
 {
     auto modified_query_ast = query->clone();
-    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
+    if (table_function_ptr)
+        typeid_cast<ASTSelectQuery &>(*modified_query_ast).addTableFunction(table_function_ptr);
+    else
+        typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
-/// insert query has database and table names as bare strings
-/// Creates a copy of query, changes the database and table names.
-ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+/// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
+/// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
+/// the sample block instead.
+ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
 {
-    auto modified_query_ast = query->clone();
+    auto query = std::make_shared<ASTInsertQuery>();
+    query->database = database;
+    query->table = table;
 
-    auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
-    actual_query.database = database;
-    actual_query.table = table;
-    actual_query.table_function = nullptr;
-    /// make sure query is not INSERT SELECT
-    actual_query.select = nullptr;
+    auto columns = std::make_shared<ASTExpressionList>();
+    query->columns = columns;
+    query->children.push_back(columns);
+    for (const auto & col : sample_block)
+        columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
 
-    return modified_query_ast;
+    return query;
 }
 
 /// Calculate maximum number in file names in directory and all subdirectories.
@@ -129,6 +139,12 @@ void initializeFileNamesIncrement(const std::string & path, SimpleIncrement & in
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
 StorageDistributed::~StorageDistributed() = default;
 
+static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, NamesAndTypesList columns, bool project)
+{
+    ASTPtr query = sharding_key;
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, columns);
+    return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
+}
 
 StorageDistributed::StorageDistributed(
     const String & database_name,
@@ -145,7 +161,7 @@ StorageDistributed::StorageDistributed(
     table_name(table_name_),
     remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-      sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, getColumns().getAllPhysical()).getActions(false) : nullptr),
+    sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, context, getColumns().getAllPhysical(), false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
@@ -159,16 +175,32 @@ StorageDistributed::StorageDistributed(
 }
 
 
-StoragePtr StorageDistributed::createWithOwnCluster(
-    const std::string & name_,
+StorageDistributed::StorageDistributed(
+    const String & database_name,
+    const String & table_name_,
     const ColumnsDescription & columns_,
-    const String & remote_database_,
-    const String & remote_table_,
-    ClusterPtr & owned_cluster_,
+    ASTPtr remote_table_function_ptr_,
+    const String & cluster_name_,
+    const Context & context_,
+    const ASTPtr & sharding_key_,
+    const String & data_path_,
+    bool attach)
+    : StorageDistributed(database_name, table_name_, columns_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+{
+        remote_table_function_ptr = remote_table_function_ptr_;
+}
+
+
+StoragePtr StorageDistributed::createWithOwnCluster(
+    const std::string & table_name_,
+    const ColumnsDescription & columns_,
+    const String & remote_database_,       /// database on remote servers.
+    const String & remote_table_,          /// The name of the table on the remote servers.
+    ClusterPtr owned_cluster_,
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, name_, columns_, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
+        String{}, table_name_, columns_, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
 
     res->owned_cluster = owned_cluster_;
 
@@ -176,11 +208,47 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 }
 
 
+StoragePtr StorageDistributed::createWithOwnCluster(
+    const std::string & table_name_,
+    const ColumnsDescription & columns_,
+    ASTPtr & remote_table_function_ptr_,
+    ClusterPtr & owned_cluster_,
+    const Context & context_)
+{
+    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
+        String{}, table_name_, columns_, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
+
+    res->owned_cluster = owned_cluster_;
+
+    return res;
+}
+
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
+{
+    auto cluster = getCluster();
+    return getQueryProcessingStage(context, cluster);
+}
+
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+{
+    const Settings & settings = context.getSettingsRef();
+
+    size_t num_local_shards = cluster->getLocalShardCount();
+    size_t num_remote_shards = cluster->getRemoteShardCount();
+    size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+
+    if (settings.distributed_group_by_no_merge)
+        return QueryProcessingStage::Complete;
+    else    /// Normal mode.
+        return result_size == 1 ? QueryProcessingStage::Complete
+                                : QueryProcessingStage::WithMergeableState;
+}
+
 BlockInputStreams StorageDistributed::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
@@ -188,28 +256,23 @@ BlockInputStreams StorageDistributed::read(
 
     const Settings & settings = context.getSettingsRef();
 
-    size_t num_local_shards = cluster->getLocalShardCount();
-    size_t num_remote_shards = cluster->getRemoteShardCount();
-    size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
-
-    processed_stage = result_size == 1 || settings.distributed_group_by_no_merge
-        ? QueryProcessingStage::Complete
-        : QueryProcessingStage::WithMergeableState;
-
     const auto & modified_query_ast = rewriteSelectQuery(
-        query_info.query, remote_database, remote_table);
+        query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
 
-    ClusterProxy::SelectStreamFactory select_stream_factory(
-        header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
+    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
+        ? ClusterProxy::SelectStreamFactory(
+            header, processed_stage, remote_table_function_ptr, context.getExternalTables())
+        : ClusterProxy::SelectStreamFactory(
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
 
     return ClusterProxy::executeQuery(
         select_stream_factory, cluster, modified_query_ast, context, settings);
 }
 
 
-BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Settings & settings)
 {
     auto cluster = getCluster();
 
@@ -233,7 +296,7 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr & query, const Setti
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedBlockOutputStream>(
-        *this, rewriteInsertQuery(query, remote_database, remote_table), cluster, settings, insert_sync, timeout);
+        *this, createInsertToRemoteTableQuery(remote_database, remote_table, getSampleBlock()), cluster, settings, insert_sync, timeout);
 }
 
 
@@ -265,47 +328,48 @@ void StorageDistributed::shutdown()
 }
 
 
-BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
+void StorageDistributed::truncate(const ASTPtr &)
 {
-    /// Create DESCRIBE TABLE query.
-    auto cluster = getCluster();
+    std::lock_guard lock(cluster_nodes_mutex);
 
-    auto describe_query = std::make_shared<ASTDescribeQuery>();
+    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
+    {
+        it->second.shutdownAndDropAllData();
+        it = cluster_nodes_data.erase(it);
+    }
+}
 
-    std::string name = remote_database + '.' + remote_table;
 
-    auto id = std::make_shared<ASTIdentifier>(name);
-
-    auto desc_database = std::make_shared<ASTIdentifier>(remote_database);
-    auto desc_table = std::make_shared<ASTIdentifier>(remote_table);
-
-    id->children.push_back(desc_database);
-    id->children.push_back(desc_table);
-
-    auto table_expression = std::make_shared<ASTTableExpression>();
-    table_expression->database_and_table_name = id;
-
-    describe_query->table_expression = table_expression;
-
-    ClusterProxy::DescribeStreamFactory describe_stream_factory;
-
-    return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query, context, settings);
+namespace
+{
+    /// NOTE This is weird. Get rid of this.
+    std::map<String, String> virtual_columns =
+    {
+        {"_table", "String"},
+        {"_part", "String"},
+        {"_part_index", "UInt64"},
+        {"_partition_id", "String"},
+        {"_sample_factor", "Float64"},
+    };
 }
 
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
-    if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
-        return { column_name, type };
+    if (getColumns().hasPhysical(column_name))
+        return getColumns().getPhysical(column_name);
 
-    return getColumns().getPhysical(column_name);
+    auto it = virtual_columns.find(column_name);
+    if (it != virtual_columns.end())
+        return { it->first, DataTypeFactory::instance().get(it->second) };
+
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || getColumns().hasPhysical(column_name);
+    return virtual_columns.count(column_name) || getColumns().hasPhysical(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors()
@@ -342,7 +406,6 @@ size_t StorageDistributed::getShardCount() const
     return getCluster()->getShardCount();
 }
 
-
 ClusterPtr StorageDistributed::getCluster() const
 {
     return owned_cluster ? owned_cluster : context.getCluster(cluster_name);
@@ -359,6 +422,11 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::str
     requireConnectionPool(name, storage);
     if (!directory_monitor)
         directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+}
+
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
+{
+    directory_monitor->shutdownAndDropAllData();
 }
 
 
@@ -398,7 +466,7 @@ void registerStorageDistributed(StorageFactory & factory)
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = ExpressionAnalyzer(sharding_key, args.context, nullptr, args.columns.getAllPhysical()).getActions(true);
+            auto sharding_expr = buildShardingKeyExpression(sharding_key, args.context, args.columns.getAllPhysical(), true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)

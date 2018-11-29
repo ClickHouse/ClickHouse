@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
@@ -62,13 +63,6 @@ public:
       */
     virtual Block read() = 0;
 
-    /** Get information about the last block received.
-      */
-    virtual BlockExtraInfo getBlockExtraInfo() const
-    {
-        throw Exception("Method getBlockExtraInfo is not supported by the data stream " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /** Read something before starting all data or after the end of all data.
       * In the `readSuffix` function, you can implement a finalization that can lead to an exception.
       * readPrefix() must be called before the first call to read().
@@ -83,16 +77,14 @@ public:
       */
     virtual String getName() const = 0;
 
-    /// If this stream generates data in grouped by some keys, return true.
-    virtual bool isGroupedOutput() const { return false; }
     /// If this stream generates data in order by some keys, return true.
     virtual bool isSortedOutput() const { return false; }
-    /// In case of isGroupedOutput or isSortedOutput, return corresponding SortDescription
+    /// In case of isSortedOutput, return corresponding SortDescription
     virtual const SortDescription & getSortDescription() const { throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED); }
 
     /** Must be called before read, readPrefix.
       */
-    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
+    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.
@@ -108,7 +100,9 @@ public:
     template <typename F>
     void forEachChild(F && f)
     {
-        std::lock_guard lock(children_mutex);
+        /// NOTE: Acquire a read lock, therefore f() should be thread safe
+        std::shared_lock lock(children_mutex);
+
         for (auto & child : children)
             if (f(*child))
                 return;
@@ -116,7 +110,7 @@ public:
 
 protected:
     BlockInputStreams children;
-    std::mutex children_mutex;
+    std::shared_mutex children_mutex;
 
 private:
     TableStructureReadLocks table_locks;

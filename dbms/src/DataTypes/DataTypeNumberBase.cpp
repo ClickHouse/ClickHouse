@@ -6,27 +6,20 @@
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/FormatSettingsJSON.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeText(static_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeText(column, row_num, ostr);
-}
-
-
-template <typename T>
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+void DataTypeNumberBase<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
 
@@ -37,26 +30,6 @@ static void deserializeText(IColumn & column, ReadBuffer & istr)
 
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
-
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
-{
-    deserializeText<T>(column, istr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeText(column, row_num, ostr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
-{
-    deserializeText<T>(column, istr);
-}
-
 
 template <typename T>
 static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
@@ -87,20 +60,20 @@ static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
 
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
+void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
-        || (settings.output_format_json_quote_denormals && !is_finite);
+    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);
 
     if (is_finite)
         writeText(x, ostr);
-    else if (!settings.output_format_json_quote_denormals)
+    else if (!settings.json.quote_denormals)
         writeCString("null", ostr);
     else
         writeDenormalNumber(x, ostr);
@@ -110,7 +83,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     bool has_quote = false;
     if (!istr.eof() && *istr.position() == '"')        /// We understand the number both in quotes and without.
@@ -161,13 +134,7 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    serializeText(column, row_num, ostr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
+void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     FieldType x;
     readCSV(x, istr);
@@ -177,14 +144,14 @@ void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeNumberBase<T>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type();
+    return NearestFieldType<FieldType>();
 }
 
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
+    typename ColumnVector<T>::value_type x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -193,7 +160,7 @@ void DataTypeNumberBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) 
 {
     typename ColumnVector<T>::value_type x;
     readBinary(x, istr);
-    field = typename NearestFieldType<FieldType>::Type(x);
+    field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>
@@ -220,7 +187,8 @@ void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuf
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
+    if (limit)
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
 }
 
 template <typename T>
@@ -243,6 +211,12 @@ template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
     return std::is_integral_v<T>;
+}
+
+template <typename T>
+bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
+{
+    return std::is_integral_v<T> && std::is_unsigned_v<T>;
 }
 
 

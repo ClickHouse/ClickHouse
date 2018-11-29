@@ -26,6 +26,7 @@ public:
                                          bool deduplicate_);
 
     Block getHeader() const override;
+    void writePrefix() override;
     void write(const Block & block) override;
 
     /// For ATTACHing existing data on filesystem.

@@ -71,9 +71,9 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        if (method == 1)    sort1(&data[0], n);
-        if (method == 2)    sort2(&data[0], n);
-        if (method == 3)    sort3(&data[0], n);
+        if (method == 1)    sort1(data.data(), n);
+        if (method == 2)    sort2(data.data(), n);
+        if (method == 3)    sort3(data.data(), n);
 
         watch.stop();
         double elapsed = watch.elapsedSeconds();

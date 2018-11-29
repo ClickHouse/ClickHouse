@@ -14,6 +14,8 @@
   */
 
 #include <common/Types.h>
+#include <common/unaligned.h>
+#include <string>
 #include <type_traits>
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -106,7 +108,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = *reinterpret_cast<const UInt64 *>(data);
+            current_word = unalignedLoad<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -138,6 +140,11 @@ public:
         update(reinterpret_cast<const char *>(&x), sizeof(x));
     }
 
+    void update(const std::string & x)
+    {
+        update(x.data(), x.length());
+    }
+
     /// Get the result in some form. This can only be done once!
 
     void get128(char * out)
@@ -147,8 +154,11 @@ public:
         reinterpret_cast<UInt64 *>(out)[1] = v2 ^ v3;
     }
 
-    void get128(UInt64 & lo, UInt64 & hi)
+    /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos
+    template <typename T>
+    void get128(T & lo, T & hi)
     {
+        static_assert(sizeof(T) == 8);
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;

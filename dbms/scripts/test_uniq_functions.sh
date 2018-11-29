@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 for ((p = 2; p <= 10; p++))
 do
     for ((i = 1; i <= 9; i++))

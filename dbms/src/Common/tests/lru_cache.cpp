@@ -190,7 +190,7 @@ bool test_concurrent()
 
     bool res = true;
 
-    auto load_func = [](const std::string& result, std::chrono::seconds sleep_for, bool throw_exc)
+    auto load_func = [](const std::string & result, std::chrono::seconds sleep_for, bool throw_exc)
     {
         std::this_thread::sleep_for(sleep_for);
         if (throw_exc)

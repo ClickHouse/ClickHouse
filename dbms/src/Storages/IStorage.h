@@ -3,12 +3,16 @@
 #include <Core/Names.h>
 #include <Common/Exception.h>
 #include <Common/RWLockFIFO.h>
+#include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Databases/IDatabase.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
 #include <shared_mutex>
 #include <memory>
 #include <optional>
+#include <Common/ActionLock.h>
 
 
 namespace DB
@@ -17,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class Context;
@@ -25,6 +30,8 @@ class IBlockOutputStream;
 
 class RWLockFIFO;
 using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
+
+using StorageActionBlockType = size_t;
 
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -35,10 +42,13 @@ class ASTCreateQuery;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
+using StorageWeakPtr = std::weak_ptr<IStorage>;
 
 struct Settings;
 
 class AlterCommands;
+class MutationCommands;
+class PartitionCommands;
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -102,6 +112,9 @@ public:
     /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
     virtual bool supportsReplication() const { return false; }
 
+    /** Returns true if the storage supports deduplication of inserted data blocks . */
+    virtual bool supportsDeduplication() const { return false; }
+
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
       * This will take an extra lock that does not allow starting ALTER MODIFY.
@@ -118,15 +131,15 @@ public:
         return res;
     }
 
-    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
+    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP, TRUNCATE.
       */
     TableFullWriteLock lockForAlter(const std::string & who = "Alter")
     {
         /// The calculation order is important.
-        auto data_lock = lockDataForAlter(who);
-        auto structure_lock = lockStructureForAlter(who);
+        auto res_data_lock = lockDataForAlter(who);
+        auto res_structure_lock = lockStructureForAlter(who);
 
-        return {std::move(data_lock), std::move(structure_lock)};
+        return {std::move(res_data_lock), std::move(res_structure_lock)};
     }
 
     /** Does not allow changing the data in the table. (Moreover, does not give a look at the structure of the table with the intention to change the data).
@@ -149,6 +162,11 @@ public:
         return res;
     }
 
+    /** Returns stage to which query is going to be processed in read() function.
+      * (Normally, the function only reads the columns from the list, but in other cases,
+      *  for example, the request can be partially processed on a remote server.)
+      */
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -156,9 +174,7 @@ public:
       *  (indexes, locks, etc.)
       * Returns a stream with which you can read data sequentially
       *  or multiple streams for parallel data reading.
-      * The `processed_stage` info is also written to what stage the request was processed.
-      * (Normally, the function only reads the columns from the list, but in other cases,
-      *  for example, the request can be partially processed on a remote server.)
+      * The `processed_stage` must be the result of getQueryProcessingStage() function.
       *
       * context contains settings for one query.
       * Usually Storage does not care about these settings, since they are used in the interpreter.
@@ -173,7 +189,7 @@ public:
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         const Context & /*context*/,
-        QueryProcessingStage::Enum & /*processed_stage*/,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/)
     {
@@ -194,9 +210,19 @@ public:
     }
 
     /** Delete the table data. Called before deleting the directory with the data.
+      * The method can be called only after detaching table from Context (when no queries are performed with table).
+      * The table is not usable during and after call to this method.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
+
+    /** Clear the table data and leave it empty.
+      * Must be called under lockForAlter.
+      */
+    virtual void truncate(const ASTPtr & /*query*/)
+    {
+        throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
@@ -212,43 +238,27 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
-    virtual void alter(const AlterCommands & /*params*/, const String & /*database_name*/, const String & /*table_name*/, const Context & /*context*/)
+    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
     {
-        throw Exception("Method alter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        for (const auto & param : params)
+        {
+            if (param.is_mutable())
+                throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        }
+
+        auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+        auto new_columns = getColumns();
+        params.apply(new_columns);
+        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+        setColumns(std::move(new_columns));
     }
 
-    /** Execute CLEAR COLUMN ... IN PARTITION query which removes column from given partition. */
-    virtual void clearColumnInPartition(const ASTPtr & /*partition*/, const Field & /*column_name*/, const Context & /*context*/)
-    {
-        throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the query (DROP|DETACH) PARTITION.
+    /** ALTER tables with regard to its partitions.
+      * Should handle locks for each command on its own.
       */
-    virtual void dropPartition(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*detach*/, const Context & /*context*/)
+    virtual void alterPartition(const ASTPtr & /* query */, const PartitionCommands & /* commands */, const Context & /* context */)
     {
-        throw Exception("Method dropPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the ATTACH request (PART|PARTITION).
-      */
-    virtual void attachPartition(const ASTPtr & /*partition*/, bool /*part*/, const Context & /*context*/)
-    {
-        throw Exception("Method attachPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the FETCH PARTITION query.
-      */
-    virtual void fetchPartition(const ASTPtr & /*partition*/, const String & /*from*/, const Context & /*context*/)
-    {
-        throw Exception("Method fetchPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /** Run the FREEZE PARTITION request. That is, create a local backup (snapshot) of data using the `localBackup` function (see localBackup.h)
-      */
-    virtual void freezePartition(const ASTPtr & /*partition*/, const String & /*with_name*/, const Context & /*context*/)
-    {
-        throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.
@@ -257,6 +267,12 @@ public:
     virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Mutate the table contents
+    virtual void mutate(const MutationCommands &, const Context &)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If the table have to do some complicated work on startup,
@@ -276,6 +292,13 @@ public:
       */
     virtual void shutdown() {}
 
+    /// Asks table to stop executing some action identified by action_type
+    /// If table does not support such type of lock, and empty lock is returned
+    virtual ActionLock getActionLock(StorageActionBlockType /* action_type */)
+    {
+        return {};
+    }
+
     bool is_dropped{false};
 
     /// Does table support index for IN sections
@@ -285,12 +308,17 @@ public:
     virtual bool mayBenefitFromIndexForIn(const ASTPtr & /* left_in_operand */) const { return false; }
 
     /// Checks validity of the data
-    virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
+    virtual bool checkData() const { throw Exception("Check query is not supported for " + getName() + " storage", ErrorCodes::NOT_IMPLEMENTED); }
 
     /// Checks that table could be dropped right now
-    /// If it can - returns true
-    /// Otherwise - throws an exception with detailed information or returns false
-    virtual bool checkTableCanBeDropped() const { return true; }
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkTableCanBeDropped() const {}
+
+    /// Checks that Partition could be dropped right now
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}
@@ -298,7 +326,30 @@ public:
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
 
-protected:
+    /// Returns sampling expression for storage or nullptr if there is no.
+    virtual ASTPtr getSamplingExpression() const { return nullptr; }
+
+    /// Returns primary expression for storage or nullptr if there is no.
+    virtual ASTPtr getPrimaryExpression() const { return nullptr; }
+
+    /// Returns partition expression for storage or nullptr if there is no.
+    virtual ASTPtr getPartitionExpression() const { return nullptr; }
+
+    /// Returns secondary expression for storage or nullptr if there is no.
+    virtual ASTPtr getOrderExpression() const { return nullptr; }
+
+    /// Returns sampling key names for storage or empty vector if there is no.
+    virtual Names getSamplingExpressionNames() const { return {}; }
+
+    /// Returns primary key names for storage or empty vector if there is no.
+    virtual Names getPrimaryExpressionNames() const { return {}; }
+
+    /// Returns partition key names for storage or empty vector if there is no.
+    virtual Names getPartitionExpressionNames() const { return {}; }
+
+    /// Returns order key names for storage or empty vector if there is no.
+    virtual Names getOrderExpressionNames() const { return {}; }
+
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
 

@@ -24,7 +24,7 @@ public:
         children.insert(children.end(), inputs.begin(), inputs.end());
     }
 
-    ~CollapsingFinalBlockInputStream();
+    ~CollapsingFinalBlockInputStream() override;
 
     String getName() const override { return "CollapsingFinal"; }
 
@@ -150,7 +150,7 @@ private:
                 --ptr->refcount;
                 if (!ptr->refcount)
                 {
-                    if (std::uncaught_exception())
+                    if (std::uncaught_exceptions())
                         delete ptr;
                     else
                         ptr->output_blocks->push_back(ptr);

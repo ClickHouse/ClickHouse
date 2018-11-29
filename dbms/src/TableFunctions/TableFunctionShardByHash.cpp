@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -66,7 +66,7 @@ StoragePtr TableFunctionShardByHash::executeImpl(const ASTPtr & ast_function, co
     /// Similar to other TableFunctions.
     for (auto & arg : args)
         if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
-            id->kind = ASTIdentifier::Table;
+            id->setSpecial();
 
     auto cluster = context.getCluster(cluster_name);
     size_t shard_index = sipHash64(key) % cluster->getShardCount();

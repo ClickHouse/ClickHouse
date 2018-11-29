@@ -39,6 +39,7 @@ CREATE TABLE test.replicated_collapsing(d Date, x UInt32, sign Int8)
 INSERT INTO test.replicated_collapsing VALUES ('2017-10-23', 1, 1);
 INSERT INTO test.replicated_collapsing VALUES ('2017-10-23', 1, -1), ('2017-10-23', 2, 1);
 
+SYSTEM SYNC REPLICA test.replicated_collapsing;
 OPTIMIZE TABLE test.replicated_collapsing PARTITION 201710 FINAL;
 
 SELECT * FROM test.replicated_collapsing;
@@ -57,6 +58,7 @@ INSERT INTO test.replicated_versioned_collapsing VALUES ('2017-10-23', 1, 1, 0);
 INSERT INTO test.replicated_versioned_collapsing VALUES ('2017-10-23', 1, -1, 0), ('2017-10-23', 2, 1, 0);
 INSERT INTO test.replicated_versioned_collapsing VALUES ('2017-10-23', 1, -1, 1), ('2017-10-23', 2, 1, 2);
 
+SYSTEM SYNC REPLICA test.replicated_versioned_collapsing;
 OPTIMIZE TABLE test.replicated_versioned_collapsing PARTITION 201710 FINAL;
 
 SELECT * FROM test.replicated_versioned_collapsing;

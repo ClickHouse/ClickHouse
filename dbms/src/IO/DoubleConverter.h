@@ -1,6 +1,15 @@
 #pragma once
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+#endif
+
 #include <double-conversion/double-conversion.h>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 
 namespace DB
@@ -20,7 +29,7 @@ template <bool emit_decimal_point>
 class DoubleConverter
 {
     DoubleConverter(const DoubleConverter &) = delete;
-    DoubleConverter & operator=(const DoubleConverter &)  = delete;
+    DoubleConverter & operator=(const DoubleConverter &) = delete;
 
     DoubleConverter() = default;
 

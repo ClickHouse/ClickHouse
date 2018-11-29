@@ -1,12 +1,14 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
 
-String ASTQualifiedAsterisk::getColumnName() const
+void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
 {
     const auto & qualifier = children.at(0);
-    return qualifier->getColumnName() + ".*";
+    qualifier->appendColumnName(ostr);
+    writeCString(".*", ostr);
 }
 
 void ASTQualifiedAsterisk::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
