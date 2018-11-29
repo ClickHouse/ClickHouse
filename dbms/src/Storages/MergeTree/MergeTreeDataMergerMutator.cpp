@@ -607,7 +607,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     UInt64 watch_prev_elapsed = 0;
 
     /// We count total amount of bytes in parts
-    /// and use direct_io + aio is there are more than setting
+    /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
     bool read_with_direct_io = false;
     if (data.settings.min_merge_bytes_to_use_direct_io != 0)
     {
@@ -629,7 +629,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
-            data, part, merging_column_names, read_with_direct_io);
+            data, part, merging_column_names, read_with_direct_io, true);
 
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
@@ -775,7 +775,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
                 auto column_part_stream = std::make_shared<MergeTreeSequentialBlockInputStream>(
-                    data, parts[part_num], column_names, read_with_direct_io);
+                    data, parts[part_num], column_names, read_with_direct_io, true);
 
                 column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
                         merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed));

@@ -13,6 +13,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     const MergeTreeData::DataPartPtr & data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
+    bool take_column_types_from_storage,
     bool quiet)
     : storage(storage_)
     , data_part(data_part_)
@@ -29,17 +30,21 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     addTotalRowsApprox(data_part->rows_count);
 
     header = storage.getSampleBlockForColumns(columns_to_read);
-
     fixHeader(header);
 
-    const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
-    auto column_names_with_helper_columns = columns_to_read;
+    /// take columns from data_part (header was fixed by fixHeader)
+    NamesAndTypesList columns_for_reader = header.getNamesAndTypesList();
+    if (take_column_types_from_storage)
+    {
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
+        auto column_names_with_helper_columns = columns_to_read;
+        injectRequiredColumns(storage, data_part, column_names_with_helper_columns);
+        columns_for_reader = physical_columns.addTypes(column_names_with_helper_columns);
+    }
 
     /// Add columns because we don't want to read empty blocks
-    injectRequiredColumns(storage, data_part, column_names_with_helper_columns);
-
     reader = std::make_unique<MergeTreeReader>(
-        data_part->getFullPath(), data_part, physical_columns.addTypes(column_names_with_helper_columns), /* uncompressed_cache = */ nullptr,
+        data_part->getFullPath(), data_part, columns_for_reader, /* uncompressed_cache = */ nullptr,
         mark_cache.get(), /* save_marks_in_cache = */ false, storage,
         MarkRanges{MarkRange(0, data_part->marks_count)},
         /* bytes to use AIO (this is hack) */
@@ -79,19 +84,22 @@ try
         bool continue_reading = (current_mark != 0);
         size_t rows_readed = reader->readRows(current_mark, continue_reading, storage.index_granularity, res);
 
-        res.checkNumberOfRows();
+        if (res)
+        {
+            res.checkNumberOfRows();
 
-        current_row += rows_readed;
-        current_mark += (rows_readed / storage.index_granularity);
+            current_row += rows_readed;
+            current_mark += (rows_readed / storage.index_granularity);
 
-        bool should_reorder = false, should_evaluate_missing_defaults = false;
-        reader->fillMissingColumns(res, should_reorder, should_evaluate_missing_defaults, res.rows());
+            bool should_reorder = false, should_evaluate_missing_defaults = false;
+            reader->fillMissingColumns(res, should_reorder, should_evaluate_missing_defaults, res.rows());
 
-        if (res && should_evaluate_missing_defaults)
-            reader->evaluateMissingDefaults(res);
+            if (should_evaluate_missing_defaults)
+                reader->evaluateMissingDefaults(res);
 
-        if (res && should_reorder)
-            reader->reorderColumns(res, header.getNames(), nullptr);
+            if (should_reorder)
+                reader->reorderColumns(res, header.getNames(), nullptr);
+        }
     }
     else
     {
