@@ -173,6 +173,15 @@ struct MergeTreeDataPart
 
     MergeTreePartition partition;
 
+    /// Amount of rows between marks
+    /// As index always loaded into memory
+    using MarksIndexGranularity = std::vector<size_t>;
+    MarksIndexGranularity marks_index_granularity;
+    size_t rows_approx = 0;
+
+    std::string marks_file_extension;
+    size_t mark_size_in_bytes;
+
     /// Index that for each part stores min and max values of a set of columns. This allows quickly excluding
     /// parts based on conditions on these columns imposed by a query.
     /// Currently this index is built using only columns required by partition expression, but in principle it
@@ -265,7 +274,10 @@ private:
     /// If checksums.txt exists, reads files' checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    /// Loads index file. Also calculates this->marks_count if marks_count = 0
+    /// Loads marks index granularity into memory
+    void loadMarksIndexGranularity();
+
+    /// Loads index file.
     void loadIndex();
 
     /// Load rows count for this part from disk (for the newer storage format version).

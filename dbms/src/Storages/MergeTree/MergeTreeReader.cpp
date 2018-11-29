@@ -42,7 +42,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
     clockid_t clock_type)
     : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
 {
     try
     {
@@ -157,14 +157,16 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
 
 MergeTreeReader::Stream::Stream(
-    const String & path_prefix_, const String & extension_, size_t marks_count_,
+    const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
     const MarkRanges & all_mark_ranges,
     MarkCache * mark_cache_, bool save_marks_in_cache_,
     UncompressedCache * uncompressed_cache,
     size_t aio_threshold, size_t max_read_buffer_size,
+    const std::string & marks_file_extension_, size_t one_mark_bytes_size_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-    : path_prefix(path_prefix_), extension(extension_), marks_count(marks_count_)
-    , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_)
+    : path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
+    , mark_cache(mark_cache_), save_marks_in_cache(save_marks_in_cache_), marks_file_extension(marks_file_extension_)
+    , one_mark_bytes_size(one_mark_bytes_size_)
 {
     /// Compute the size of the buffer.
     size_t max_mark_range = 0;
@@ -219,7 +221,7 @@ MergeTreeReader::Stream::Stream(
 
             size_t offset_end = (mark_range.end < marks_count)
                 ? getMark(mark_range.end).offset_in_compressed_file
-                : Poco::File(path_prefix + extension).getSize();
+                : Poco::File(path_prefix +  data_file_extension).getSize();
 
             if (offset_end > offset_begin)
                 estimated_size += offset_end - offset_begin;
@@ -230,7 +232,7 @@ MergeTreeReader::Stream::Stream(
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            path_prefix + extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
+            path_prefix +  data_file_extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -241,7 +243,7 @@ MergeTreeReader::Stream::Stream(
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            path_prefix + extension, estimated_size, aio_threshold, buffer_size);
+            path_prefix + data_file_extension, estimated_size, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -262,7 +264,7 @@ const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
 
 void MergeTreeReader::Stream::loadMarks()
 {
-    std::string path = path_prefix + ".mrk";
+    std::string path = path_prefix + marks_file_extension;
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
@@ -270,7 +272,7 @@ void MergeTreeReader::Stream::loadMarks()
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(path).getSize();
-        size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
+        size_t expected_file_size = one_mark_bytes_size * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
                 "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
@@ -278,11 +280,28 @@ void MergeTreeReader::Stream::loadMarks()
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
-        /// Read directly to marks.
-        ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(res->data()));
+        if (one_mark_bytes_size == sizeof(MarkInCompressedFile))
+        {
+            /// Read directly to marks.
+            ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(res->data()));
 
-        if (buffer.eof() || buffer.buffer().size() != file_size)
-            throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+            if (buffer.eof() || buffer.buffer().size() != file_size)
+                throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+        else
+        {
+            ReadBufferFromFile buffer(path, file_size, -1);
+            size_t i = 0;
+            while (!buffer.eof())
+            {
+                readIntBinary((*res)[i].offset_in_compressed_file, buffer);
+                readIntBinary((*res)[i].offset_in_decompressed_block, buffer);
+                buffer.seek(sizeof(size_t), SEEK_CUR);
+                ++i;
+            }
+            if (i * one_mark_bytes_size != file_size)
+                throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
 
         return res;
     };
@@ -375,7 +394,9 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
         streams.emplace(stream_name, std::make_unique<Stream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
             all_mark_ranges, mark_cache, save_marks_in_cache,
-            uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
+            uncompressed_cache, aio_threshold, max_read_buffer_size,
+            data_part->marks_file_extension, data_part->mark_size_in_bytes,
+            profile_callback, clock_type));
     };
 
     IDataType::SubstreamPath path;
