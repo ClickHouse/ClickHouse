@@ -21,7 +21,8 @@ public:
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
         CompressionSettings compression_settings_,
-        size_t aio_threshold_);
+        size_t aio_threshold_,
+        const std::vector<size_t> & index_granularity_ = {});
 
     using WrittenOffsetColumns = std::set<std::string>;
 
@@ -91,8 +92,11 @@ protected:
 
     CompressionSettings compression_settings;
 
+    std::vector<size_t> index_granularity;
+
     std::string marks_file_extension;
     size_t mark_size_in_bytes;
+    bool compute_granularity_unknown;
 };
 
 
@@ -151,7 +155,6 @@ private:
 
     size_t rows_count = 0;
     size_t marks_count = 0;
-    std::vector<size_t> marks_index_granularity;
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;

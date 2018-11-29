@@ -31,14 +31,17 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
     CompressionSettings compression_settings_,
-    size_t aio_threshold_)
+    size_t aio_threshold_,
+    const std::vector<size_t> & index_granularity_)
     : storage(storage_),
-    min_compress_block_size(min_compress_block_size_),
-    max_compress_block_size(max_compress_block_size_),
-    aio_threshold(aio_threshold_),
-    compression_settings(compression_settings_),
-    marks_file_extension(storage.index_granularity_bytes == 0 ? FIXED_MARKS_FILE_EXTENSION : ADAPTIVE_MARKS_FILE_EXTENSION),
-    mark_size_in_bytes(storage.index_granularity_bytes == 0 ? FIXED_MARK_BYTE_SIZE : ADAPTIVE_MARK_BYTE_SIZE)
+      min_compress_block_size(min_compress_block_size_),
+      max_compress_block_size(max_compress_block_size_),
+      aio_threshold(aio_threshold_),
+      compression_settings(compression_settings_),
+      marks_file_extension(storage.index_granularity_bytes == 0 ? FIXED_MARKS_FILE_EXTENSION : ADAPTIVE_MARKS_FILE_EXTENSION),
+      mark_size_in_bytes(storage.index_granularity_bytes == 0 ? FIXED_MARK_BYTE_SIZE : ADAPTIVE_MARK_BYTE_SIZE),
+      index_granularity(index_granularity_),
+      compute_granularity_unknown(index_granularity.empty())
 {
 }
 
@@ -570,11 +573,11 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_block_index_granularity);
+        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], storage.index_granularity);
     }
 
-    size_t written_for_last_mark = (current_block_index_granularity - index_offset + rows) % current_block_index_granularity;
-    index_offset = (current_block_index_granularity - written_for_last_mark) % current_block_index_granularity;
+    // size_t written_for_last_mark = (current_block_index_granularity - index_offset + rows) % current_block_index_granularity;
+    // index_offset = (current_block_index_granularity - written_for_last_mark) % current_block_index_granularity;
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()
