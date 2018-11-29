@@ -78,7 +78,7 @@ public:
 
     }
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self [[maybe_unused]])
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
