@@ -606,6 +606,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     BlockInputStreams src_streams;
     UInt64 watch_prev_elapsed = 0;
 
+    /// We count total amount of bytes in parts
+    /// and use direct_io + aio is there are more than setting
     bool read_with_direct_io = false;
     if (data.settings.min_merge_bytes_to_use_direct_io != 0)
     {

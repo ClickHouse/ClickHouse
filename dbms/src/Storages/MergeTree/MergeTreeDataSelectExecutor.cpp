@@ -3,9 +3,9 @@
 
 #include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -654,7 +654,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
         for (size_t i = 0; i < num_streams; ++i)
         {
-            res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
+            res.emplace_back(std::make_shared<MergeTreeThreadSelectBlockInputStream>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
                 prewhere_info, settings, virt_columns));
@@ -730,7 +730,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                     parts.emplace_back(part);
                 }
 
-                BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
+                BlockInputStreamPtr source_stream = std::make_shared<MergeTreeSelectBlockInputStream>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, prewhere_info, true, settings.min_bytes_to_use_direct_io,
@@ -775,7 +775,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     {
         RangesInDataPart & part = parts[part_index];
 
-        BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
+        BlockInputStreamPtr source_stream = std::make_shared<MergeTreeSelectBlockInputStream>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,

@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// Lightweight (in terms of logic) stream for reading single part in merge process
+/// Lightweight (in terms of logic) stream for reading single part from MergeTree
 class MergeTreeSequentialBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -28,6 +28,10 @@ public:
 
     /// Closes readers and unlock part locks
     void finish();
+
+    size_t getCurrentMark() const { return current_mark; }
+
+    size_t getCurrentRow() const { return current_row; }
 
 protected:
     Block readImpl() override;

@@ -1,13 +1,13 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
 
 
 namespace DB
 {
 
 
-MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
+MergeTreeThreadSelectBlockInputStream::MergeTreeThreadSelectBlockInputStream(
     const size_t thread,
     const MergeTreeReadPoolPtr & pool,
     const size_t min_marks_to_read_,
@@ -20,7 +20,7 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
     const Settings & settings,
     const Names & virt_column_names)
     :
-    MergeTreeBaseBlockInputStream{storage, prewhere_info, max_block_size_rows,
+    MergeTreeBaseSelectBlockInputStream{storage, prewhere_info, max_block_size_rows,
         preferred_block_size_bytes, preferred_max_column_in_block_size_bytes, settings.min_bytes_to_use_direct_io,
         settings.max_read_buffer_size, use_uncompressed_cache, true, virt_column_names},
     thread{thread},
@@ -39,7 +39,7 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
 }
 
 
-Block MergeTreeThreadBlockInputStream::getHeader() const
+Block MergeTreeThreadSelectBlockInputStream::getHeader() const
 {
     auto res = pool->getHeader();
     executePrewhereActions(res, prewhere_info);
@@ -49,7 +49,7 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
 
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
-bool MergeTreeThreadBlockInputStream::getNewTask()
+bool MergeTreeThreadSelectBlockInputStream::getNewTask()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
 
@@ -112,6 +112,6 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
 }
 
 
-MergeTreeThreadBlockInputStream::~MergeTreeThreadBlockInputStream() = default;
+MergeTreeThreadSelectBlockInputStream::~MergeTreeThreadSelectBlockInputStream() = default;
 
 }
