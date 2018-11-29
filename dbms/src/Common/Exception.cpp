@@ -24,6 +24,30 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
 }
 
+std::string errnoToString(int code, int e)
+{
+    const size_t buf_size = 128;
+    char buf[buf_size];
+#ifndef _GNU_SOURCE
+    int rc = strerror_r(e, buf, buf_size);
+#ifdef __APPLE__
+    if (rc != 0 && rc != EINVAL)
+#else
+        if (rc != 0)
+#endif
+        {
+            std::string tmp = std::to_string(code);
+            const char * code = tmp.c_str();
+            const char * unknown_message = "Unknown error ";
+            strcpy(buf, unknown_message);
+            strcpy(buf + strlen(unknown_message), code);
+        }
+    return "errno: " + toString(e) + ", strerror: " + std::string(buf);
+#else
+    (void)code;
+    return "errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf)));
+#endif
+}
 
 void throwFromErrno(const std::string & s, int code, int e)
 {
