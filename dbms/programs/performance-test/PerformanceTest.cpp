@@ -551,6 +551,8 @@ public:
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
+
+        return 0;
     }
 
 private:
