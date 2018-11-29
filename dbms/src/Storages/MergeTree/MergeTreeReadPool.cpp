@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
-#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -114,7 +114,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
             need_marks -= marks_to_get_from_range;
         }
 
-        /** Change order to right-to-left, for MergeTreeThreadBlockInputStream to get ranges with .pop_back()
+        /** Change order to right-to-left, for MergeTreeThreadSelectBlockInputStream to get ranges with .pop_back()
             *  (order was changed to left-to-right due to .pop_back() above).
             */
         std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));

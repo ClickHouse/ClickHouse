@@ -24,7 +24,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     if (!quiet)
         LOG_TRACE(log, "Reading " << data_part->marks_count << " marks from part " << data_part->name
             << ", totaly " << data_part->rows_count
-            << " rows starting from the begging of the part");
+            << " rows starting from the beginning of the part");
 
     addTotalRowsApprox(data_part->rows_count);
 
@@ -34,13 +34,16 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
 
     const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
     auto column_names_with_helper_columns = columns_to_read;
+
+    /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(storage, data_part, column_names_with_helper_columns);
 
     reader = std::make_unique<MergeTreeReader>(
         data_part->getFullPath(), data_part, physical_columns.addTypes(column_names_with_helper_columns), /* uncompressed_cache = */ nullptr,
         mark_cache.get(), /* save_marks_in_cache = */ false, storage,
         MarkRanges{MarkRange(0, data_part->marks_count)},
-        /* bytes to use AIO */ read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
+        /* bytes to use AIO (this is hack) */
+        read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
         DBMS_DEFAULT_BUFFER_SIZE);
 }
 
@@ -80,6 +83,7 @@ try
 
         current_row += rows_readed;
         current_mark += (rows_readed / storage.index_granularity);
+
         bool should_reorder = false, should_evaluate_missing_defaults = false;
         reader->fillMissingColumns(res, should_reorder, should_evaluate_missing_defaults, res.rows());
 

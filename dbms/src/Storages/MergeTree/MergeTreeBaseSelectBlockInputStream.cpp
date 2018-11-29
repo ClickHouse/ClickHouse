@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 }
 
 
-MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
+MergeTreeBaseSelectBlockInputStream::MergeTreeBaseSelectBlockInputStream(
     const MergeTreeData & storage,
     const PrewhereInfoPtr & prewhere_info,
     UInt64 max_block_size_rows,
@@ -46,7 +46,7 @@ MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
 }
 
 
-Block MergeTreeBaseBlockInputStream::readImpl()
+Block MergeTreeBaseSelectBlockInputStream::readImpl()
 {
     Block res;
 
@@ -68,7 +68,7 @@ Block MergeTreeBaseBlockInputStream::readImpl()
 }
 
 
-Block MergeTreeBaseBlockInputStream::readFromPart()
+Block MergeTreeBaseSelectBlockInputStream::readFromPart()
 {
     if (task->size_predictor)
         task->size_predictor->startBlock();
@@ -181,7 +181,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 }
 
 
-void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
+void MergeTreeBaseSelectBlockInputStream::injectVirtualColumns(Block & block) const
 {
     /// add virtual columns
     /// Except _sample_factor, which is added from the outside.
@@ -226,7 +226,7 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 }
 
 
-void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
+void MergeTreeBaseSelectBlockInputStream::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
 {
     if (prewhere_info)
     {
@@ -243,6 +243,6 @@ void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block, const 
 }
 
 
-MergeTreeBaseBlockInputStream::~MergeTreeBaseBlockInputStream() = default;
+MergeTreeBaseSelectBlockInputStream::~MergeTreeBaseSelectBlockInputStream() = default;
 
 }
