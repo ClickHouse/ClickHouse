@@ -28,6 +28,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
             << " rows starting from the beginning of the part");
 
     addTotalRowsApprox(data_part->rows_count);
+    injectRequiredColumns(storage, data_part, columns_to_read);
 
     header = storage.getSampleBlockForColumns(columns_to_read);
     fixHeader(header);
@@ -37,9 +38,7 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     if (take_column_types_from_storage)
     {
         const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
-        auto column_names_with_helper_columns = columns_to_read;
-        injectRequiredColumns(storage, data_part, column_names_with_helper_columns);
-        columns_for_reader = physical_columns.addTypes(column_names_with_helper_columns);
+        columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
 
     /// Add columns because we don't want to read empty blocks
