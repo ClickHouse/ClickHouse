@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalResultDescription.h>
-#include <Dictionaries/IDictionarySource.h>
+#include "DictionaryStructure.h"
+#include "ExternalResultDescription.h"
+#include "IDictionarySource.h"
 #include <Common/SharedLibrary.h>
 #include <common/LocalDateTime.h>
 
@@ -78,4 +78,5 @@ private:
     std::shared_ptr<CStringsHolder> settings;
     void * lib_data = nullptr;
 };
+
 }

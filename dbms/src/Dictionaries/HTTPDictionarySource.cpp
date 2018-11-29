@@ -1,4 +1,4 @@
-#include <Dictionaries/HTTPDictionarySource.h>
+#include "HTTPDictionarySource.h"
 
 #include <Poco/Net/HTTPRequest.h>
 #include <Interpreters/Context.h>
@@ -6,9 +6,12 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <IO/WriteBufferFromOStream.h>
-#include <Dictionaries/DictionarySourceHelpers.h>
+#include "DictionarySourceHelpers.h"
 #include <common/logger_useful.h>
 #include <IO/ConnectionTimeouts.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+
 
 namespace DB
 {
@@ -147,6 +150,21 @@ std::string HTTPDictionarySource::toString() const
 {
     Poco::URI uri(url);
     return uri.toString();
+}
+
+void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & context) -> DictionarySourcePtr {
+        if (dict_struct.has_expressions)
+            throw Exception {"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
+
+        return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
+    };
+    factory.registerSource("http", createTableSource);
 }
 
 }

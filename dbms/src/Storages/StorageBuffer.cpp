@@ -178,7 +178,12 @@ BlockInputStreams StorageBuffer::read(
             LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
                 << " has no common columns with block in buffer. Block of data is skipped.");
         else
+        {
+            auto lock = destination->lockStructure(false, __PRETTY_FUNCTION__);
             streams_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+            for (auto & stream : streams_from_dst)
+                stream->addTableLock(lock);
+        }
 
         if (struct_mismatch && !streams_from_dst.empty())
         {
