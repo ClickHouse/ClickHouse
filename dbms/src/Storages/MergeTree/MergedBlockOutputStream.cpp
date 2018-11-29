@@ -2,6 +2,7 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataStreams/MarkInCompressedFile.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/MemoryTracker.h>
@@ -15,7 +16,10 @@ namespace
 {
 
 constexpr auto DATA_FILE_EXTENSION = ".bin";
-constexpr auto MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto FIXED_MARKS_FILE_EXTENSION = ".mrk";
+constexpr auto ADAPTIVE_MARKS_FILE_EXTENSION = ".mrk2";
+constexpr auto FIXED_MARK_BYTE_SIZE = sizeof(MarkInCompressedFile);
+constexpr auto ADAPTIVE_MARK_BYTE_SIZE = sizeof(MarkInCompressedFile) + sizeof(size_t);
 
 }
 
@@ -32,7 +36,9 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     min_compress_block_size(min_compress_block_size_),
     max_compress_block_size(max_compress_block_size_),
     aio_threshold(aio_threshold_),
-    compression_settings(compression_settings_)
+    compression_settings(compression_settings_),
+    marks_file_extension(storage.index_granularity_bytes == 0 ? FIXED_MARKS_FILE_EXTENSION : ADAPTIVE_MARKS_FILE_EXTENSION),
+    mark_size_in_bytes(storage.index_granularity_bytes == 0 ? FIXED_MARK_BYTE_SIZE : ADAPTIVE_MARK_BYTE_SIZE)
 {
 }
 
@@ -58,7 +64,7 @@ void IMergedBlockOutputStream::addStreams(
         column_streams[stream_name] = std::make_unique<ColumnStream>(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
-            path + stream_name, MARKS_FILE_EXTENSION,
+            path + stream_name, marks_file_extension,
             max_compress_block_size,
             compression_settings,
             estimated_size,
@@ -89,6 +95,15 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
     };
 }
 
+size_t IMergedBlockOutputStream::getBlockIndexGranularity(const Block & block) const
+{
+    if (storage.index_granularity_bytes == 0)
+        return storage.index_granularity;
+
+    size_t block_size_in_memory = block.allocatedBytes();
+    return std::max(block_size_in_memory / storage.index_granularity_bytes, 1);
+}
+
 
 void IMergedBlockOutputStream::writeData(
     const String & name,
@@ -96,7 +111,8 @@ void IMergedBlockOutputStream::writeData(
     const IColumn & column,
     WrittenOffsetColumns & offset_columns,
     bool skip_offsets,
-    IDataType::SerializeBinaryBulkStatePtr & serialization_state)
+    IDataType::SerializeBinaryBulkStatePtr & serialization_state,
+    size_t index_granularity)
 {
     auto & settings = storage.context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -115,7 +131,7 @@ void IMergedBlockOutputStream::writeData(
             limit = index_offset;
         else
         {
-            limit = storage.index_granularity;
+            limit = index_granularity;
 
             /// Write marks.
             type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
@@ -138,6 +154,8 @@ void IMergedBlockOutputStream::writeData(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
+                if (stream.marks_file_extension != FIXED_MARKS_FILE_EXTENSION)
+                    writeIntBinary(index_granularity, stream.marks);
             }, serialize_settings.path);
         }
 
@@ -379,6 +397,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
     new_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_part->getFullPath());
+    new_part->marks_file_extension = marks_file_extension;
+    new_part->marks_index_granularity.swap(marks_index_granularity);
+    new_part->mark_size_in_bytes = mark_size_in_bytes;
 }
 
 void MergedBlockOutputStream::init()
@@ -398,6 +419,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
+    size_t current_block_index_granularity = getBlockIndexGranularity(block);
 
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     WrittenOffsetColumns offset_columns;
@@ -455,18 +477,18 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             if (primary_columns_name_to_position.end() != primary_column_it)
             {
                 auto & primary_column = *primary_columns[primary_column_it->second].column;
-                writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i]);
+                writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i], current_block_index_granularity);
             }
             else
             {
                 /// We rearrange the columns that are not included in the primary key here; Then the result is released - to save RAM.
                 ColumnPtr permuted_column = column.column->permute(*permutation, 0);
-                writeData(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i]);
+                writeData(column.name, *column.type, *permuted_column, offset_columns, false, serialization_states[i], current_block_index_granularity);
             }
         }
         else
         {
-            writeData(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i]);
+            writeData(column.name, *column.type, *column.column, offset_columns, false, serialization_states[i], current_block_index_granularity);
         }
     }
 
@@ -482,7 +504,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        for (size_t i = index_offset; i < rows; i += storage.index_granularity)
+        for (size_t i = index_offset; i < rows; i += current_block_index_granularity)
         {
             if (storage.hasPrimaryKey())
             {
@@ -494,12 +516,13 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
             }
 
+            marks_index_granularity.push_back(current_block_index_granularity);
             ++marks_count;
         }
     }
 
-    size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
-    index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
+    size_t written_for_last_mark = (current_block_index_granularity - index_offset + rows) % current_block_index_granularity;
+    index_offset = (current_block_index_granularity - written_for_last_mark) % current_block_index_granularity;
 }
 
 
@@ -547,11 +570,11 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
-        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i]);
+        writeData(column.name, *column.type, *column.column, offset_columns, skip_offsets, serialization_states[i], current_block_index_granularity);
     }
 
-    size_t written_for_last_mark = (storage.index_granularity - index_offset + rows) % storage.index_granularity;
-    index_offset = (storage.index_granularity - written_for_last_mark) % storage.index_granularity;
+    size_t written_for_last_mark = (current_block_index_granularity - index_offset + rows) % current_block_index_granularity;
+    index_offset = (current_block_index_granularity - written_for_last_mark) % current_block_index_granularity;
 }
 
 void MergedColumnOnlyOutputStream::writeSuffix()

@@ -15,6 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/MarkInCompressedFile.h>
 #include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
@@ -103,6 +104,7 @@ MergeTreeData::MergeTreeData(
     context(context_),
     sampling_expression(sampling_expression_),
     index_granularity(settings_.index_granularity),
+    index_granularity_bytes(settings_.index_granularity_bytes),
     merging_params(merging_params_),
     settings(settings_),
     primary_expr_ast(primary_expr_ast_),
@@ -124,11 +126,11 @@ MergeTreeData::MergeTreeData(
 
     initPrimaryKey();
 
+    size_t min_format_version(0);
     if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
         && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-    MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
     {
         try
@@ -149,11 +151,12 @@ MergeTreeData::MergeTreeData(
             e.addMessage("(while initializing MergeTree partition key from date column `" + date_column_name + "`)");
             throw;
         }
+        format_version = 0;
     }
     else
     {
-        initPartitionKey();
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+        initPartitionKey();
     }
 
     auto path_exists = Poco::File(full_path).exists();
@@ -182,9 +185,13 @@ MergeTreeData::MergeTreeData(
         format_version = 0;
 
     if (format_version < min_format_version)
-        throw Exception(
-            "MergeTree data format version on disk doesn't support custom partitioning",
-            ErrorCodes::METADATA_MISMATCH);
+    {
+        if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
+            throw Exception(
+                "MergeTree data format version on disk doesn't support custom partitioning",
+                ErrorCodes::METADATA_MISMATCH);
+    }
+
 }
 
 
@@ -943,11 +950,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     /// Check that type conversions are possible.
-    ExpressionActionsPtr unused_expression;
-    NameToNameMap unused_map;
-    bool unused_bool;
+    ///ExpressionActionsPtr unused_expression;
+    ///NameToNameMap unused_map;
+    ///bool unused_bool;
 
-    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
+    ///createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -990,7 +997,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     if (--stream_counts[file_name] == 0)
                     {
                         out_rename_map[file_name + ".bin"] = "";
-                        out_rename_map[file_name + ".mrk"] = "";
+                        out_rename_map[file_name + part->marks_file_extension] = "";
                     }
                 }, {});
             }
@@ -1064,8 +1071,9 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                     String original_file_name = IDataType::getFileNameForStream(original_column_name, substream_path);
                     String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
 
+                    std::cerr << "PART MARKS FILE_EXTENSION:" << part->marks_file_extension << std::endl;
                     out_rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    out_rename_map[temporary_file_name + ".mrk"] = original_file_name + ".mrk";
+                    out_rename_map[temporary_file_name + part->marks_file_extension] = original_file_name + part->marks_file_extension;
                 }, {});
         }
 
@@ -2211,6 +2219,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
             for (size_t i = 0; i < res.size(); ++i)
                 (*out_states)[i] = res[i]->state;
         }
+    }
+    std::cerr << "NOT INITIALIZED DATA PART\n";
+    for (auto part : res) {
+        std::cerr << "FullPath:" << part->getFullPath() << std::endl;
+        std::cerr << "MarkSFileExtensSion:" << part->marks_file_extension << std::endl;
     }
 
     return res;

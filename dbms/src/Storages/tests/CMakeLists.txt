@@ -27,3 +27,4 @@ target_link_libraries (get_current_inserts_in_replicated PRIVATE dbms clickhouse
 
 add_executable (get_abandonable_lock_in_all_partitions get_abandonable_lock_in_all_partitions.cpp)
 target_link_libraries (get_abandonable_lock_in_all_partitions PRIVATE dbms clickhouse_common_config clickhouse_common_zookeeper)
+target_link_libraries (get_abandonable_lock_in_all_partitions dbms)

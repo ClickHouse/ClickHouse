@@ -57,16 +57,18 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
+    MergeTreeData::DataPartPtr data_part;
 private:
     class Stream
     {
     public:
         Stream(
-            const String & path_prefix_, const String & extension_, size_t marks_count_,
+            const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
             const MarkRanges & all_mark_ranges,
             MarkCache * mark_cache, bool save_marks_in_cache,
             UncompressedCache * uncompressed_cache,
             size_t aio_threshold, size_t max_read_buffer_size,
+            const std::string & marks_file_extension_, size_t one_mark_bytes_size_,
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
         void seekToMark(size_t index);
@@ -83,9 +85,11 @@ private:
         void loadMarks();
 
         std::string path_prefix;
-        std::string extension;
+        std::string data_file_extension;
+        std::string marks_file_extension;
 
         size_t marks_count;
+        size_t one_mark_bytes_size;
 
         MarkCache * mark_cache;
         bool save_marks_in_cache;
@@ -103,7 +107,6 @@ private:
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     /// Path to the directory containing the part
     String path;
-    MergeTreeData::DataPartPtr data_part;
 
     FileStreams streams;
 
@@ -119,7 +122,6 @@ private:
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
-    size_t index_granularity;
 
     void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);

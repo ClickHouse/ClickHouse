@@ -72,7 +72,9 @@ protected:
 
     /// Write data of one column.
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenOffsetColumns & offset_columns,
-                   bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
+                   bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state, size_t index_granularity);
+
+    size_t getBlockIndexGranularity(const Block & block) const;
 
     MergeTreeData & storage;
 
@@ -86,7 +88,11 @@ protected:
 
     size_t aio_threshold;
 
+
     CompressionSettings compression_settings;
+
+    std::string marks_file_extension;
+    size_t mark_size_in_bytes;
 };
 
 
@@ -124,6 +130,7 @@ public:
 
     void writeSuffix() override;
 
+    /// Finilize writing part and fill inner structures
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
             const NamesAndTypesList * total_columns_list = nullptr,
@@ -144,6 +151,7 @@ private:
 
     size_t rows_count = 0;
     size_t marks_count = 0;
+    std::vector<size_t> marks_index_granularity;
 
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
