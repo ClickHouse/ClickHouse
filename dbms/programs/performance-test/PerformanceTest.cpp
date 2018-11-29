@@ -528,7 +528,7 @@ public:
         }
     }
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self [[maybe_unused]])
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
@@ -551,6 +551,8 @@ public:
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
+
+        return 0;
     }
 
 private:
