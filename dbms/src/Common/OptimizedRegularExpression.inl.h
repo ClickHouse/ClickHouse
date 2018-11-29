@@ -264,15 +264,15 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
-        typename RegexType::Options options;
+        typename RegexType::Options regexp_options;
 
         if (is_case_insensitive)
-            options.set_case_sensitive(false);
+            regexp_options.set_case_sensitive(false);
 
         if (is_dot_nl)
-            options.set_dot_nl(true);
+            regexp_options.set_dot_nl(true);
 
-        re2 = std::make_unique<RegexType>(regexp_, options);
+        re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
             throw Poco::Exception("OptimizedRegularExpression: cannot compile re2: " + regexp_ + ", error: " + re2->error());
 

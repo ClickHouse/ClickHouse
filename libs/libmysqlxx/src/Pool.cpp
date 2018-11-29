@@ -1,11 +1,15 @@
+#if __has_include(<mariadb/mysql.h>)
+#include <mariadb/mysql.h> // Y_IGNORE
+#include <mariadb/mysqld_error.h> // Y_IGNORE
+#else
 #include <mysql/mysql.h>
 #include <mysql/mysqld_error.h>
+#endif
 
 #include <mysqlxx/Pool.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/NumberFormatter.h>
 
 
 namespace mysqlxx
@@ -65,6 +69,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_key = cfg.has(config_name + ".ssl_key")
             ? cfg.getString(config_name + ".ssl_key")
             : cfg.getString(parent_config_name + ".ssl_key", "");
+
+        enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
+            cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
     }
     else
     {
@@ -80,6 +87,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
         ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
         ssl_key = cfg.getString(config_name + ".ssl_key", "");
+
+        enable_local_infile = cfg.getBool(
+            config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -188,7 +198,8 @@ void Pool::Entry::forceConnected() const
             pool->ssl_cert.c_str(),
             pool->ssl_key.c_str(),
             pool->connect_timeout,
-            pool->rw_timeout);
+            pool->rw_timeout,
+            pool->enable_local_infile);
     }
     while (!data->conn.ping());
 }
@@ -198,7 +209,7 @@ void Pool::initialize()
 {
     if (!initialized)
     {
-        description = db + "@" + server + ":" + Poco::NumberFormatter::format(port) + " as user " + user;
+        description = db + "@" + server + ":" + std::to_string(port) + " as user " + user;
 
         for (unsigned i = 0; i < default_connections; ++i)
             allocConnection();
@@ -229,7 +240,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             ssl_cert.c_str(),
             ssl_key.c_str(),
             connect_timeout,
-            rw_timeout);
+            rw_timeout,
+            enable_local_infile);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

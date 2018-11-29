@@ -15,6 +15,10 @@ namespace DB
   */
 class AggregateFunctionCombinatorFactory final: public ext::singleton<AggregateFunctionCombinatorFactory>
 {
+private:
+    using Dict = std::unordered_map<std::string, AggregateFunctionCombinatorPtr>;
+    Dict dict;
+
 public:
     /// Not thread safe. You must register before using tryGet.
     void registerCombinator(const AggregateFunctionCombinatorPtr & value);
@@ -22,8 +26,10 @@ public:
     /// Example: if the name is 'avgIf', it will return combinator -If.
     AggregateFunctionCombinatorPtr tryFindSuffix(const std::string & name) const;
 
-private:
-    std::unordered_map<std::string, AggregateFunctionCombinatorPtr> dict;
+    const Dict & getAllAggregateFunctionCombinators() const
+    {
+        return dict;
+    }
 };
 
 }

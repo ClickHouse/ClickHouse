@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <port/unistd.h>
 
 
@@ -50,6 +51,12 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
         writeBinary(quota_key, out);
+
+    if (interface == Interface::TCP)
+    {
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+            writeVarUInt(client_version_patch, out);
+    }
 }
 
 
@@ -95,14 +102,22 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
         readBinary(quota_key, in);
+
+    if (interface == Interface::TCP)
+    {
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+            readVarUInt(client_version_patch, in);
+        else
+            client_version_patch = client_revision;
+    }
 }
 
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
 {
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(&os_user[0], os_user.size() - 1))
-        os_user.resize(strlen(os_user.data()));
+    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+        os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
 
@@ -110,6 +125,7 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
 
     client_version_major = DBMS_VERSION_MAJOR;
     client_version_minor = DBMS_VERSION_MINOR;
+    client_version_patch = DBMS_VERSION_PATCH;
     client_revision = ClickHouseRevision::get();
 }
 

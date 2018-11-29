@@ -28,8 +28,8 @@ if (NOT USE_INTERNAL_UNWIND_LIBRARY)
        unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME);
        return 0;
     }
-    " HAVE_UNWIND_INIT_LOCAL_SIGNAL)
-    if (NOT HAVE_UNWIND_INIT_LOCAL_SIGNAL)
+    " HAVE_UNW_INIT_LOCAL2)
+    if (NOT HAVE_UNW_INIT_LOCAL2)
        set(UNWIND_LIBRARY "")
        set(UNWIND_INCLUDE_DIR "")
     endif ()

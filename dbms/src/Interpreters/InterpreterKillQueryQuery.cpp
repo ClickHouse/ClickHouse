@@ -2,6 +2,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Columns/ColumnString.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int READONLY;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_KILL;
 }
 
 
@@ -61,7 +63,7 @@ using QueryDescriptors = std::vector<QueryDescriptor>;
 
 static void insertResultRow(size_t n, CancellationCode code, const Block & source_processes, const Block & sample_block, MutableColumns & columns)
 {
-    columns[0]->insert(String(cancellationCodeToStatus(code)));
+    columns[0]->insert(cancellationCodeToStatus(code));
 
     for (size_t col_num = 1, size = columns.size(); col_num < size; ++col_num)
         columns[col_num]->insertFrom(*source_processes.getByName(sample_block.getByPosition(col_num).name).column, n);
@@ -117,7 +119,7 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    Block getHeader() const override { return res_sample_block; };
+    Block getHeader() const override { return res_sample_block; }
 
     Block readImpl() override
     {
@@ -137,17 +139,20 @@ public:
 
                 auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
-                if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
+                /// Raise exception if this query is immortal, user have to know
+                /// This could happen only if query generate streams that don't implement IProfilingBlockInputStream
+                if (code == CancellationCode::CancelCannotBeSent)
+                    throw Exception("Can't kill query '" + curr_process.query_id + "' it consits of unkillable stages", ErrorCodes::CANNOT_KILL);
+                else if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
                     curr_process.processed = true;
                     insertResultRow(curr_process.source_num, code, processes_block, res_sample_block, columns);
                     ++num_processed_queries;
                 }
-                /// Wait if QueryIsNotInitializedYet or CancelSent
+                /// Wait if CancelSent
             }
 
             /// KILL QUERY could be killed also
-            /// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
             if (isCancelled())
                 break;
 
@@ -173,6 +178,9 @@ BlockIO InterpreterKillQueryQuery::execute()
 {
     ASTKillQueryQuery & query = typeid_cast<ASTKillQueryQuery &>(*query_ptr);
 
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {"system"});
+
     BlockIO res_io;
     Block processes_block = getSelectFromSystemProcessesResult();
     if (!processes_block)
@@ -191,6 +199,12 @@ BlockIO InterpreterKillQueryQuery::execute()
         for (const auto & query_desc : queries_to_stop)
         {
             auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
+
+            /// Raise exception if this query is immortal, user have to know
+            /// This could happen only if query generate streams that don't implement IProfilingBlockInputStream
+            if (code == CancellationCode::CancelCannotBeSent)
+                throw Exception("Can't kill query '" + query_desc.query_id + "' it consits of unkillable stages", ErrorCodes::CANNOT_KILL);
+
             insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
         }
 

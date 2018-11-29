@@ -12,3 +12,5 @@ select arrayResize([[1, 2], [3, 4]], -4);
 select arrayResize([[1, 2], [3, 4]], 4, [5, 6]);
 select arrayResize([[1, 2], [3, 4]], -4, [5, 6]);
 
+-- different types of array elements and default value to fill
+select arrayResize([1, 2, 3], 5, 423.56);

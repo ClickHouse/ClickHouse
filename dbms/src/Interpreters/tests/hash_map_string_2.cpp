@@ -22,27 +22,27 @@
 
 /** Do this:
 for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL Title; do
- for size in 30000 100000 300000 1000000 5000000; do
-  echo
-  BEST_METHOD=0
-  BEST_RESULT=0
-  for method in {1..12}; do
-   echo -ne $file $size $method '';
-   TOTAL_ELEMS=0
-   for i in {0..1000}; do
-    TOTAL_ELEMS=$(( $TOTAL_ELEMS + $size ))
-    if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
-    ./hash_map_string_2 $size $method < ${file}.bin 2>&1 |
-     grep HashMap | grep -oE '[0-9\.]+ elem';
-   done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_2_res;
-   CUR_RESULT=$(cat /tmp/hash_map_string_2_res | tr -d '.')
-   if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
-    BEST_METHOD=$method
-    BEST_RESULT=$CUR_RESULT
-   fi;
-  done;
-  echo Best: $BEST_METHOD - $BEST_RESULT
- done;
+    for size in 30000 100000 300000 1000000 5000000; do
+        echo
+        BEST_METHOD=0
+        BEST_RESULT=0
+        for method in {1..12}; do
+            echo -ne $file $size $method '';
+            TOTAL_ELEMS=0
+            for i in {0..1000}; do
+                TOTAL_ELEMS=$(( $TOTAL_ELEMS + $size ))
+                if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
+                ./hash_map_string_2 $size $method < ${file}.bin 2>&1 |
+                    grep HashMap | grep -oE '[0-9\.]+ elem';
+            done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_2_res;
+            CUR_RESULT=$(cat /tmp/hash_map_string_2_res | tr -d '.')
+            if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
+                BEST_METHOD=$method
+                BEST_RESULT=$CUR_RESULT
+            fi;
+        done;
+    echo Best: $BEST_METHOD - $BEST_RESULT
+    done;
 done
 */
 
@@ -58,7 +58,7 @@ namespace ZeroTraits \
  \
     template <> \
     inline void set<STRUCT>(STRUCT & x) { x.size = 0; } \
-}; \
+} \
  \
 template <> \
 struct DefaultHash<STRUCT> \
@@ -247,17 +247,17 @@ inline bool memequal(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
@@ -303,17 +303,17 @@ inline bool memequal_sse41(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
@@ -433,17 +433,17 @@ inline bool memequal_sse41_wide(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;
@@ -485,17 +485,17 @@ inline bool memequal_sse_wide(const char * p1, const char * p2, size_t size)
         case 12: if (reinterpret_cast<const UInt32 *>(p1)[2] == reinterpret_cast<const UInt32 *>(p2)[2]) goto l8; else return false;
         case 11: if (p1[10] != p2[10]) return false; [[fallthrough]];
         case 10: if (p1[9] != p2[9]) return false; [[fallthrough]];
-        case 9:  if (p1[8] != p2[8]) return false;
+        case 9: if (p1[8] != p2[8]) return false;
     l8: [[fallthrough]];
-        case 8:  return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
-        case 7:  if (p1[6] != p2[6]) return false; [[fallthrough]];
-        case 6:  if (p1[5] != p2[5]) return false; [[fallthrough]];
-        case 5:  if (p1[4] != p2[4]) return false; [[fallthrough]];
-        case 4:  return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
-        case 3:  if (p1[2] != p2[2]) return false; [[fallthrough]];
-        case 2:  return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
-        case 1:  if (p1[0] != p2[0]) return false; [[fallthrough]];
-        case 0:  break;
+        case 8: return reinterpret_cast<const UInt64 *>(p1)[0] == reinterpret_cast<const UInt64 *>(p2)[0];
+        case 7: if (p1[6] != p2[6]) return false; [[fallthrough]];
+        case 6: if (p1[5] != p2[5]) return false; [[fallthrough]];
+        case 5: if (p1[4] != p2[4]) return false; [[fallthrough]];
+        case 4: return reinterpret_cast<const UInt32 *>(p1)[0] == reinterpret_cast<const UInt32 *>(p2)[0];
+        case 3: if (p1[2] != p2[2]) return false; [[fallthrough]];
+        case 2: return reinterpret_cast<const UInt16 *>(p1)[0] == reinterpret_cast<const UInt16 *>(p2)[0];
+        case 1: if (p1[0] != p2[0]) return false; [[fallthrough]];
+        case 0: break;
     }
 
     return true;

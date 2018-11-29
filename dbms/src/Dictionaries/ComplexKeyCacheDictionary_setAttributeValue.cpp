@@ -1,4 +1,4 @@
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include "ComplexKeyCacheDictionary.h"
 
 namespace DB
 {
@@ -18,6 +18,11 @@ void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const s
         case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
         case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
         case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+
+        case AttributeUnderlyingType::Decimal32: std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>(); break;
+        case AttributeUnderlyingType::Decimal64: std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = value.get<Decimal64>(); break;
+        case AttributeUnderlyingType::Decimal128: std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = value.get<Decimal128>(); break;
+
         case AttributeUnderlyingType::String:
         {
             const auto & string = value.get<String>();
@@ -28,12 +33,12 @@ void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const s
             if (string_ref.data && string_ref.data != null_value_ref.data())
                 string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
 
-            const auto size = string.size();
-            if (size != 0)
+            const auto str_size = string.size();
+            if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(size + 1);
-                std::copy(string.data(), string.data() + size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, size};
+                auto string_ptr = string_arena->alloc(str_size + 1);
+                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
+                string_ref = StringRef{string_ptr, str_size};
             }
             else
                 string_ref = {};

@@ -20,8 +20,9 @@ namespace
 template <template <typename, typename> class AggregateFunctionTemplate, typename Data, typename ... TArgs>
 static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argument_type, TArgs && ... args)
 {
-    if (typeid_cast<const DataTypeDate *>(&argument_type)) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
-    if (typeid_cast<const DataTypeDateTime *>(&argument_type)) return new AggregateFunctionTemplate<UInt32, Data>(std::forward<TArgs>(args)...);
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32, Data>(std::forward<TArgs>(args)...);
     return createWithNumericType<AggregateFunctionTemplate, Data, TArgs...>(argument_type, std::forward<TArgs>(args)...);
 }
 
@@ -32,11 +33,12 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
     if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, has_limit>(*argument_type, argument_type, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
-    if (typeid_cast<const DataTypeString *>(argument_type.get()))
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::String)
         return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeString, has_limit::value>>(argument_type, std::forward<TArgs>(args)...);
 
     return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeGeneral, has_limit::value>>(argument_type, std::forward<TArgs>(args)...);
-};
+}
 
 
 static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
@@ -53,10 +55,10 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
     else if (parameters.size() == 1)
     {
         auto type = parameters[0].getType();
-        if (type != Field::Types::Int64  && type != Field::Types::UInt64)
+        if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
 
-        if ((type == Field::Types::Int64  && parameters[0].get<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[0].get<Int64>() < 0) ||
             (type == Field::Types::UInt64 && parameters[0].get<UInt64>() == 0))
             throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
 

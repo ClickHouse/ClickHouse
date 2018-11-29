@@ -40,9 +40,8 @@ BlockInputStreams executeQuery(
     new_context.setSettings(new_settings);
 
     ThrottlerPtr user_level_throttler;
-    if (settings.max_network_bandwidth_for_user)
-        if (auto process_list_element = context.getProcessListElement())
-            user_level_throttler = process_list_element->getUserNetworkThrottler();
+    if (auto process_list_element = context.getProcessListElement())
+        user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
     ThrottlerPtr throttler;
@@ -54,7 +53,7 @@ BlockInputStreams executeQuery(
                 "Limit for bytes to send or receive over network exceeded.",
                 user_level_throttler);
     }
-    else if (settings.max_network_bandwidth_for_user)
+    else
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())

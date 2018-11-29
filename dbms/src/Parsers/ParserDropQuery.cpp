@@ -10,11 +10,52 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+    extern const int LOGICAL_ERROR;
+}
 
 bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_drop("DROP");
     ParserKeyword s_detach("DETACH");
+    ParserKeyword s_truncate("TRUNCATE");
+
+    if (s_drop.ignore(pos, expected))
+        return parseDropQuery(pos, node, expected);
+    else if (s_detach.ignore(pos, expected))
+        return parseDetachQuery(pos, node, expected);
+    else if (s_truncate.ignore(pos, expected))
+        return parseTruncateQuery(pos, node, expected);
+    else
+        return false;
+}
+
+bool ParserDropQuery::parseDetachQuery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (parseDropQuery(pos, node, expected))
+    {
+        ASTDropQuery * drop_query = static_cast<ASTDropQuery*>(node.get());
+        drop_query->kind = ASTDropQuery::Kind::Detach;
+        return true;
+    }
+    return false;
+}
+
+bool ParserDropQuery::parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (parseDropQuery(pos, node, expected))
+    {
+        ASTDropQuery * drop_query = static_cast<ASTDropQuery*>(node.get());
+        drop_query->kind = ASTDropQuery::Kind::Truncate;
+        return true;
+    }
+    return false;
+}
+
+bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expected)
+{
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_database("DATABASE");
@@ -25,17 +66,8 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr database;
     ASTPtr table;
     String cluster_str;
-    bool detach = false;
     bool if_exists = false;
     bool temporary = false;
-
-    if (!s_drop.ignore(pos, expected))
-    {
-        if (s_detach.ignore(pos, expected))
-            detach = true;
-        else
-            return false;
-    }
 
     if (s_database.ignore(pos, expected))
     {
@@ -82,7 +114,7 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto query = std::make_shared<ASTDropQuery>();
     node = query;
 
-    query->detach = detach;
+    query->kind = ASTDropQuery::Kind::Drop;
     query->if_exists = if_exists;
     query->temporary = temporary;
     if (database)
@@ -93,6 +125,5 @@ bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-
 
 }

@@ -6,7 +6,7 @@
 #endif
 
 #include <common/Types.h>
-#include <Poco/NumberParser.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 
 /** Counts number of 0 in a file.
@@ -20,10 +20,10 @@ int main(int argc, char ** argv)
     {
         DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
         size_t zeros = 0;
-        size_t limit = 0;
+        UInt64 limit = 0;
 
         if (argc == 2)
-            limit = Poco::NumberParser::parseUnsigned64(argv[1]);
+            limit = DB::parse<UInt64>(argv[1]);
 
         while (!in.eof())
         {

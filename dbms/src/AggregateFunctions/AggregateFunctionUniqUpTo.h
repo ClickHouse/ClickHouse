@@ -8,7 +8,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -82,7 +84,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
         /// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
         if (count <= threshold)
-            wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
+            wb.write(reinterpret_cast<const char *>(data), count * sizeof(data[0]));
     }
 
     void read(ReadBuffer & rb, UInt8 threshold)
@@ -90,7 +92,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
         readBinary(count, rb);
 
         if (count <= threshold)
-            rb.read(reinterpret_cast<char *>(&data[0]), count * sizeof(data[0]));
+            rb.read(reinterpret_cast<char *>(data), count * sizeof(data[0]));
     }
 
     void add(const IColumn & column, size_t row_num, UInt8 threshold)
@@ -180,9 +182,9 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
-template <bool argument_is_tuple>
+template <bool is_exact, bool argument_is_tuple>
 class AggregateFunctionUniqUpToVariadic final
-    : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<argument_is_tuple>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>
 {
 private:
     size_t num_args = 0;
@@ -212,7 +214,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).insert(UniqVariadicHash<false, argument_is_tuple>::apply(num_args, columns, row_num), threshold);
+        this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

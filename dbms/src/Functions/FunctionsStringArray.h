@@ -66,7 +66,7 @@ public:
     /// Check the type of the function's arguments.
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -124,11 +124,11 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[0]->isString())
+        if (!isString(arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -145,7 +145,7 @@ public:
         String sep_str = col->getValue<String>();
 
         if (sep_str.size() != 1)
-            throw Exception("Illegal separator for function " + getName() + ". Must be exactly one byte.");
+            throw Exception("Illegal separator for function " + getName() + ". Must be exactly one byte.", ErrorCodes::BAD_ARGUMENTS);
 
         sep = sep_str[0];
     }
@@ -265,7 +265,7 @@ public:
     static size_t getNumberOfArguments() { return 2; }
 
     /// Check the type of function arguments.
-    static void checkArguments( const DataTypes &  arguments )
+    static void checkArguments(const DataTypes & arguments)
     {
         SplitByStringImpl::checkArguments(arguments);
     }
@@ -339,7 +339,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         Generator generator;
         generator.init(block, arguments);
@@ -352,12 +352,12 @@ public:
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnArray::Offsets & res_offsets = col_res->getOffsets();
-        ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
+        ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
         if (col_str)
         {
-            const ColumnString::Chars_t & src_chars = col_str->getChars();
+            const ColumnString::Chars & src_chars = col_str->getChars();
             const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
             res_offsets.reserve(src_offsets.size());
@@ -427,11 +427,11 @@ class FunctionArrayStringConcat : public IFunction
 {
 private:
     void executeInternal(
-        const ColumnString::Chars_t & src_chars,
+        const ColumnString::Chars & src_chars,
         const ColumnString::Offsets & src_string_offsets,
         const ColumnArray::Offsets & src_array_offsets,
         const char * delimiter, const size_t delimiter_size,
-        ColumnString::Chars_t & dst_chars,
+        ColumnString::Chars & dst_chars,
         ColumnString::Offsets & dst_string_offsets)
     {
         size_t size = src_array_offsets.size();
@@ -504,17 +504,17 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type || !array_type->getNestedType()->isString())
+        if (!array_type || !isString(array_type->getNestedType()))
             throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2
-            && !arguments[1]->isString())
+            && !isString(arguments[1]))
             throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         String delimiter;
         if (arguments.size() == 2)

@@ -1,23 +1,23 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <iostream>
 #include <iomanip>
+#include <iostream>
 
 #include <Common/SipHash.h>
 
 /// Adapted version https://www.131002.net/siphash/siphash24.c
 
 /*
-   SipHash-2-4 output with
-   k = 00 01 02 ...
-   and
-   in = (empty string)
-   in = 00 (1 byte)
-   in = 00 01 (2 bytes)
-   in = 00 01 02 (3 bytes)
-   ...
-   in = 00 01 02 ... 3e (63 bytes)
+    SipHash-2-4 output with
+    k = 00 01 02 ...
+    and
+    in = (empty string)
+    in = 00 (1 byte)
+    in = 00 01 (2 bytes)
+    in = 00 01 02 (3 bytes)
+    ...
+    in = 00 01 02 ... 3e (63 bytes)
 */
 uint8_t vectors[64][8] =
 {
@@ -91,49 +91,50 @@ uint8_t vectors[64][8] =
 int test_vectors()
 {
 #define MAXLEN 64
-  char in[MAXLEN];
+    char in[MAXLEN];
 
-  union
-  {
-      char out[16];
-      uint64_t out64[2];
-  };
-
-  union
-  {
-      char k[16];
-      uint64_t k64[2];
-  };
-
-  int i;
-  int ok = 1;
-
-  for( i = 0; i < 16; ++i ) k[i] = i;
-
-  for( i = 0; i < MAXLEN; ++i )
-  {
-    in[i] = i;
-
-    size_t part = i == 0 ? 0 : (rand() % i);
-
-    SipHash hash(k64[0], k64[1]);
-
-    hash.update(in, part);
-    hash.update(in + part, i - part);
-
-    hash.get128(out);
-
-    uint64_t test_vector;
-    memcpy(&test_vector, vectors[i], 8);
-
-    if ((out64[0] ^ out64[1]) != test_vector)
+    union
     {
-      std::cerr << "test vector failed for " << i << " bytes" << std::endl;
-      ok = 0;
-    }
-  }
+        char out[16];
+        uint64_t out64[2];
+    };
 
-  return ok;
+    union
+    {
+        char k[16];
+        uint64_t k64[2];
+    };
+
+    int i;
+    int ok = 1;
+
+    for (i = 0; i < 16; ++i)
+        k[i] = i;
+
+    for (i = 0; i < MAXLEN; ++i)
+    {
+        in[i] = i;
+
+        size_t part = i == 0 ? 0 : (rand() % i);
+
+        SipHash hash(k64[0], k64[1]);
+
+        hash.update(in, part);
+        hash.update(in + part, i - part);
+
+        hash.get128(out);
+
+        uint64_t test_vector;
+        memcpy(&test_vector, vectors[i], 8);
+
+        if ((out64[0] ^ out64[1]) != test_vector)
+        {
+            std::cerr << "test vector failed for " << i << " bytes" << std::endl;
+            ok = 0;
+        }
+    }
+
+    return ok;
 }
 
 

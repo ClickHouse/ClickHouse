@@ -6,6 +6,9 @@
 #include <ctime>
 #include <memory>
 #include <functional>
+#include <Poco/File.h>
+#include <Common/escapeForFileName.h>
+#include <Interpreters/Context.h>
 
 
 class ThreadPool;
@@ -88,7 +91,7 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) = 0;
 
-    /// Delete the table from the database and return it. Delete the metadata.
+    /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
         const Context & context,
         const String & name) = 0;
@@ -122,10 +125,18 @@ public:
         const String & name) = 0;
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    virtual ASTPtr getCreateQuery(
-        const Context & context,
-        const String & name) const = 0;
+    virtual ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const = 0;
 
+    virtual ASTPtr getCreateTableQuery(const Context & context, const String & name) const
+    {
+        return tryGetCreateTableQuery(context, name);
+    }
+
+    /// Get the CREATE DATABASE query for current database.
+    virtual ASTPtr getCreateDatabaseQuery(const Context & context) const = 0;
+
+    /// Get name of database.
+    virtual String getDatabaseName() const = 0;
     /// Returns path for persistent data storage if the database supports it, empty string otherwise
     virtual String getDataPath() const { return {}; }
     /// Returns metadata path if the database supports it, empty string otherwise
@@ -136,8 +147,8 @@ public:
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
-    /// Delete metadata, the deletion of which differs from the recursive deletion of the directory, if any.
-    virtual void drop() = 0;
+    /// Delete data and metadata stored inside the database, if exists.
+    virtual void drop() {}
 
     virtual ~IDatabase() {}
 };

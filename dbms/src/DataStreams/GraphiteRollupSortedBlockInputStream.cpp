@@ -12,6 +12,35 @@ namespace ErrorCodes
 }
 
 
+GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
+    const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+    const Graphite::Params & params, time_t time_of_merge)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
+    params(params), time_of_merge(time_of_merge)
+{
+    size_t max_size_of_aggregate_state = 0;
+    size_t max_alignment_of_aggregate_state = 1;
+
+    for (const auto & pattern : params.patterns)
+    {
+        max_size_of_aggregate_state = std::max(max_size_of_aggregate_state, pattern.function->sizeOfData());
+        max_alignment_of_aggregate_state = std::max(max_alignment_of_aggregate_state, pattern.function->alignOfData());
+    }
+
+    place_for_aggregate_state.reset(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
+
+    /// Memoize column numbers in block.
+    path_column_num = header.getPositionByName(params.path_column_name);
+    time_column_num = header.getPositionByName(params.time_column_name);
+    value_column_num = header.getPositionByName(params.value_column_name);
+    version_column_num = header.getPositionByName(params.version_column_name);
+
+    for (size_t i = 0; i < num_columns; ++i)
+        if (i != time_column_num && i != value_column_num && i != version_column_num)
+            unmodified_column_numbers.push_back(i);
+}
+
+
 const Graphite::Pattern * GraphiteRollupSortedBlockInputStream::selectPatternForPath(StringRef path) const
 {
     for (const auto & pattern : params.patterns)
@@ -68,10 +97,8 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
@@ -79,28 +106,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return Block();
 
-    /// Additional initialization.
-    if (is_first)
-    {
-        size_t max_size_of_aggregate_state = 0;
-        for (const auto & pattern : params.patterns)
-            if (pattern.function->sizeOfData() > max_size_of_aggregate_state)
-                max_size_of_aggregate_state = pattern.function->sizeOfData();
-
-        place_for_aggregate_state.resize(max_size_of_aggregate_state);
-
-        /// Memoize column numbers in block.
-        path_column_num = header.getPositionByName(params.path_column_name);
-        time_column_num = header.getPositionByName(params.time_column_name);
-        value_column_num = header.getPositionByName(params.value_column_name);
-        version_column_num = header.getPositionByName(params.version_column_name);
-
-        for (size_t i = 0; i < num_columns; ++i)
-            if (i != time_column_num && i != value_column_num && i != version_column_num)
-                unmodified_column_numbers.push_back(i);
-    }
-
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -126,7 +132,7 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
         is_first = false;
 
-        time_t next_row_time = next_cursor->all_columns[time_column_num]->get64(next_cursor->pos);
+        time_t next_row_time = next_cursor->all_columns[time_column_num]->getUInt(next_cursor->pos);
         /// Is new key before rounding.
         bool is_new_key = new_path || next_row_time != current_time;
 
@@ -245,7 +251,7 @@ void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merge
 void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & merged_columns)
 {
     /// Insert calculated values of the columns `time`, `value`, `version`.
-    merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
+    merged_columns[time_column_num]->insert(current_time_rounded);
     merged_columns[version_column_num]->insertFrom(
         *(*current_subgroup_newest_row.columns)[version_column_num], current_subgroup_newest_row.row_num);
 

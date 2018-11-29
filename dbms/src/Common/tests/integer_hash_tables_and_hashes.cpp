@@ -331,8 +331,8 @@ void NO_INLINE testForEachMapAndHash(const Key * data, size_t size)
 
     testForEachHash<HashMap>(data, size, nothing);
     testForEachHash<std::unordered_map>(data, size, nothing);
-    testForEachHash<google::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
-    testForEachHash<google::sparse_hash_map>(data, size, nothing);
+    testForEachHash<GOOGLE_NAMESPACE::dense_hash_map>(data, size, [](auto & map){ map.set_empty_key(-1); });
+    testForEachHash<GOOGLE_NAMESPACE::sparse_hash_map>(data, size, nothing);
 }
 
 
@@ -359,7 +359,7 @@ int main(int argc, char ** argv)
         DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
         DB::CompressedReadBuffer in2(in1);
 
-        in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
+        in2.readStrict(reinterpret_cast<char*>(data.data()), sizeof(data[0]) * n);
 
         watch.stop();
         std::cerr

@@ -51,7 +51,7 @@ int main(int argc, const char ** argv)
             return 1;
         }
         len = std::min(static_cast<UInt64>(block), size - pos);
-        in.read(&buf[0], len);
+        in.read(buf.get(), len);
         checksum += buf[0] + buf[block - 1];
         pos += len;
         bytes_read += len;

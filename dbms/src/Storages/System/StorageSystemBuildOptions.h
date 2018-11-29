@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,25 +12,18 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorage
+class StorageSystemBuildOptions : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorageSystemOneBlock<StorageSystemBuildOptions>
 {
-public:
-    std::string getName() const override { return "SystemBuildOptions"; }
-    std::string getTableName() const override { return name; }
-
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-private:
-    const std::string name;
-
 protected:
-    StorageSystemBuildOptions(const std::string & name_);
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
+public:
+
+    std::string getName() const override { return "SystemBuildOptions"; }
+
+    static NamesAndTypesList getNamesAndTypes();
 };
 
 }

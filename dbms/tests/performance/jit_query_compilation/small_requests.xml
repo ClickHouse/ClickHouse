@@ -1,0 +1,48 @@
+<test>
+  <name>small_requests</name>
+  <type>loop</type>
+
+    <stop_conditions>
+        <all_of>
+            <iterations>5</iterations>
+            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
+        </all_of>
+        <any_of>
+            <iterations>5000</iterations>
+            <total_time_ms>60000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+      <bytes_per_second/>
+    </main_metric>
+
+    <metrics>
+      <rows_per_second/>
+    </metrics>
+
+    <query>
+        WITH
+            bitXor(number, 0x4CF2D2BAAE6DA887) AS x0,
+            bitXor(x0, bitShiftRight(x0, 33)) AS x1,
+            x1 * 0xff51afd7ed558ccd AS x2,
+            bitXor(x2, bitShiftRight(x2, 33)) AS x3,
+            x3 * 0xc4ceb9fe1a85ec53 AS x4,
+            bitXor(x4, bitShiftRight(x4, 33)) AS x5
+        SELECT x5, intHash64(number) FROM system.numbers LIMIT 10
+        SETTINGS
+            compile_expressions = 0
+    </query>
+    <query>
+        WITH
+            bitXor(number, 0x4CF2D2BAAE6DA887) AS x0,
+            bitXor(x0, bitShiftRight(x0, 33)) AS x1,
+            x1 * 0xff51afd7ed558ccd AS x2,
+            bitXor(x2, bitShiftRight(x2, 33)) AS x3,
+            x3 * 0xc4ceb9fe1a85ec53 AS x4,
+            bitXor(x4, bitShiftRight(x4, 33)) AS x5
+        SELECT x5, intHash64(number) FROM system.numbers LIMIT 10
+        SETTINGS
+            compile_expressions = 1
+    </query>
+</test>

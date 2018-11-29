@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <array>
 
 #define STACK_TRACE_MAX_DEPTH 32
 
@@ -17,6 +18,9 @@ public:
 
 private:
     using Frame = void*;
-    Frame frames[STACK_TRACE_MAX_DEPTH];
+    using Frames = std::array<Frame, STACK_TRACE_MAX_DEPTH>;
+    Frames frames;
     size_t frames_size;
+
+    static std::string toStringImpl(const Frames & frames, size_t frames_size);
 };

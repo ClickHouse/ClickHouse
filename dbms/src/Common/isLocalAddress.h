@@ -1,6 +1,8 @@
 #pragma once
 
 #include <common/Types.h>
+#include <Poco/Net/IPAddress.h>
+
 
 namespace Poco
 {
@@ -23,6 +25,8 @@ namespace DB
     bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port);
 
     bool isLocalAddress(const Poco::Net::SocketAddress & address);
+
+    bool isLocalAddress(const Poco::Net::IPAddress & address);
 
     /// Returns number of different bytes in hostnames, used for load balancing
     size_t getHostNameDifference(const std::string & local_hostname, const std::string & host);

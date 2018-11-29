@@ -2,12 +2,7 @@
 
 #include <vector>
 #include <Common/Stopwatch.h>
-
 #include <Core/Types.h>
-
-#if __APPLE__
-#include <common/apple_rt.h>
-#endif
 
 namespace DB
 {

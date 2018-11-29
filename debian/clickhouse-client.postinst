@@ -1,7 +1,6 @@
 #!/bin/sh
 set -e
 
-mkdir -p /etc/clickhouse-client/conf.d
+CLICKHOUSE_USER=${CLICKHOUSE_USER=clickhouse}
 
-# user created by clickhouse-server package
-chown -R clickhouse /etc/clickhouse-client || true
+mkdir -p /etc/clickhouse-client/conf.d

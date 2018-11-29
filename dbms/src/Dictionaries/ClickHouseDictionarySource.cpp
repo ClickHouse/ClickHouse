@@ -1,13 +1,17 @@
-#include <Dictionaries/ClickHouseDictionarySource.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/writeParenthesisedString.h>
+#include "ClickHouseDictionarySource.h"
+#include "ExternalQueryBuilder.h"
+#include "writeParenthesisedString.h"
 #include <Client/ConnectionPool.h>
 #include <DataStreams/RemoteBlockInputStream.h>
+#include "readInvalidateQuery.h"
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
 #include <memory>
 #include <ext/range.h>
 #include <IO/ConnectionTimeouts.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+
 
 namespace DB
 {
@@ -21,13 +25,15 @@ namespace ErrorCodes
 static const size_t MAX_CONNECTIONS = 16;
 
 static ConnectionPoolWithFailoverPtr createPool(
-        const std::string & host, UInt16 port, const std::string & db,
+        const std::string & host, UInt16 port, bool secure, const std::string & db,
         const std::string & user, const std::string & password, const Context & context)
 {
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(context.getSettingsRef());
     ConnectionPoolPtrs pools;
     pools.emplace_back(std::make_shared<ConnectionPool>(
-            MAX_CONNECTIONS, host, port, db, user, password, timeouts, "ClickHouseDictionarySource"));
+            MAX_CONNECTIONS, host, port, db, user, password, timeouts, "ClickHouseDictionarySource",
+            Protocol::Compression::Enable,
+            secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));
     return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
 }
 
@@ -41,16 +47,18 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         dict_struct{dict_struct_},
         host{config.getString(config_prefix + ".host")},
         port(config.getInt(config_prefix + ".port")),
+        secure(config.getBool(config_prefix + ".secure", false)),
         user{config.getString(config_prefix + ".user", "")},
         password{config.getString(config_prefix + ".password", "")},
         db{config.getString(config_prefix + ".db", "")},
         table{config.getString(config_prefix + ".table")},
         where{config.getString(config_prefix + ".where", "")},
         update_field{config.getString(config_prefix + ".update_field", "")},
-        query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
+        invalidate_query{config.getString(config_prefix + ".invalidate_query", "")},
+        query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks},
         sample_block{sample_block}, context(context),
         is_local{isLocalAddress({ host, port }, config.getInt("tcp_port", 0))},
-        pool{is_local ? nullptr : createPool(host, port, db, user, password, context)},
+        pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)},
         load_all_query{query_builder.composeLoadAllQuery()}
 {}
 
@@ -58,14 +66,18 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
     : update_time{other.update_time},
         dict_struct{other.dict_struct},
-        host{other.host}, port{other.port}, user{other.user}, password{other.password},
+        host{other.host}, port{other.port},
+        secure{other.secure},
+        user{other.user}, password{other.password},
         db{other.db}, table{other.table},
         where{other.where},
         update_field{other.update_field},
-        query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
+        invalidate_query{other.invalidate_query},
+        invalidate_query_response{other.invalidate_query_response},
+        query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks},
         sample_block{other.sample_block}, context(other.context),
         is_local{other.is_local},
-        pool{is_local ? nullptr : createPool(host, port, db, user, password, context)},
+        pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)},
         load_all_query{other.load_all_query}
 {}
 
@@ -120,6 +132,18 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadKeys(
             key_columns, requested_rows, ExternalQueryBuilder::IN_WITH_TUPLES));
 }
 
+bool ClickHouseDictionarySource::isModified() const
+{
+    if (!invalidate_query.empty())
+    {
+        auto response = doInvalidateQuery(invalidate_query);
+        if (invalidate_query_response == response)
+            return false;
+        invalidate_query_response = response;
+    }
+    return true;
+}
+
 bool ClickHouseDictionarySource::hasUpdateField() const
 {
     return !update_field.empty();
@@ -136,6 +160,35 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
     if (is_local)
         return executeQuery(query, context, true).in;
     return std::make_shared<RemoteBlockInputStream>(pool, query, sample_block, context);
+}
+
+std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
+{
+    if (is_local)
+    {
+        auto input_block = executeQuery(request, context, true).in;
+        return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream&>((*input_block)));
+    }
+    else
+    {
+        /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
+        Block invalidate_sample_block;
+        RemoteBlockInputStream invalidate_stream(pool, request, invalidate_sample_block, context);
+        return readInvalidateQuery(invalidate_stream);
+    }
+}
+
+
+void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 Context & context) -> DictionarySourcePtr {
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
+    };
+    factory.registerSource("clickhouse", createTableSource);
 }
 
 }

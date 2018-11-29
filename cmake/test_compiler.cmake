@@ -14,6 +14,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif ()
 
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
+    set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} Threads::Threads)
 
     check_cxx_source_compiles("
         #include <iostream>
@@ -24,8 +25,6 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
         " HAVE_LIBCXX)
 
 else ()
-
-    cmake_push_check_state ()
 
     set (TEST_FLAG "-no-pie")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
@@ -39,7 +38,6 @@ else ()
     if (HAVE_NO_PIE)
         set (FLAG_NO_PIE ${TEST_FLAG})
     endif ()
-
 
 endif ()
 

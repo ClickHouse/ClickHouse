@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
-
+#include "INamesProvider.h"
 #include <Common/FileUpdatesTracker.h>
 
 
@@ -44,7 +43,7 @@ public:
     RegionsNamesDataProvider(const std::string & directory_);
 
     ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(
-        const std::string& language) const override;
+        const std::string & language) const override;
 
 private:
     std::string getDataFilePath(const std::string & language) const;

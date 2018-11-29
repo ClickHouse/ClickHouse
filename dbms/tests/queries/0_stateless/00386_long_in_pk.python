@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+
+def gen_queries():
+    create_template = 'create table test.tab (a Int8, b String, c Tuple(Int8), d Tuple(Tuple(Int8)), e Tuple(Int8, String), f Tuple(Tuple(Int8, String))) engine = MergeTree order by ({}) partition by {}'
+    drop_query = 'drop table if exists test.tab'
+    values = ('1', "'a'", 'tuple(1)', 'tuple(tuple(1))', "(1, 'a')", "tuple((1, 'a'))")
+    insert_query = "insert into test.tab values (1, 'a', tuple(1), tuple(tuple(1)), (1, 'a'), tuple((1, 'a')))"
+    columns = tuple('a b c d'.split())
+    order_by_columns = tuple('a b c'.split())
+    partition_by_columns = tuple(' tuple() a'.split())
+    
+    for partition in partition_by_columns:
+        for key_mask in range(1, 1 << len(order_by_columns)):
+            key = ','.join(order_by_columns[i] for i in range(len(order_by_columns)) if (1 << i) & key_mask != 0)
+            create_query = create_template.format(key, partition)
+            for q in (drop_query, create_query, insert_query):
+                yield q
+	    
+            for column, value in zip(columns, values):
+		yield 'select {} in {} from test.tab'.format(column, value)
+                yield 'select {} in tuple({}) from test.tab'.format(column, value)
+                yield 'select {} in (select {} from test.tab) from test.tab'.format(column, column)
+
+            for i in range(len(columns)):
+                for j in range(i, len(columns)):
+                    yield 'select ({}, {}) in tuple({}, {}) from test.tab'.format(columns[i], columns[j], values[i], values[j])
+                    yield 'select ({}, {}) in (select {}, {} from test.tab) from test.tab'.format(columns[i], columns[j], columns[i], columns[j])
+                    yield 'select ({}, {}) in (select ({}, {}) from test.tab) from test.tab'.format(columns[i], columns[j], columns[i], columns[j])
+            
+            yield "select e in (1, 'a') from test.tab"
+            yield "select f in tuple((1, 'a')) from test.tab"
+            yield "select f in tuple(tuple((1, 'a'))) from test.tab"
+
+            yield 'select e in (select a, b from test.tab) from test.tab'
+            yield 'select e in (select (a, b) from test.tab) from test.tab'
+            yield 'select f in (select tuple((a, b)) from test.tab) from test.tab'
+            yield 'select tuple(f) in (select tuple(tuple((a, b))) from test.tab) from test.tab'
+
+import requests
+import os
+
+def main():
+    url = os.environ['CLICKHOUSE_URL']
+    
+    for q in gen_queries():
+        resp = requests.post(url, data=q)
+        if resp.status_code != 200 or resp.text.strip() not in ('1', ''):
+            print 'Query:', q
+            print 'Code:', resp.status_code
+            print resp.text
+            break
+
+if __name__ == "__main__":
+    main()
+

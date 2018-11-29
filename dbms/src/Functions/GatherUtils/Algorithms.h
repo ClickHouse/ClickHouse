@@ -12,7 +12,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace  DB::GatherUtils
+namespace DB::GatherUtils
 {
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
@@ -79,7 +79,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 {
     for (size_t i = 0; i < slice.size; ++i)
     {
-        Field field = static_cast<typename NearestFieldType<T>::Type>(slice.data[i]);
+        Field field = T(slice.data[i]);
         sink.elements.insert(field);
     }
     sink.current_offset += slice.size;
@@ -105,7 +105,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 
     if (slice.size == 1) /// Always true for ValueSlice.
         sink.null_map[sink.current_offset] = 0;
-    else
+    else if (slice.size)
         memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
 
     writeSlice(slice, static_cast<ArraySink &>(sink));
@@ -147,7 +147,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, NumericArr
 template <typename T>
 inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, GenericArraySink & sink)
 {
-    Field field = static_cast<typename NearestFieldType<T>::Type>(slice.value);
+    Field field = T(slice.value);
     sink.elements.insert(field);
     ++sink.current_offset;
 }
@@ -294,7 +294,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 {
     const bool is_null = offset_column.onlyNull();
     const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
     const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     while (!src.isEnd())
@@ -325,12 +325,12 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
 {
     const bool is_offset_null = offset_column.onlyNull();
     const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
     const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
 
     const bool is_length_null = length_column.onlyNull();
     const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
-    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
     const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())
@@ -367,7 +367,7 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
-    const UInt8 * cond_pos = &condition[0];
+    const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
     while (cond_pos < cond_end)

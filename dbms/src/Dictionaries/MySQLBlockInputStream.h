@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Dictionaries/ExternalResultDescription.h>
+#include "ExternalResultDescription.h"
 #include <mysqlxx/Query.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <string>
@@ -21,7 +21,7 @@ public:
 
     String getName() const override { return "MySQL"; }
 
-    Block getHeader() const override { return description.sample_block; };
+    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 private:
     Block readImpl() override;

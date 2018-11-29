@@ -27,7 +27,7 @@ public:
     const char * end = nullptr;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "InsertQuery_" + database + "_" + table; };
+    String getID() const override { return "InsertQuery_" + database + "_" + table; }
 
     ASTPtr clone() const override
     {
@@ -35,7 +35,7 @@ public:
         res->children.clear();
 
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
-        if (select)  { res->select = select->clone(); res->children.push_back(res->select); }
+        if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (table_function)
         {
             res->table_function = table_function->clone(); res->children.push_back(res->table_function);

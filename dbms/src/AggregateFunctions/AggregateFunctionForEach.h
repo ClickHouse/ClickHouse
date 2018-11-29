@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
@@ -59,10 +58,11 @@ private:
         size_t old_size = state.dynamic_array_size;
         if (old_size < new_size)
         {
-            state.array_of_aggregate_datas = arena.realloc(
+            state.array_of_aggregate_datas = arena.alignedRealloc(
                 state.array_of_aggregate_datas,
                 old_size * nested_size_of_data,
-                new_size * nested_size_of_data);
+                new_size * nested_size_of_data,
+                nested_func->alignOfData());
 
             size_t i = old_size;
             char * nested_state = state.array_of_aggregate_datas + i * nested_size_of_data;
@@ -105,7 +105,7 @@ public:
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!typeid_cast<const DataTypeArray *>(type.get()))
+            if (!isArray(type))
                 throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

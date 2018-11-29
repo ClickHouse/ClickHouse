@@ -21,8 +21,8 @@ void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes);
 
 /** The same, with the condition to cancel.
   */
-void copyData(ReadBuffer & from, WriteBuffer & to, std::atomic<int> & is_cancelled);
-void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::atomic<int> & is_cancelled);
+void copyData(ReadBuffer & from, WriteBuffer & to, const std::atomic<int> & is_cancelled);
+void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, const std::atomic<int> & is_cancelled);
 
 void copyData(ReadBuffer & from, WriteBuffer & to, std::function<void()> cancellation_hook);
 void copyData(ReadBuffer & from, WriteBuffer & to, size_t bytes, std::function<void()> cancellation_hook);

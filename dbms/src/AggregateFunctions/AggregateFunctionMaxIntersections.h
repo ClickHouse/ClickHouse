@@ -61,10 +61,10 @@ public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
         : kind(kind_)
     {
-        if (!arguments[0]->isNumber())
+        if (!isNumber(arguments[0]))
             throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!arguments[1]->isNumber())
+        if (!isNumber(arguments[1]))
             throw Exception{getName() + ": second argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!arguments[0]->equals(*arguments[1]))
@@ -111,7 +111,7 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
+        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
@@ -125,7 +125,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(&value[0]), size * sizeof(value[0]));
+        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -137,7 +137,8 @@ public:
         /// const_cast because we will sort the array
         auto & array = const_cast<typename MaxIntersectionsData<PointType>::Array &>(this->data(place).value);
 
-        std::sort(array.begin(), array.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
+        /// Sort by position; for equal position, sort by weight to get deterministic result.
+        std::sort(array.begin(), array.end());
 
         for (const auto & point_weight : array)
         {

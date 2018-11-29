@@ -21,7 +21,7 @@ make
 
 Создание таблиц в ClickHouse:
 
-```sql
+``` sql
 CREATE TABLE lineorder (
         LO_ORDERKEY             UInt32,
         LO_LINENUMBER           UInt8,
@@ -82,3 +82,5 @@ CREATE TABLE partd AS part ENGINE = Distributed(perftest_3shards_1replicas, defa
 cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INTO customer FORMAT CSV"
 cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/getting_started/example_datasets/star_schema/) <!--hide-->

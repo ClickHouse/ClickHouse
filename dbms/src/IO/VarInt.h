@@ -118,13 +118,15 @@ inline void throwReadAfterEOF()
     throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+template <bool fast>
+inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
     for (size_t i = 0; i < 9; ++i)
     {
-        if (istr.eof())
-            throwReadAfterEOF();
+        if constexpr (!fast)
+            if (istr.eof())
+                throwReadAfterEOF();
 
         UInt64 byte = *istr.position();
         ++istr.position();
@@ -133,6 +135,13 @@ inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
         if (!(byte & 0x80))
             return;
     }
+}
+
+inline void readVarUInt(UInt64 & x, ReadBuffer & istr)
+{
+    if (istr.buffer().end() - istr.position() >= 9)
+        return readVarUIntImpl<true>(x, istr);
+    return readVarUIntImpl<false>(x, istr);
 }
 
 

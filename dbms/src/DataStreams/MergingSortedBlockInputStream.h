@@ -1,13 +1,16 @@
 #pragma once
 
 #include <queue>
-#include <boost/intrusive_ptr.hpp>
+
+#include <boost/smart_ptr/intrusive_ptr.hpp>
 
 #include <common/logger_useful.h>
 
 #include <Core/Row.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
+
+#include <IO/WriteHelpers.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -65,16 +68,15 @@ public:
       * quiet - don't log profiling info
       */
     MergingSortedBlockInputStream(
-            BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-            size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        size_t limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return header; }
 
 protected:
     struct RowRef
@@ -120,13 +122,15 @@ protected:
 
     void readSuffixImpl() override;
 
-    /// Initializes the queue and the next result block.
-    void init(Block & header, MutableColumns & merged_columns);
+    /// Initializes the queue and the columns of next result block.
+    void init(MutableColumns & merged_columns);
 
     /// Gets the next block from the source corresponding to the `current`.
     template <typename TSortCursor>
     void fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue);
 
+
+    Block header;
 
     const SortDescription description;
     const size_t max_block_size;
@@ -148,7 +152,7 @@ protected:
     CursorImpls cursors;
 
     using Queue = std::priority_queue<SortCursor>;
-    Queue queue;
+    Queue queue_without_collation;
 
     using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
     QueueWithCollation queue_with_collation;

@@ -1,0 +1,24 @@
+version: '2'
+
+services:
+  kafka_zookeeper:
+    image: zookeeper:3.4.9
+    hostname: kafka_zookeeper
+    environment:
+        ZOO_MY_ID: 1
+        ZOO_PORT: 2181
+        ZOO_SERVERS: server.1=kafka_zookeeper:2888:3888
+
+  kafka1:
+    image: confluentinc/cp-kafka:4.1.0
+    hostname: kafka1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka1:9092"
+      KAFKA_ZOOKEEPER_CONNECT: "kafka_zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - kafka_zookeeper

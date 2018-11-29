@@ -1,6 +1,7 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -14,6 +15,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 
 
@@ -96,7 +98,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 
     if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&*expression))
     {
-        if (identifier->kind == ASTIdentifier::Kind::Column)
+        if (identifier->general())
             return columns.count(identifier->name);
     }
     return true;
@@ -155,7 +157,8 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return;
 
     /// Let's analyze and calculate the expression.
-    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(expression_ast, block.getNamesAndTypesList());
+    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false);
 
     Block block_with_filter = block;

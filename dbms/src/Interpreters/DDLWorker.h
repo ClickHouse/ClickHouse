@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <DataStreams/BlockIO.h>
+#include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -18,7 +19,8 @@ struct DDLLogEntry;
 struct DDLTask;
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context);
+/// Pushes distributed DDL query to the queue
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr, const Context & context, NameSet && query_databases);
 
 
 class DDLWorker
@@ -66,9 +68,12 @@ private:
 
     void run();
 
+    void attachToThreadGroup();
+
 private:
     Context & context;
     Logger * log;
+    std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port
@@ -95,6 +100,8 @@ private:
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
+
+    ThreadGroupStatusPtr thread_group;
 
     friend class DDLQueryStatusInputSream;
     friend struct DDLTask;

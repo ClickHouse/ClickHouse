@@ -27,7 +27,8 @@ def test_chroot_with_same_root():
                 CREATE TABLE simple (date Date, id UInt32)
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
                 '''.format(replica=node.name))
-                node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
+                for j in range(2): # Second insert to test deduplication
+                    node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
 
             time.sleep(1)
 
@@ -67,7 +68,8 @@ def test_chroot_with_different_root():
                 CREATE TABLE simple (date Date, id UInt32) 
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
                 '''.format(replica=node.name))
-                node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
+                for j in range(2): # Second insert to test deduplication
+                    node.query("INSERT INTO simple VALUES ({0}, {0})".format(i))
 
             assert node1.query('select count() from simple').strip() == '1'
             assert node2.query('select count() from simple').strip() == '1'

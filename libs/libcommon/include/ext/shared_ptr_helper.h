@@ -29,7 +29,7 @@ struct shared_ptr_helper
           */
         struct Local : T
         {
-            Local(TArgs &&... args) : T(std::forward<TArgs>(args)...) {};
+            Local(TArgs &&... args) : T(std::forward<TArgs>(args)...) {}
         };
 
         return std::make_shared<Local>(std::forward<TArgs>(args)...);

@@ -1,0 +1,65 @@
+SELECT toDecimal32(12345.6789, 4) AS x, round(x), round(x, 1), round(x, 2), round(x, 3), round(x, 4), round(x, 5);
+SELECT toDecimal32(12345.6789, 4) AS x, ceil(x), ceil(x, 1), ceil(x, 2), ceil(x, 3), ceil(x, 4), ceil(x, 5);
+SELECT toDecimal32(12345.6789, 4) AS x, floor(x), floor(x, 1), floor(x, 2), floor(x, 3), floor(x, 4), floor(x, 5);
+SELECT toDecimal32(12345.6789, 4) AS x, trunc(x), trunc(x, 1), trunc(x, 2), trunc(x, 3), trunc(x, 4), trunc(x, 5);
+SELECT toDecimal32(-12345.6789, 4) AS x, round(x), round(x, 1), round(x, 2), round(x, 3), round(x, 4), round(x, 5);
+SELECT toDecimal32(-12345.6789, 4) AS x, ceil(x), ceil(x, 1), ceil(x, 2), ceil(x, 3), ceil(x, 4), ceil(x, 5);
+SELECT toDecimal32(-12345.6789, 4) AS x, floor(x), floor(x, 1), floor(x, 2), floor(x, 3), floor(x, 4), floor(x, 5);
+SELECT toDecimal32(-12345.6789, 4) AS x, trunc(x), trunc(x, 1), trunc(x, 2), trunc(x, 3), trunc(x, 4), trunc(x, 5);
+SELECT toDecimal32(12345.6789, 4) AS x, round(x, -1), round(x, -2), round(x, -3), round(x, -4), round(x, -5);
+SELECT toDecimal32(12345.6789, 4) AS x, ceil(x, -1), ceil(x, -2), ceil(x, -3), ceil(x, -4), ceil(x, -5);
+SELECT toDecimal32(12345.6789, 4) AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), floor(x, -5);
+SELECT toDecimal32(12345.6789, 4) AS x, trunc(x, -1), trunc(x, -2), trunc(x, -3), trunc(x, -4), trunc(x, -5);
+SELECT toDecimal32(-12345.6789, 4) AS x, round(x, -1), round(x, -2), round(x, -3), round(x, -4), round(x, -5);
+SELECT toDecimal32(-12345.6789, 4) AS x, ceil(x, -1), ceil(x, -2), ceil(x, -3), ceil(x, -4), ceil(x, -5);
+SELECT toDecimal32(-12345.6789, 4) AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), floor(x, -5);
+SELECT toDecimal32(-12345.6789, 4) AS x, trunc(x, -1), trunc(x, -2), trunc(x, -3), trunc(x, -4), trunc(x, -5);
+
+SELECT toDecimal64(12345.6789, 4) AS x, round(x), round(x, 1), round(x, 2), round(x, 3), round(x, 4), round(x, 5);
+SELECT toDecimal64(12345.6789, 4) AS x, ceil(x), ceil(x, 1), ceil(x, 2), ceil(x, 3), ceil(x, 4), ceil(x, 5);
+SELECT toDecimal64(12345.6789, 4) AS x, floor(x), floor(x, 1), floor(x, 2), floor(x, 3), floor(x, 4), floor(x, 5);
+SELECT toDecimal64(12345.6789, 4) AS x, trunc(x), trunc(x, 1), trunc(x, 2), trunc(x, 3), trunc(x, 4), trunc(x, 5);
+SELECT toDecimal64(-12345.6789, 4) AS x, round(x), round(x, 1), round(x, 2), round(x, 3), round(x, 4), round(x, 5);
+SELECT toDecimal64(-12345.6789, 4) AS x, ceil(x), ceil(x, 1), ceil(x, 2), ceil(x, 3), ceil(x, 4), ceil(x, 5);
+SELECT toDecimal64(-12345.6789, 4) AS x, floor(x), floor(x, 1), floor(x, 2), floor(x, 3), floor(x, 4), floor(x, 5);
+SELECT toDecimal64(-12345.6789, 4) AS x, trunc(x), trunc(x, 1), trunc(x, 2), trunc(x, 3), trunc(x, 4), trunc(x, 5);
+SELECT toDecimal64(12345.6789, 4) AS x, round(x, -1), round(x, -2), round(x, -3), round(x, -4), round(x, -5);
+SELECT toDecimal64(12345.6789, 4) AS x, ceil(x, -1), ceil(x, -2), ceil(x, -3), ceil(x, -4), ceil(x, -5);
+SELECT toDecimal64(12345.6789, 4) AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), floor(x, -5);
+SELECT toDecimal64(12345.6789, 4) AS x, trunc(x, -1), trunc(x, -2), trunc(x, -3), trunc(x, -4), trunc(x, -5);
+SELECT toDecimal64(-12345.6789, 4) AS x, round(x, -1), round(x, -2), round(x, -3), round(x, -4), round(x, -5);
+SELECT toDecimal64(-12345.6789, 4) AS x, ceil(x, -1), ceil(x, -2), ceil(x, -3), ceil(x, -4), ceil(x, -5);
+SELECT toDecimal64(-12345.6789, 4) AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), floor(x, -5);
+SELECT toDecimal64(-12345.6789, 4) AS x, trunc(x, -1), trunc(x, -2), trunc(x, -3), trunc(x, -4), trunc(x, -5);
+
+SELECT toDecimal128(12345.6789, 4) AS x, round(x), round(x, 1), round(x, 2), round(x, 3), round(x, 4), round(x, 5);
+SELECT toDecimal128(12345.6789, 4) AS x, ceil(x), ceil(x, 1), ceil(x, 2), ceil(x, 3), ceil(x, 4), ceil(x, 5);
+SELECT toDecimal128(12345.6789, 4) AS x, floor(x), floor(x, 1), floor(x, 2), floor(x, 3), floor(x, 4), floor(x, 5);
+SELECT toDecimal128(12345.6789, 4) AS x, trunc(x), trunc(x, 1), trunc(x, 2), trunc(x, 3), trunc(x, 4), trunc(x, 5);
+SELECT toDecimal128(-12345.6789, 4) AS x, round(x), round(x, 1), round(x, 2), round(x, 3), round(x, 4), round(x, 5);
+SELECT toDecimal128(-12345.6789, 4) AS x, ceil(x), ceil(x, 1), ceil(x, 2), ceil(x, 3), ceil(x, 4), ceil(x, 5);
+SELECT toDecimal128(-12345.6789, 4) AS x, floor(x), floor(x, 1), floor(x, 2), floor(x, 3), floor(x, 4), floor(x, 5);
+SELECT toDecimal128(-12345.6789, 4) AS x, trunc(x), trunc(x, 1), trunc(x, 2), trunc(x, 3), trunc(x, 4), trunc(x, 5);
+SELECT toDecimal128(12345.6789, 4) AS x, round(x, -1), round(x, -2), round(x, -3), round(x, -4), round(x, -5);
+SELECT toDecimal128(12345.6789, 4) AS x, ceil(x, -1), ceil(x, -2), ceil(x, -3), ceil(x, -4), ceil(x, -5);
+SELECT toDecimal128(12345.6789, 4) AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), floor(x, -5);
+SELECT toDecimal128(12345.6789, 4) AS x, trunc(x, -1), trunc(x, -2), trunc(x, -3), trunc(x, -4), trunc(x, -5);
+SELECT toDecimal128(-12345.6789, 4) AS x, round(x, -1), round(x, -2), round(x, -3), round(x, -4), round(x, -5);
+SELECT toDecimal128(-12345.6789, 4) AS x, ceil(x, -1), ceil(x, -2), ceil(x, -3), ceil(x, -4), ceil(x, -5);
+SELECT toDecimal128(-12345.6789, 4) AS x, floor(x, -1), floor(x, -2), floor(x, -3), floor(x, -4), floor(x, -5);
+SELECT toDecimal128(-12345.6789, 4) AS x, trunc(x, -1), trunc(x, -2), trunc(x, -3), trunc(x, -4), trunc(x, -5);
+
+SELECT toDecimal64(123456789.123456789, 9) AS x, -x AS y, round(x), round(y), round(x, 5), round(y, 5), round(x, -5), round(y, -5);
+SELECT toDecimal64(123456789.123456789, 9) AS x, -x AS y, ceil(x), ceil(y), ceil(x, 5), ceil(y, 5), ceil(x, -5), ceil(y, -5);
+SELECT toDecimal64(123456789.123456789, 9) AS x, -x AS y, floor(x), floor(y), floor(x, 5), floor(y, 5), floor(x, -5), floor(y, -5);
+SELECT toDecimal64(123456789.123456789, 9) AS x, -x AS y, trunc(x), trunc(y), trunc(x, 5), trunc(y, 5), trunc(x, -5), trunc(y, -5);
+
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, round(x), round(y), round(x, 3), round(y, 3);
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, ceil(x), ceil(y), ceil(x, 3), ceil(y, 3);
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, floor(x), floor(y), floor(x, 3), floor(y, 3);
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, trunc(x), trunc(y), trunc(x, 3), trunc(y, 3);
+
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, round(x), round(y), round(x, -3), round(y, -3);
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, ceil(x), ceil(y), ceil(x, -3), ceil(y, -3);
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, floor(x), floor(y), floor(x, -3), floor(y, -3);
+SELECT toDecimal128(12345678901234567890123456789.123456789, 9) AS x, -x AS y, trunc(x), trunc(y), trunc(x, -3), trunc(y, -3);

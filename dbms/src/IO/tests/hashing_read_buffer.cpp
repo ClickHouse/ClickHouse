@@ -7,7 +7,7 @@
 void test(size_t data_size)
 {
     std::vector<char> vec(data_size);
-    char * data = &vec[0];
+    char * data = vec.data();
 
     for (size_t i = 0; i < data_size; ++i)
         data[i] = rand() & 255;
@@ -17,7 +17,7 @@ void test(size_t data_size)
     std::vector<size_t> block_sizes = {56, 128, 513, 2048, 3055, 4097, 4096};
     for (size_t read_buffer_block_size : block_sizes)
     {
-        std::cout  << "block size " << read_buffer_block_size << std::endl;
+        std::cout << "block size " << read_buffer_block_size << std::endl;
         std::stringstream io;
         DB::WriteBufferFromOStream out_(io);
         DB::HashingWriteBuffer out(out_);

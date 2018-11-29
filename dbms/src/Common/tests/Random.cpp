@@ -1,8 +1,6 @@
 /// Taken from SMHasher.
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
 #include "Random.h"
+#include <port/clock.h>
 
 Rand g_rand1(1);
 Rand g_rand2(2);

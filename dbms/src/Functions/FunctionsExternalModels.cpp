@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
+#include <string>
+#include <memory>
 
 namespace DB
 {
@@ -30,14 +32,14 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments
         throw Exception("Function " + getName() + " expects at least 2 arguments",
                         ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
 
-    if (!arguments[0]->isString())
+    if (!isString(arguments[0]))
         throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                         + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return std::make_shared<DataTypeFloat64>();
 }
 
-void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const auto name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
     if (!name_col)

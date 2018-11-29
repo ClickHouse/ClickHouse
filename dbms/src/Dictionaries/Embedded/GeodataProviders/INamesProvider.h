@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/Entries.h>
-
+#include "Entries.h"
 #include <memory>
 
 
@@ -44,8 +43,7 @@ class IRegionsNamesDataProvider
 {
 public:
     virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(
-        const std::string& language) const = 0;
-    ;
+        const std::string & language) const = 0;
 
     virtual ~IRegionsNamesDataProvider() {}
 };

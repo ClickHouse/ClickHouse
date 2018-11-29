@@ -14,12 +14,12 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
-#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DataStreams/copyData.h>
 
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -41,7 +41,7 @@ int main(int argc, char ** argv)
             "s1 < s2 AND x % 3 < x % 5";
 
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
@@ -54,8 +54,9 @@ int main(int argc, char ** argv)
             {"s2", std::make_shared<DataTypeString>()}
         };
 
-        ExpressionAnalyzer analyzer(ast, context, {}, columns);
-        ExpressionActionsChain chain;
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, columns);
+        ExpressionAnalyzer analyzer(ast, syntax_result, context);
+        ExpressionActionsChain chain(context);
         analyzer.appendSelect(chain, false);
         analyzer.appendProjectResult(chain);
         chain.finalize();
@@ -124,10 +125,9 @@ int main(int argc, char ** argv)
         auto is = std::make_shared<OneBlockInputStream>(block);
         LimitBlockInputStream lis(is, 20, std::max(0, static_cast<int>(n) - 20));
         WriteBufferFromOStream out_buf(std::cout);
-        RowOutputStreamPtr os_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, block);
-        BlockOutputStreamFromRowOutputStream os(os_, is->getHeader());
+        BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out_buf, block, context);
 
-        copyData(lis, os);
+        copyData(lis, *out);
     }
     catch (const Exception & e)
     {

@@ -3,8 +3,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <DataStreams/LimitBlockInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -27,13 +26,13 @@ try
 
     WriteBufferFromOStream out_buf(std::cout);
 
-    QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
 
-    LimitBlockInputStream input(table->read(column_names, {}, Context::createGlobal(), stage, 10, 1)[0], 10, 96);
-    RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
-    BlockOutputStreamFromRowOutputStream output(output_, sample);
+    auto context = Context::createGlobal();
+    LimitBlockInputStream input(table->read(column_names, {}, context, stage, 10, 1)[0], 10, 96);
+    BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
 
-    copyData(input, output);
+    copyData(input, *out);
 
     return 0;
 }

@@ -14,12 +14,14 @@ void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
+void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory &);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory &);
+void registerAggregateFunctionUniqCombined(AggregateFunctionFactory &);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
@@ -32,6 +34,8 @@ void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory &);
 
+void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
+void registerAggregateFunctionRetention(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -45,16 +49,20 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionsQuantile(factory);
         registerAggregateFunctionsSequenceMatch(factory);
+        registerAggregateFunctionWindowFunnel(factory);
         registerAggregateFunctionsMinMaxAny(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSimple(factory);
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumMap(factory);
         registerAggregateFunctionsUniq(factory);
+        registerAggregateFunctionUniqCombined(factory);
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
         registerAggregateFunctionsMaxIntersections(factory);
+        registerAggregateFunctionHistogram(factory);
+        registerAggregateFunctionRetention(factory);
     }
 
     {

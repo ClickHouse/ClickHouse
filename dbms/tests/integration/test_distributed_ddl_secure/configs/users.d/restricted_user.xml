@@ -1,0 +1,16 @@
+<yandex>
+    <users>
+    	<restricted_user>
+    		<password></password>
+	        <profile>default</profile>
+	        <quota>default</quota>
+            <networks>
+                    <ip>::/0</ip>
+            </networks>
+
+	        <allow_databases>
+	           <database>db1</database>
+	        </allow_databases>
+    	</restricted_user>
+    </users>
+</yandex>

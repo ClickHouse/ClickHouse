@@ -2,7 +2,9 @@
 
 Restrictions on query complexity are part of the settings.
 They are used in order to provide safer execution from the user interface.
-Almost all the restrictions only apply to SELECTs.For distributed query processing, restrictions are applied on each server separately.
+Almost all the restrictions only apply to `SELECT`. For distributed query processing, restrictions are applied on each server separately.
+
+ClickHouse checks the restrictions for data parts, not for each row. It means that you can exceed the value of restriction with a size of the data part.
 
 Restrictions on the "maximum amount of something" can take the value 0, which means "unrestricted".
 Most restrictions also have an 'overflow_mode' setting, meaning what to do when the limit is exceeded.
@@ -14,33 +16,40 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
-<a name="query_complexity_readonly"></a>
-
-## readonly
-
-With a value of 0, you can execute any queries.
-With a value of 1, you can only execute read requests (such as SELECT and SHOW). Requests for writing and changing settings (INSERT, SET) are prohibited.
-With a value of 2, you can process read queries (SELECT, SHOW) and change settings (SET).
-
-After enabling readonly mode, you can't disable it in the current session.
-
-When using the GET method in the HTTP interface, 'readonly = 1' is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
+<a name="settings_max_memory_usage"></a>
 
 ## max_memory_usage
 
-The maximum amount of memory consumption when running a query on a single server. By default, 10 GB.
+The maximum amount of RAM to use for running a query on a single server.
+
+In the default configuration file, the maximum is 10 GB.
 
 The setting doesn't consider the volume of available memory or the total volume of memory on the machine.
 The restriction applies to a single query within a single server.
-You can use SHOW PROCESSLIST to see the current memory consumption for each query.
+You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
 In addition, the peak memory consumption is tracked for each query and written to the log.
 
-Certain cases of memory consumption are not tracked:
+Memory usage is not monitored for the states of certain aggregate functions.
 
-- Large constants (for example, a very long string constant).
-- The states of certain aggregate functions.
+Memory usage is not fully tracked for states of the aggregate functions `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` from `String` and `Array` arguments.
 
-Memory consumption is not fully considered for aggregate function states 'min', 'max', 'any', 'anyLast', 'argMin', and 'argMax' from String and Array arguments.
+Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and `max_memory_usage_for_all_queries`.
+
+## max_memory_usage_for_user
+
+The maximum amount of RAM to use for running a user's queries on a single server.
+
+Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L244). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+
+See also the description of [max_memory_usage](#settings_max_memory_usage).
+
+## max_memory_usage_for_all_queries
+
+The maximum amount of RAM to use for running all queries on a single server.
+
+Default values are defined in [Settings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Interpreters/Settings.h#L245). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
+
+See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 ## max_rows_to_read
 
@@ -175,3 +184,4 @@ Maximum number of bytes (uncompressed data) that can be passed to a remote serve
 
 What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
 
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/query_complexity/) <!--hide-->

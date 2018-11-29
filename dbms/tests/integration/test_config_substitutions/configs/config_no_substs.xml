@@ -1,0 +1,14 @@
+<yandex>
+  <profiles>
+    <default>
+        <max_query_size>33333</max_query_size>
+    </default>
+  </profiles>
+  <users>
+      <default>
+          <password></password>
+          <profile>default</profile>
+          <quota>default</quota>
+      </default>
+  </users>
+</yandex>

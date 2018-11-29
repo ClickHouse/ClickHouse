@@ -1,8 +1,6 @@
 #pragma once
 
-#include <mutex>
-#include <Databases/IDatabase.h>
-#include <Storages/IStorage.h>
+#include <Databases/DatabasesCommon.h>
 
 
 namespace Poco { class Logger; }
@@ -16,18 +14,12 @@ namespace DB
   * All tables are created by calling code.
   * TODO: Maybe DatabaseRuntime is more suitable class name.
   */
-class DatabaseMemory : public IDatabase
+class DatabaseMemory : public DatabaseWithOwnTablesBase
 {
-protected:
-    const String name;
-    mutable std::mutex mutex;
-    Tables tables;
-
-    Poco::Logger * log;
-
 public:
+    DatabaseMemory(String name_);
 
-    DatabaseMemory(const String & name_) : name(name_) {}
+    String getDatabaseName() const override;
 
     String getEngineName() const override { return "Memory"; }
 
@@ -35,18 +27,6 @@ public:
         Context & context,
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
-
-    bool empty(const Context & context) const override;
-
-    DatabaseIteratorPtr getIterator(const Context & context) override;
-
-    bool isTableExist(
-        const Context & context,
-        const String & table_name) const override;
-
-    StoragePtr tryGetTable(
-        const Context & context,
-        const String & table_name) const override;
 
     void createTable(
         const Context & context,
@@ -57,9 +37,6 @@ public:
     void removeTable(
         const Context & context,
         const String & table_name) override;
-
-    void attachTable(const String & table_name, const StoragePtr & table) override;
-    StoragePtr detachTable(const String & table_name) override;
 
     void renameTable(
         const Context & context,
@@ -77,12 +54,13 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateQuery(
-        const Context & context,
-        const String & table_name) const override;
+    ASTPtr getCreateTableQuery(const Context & context, const String & table_name) const override;
+    ASTPtr tryGetCreateTableQuery(const Context &, const String &) const override { return nullptr; }
 
-    void shutdown() override;
-    void drop() override;
+    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+
+private:
+    Poco::Logger * log;
 };
 
 }

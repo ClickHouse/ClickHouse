@@ -439,7 +439,7 @@ Then run:
 %%
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server-common
+sudo apt-get install -y clickhouse-client clickhouse-server
 %%
 
 You can also download and install packages manually from here:
@@ -457,8 +457,8 @@ To build, follow the instructions in <a href="https://github.com/yandex/ClickHou
 
 You can compile packages and install them. You can also use programs without installing packages.
 
-Client: src/dbms/src/Client/
-Server: src/dbms/src/Server/
+Client: src/dbms/programs/clickhouse-client
+Server: src/dbms/programs/clickhouse-server
 
 For the server, create a catalog with data, such as:
 
@@ -470,7 +470,7 @@ For the server, create a catalog with data, such as:
 (Configured in the server config.)
 Run &#39;chown&#39; for the desired user.
 
-Note the path to logs in the server config (src/dbms/src/Server/config.xml).
+Note the path to logs in the server config (src/dbms/programs/server/config.xml).
 
 
 ===Other methods of installation===
@@ -709,7 +709,7 @@ echo &#39;DROP TABLE t&#39; | POST &#39;http://localhost:8123/&#39;
 
 For successful requests that don&#39;t return a data table, an empty response body is returned.
 
-You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use a special compressor program to work with it (%%sudo apt-get install clickhouse-compressor%%).
+You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use a special clickhouse-compressor program to work with it (%%sudo apt-get install clickhouse-utils%%).
 
 If you specified &#39;compress=1&#39; in the URL, the server will compress the data it sends you.
 If you specified &#39;decompress=1&#39; in the URL, the server will decompress the same data that you pass in the POST method.

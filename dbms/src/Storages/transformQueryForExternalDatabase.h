@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 
 
 namespace DB
@@ -27,6 +28,7 @@ class Context;
 String transformQueryForExternalDatabase(
     const IAST & query,
     const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
     const Context & context);

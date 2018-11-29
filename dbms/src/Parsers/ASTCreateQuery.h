@@ -4,7 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -74,7 +74,7 @@ public:
 
 
 /// CREATE TABLE or ATTACH TABLE query
-class ASTCreateQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
@@ -82,9 +82,6 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_populate{false};
-    bool is_temporary{false};
-    String database;
-    String table;
     ASTExpressionList * columns = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
@@ -94,7 +91,7 @@ public:
     ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
+    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; }
 
     ASTPtr clone() const override
     {
@@ -115,14 +112,7 @@ public:
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        auto query_ptr = clone();
-        ASTCreateQuery & query = static_cast<ASTCreateQuery &>(*query_ptr);
-
-        query.cluster.clear();
-        if (query.database.empty())
-            query.database = new_database;
-
-        return query_ptr;
+        return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
 
 protected:
@@ -155,7 +145,7 @@ protected:
             settings.ostr
                 << (settings.hilite ? hilite_keyword : "")
                     << (attach ? "ATTACH " : "CREATE ")
-                    << (is_temporary ? "TEMPORARY " : "")
+                    << (temporary ? "TEMPORARY " : "")
                     << what << " "
                     << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")

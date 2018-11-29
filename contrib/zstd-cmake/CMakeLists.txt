@@ -125,6 +125,6 @@ IF (ZSTD_LEGACY_SUPPORT)
             ${LIBRARY_LEGACY_DIR}/zstd_v07.h)
 ENDIF (ZSTD_LEGACY_SUPPORT)
 
-ADD_LIBRARY(zstd ${Sources} ${Headers})
+ADD_LIBRARY(zstd ${LINK_MODE} ${Sources} ${Headers})
 
 target_include_directories (zstd PUBLIC ${LIBRARY_DIR})

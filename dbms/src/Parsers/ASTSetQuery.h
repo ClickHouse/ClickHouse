@@ -26,7 +26,7 @@ public:
     Changes changes;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "Set"; };
+    String getID() const override { return "Set"; }
 
     ASTPtr clone() const override { return std::make_shared<ASTSetQuery>(*this); }
 

@@ -34,7 +34,7 @@ template <typename ASTIDAndQueryNames>
 class ASTQueryWithOutputImpl : public ASTQueryWithOutput
 {
 public:
-    String getID() const override { return ASTIDAndQueryNames::ID; };
+    String getID() const override { return ASTIDAndQueryNames::ID; }
 
     ASTPtr clone() const override
     {

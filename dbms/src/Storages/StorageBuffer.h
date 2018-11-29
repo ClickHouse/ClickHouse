@@ -53,11 +53,13 @@ public:
     std::string getName() const override { return "Buffer"; }
     std::string getTableName() const override { return name; }
 
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -112,7 +114,7 @@ private:
 
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.
-    void flushBuffer(Buffer & buffer, bool check_thresholds);
+    void flushBuffer(Buffer & buffer, bool check_thresholds, bool locked = false);
     bool checkThresholds(const Buffer & buffer, time_t current_time, size_t additional_rows = 0, size_t additional_bytes = 0) const;
     bool checkThresholdsImpl(size_t rows, size_t bytes, time_t time_passed) const;
 
@@ -129,6 +131,8 @@ protected:
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_, bool allow_materialized_);
+
+    ~StorageBuffer() override;
 };
 
 }

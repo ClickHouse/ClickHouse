@@ -19,7 +19,7 @@ UInt64 rdtsc()
 {
 #if __x86_64__
     UInt64 val;
-    __asm__ __volatile__("rdtsc" : "=A" (val) : );
+    __asm__ __volatile__("rdtsc" : "=A" (val) :);
     return val;
 #else
     // TODO: make for arm
@@ -84,14 +84,14 @@ int main(int argc, char ** argv)
                 << n / watch.elapsedSeconds() << " num/s., "
                 << wb.count() / watch.elapsedSeconds() / 1000000 << " MB/s., "
                 << watch.elapsed() / n << " ns/num., "
-                << tsc / n  << " ticks/num., "
+                << tsc / n << " ticks/num., "
                 << watch.elapsed() / wb.count() << " ns/byte., "
-                << tsc / wb.count()  << " ticks/byte."
+                << tsc / wb.count() << " ticks/byte."
                 << std::endl;
         }
 
         {
-            DB::ReadBuffer rb(&formatted[0], formatted.size(), 0);
+            DB::ReadBuffer rb(formatted.data(), formatted.size(), 0);
         //    DB::CompressedReadBuffer rb(rb_);
             Stopwatch watch;
 
@@ -108,7 +108,7 @@ int main(int argc, char ** argv)
                 << std::endl;
         }
 
-        std::cerr << (0 == memcmp(&data[0], &data2[0], data.size()) ? "Ok." : "Fail.") << std::endl;
+        std::cerr << (0 == memcmp(data.data(), data2.data(), data.size()) ? "Ok." : "Fail.") << std::endl;
     }
     catch (const DB::Exception & e)
     {

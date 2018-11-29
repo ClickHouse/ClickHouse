@@ -20,7 +20,7 @@ private:
 
 public:
     const char * getFamilyName() const override { return "Nothing"; }
-    MutableColumnPtr cloneDummy(size_t s) const override { return ColumnNothing::create(s); };
+    MutableColumnPtr cloneDummy(size_t s) const override { return ColumnNothing::create(s); }
 
     bool canBeInsideNullable() const override { return true; }
 };

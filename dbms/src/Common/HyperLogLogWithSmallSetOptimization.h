@@ -51,6 +51,8 @@ private:
     }
 
 public:
+    using value_type = Key;
+
     ~HyperLogLogWithSmallSetOptimization()
     {
         if (isLarge())

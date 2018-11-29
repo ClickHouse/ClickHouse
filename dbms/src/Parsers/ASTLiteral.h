@@ -28,7 +28,7 @@ protected:
         settings.ostr << applyVisitor(FieldVisitorToString(), value);
     }
 
-    String getColumnNameImpl() const override;
+    void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 
 }

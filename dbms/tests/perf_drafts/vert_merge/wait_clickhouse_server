@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 for i in $(seq 1 100); do
     clickhouse-client --query "SELECT * FROM system.one" 1>/dev/null 2>/dev/null;

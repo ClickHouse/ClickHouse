@@ -116,7 +116,7 @@ public:
 
         const auto type_x = arguments[0];
 
-        if (!type_x->isNumber())
+        if (!isNumber(type_x))
             throw Exception{"Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -128,7 +128,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto in_untyped = block.getByPosition(arguments[0]).column.get();
         const auto centroids_array_untyped = block.getByPosition(arguments[1]).column.get();
@@ -185,7 +185,7 @@ protected:
         for (size_t k = 0; k < array.size(); ++k)
         {
             const Field & tmp_field = array[k];
-            typename NearestFieldType<CentroidsType>::Type value;
+            NearestFieldType<CentroidsType> value;
             if (!tmp_field.tryGet(value))
                 return false;
 

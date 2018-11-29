@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Parsers/ParserQueryWithOutput.h>
-
+#include <Parsers/IParserBase.h>
 
 namespace DB
 {

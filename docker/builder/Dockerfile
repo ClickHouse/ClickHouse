@@ -1,14 +1,29 @@
-FROM ubuntu:17.10
+FROM ubuntu:18.04
 
-RUN apt update -y && \
-    apt install -y cmake libssl-dev libcrypto++-dev \
-        libglib2.0-dev libltdl-dev libicu-dev libmysql++-dev \
-        libreadline-dev libmysqlclient-dev unixodbc-dev \
-        gcc-7 g++-7 unixodbc-dev devscripts dupload fakeroot debhelper \
-        liblld-5.0-dev libclang-5.0-dev liblld-5.0
-        # For tests: # bash expect python python-lxml python-termcolor curl perl sudo tzdata
+RUN apt-get update -y \
+    && env DEBIAN_FRONTEND=noninteractive \
+        apt-get install --yes --no-install-recommends \
+            bash \
+            ccache \
+            cmake \
+            curl \
+            expect \
+            g++ \
+            gcc \
+            libclang-6.0-dev \
+            libicu-dev \
+            liblld-6.0-dev \
+            libreadline-dev \
+            ninja-build \
+            perl \
+            pkg-config \
+            python \
+            python-lxml \
+            python-requests \
+            python-termcolor \
+            sudo \
+            tzdata
 
-ADD build.sh /
-RUN chmod +x /build.sh
+COPY build.sh /
 
-CMD ["/build.sh"]
+CMD ["/bin/bash", "/build.sh"]

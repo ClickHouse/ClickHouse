@@ -21,7 +21,7 @@ private:
     Lexer lexer;
 
 public:
-    Tokens(const char * begin, const char * end) : lexer(begin, end) {}
+    Tokens(const char * begin, const char * end, size_t max_query_size = 0) : lexer(begin, end, max_query_size) {}
 
     const Token & operator[] (size_t index)
     {

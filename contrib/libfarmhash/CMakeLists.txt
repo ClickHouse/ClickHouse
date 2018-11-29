@@ -6,4 +6,4 @@ if (MSVC)
     target_compile_definitions (farmhash PRIVATE FARMHASH_NO_BUILTIN_EXPECT=1)
 endif ()
 
-target_include_directories (farmhash PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories (farmhash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

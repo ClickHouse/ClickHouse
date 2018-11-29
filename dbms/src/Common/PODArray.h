@@ -14,6 +14,7 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/BitHelpers.h>
+#include <Common/memcpySmall.h>
 
 
 namespace DB
@@ -288,21 +289,36 @@ public:
 
     /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
     template <typename It1, typename It2, typename ... TAllocatorParams>
-    void insert(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
+    void insertPrepare(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
     {
         size_t required_capacity = size() + (from_end - from_begin);
         if (required_capacity > capacity())
             reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
+    }
 
+    /// Do not insert into the array a piece of itself. Because with the resize, the iterators on themselves can be invalidated.
+    template <typename It1, typename It2, typename ... TAllocatorParams>
+    void insert(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
+    {
+        insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
         insert_assume_reserved(from_begin, from_end);
+    }
+
+    /// Works under assumption, that it's possible to read up to 15 excessive bytes after `from_end` and this PODArray is padded.
+    template <typename It1, typename It2, typename ... TAllocatorParams>
+    void insertSmallAllowReadWriteOverflow15(It1 from_begin, It2 from_end, TAllocatorParams &&... allocator_params)
+    {
+        static_assert(pad_right_ >= 15);
+        insertPrepare(from_begin, from_end, std::forward<TAllocatorParams>(allocator_params)...);
+        size_t bytes_to_copy = byte_size(from_end - from_begin);
+        memcpySmallAllowReadWriteOverflow15(c_end, reinterpret_cast<const void *>(&*from_begin), bytes_to_copy);
+        c_end += bytes_to_copy;
     }
 
     template <typename It1, typename It2>
     void insert(iterator it, It1 from_begin, It2 from_end)
     {
-        size_t required_capacity = size() + (from_end - from_begin);
-        if (required_capacity > capacity())
-            reserve(roundUpToPowerOfTwoOrZero(required_capacity));
+        insertPrepare(from_begin, from_end);
 
         size_t bytes_to_copy = byte_size(from_end - from_begin);
         size_t bytes_to_move = (end() - it) * sizeof(T);

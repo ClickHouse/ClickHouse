@@ -20,16 +20,7 @@ public:
     CreatingSetsBlockInputStream(
         const BlockInputStreamPtr & input,
         const SubqueriesForSets & subqueries_for_sets_,
-        const SizeLimits & network_transfer_limits)
-        : subqueries_for_sets(subqueries_for_sets_),
-        network_transfer_limits(network_transfer_limits)
-    {
-        for (auto & elem : subqueries_for_sets)
-            if (elem.second.source)
-                children.push_back(elem.second.source);
-
-        children.push_back(input);
-    }
+        const SizeLimits & network_transfer_limits);
 
     String getName() const override { return "CreatingSets"; }
 

@@ -49,13 +49,11 @@ struct MergeTreeReadTask
     const bool should_reorder;
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
-    /// used to save current range processing status
-    std::optional<MergeTreeRangeReader> current_range_reader;
-    /// the number of rows wasn't read by range_reader if condition in prewhere was false
-    /// helps to skip graunule if all conditions will be aslo false
-    size_t number_of_rows_to_skip;
+    /// Used to save current range processing status
+    MergeTreeRangeReader range_reader;
+    MergeTreeRangeReader pre_range_reader;
 
-    bool isFinished() const { return mark_ranges.empty() && !current_range_reader; }
+    bool isFinished() const { return mark_ranges.empty() && range_reader.isCurrentRangeFinished(); }
 
     MergeTreeReadTask(
         const MergeTreeData::DataPartPtr & data_part, const MarkRanges & mark_ranges, const size_t part_index_in_query,
@@ -110,7 +108,7 @@ struct MergeTreeBlockSizePredictor
     inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = DECAY())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
-        double current_ration = rows_was_filtered / std::max<double>(1, rows_was_read);
+        double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;

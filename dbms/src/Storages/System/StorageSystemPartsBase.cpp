@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -11,6 +12,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -58,7 +60,10 @@ public:
             /// Add column 'database'.
             MutableColumnPtr database_column_mut = ColumnString::create();
             for (const auto & database : databases)
-                database_column_mut->insert(database.first);
+            {
+                if (context.hasDatabaseAccessRights(database.first))
+                    database_column_mut->insert(database.first);
+            }
             block_to_filter.insert(ColumnWithTypeAndName(
                     std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
@@ -160,7 +165,7 @@ public:
 
             try
             {
-                /// For table not to be dropped.
+                /// For table not to be dropped and set of columns to remain constant.
                 info.table_lock = info.storage->lockStructure(false, __PRETTY_FUNCTION__);
             }
             catch (const Exception & e)
@@ -233,13 +238,11 @@ BlockInputStreams StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names);
-
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     StoragesInfoStream stream(query_info, context, has_state_column);
 
@@ -280,7 +283,31 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : name(std::move(name_))
 {
-    setColumns(ColumnsDescription(std::move(columns_)));
+    NamesAndTypesList aliases;
+    ColumnDefaults defaults;
+    auto add_alias = [&](const String & alias_name, const String & column_name)
+    {
+        DataTypePtr type;
+        for (const NameAndTypePair & col : columns_)
+        {
+            if (col.name == column_name)
+            {
+                type = col.type;
+                break;
+            }
+        }
+        if (!type)
+            throw Exception("No column " + column_name + " in table system." + name, ErrorCodes::LOGICAL_ERROR);
+
+        aliases.push_back({alias_name, type});
+        defaults[alias_name] = ColumnDefault{ColumnDefaultKind::Alias, std::make_shared<ASTIdentifier>(column_name)};
+    };
+
+    /// Add aliases for old column names for backwards compatibility.
+    add_alias("bytes", "bytes_on_disk");
+    add_alias("marks_size", "marks_bytes");
+
+    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults), ColumnComments{}));
 }
 
 }

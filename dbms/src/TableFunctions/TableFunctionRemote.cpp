@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -130,7 +130,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
                     throw Exception("Table function 'remote': incorrect argument in braces (left number is greater then right): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
-                if (right - left + 1 >  max_addresses)
+                if (right - left + 1 > max_addresses)
                     throw Exception("Table function 'remote': first argument generates too many result addresses",
                         ErrorCodes::BAD_ARGUMENTS);
                 bool add_leading_zeroes = false;
@@ -198,6 +198,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     String cluster_description;
     String remote_database;
     String remote_table;
+    ASTPtr remote_table_function_ptr;
     String username;
     String password;
 
@@ -230,24 +231,40 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     ++arg_num;
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-    remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
-    ++arg_num;
 
-    size_t dot = remote_database.find('.');
-    if (dot != String::npos)
+    const auto function = typeid_cast<const ASTFunction *>(args[arg_num].get());
+
+    if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
     {
-        /// NOTE Bad - do not support identifiers in backquotes.
-        remote_table = remote_database.substr(dot + 1);
-        remote_database = remote_database.substr(0, dot);
+        remote_table_function_ptr = args[arg_num];
+        ++arg_num;
     }
     else
     {
-        if (arg_num >= args.size())
-            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
 
-        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
         ++arg_num;
+
+        size_t dot = remote_database.find('.');
+        if (dot != String::npos)
+        {
+            /// NOTE Bad - do not support identifiers in backquotes.
+            remote_table = remote_database.substr(dot + 1);
+            remote_database = remote_database.substr(0, dot);
+        }
+        else
+        {
+            if (arg_num >= args.size())
+            {
+                throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
+            else
+            {
+                args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+                remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
+                ++arg_num;
+            }
+        }
     }
 
     /// Username and password parameters are prohibited in cluster version of the function
@@ -275,7 +292,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     /// We need to mark them as the name of the database or table, because the default value is column.
     for (auto & arg : args)
         if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
-            id->kind = ASTIdentifier::Table;
+            id->setSpecial();
 
     ClusterPtr cluster;
     if (!cluster_name.empty())
@@ -299,13 +316,23 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort(), false);
     }
 
-    auto res = StorageDistributed::createWithOwnCluster(
-        getName(),
-        getStructureOfRemoteTable(*cluster, remote_database, remote_table, context),
-        remote_database,
-        remote_table,
-        cluster,
-        context);
+    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
+
+    StoragePtr res = remote_table_function_ptr
+        ? StorageDistributed::createWithOwnCluster(
+            getName(),
+            structure_remote_table,
+            remote_table_function_ptr,
+            cluster,
+            context)
+        : StorageDistributed::createWithOwnCluster(
+            getName(),
+            structure_remote_table,
+            remote_database,
+            remote_table,
+            cluster,
+            context);
+
     res->startup();
     return res;
 }
