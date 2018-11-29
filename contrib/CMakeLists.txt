@@ -149,14 +149,16 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     else()
         set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
-        set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
     endif()
+    set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
 
     set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
 
     #BOOST_ROOT           
     set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
     set (Boost_FOUND 1 CACHE INTERNAL "")
+
+    #set (DOUBLE_CONVERSION_HOME "${ClickHouse_SOURCE_DIR}/contrib/double-conversion")
 
     if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
         set(_save_build_type ${CMAKE_BUILD_TYPE})
