@@ -1,7 +1,6 @@
-#include <Dictionaries/Embedded/RegionsHierarchies.h>
+#include "RegionsHierarchies.h"
 
 #include <common/logger_useful.h>
-
 #include <Poco/DirectoryIterator.h>
 
 

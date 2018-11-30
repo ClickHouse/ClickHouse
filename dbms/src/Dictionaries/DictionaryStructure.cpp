@@ -1,4 +1,4 @@
-#include <Dictionaries/DictionaryStructure.h>
+#include "DictionaryStructure.h"
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
