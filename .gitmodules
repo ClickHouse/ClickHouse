@@ -46,3 +46,6 @@
 [submodule "contrib/unixodbc"]
 	path = contrib/unixodbc
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
+[submodule "contrib/base64"]
+	path = contrib/base64
+	url = https://github.com/aklomp/base64.git

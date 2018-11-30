@@ -60,7 +60,7 @@ public:
       */
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void partition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
+    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -160,7 +160,7 @@ private:
     friend struct CurrentlyMergingPartsTagger;
 
 protected:
-    /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
+    /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *

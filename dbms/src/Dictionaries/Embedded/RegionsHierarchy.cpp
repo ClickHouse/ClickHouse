@@ -1,13 +1,20 @@
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include "RegionsHierarchy.h"
 
+#include "GeodataProviders/IHierarchiesProvider.h"
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
-
 #include <common/logger_useful.h>
 #include <ext/singleton.h>
-
 #include <IO/WriteHelpers.h>
+
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int INCORRECT_DATA;
+    }
+}
 
 
 RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_)
@@ -36,7 +43,7 @@ void RegionsHierarchy::reload()
     RegionParents new_continent(initial_size);
     RegionParents new_top_continent(initial_size);
     RegionPopulations new_populations(initial_size);
-    RegionDepths  new_depths(initial_size);
+    RegionDepths new_depths(initial_size);
     RegionTypes types(initial_size);
 
     RegionID max_region_id = 0;
@@ -49,7 +56,8 @@ void RegionsHierarchy::reload()
         if (region_entry.id > max_region_id)
         {
             if (region_entry.id > max_size)
-                throw DB::Exception("Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size));
+                throw DB::Exception("Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size),
+                    DB::ErrorCodes::INCORRECT_DATA);
 
             max_region_id = region_entry.id;
 

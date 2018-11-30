@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -27,7 +27,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -45,119 +47,7 @@ namespace ErrorCodes
     * Type of the result is the type of argument.
     * For integer arguments, when passing negative scale, overflow can occur.
     * In that case, the behavior is implementation specific.
-    *
-    * roundToExp2 - down to the nearest power of two (see below);
-    *
-    * Deprecated functions:
-    * roundDuration - down to the nearest of: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
-    * roundAge - down to the nearest of: 0, 18, 25, 35, 45, 55.
     */
-
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
-roundDownToPowerOfTwo(T x)
-{
-    return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
-roundDownToPowerOfTwo(T x)
-{
-    return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Float32>, T>
-roundDownToPowerOfTwo(T x)
-{
-    return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Float64>, T>
-roundDownToPowerOfTwo(T x)
-{
-    return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
-}
-
-/** For integer data types:
-  * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(100) = 64, roundToExp2(64) = 64);
-  * - otherwise, return 0.
-  *
-  * For floating point data types: zero out mantissa, but leave exponent.
-  * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(3) = 2);
-  * - negative powers are also used (example: roundToExp2(0.7) = 0.5);
-  * - if number is zero, return zero;
-  * - if number is less than zero, the result is symmetrical: roundToExp2(x) = -roundToExp2(-x). (example: roundToExp2(-0.3) = -0.25);
-  */
-
-template <typename T>
-struct RoundToExp2Impl
-{
-    using ResultType = T;
-
-    static inline T apply(T x)
-    {
-        return roundDownToPowerOfTwo<T>(x);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
-#endif
-};
-
-
-template <typename A>
-struct RoundDurationImpl
-{
-    using ResultType = UInt16;
-
-    static inline ResultType apply(A x)
-    {
-        return x < 1 ? 0
-            : (x < 10 ? 1
-            : (x < 30 ? 10
-            : (x < 60 ? 30
-            : (x < 120 ? 60
-            : (x < 180 ? 120
-            : (x < 240 ? 180
-            : (x < 300 ? 240
-            : (x < 600 ? 300
-            : (x < 1200 ? 600
-            : (x < 1800 ? 1200
-            : (x < 3600 ? 1800
-            : (x < 7200 ? 3600
-            : (x < 18000 ? 7200
-            : (x < 36000 ? 18000
-            : 36000))))))))))))));
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
-#endif
-};
-
-template <typename A>
-struct RoundAgeImpl
-{
-    using ResultType = UInt8;
-
-    static inline ResultType apply(A x)
-    {
-        return x < 1 ? 0
-            : (x < 18 ? 17
-            : (x < 25 ? 18
-            : (x < 35 ? 25
-            : (x < 45 ? 35
-            : (x < 55 ? 45
-            : 55)))));
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
-#endif
-};
 
 
 /** This parameter controls the behavior of the rounding functions.
@@ -838,27 +728,9 @@ struct NameCeil { static constexpr auto name = "ceil"; };
 struct NameFloor { static constexpr auto name = "floor"; };
 struct NameTrunc { static constexpr auto name = "trunc"; };
 
-using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
-using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;
-using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl, NameRoundAge, false>;
-
 using FunctionRound = FunctionRounding<NameRound, RoundingMode::Round>;
 using FunctionFloor = FunctionRounding<NameFloor, RoundingMode::Floor>;
 using FunctionCeil = FunctionRounding<NameCeil, RoundingMode::Ceil>;
 using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
-
-
-struct PositiveMonotonicity
-{
-    static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
-    {
-        return { true };
-    }
-};
-
-template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
-template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundDuration> : PositiveMonotonicity {};
-template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveMonotonicity {};
 
 }

@@ -1,4 +1,4 @@
-#include <Dictionaries/DictionaryBlockInputStreamBase.h>
+#include "DictionaryBlockInputStreamBase.h"
 
 namespace DB
 {

@@ -14,6 +14,7 @@ namespace DB
  *      DROP COLUMN col_drop [FROM PARTITION partition],
  *      MODIFY COLUMN col_name type,
  *      DROP PARTITION partition,
+ *      COMMENT_COLUMN col_name 'comment',
  */
 
 class ASTAlterCommand : public IAST
@@ -25,6 +26,7 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         MODIFY_PRIMARY_KEY,
+        COMMENT_COLUMN,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
@@ -66,6 +68,9 @@ public:
 
     /// A list of expressions of the form `column = expr` for the UPDATE command.
     ASTPtr update_assignments;
+
+    /// A column comment
+    ASTPtr comment;
 
     bool detach = false;        /// true for DETACH PARTITION
 

@@ -1,4 +1,4 @@
-#include <Dictionaries/readInvalidateQuery.h>
+#include "readInvalidateQuery.h"
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 namespace DB

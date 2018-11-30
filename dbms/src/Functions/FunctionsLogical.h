@@ -501,7 +501,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!( executeType<UInt8>(block, arguments, result)
+        if (!(executeType<UInt8>(block, arguments, result)
             || executeType<UInt16>(block, arguments, result)
             || executeType<UInt32>(block, arguments, result)
             || executeType<UInt64>(block, arguments, result)
