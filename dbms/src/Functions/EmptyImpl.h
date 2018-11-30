@@ -42,7 +42,7 @@ struct EmptyImpl
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = negative ^ (0 == memcmp(&data[i * size], empty_chars.data(), n));
+            res[i] = negative ^ (0 == memcmp(&data[i * n], empty_chars.data(), n));
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
