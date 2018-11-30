@@ -136,6 +136,8 @@ else ()
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
 endif ()
 
+set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -fsigned-char")
+
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
 set (CMAKE_CXX_FLAGS                     "${CMAKE_CXX_FLAGS} ${COMPILER_FLAGS} ${PLATFORM_EXTRA_CXX_FLAG} -fno-omit-frame-pointer ${COMMON_WARNING_FLAGS} ${CXX_WARNING_FLAGS}")
 #set (CMAKE_CXX_FLAGS_RELEASE             "${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_ADD}")
