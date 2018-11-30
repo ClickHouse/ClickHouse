@@ -103,10 +103,6 @@ Sets default strictness for [JOIN clause](../../query_language/select.md#query-l
 
 `ALL`
 
-**Version of ClickHouse**
-
-18.15.0 and higher.
-
 ## max_block_size
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. `max_block_size` is a recommendation for what size of block (in number of rows) to load from tables. The block size shouldn't be too small, so that the expenditures on each block are still noticeable, but not too large, so that the query with LIMIT that is completed after the first block is processed quickly, so that too much memory isn't consumed when extracting a large number of columns in multiple threads, and so that at least some cache locality is preserved.
