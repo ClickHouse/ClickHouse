@@ -217,7 +217,7 @@ BlockInputStreams StorageMerge::read(
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
-        size_t current_need_streams =  tables_count >= num_streams ? 1 : (num_streams / tables_count);
+        size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
         current_streams = std::max(1, current_streams);

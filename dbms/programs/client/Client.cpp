@@ -18,7 +18,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -59,6 +59,7 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Common/Config/configReadClient.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -86,9 +87,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
@@ -209,22 +207,7 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        std::string config_path;
-        if (config().has("config-file"))
-            config_path = config().getString("config-file");
-        else if (Poco::File("./clickhouse-client.xml").exists())
-            config_path = "./clickhouse-client.xml";
-        else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            config_path = home_path + "/.clickhouse-client/config.xml";
-        else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            config_path = "/etc/clickhouse-client/config.xml";
-
-        if (!config_path.empty())
-        {
-            ConfigProcessor config_processor(config_path);
-            auto loaded_config = config_processor.loadConfig();
-            config().add(loaded_config.configuration);
-        }
+        configReadClient(config(), home_path);
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
@@ -529,7 +512,7 @@ private:
 
         if (max_client_network_bandwidth)
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
             connection->setThrottler(throttler);
         }
 

@@ -59,10 +59,9 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
         table_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
     }
 
-    const auto & config = context.getConfigRef();
-
     /* Infer external table structure */
-    BridgeHelperPtr helper = createBridgeHelper(config, context.getSettingsRef().http_receive_timeout.value, connection_string);
+    /// Have to const_cast, because bridges store their commands inside context
+    BridgeHelperPtr helper = createBridgeHelper(const_cast<Context &>(context), context.getSettingsRef().http_receive_timeout.value, connection_string);
     helper->startBridgeSync();
 
     Poco::URI columns_info_uri = helper->getColumnsInfoURI();

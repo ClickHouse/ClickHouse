@@ -590,7 +590,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
                     if (query.group_by_with_rollup)
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                    else if(query.group_by_with_cube)
+                    else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
                 }
                 else if (expressions.has_having)
@@ -929,8 +929,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (query_info.prewhere_info)
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
                         pipeline.streams.back(), prewhere_info->prewhere_actions,
-                        prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column
-                );
+                        prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column);
         }
 
         pipeline.transform([&](auto & stream)
@@ -1309,7 +1308,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
     {
         unifyStreams(pipeline);
 
-        pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
+        pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
     }

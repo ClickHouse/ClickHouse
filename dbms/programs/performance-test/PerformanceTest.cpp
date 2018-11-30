@@ -30,7 +30,9 @@
 #include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
+#include <Poco/Util/Application.h>
 #include <Common/InterruptListener.h>
+#include <Common/Config/configReadClient.h>
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -49,10 +51,10 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 static String pad(size_t padding)
@@ -156,7 +158,7 @@ struct StopConditionsSet
             else if (key == "average_speed_not_changing_for_ms")
                 average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
             else
-                throw DB::Exception("Met unkown stop condition: " + key);
+                throw DB::Exception("Met unkown stop condition: " + key, DB::ErrorCodes::LOGICAL_ERROR);
 
             ++initialized_count;
         }
@@ -487,17 +489,18 @@ struct Stats
 double Stats::avg_rows_speed_precision = 0.001;
 double Stats::avg_bytes_speed_precision = 0.001;
 
-class PerformanceTest
+class PerformanceTest : public Poco::Util::Application
 {
 public:
     using Strings = std::vector<String>;
 
     PerformanceTest(const String & host_,
         const UInt16 port_,
+        const bool secure_,
         const String & default_database_,
         const String & user_,
         const String & password_,
-        const bool & lite_output_,
+        const bool lite_output_,
         const String & profiles_file_,
         Strings && input_files_,
         Strings && tests_tags_,
@@ -507,7 +510,7 @@ public:
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
         const ConnectionTimeouts & timeouts)
-        : connection(host_, port_, default_database_, user_, password_, timeouts),
+        : connection(host_, port_, default_database_, user_, password_, timeouts, "performance-test", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
           gotSIGINT(false),
           lite_output(lite_output_),
           profiles_file(profiles_file_),
@@ -521,9 +524,21 @@ public:
     {
         if (input_files.size() < 1)
         {
-            throw DB::Exception("No tests were specified", 0);
+            throw DB::Exception("No tests were specified", DB::ErrorCodes::BAD_ARGUMENTS);
         }
+    }
 
+    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    {
+        std::string home_path;
+        const char * home_path_cstr = getenv("HOME");
+        if (home_path_cstr)
+            home_path = home_path_cstr;
+        configReadClient(Poco::Util::Application::instance().config(), home_path);
+    }
+
+    int main(const std::vector < std::string > & /* args */)
+    {
         std::string name;
         UInt64 version_major;
         UInt64 version_minor;
@@ -536,6 +551,8 @@ public:
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
+
+        return 0;
     }
 
 private:
@@ -694,7 +711,7 @@ private:
                 size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
                 size_t actual_ram = getMemoryAmount();
                 if (!actual_ram)
-                    throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
+                    throw DB::Exception("ram_size precondition not available on this platform", DB::ErrorCodes::NOT_IMPLEMENTED);
 
                 if (ram_size_needed > actual_ram)
                 {
@@ -868,12 +885,12 @@ private:
 
         if (!test_config->has("query") && !test_config->has("query_file"))
         {
-            throw DB::Exception("Missing query fields in test's config: " + test_name);
+            throw DB::Exception("Missing query fields in test's config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("query") && test_config->has("query_file"))
         {
-            throw DB::Exception("Found both query and query_file fields. Choose only one");
+            throw DB::Exception("Found both query and query_file fields. Choose only one", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("query"))
@@ -885,7 +902,7 @@ private:
         {
             const String filename = test_config->getString("query_file");
             if (filename.empty())
-                throw DB::Exception("Empty file name");
+                throw DB::Exception("Empty file name", DB::ErrorCodes::BAD_ARGUMENTS);
 
             bool tsv = fs::path(filename).extension().string() == ".tsv";
 
@@ -909,7 +926,7 @@ private:
 
         if (queries.empty())
         {
-            throw DB::Exception("Did not find any query to execute: " + test_name);
+            throw DB::Exception("Did not find any query to execute: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("substitutions"))
@@ -929,7 +946,7 @@ private:
 
         if (!test_config->has("type"))
         {
-            throw DB::Exception("Missing type property in config: " + test_name);
+            throw DB::Exception("Missing type property in config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         String config_exec_type = test_config->getString("type");
@@ -938,7 +955,7 @@ private:
         else if (config_exec_type == "once")
             exec_type = ExecutionType::Once;
         else
-            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name);
+            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
 
         times_to_run = test_config->getUInt("times_to_run", 1);
 
@@ -951,7 +968,7 @@ private:
         }
 
         if (stop_conditions_template.empty())
-            throw DB::Exception("No termination conditions were found in config");
+            throw DB::Exception("No termination conditions were found in config", DB::ErrorCodes::BAD_ARGUMENTS);
 
         for (size_t i = 0; i < times_to_run * queries.size(); ++i)
             stop_conditions_by_run.push_back(stop_conditions_template);
@@ -978,7 +995,7 @@ private:
         else
         {
             if (lite_output)
-                throw DB::Exception("Specify main_metric for lite output");
+                throw DB::Exception("Specify main_metric for lite output", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (metrics.size() > 0)
@@ -1023,22 +1040,14 @@ private:
         if (exec_type == ExecutionType::Loop)
         {
             for (const String & metric : metrics)
-            {
                 if (std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric) != non_loop_metrics.end())
-                {
-                    throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")");
-                }
-            }
+                   throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")", DB::ErrorCodes::BAD_ARGUMENTS);
         }
         else
         {
             for (const String & metric : metrics)
-            {
                 if (std::find(loop_metrics.begin(), loop_metrics.end(), metric) != loop_metrics.end())
-                {
-                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")");
-                }
-            }
+                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", DB::ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
@@ -1391,21 +1400,28 @@ try
     using Strings = std::vector<String>;
 
     boost::program_options::options_description desc("Allowed options");
-    desc.add_options()("help", "produce help message")("lite", "use lite version of output")(
-        "profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")(
-        "host,h", value<String>()->default_value("localhost"), "")("port", value<UInt16>()->default_value(9000), "")(
-        "database", value<String>()->default_value("default"), "")("user", value<String>()->default_value("default"), "")(
-        "password", value<String>()->default_value(""), "")("tags", value<Strings>()->multitoken(), "Run only tests with tag")(
-        "skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")("names",
-        value<Strings>()->multitoken(),
-        "Run tests with specific name")("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")(
-        "names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")("skip-names-regexp",
-        value<Strings>()->multitoken(),
-        "Do not run tests with names matching regexp")("recursive,r", "Recurse in directories to find all xml's");
+    desc.add_options()
+        ("help", "produce help message")
+        ("lite", "use lite version of output")
+        ("profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")
+        ("host,h", value<String>()->default_value("localhost"), "")
+        ("port", value<UInt16>()->default_value(9000), "")
+        ("secure,s", "Use TLS connection")
+        ("database", value<String>()->default_value("default"), "")
+        ("user", value<String>()->default_value("default"), "")
+        ("password", value<String>()->default_value(""), "")
+        ("tags", value<Strings>()->multitoken(), "Run only tests with tag")
+        ("skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")
+        ("names", value<Strings>()->multitoken(), "Run tests with specific name")
+        ("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")
+        ("names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")
+        ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
+        ("recursive,r", "Recurse in directories to find all xml's");
 
     /// These options will not be displayed in --help
     boost::program_options::options_description hidden("Hidden options");
-    hidden.add_options()("input-files", value<std::vector<String>>(), "");
+    hidden.add_options()
+        ("input-files", value<std::vector<String>>(), "");
 
     /// But they will be legit, though. And they must be given without name
     boost::program_options::positional_options_description positional;
@@ -1439,7 +1455,7 @@ try
         if (input_files.empty())
         {
             std::cerr << std::endl;
-            throw DB::Exception("Did not find any xml files");
+            throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
         }
         else
             std::cerr << " found " << input_files.size() << " files." << std::endl;
@@ -1454,7 +1470,7 @@ try
             fs::path file(filename);
 
             if (!fs::exists(file))
-                throw DB::Exception("File '" + filename + "' does not exist");
+                throw DB::Exception("File '" + filename + "' does not exist", DB::ErrorCodes::FILE_DOESNT_EXIST);
 
             if (fs::is_directory(file))
             {
@@ -1463,7 +1479,7 @@ try
             else
             {
                 if (file.extension().string() != ".xml")
-                    throw DB::Exception("File '" + filename + "' does not have .xml extension");
+                    throw DB::Exception("File '" + filename + "' does not have .xml extension", DB::ErrorCodes::BAD_ARGUMENTS);
                 collected_files.push_back(filename);
             }
         }
@@ -1482,8 +1498,10 @@ try
 
     DB::UseSSL use_ssl;
 
-    DB::PerformanceTest performanceTest(options["host"].as<String>(),
+    DB::PerformanceTest performance_test(
+        options["host"].as<String>(),
         options["port"].as<UInt16>(),
+        options.count("secure"),
         options["database"].as<String>(),
         options["user"].as<String>(),
         options["password"].as<String>(),
@@ -1497,8 +1515,7 @@ try
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
         timeouts);
-
-    return 0;
+    return performance_test.run();
 }
 catch (...)
 {

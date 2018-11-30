@@ -310,9 +310,9 @@ public:
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
-            bucket_count == 2  ? 0.351 :
-            bucket_count == 4  ? 0.532 :
-            bucket_count == 8  ? 0.626 :
+            bucket_count == 2 ? 0.351 :
+            bucket_count == 4 ? 0.532 :
+            bucket_count == 8 ? 0.626 :
             bucket_count == 16 ? 0.673 :
             bucket_count == 32 ? 0.697 :
             bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);

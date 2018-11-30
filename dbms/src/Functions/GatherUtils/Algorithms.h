@@ -12,7 +12,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace  DB::GatherUtils
+namespace DB::GatherUtils
 {
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
@@ -294,7 +294,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 {
     const bool is_null = offset_column.onlyNull();
     const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
     const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     while (!src.isEnd())
@@ -325,12 +325,12 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
 {
     const bool is_offset_null = offset_column.onlyNull();
     const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
     const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
 
     const bool is_length_null = length_column.onlyNull();
     const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
-    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
     const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())

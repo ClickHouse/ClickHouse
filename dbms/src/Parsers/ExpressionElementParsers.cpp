@@ -238,17 +238,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             , ErrorCodes::SYNTAX_ERROR);
     }
 
-    /// Temporary compatibility fix for Yandex.Metrika.
-    /// When we have a query with
-    ///  cast(x, 'Type')
-    /// when cast is not in uppercase and when expression is written as a function, not as operator like cast(x AS Type)
-    /// and newer ClickHouse server (1.1.54388) interacts with older ClickHouse server (1.1.54381) in distributed query,
-    /// then exception was thrown.
-
-    auto & identifier_concrete = typeid_cast<ASTIdentifier &>(*identifier);
-    if (Poco::toLower(identifier_concrete.name) == "cast")
-        identifier_concrete.name = "CAST";
-
     /// The parametric aggregate function has two lists (parameters and arguments) in parentheses. Example: quantile(0.9)(x).
     if (pos->type == TokenType::OpeningRoundBracket)
     {
