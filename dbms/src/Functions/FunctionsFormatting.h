@@ -108,8 +108,8 @@ private:
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
-            data_to.resize(buf_to.count());
 
+            buf_to.finish();
             block.getByPosition(result).column = std::move(col_to);
         }
         else
@@ -187,8 +187,8 @@ private:
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
-            data_to.resize(buf_to.count());
 
+            buf_to.finish();
             block.getByPosition(result).column = std::move(col_to);
             return true;
         }

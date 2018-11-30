@@ -5,20 +5,22 @@
 #include <IO/WriteBuffer.h>
 
 
-#define WRITE_BUFFER_FROM_VECTOR_INITIAL_SIZE_IF_EMPTY 32
-
-
 namespace DB
 {
 
-/** Initialized by vector. Writes data to it. When the vector is finished, it doubles its size.
-  * CharType - char or unsigned char.
+/** Writes data to existing std::vector or similar type. When not enough space, it doubles vector size.
+  *
+  * In destructor, vector is cutted to the size of written data.
+  * You can call to 'finish' to resize earlier.
+  *
+  * The vector should live until this object is destroyed or until the 'finish' method is called.
   */
-template <typename VectorType = std::vector<char>>
+template <typename VectorType>
 class WriteBufferFromVector : public WriteBuffer
 {
 private:
     VectorType & vector;
+    bool is_finished = false;
 
     void nextImpl() override
     {
@@ -34,9 +36,25 @@ public:
     {
         if (vector.empty())
         {
-            vector.resize(WRITE_BUFFER_FROM_VECTOR_INITIAL_SIZE_IF_EMPTY);
+            static constexpr size_t initial_size = 32;
+            vector.resize(initial_size);
             set(reinterpret_cast<Position>(vector.data()), vector.size());
         }
+    }
+
+    void finish()
+    {
+        is_finished = true;
+        vector.resize(
+            ((position() - reinterpret_cast<Position>(vector.data()))
+                + sizeof(typename VectorType::value_type) - 1)  /// Align up.
+            / sizeof(typename VectorType::value_type));
+    }
+
+    ~WriteBufferFromVector() override
+    {
+        if (!is_finished)
+            finish();
     }
 };
 
