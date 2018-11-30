@@ -166,7 +166,7 @@ public:
             try
             {
                 /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->lockStructure(false, __PRETTY_FUNCTION__);
+                info.table_lock = info.storage->lockStructure(false);
             }
             catch (const Exception & e)
             {
