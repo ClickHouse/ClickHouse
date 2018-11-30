@@ -6,14 +6,15 @@
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
 #include <ext/bit_cast.h>
-
-#include <iostream>
+#include <algorithm>
 
 #if __SSE4_1__
     #include <smmintrin.h>
@@ -674,7 +675,8 @@ public:
 class FunctionRoundDown : public IFunction {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRoundDown>(context); }
+    FunctionRoundDown(const Context & context) : context(context) {}
 
 public:
     String getName() const override
@@ -717,17 +719,29 @@ public:
             throw Exception{"Second argument of function " + getName() + " must be constant array.", ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        const Array & boundaries = array->getValue<Array>();
-        const auto in = block.getByPosition(arguments[0]).column.get();
+        auto in_column = block.getByPosition(arguments[0]).column;
+        const auto & in_type = block.getByPosition(arguments[0]).type;
 
-        if (in->isColumnConst())
+        if (in_column->isColumnConst())
         {
             executeConst(block, arguments, result, input_rows_count);
             return;
         }
 
-        auto column_result = block.getByPosition(result).type->createColumn();
+        const auto & return_type = block.getByPosition(result).type;
+        auto column_result = return_type->createColumn();
         auto out = column_result.get();
+
+        if (!in_type->equals(*return_type))
+        {
+            in_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
+        }
+
+        const auto in = in_column.get();
+        auto boundaries = array->getValue<Array>();
+        for (size_t i = 0; i < boundaries.size(); ++i) {
+            boundaries[i] = convertFieldToType(boundaries[i], *return_type);
+        }
 
         if (!executeNum<UInt8>(in, out, boundaries)
             && !executeNum<UInt16>(in, out, boundaries)
@@ -779,38 +793,39 @@ private:
         {
             return false;
         }
-
         executeImplNumToNum(in->getData(), out->getData(), boundaries);
         return true;
     }
 
     template <typename T>
     void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst, const Array & boundaries) {
+        PaddedPODArray<T> bvalues(boundaries.size());
+        for (size_t i = 0; i < boundaries.size(); ++i) {
+            bvalues[i] = boundaries[i].get<T>();
+        }
+
         size_t size = src.size();
-        size_t boundaries_size = boundaries.size();
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            if (src[i] <= boundaries[0].get<T>())
+            auto it = std::upper_bound(bvalues.begin(), bvalues.end(), src[i]);
+            if (it == bvalues.end())
             {
-                dst[i] = boundaries[0].get<T>();
+                dst[i] = bvalues.back();
             }
-            else if (src[i] >= boundaries.back().get<T>())
+            else if (it == bvalues.begin())
             {
-                dst[i] = boundaries.back().get<T>();
+                dst[i] = bvalues.front();
             }
             else
             {
-                for (size_t j = 1; j < boundaries_size; ++j) {
-                    if (src[i] < boundaries[i].get<T>())
-                    {
-                        dst[i] = boundaries[i - 1].get<T>();
-                        break;
-                    }
-                }
+                dst[i] = *(it - 1);
             }
         }
     }
+
+private:
+    const Context & context;
 };
 
 
