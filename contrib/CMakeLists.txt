@@ -137,6 +137,8 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
     target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
 
+if (0)
+# if use arrow's cmakefiles they wants too lot depends, downloads some libs
 if (USE_INTERNAL_PARQUET_LIBRARY)
     set (ARROW_COMPUTE ON CACHE INTERNAL "")
     set (ARROW_PARQUET ON CACHE INTERNAL "")
@@ -154,20 +156,15 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
 
     set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
 
-    #BOOST_ROOT           
     set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
     set (Boost_FOUND 1 CACHE INTERNAL "")
 
-    #set (DOUBLE_CONVERSION_HOME "${ClickHouse_SOURCE_DIR}/contrib/double-conversion")
 
     if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
         set(_save_build_type ${CMAKE_BUILD_TYPE})
         set(CMAKE_BUILD_TYPE RELEASE)
     endif()
     
-    #BOOST_LIBRARYDIR     
-    #Boost_NO_SYSTEM_PATHS
-
     # Because Arrow uses CMAKE_SOURCE_DIR as a project path
     # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
     set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")
@@ -176,8 +173,19 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     if(_save_build_type)
         set(CMAKE_BUILD_TYPE ${_save_build_type})
     endif()
-
 endif ()
+endif ()
+
+if(USE_INTERNAL_PARQUET_LIBRARY)
+    set(BUILD_PYTHON 0 CACHE INTERNAL "")
+    set(BUILD_TESTING 0 CACHE INTERNAL "")
+    set(BUILD_EXAMPLES 0 CACHE INTERNAL "")
+    set(BUILD_TUTORIALS 0 CACHE INTERNAL "")
+    set(WITH_C_GLIB 0 CACHE INTERNAL "")
+    add_subdirectory(thrift)
+    add_subdirectory(arrow-cmake)
+endif()
+
 
 if (USE_INTERNAL_POCO_LIBRARY)
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})

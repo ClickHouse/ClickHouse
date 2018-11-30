@@ -52,3 +52,6 @@
 [submodule "contrib/arrow"]
 	path = contrib/arrow
 	url = https://github.com/apache/arrow
+[submodule "contrib/thrift"]
+	path = contrib/thrift
+	url = https://github.com/apache/thrift.git
