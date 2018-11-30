@@ -6,9 +6,10 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 
+namespace arrow { class Array; class DataType; }
+
 namespace DB
 {
-
 
 class ParquetBlockOutputStream : public IBlockOutputStream
 {

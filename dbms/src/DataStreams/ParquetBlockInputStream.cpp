@@ -1,9 +1,11 @@
 #include <Common/config.h>
+
 #if USE_PARQUET
+#include <DataStreams/ParquetBlockInputStream.h>
+
 #include <algorithm>
 #include <iterator>
 #include <vector>
-
 // TODO: clear includes
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn.h>
@@ -11,28 +13,38 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <common/DateLUTImpl.h>
-#include <DataStreams/ParquetBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/BufferBase.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
+#include <Formats/FormatFactory.h>
 #include <ext/range.h>
-
 #include <arrow/buffer.h>
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <parquet/arrow/reader.h>
 #include <parquet/arrow/writer.h>
 #include <parquet/exception.h>
-
-
+#include <parquet/file_reader.h>
 #include <IO/copyData.h>
 #include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_TYPE;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int EMPTY_DATA_PASSED;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int CANNOT_CONVERT_TYPE;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+    extern const int THERE_IS_NO_COLUMN;
+}
 
 ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_)
     : istr(istr_)
@@ -133,10 +145,10 @@ void ParquetBlockInputStream::fillColumnWithDate32Data(std::shared_ptr<arrow::Co
             if (days_num > DATE_LUT_MAX_DAY_NUM)
             {
                 // TODO: will it rollback correctly?
-                throw Exception(
+                throw Exception{
                     "Input value " + std::to_string(days_num) + " of a column \"" + arrow_column->name() + "\" is greater than "
-                    "max allowed Date value, which is " + std::to_string(DATE_LUT_MAX_DAY_NUM)
-                );
+                    "max allowed Date value, which is " + std::to_string(DATE_LUT_MAX_DAY_NUM), ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
+                };
             }
 
             column_data.emplace_back(days_num);
@@ -220,14 +232,14 @@ Block ParquetBlockInputStream::readImpl()
     // TODO: also catch a ParquetException thrown by filereader?
     arrow::Status read_status = filereader.ReadTable(&table);
     if (!read_status.ok())
-        throw Exception("Error while reading parquet data: " + read_status.ToString()/*, ErrorCodes::TODO*/);
+        throw Exception{"Error while reading parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
 
     if (0 == table->num_rows())
-        throw Exception("Empty table in input data"/*, ErrorCodes::TODO*/);
+        throw Exception{"Empty table in input data", ErrorCodes::EMPTY_DATA_PASSED};
 
     if (header.columns() > static_cast<size_t>(table->num_columns()))
         // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
-        throw Exception("Number of columns is less than the table has" /*, ErrorCodes::TODO*/);
+        throw Exception{"Number of columns is less than the table has", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
 
 
     NameToColumnPtr name_to_column_ptr;
@@ -243,24 +255,24 @@ Block ParquetBlockInputStream::readImpl()
 
         if (name_to_column_ptr.find(header_column.name) == name_to_column_ptr.end())
             // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
-            throw Exception("Column \"" + header_column.name + "\" is not presented in input data" /*, ErrorCodes::TODO*/);
+            throw Exception{"Column \"" + header_column.name + "\" is not presented in input data", ErrorCodes::THERE_IS_NO_COLUMN};
 
         std::shared_ptr<arrow::Column> arrow_column = name_to_column_ptr[header_column.name];
         arrow::Type::type arrow_type = arrow_column->type()->id();
 
         if (arrow_type_to_internal_type.find(arrow_type) == arrow_type_to_internal_type.end())
         {
-            throw Exception(
+            throw Exception{
                 "The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name() + "\""
                 " is not supported for conversion from a Parquet data format"
-                /*, ErrorCodes::TODO*/
-            );
+                , ErrorCodes::CANNOT_CONVERT_TYPE
+            };
         }
 
         // TODO: check if a column is const?
         if (!header_column.type->isNullable() && arrow_column->null_count())
         {
-            throw Exception("Can not insert NULL data into non-nullable column \"" + header_column.name + "\""/*, ErrorCodes::TODO*/);
+            throw Exception{"Can not insert NULL data into non-nullable column \"" + header_column.name + "\"", ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
         }
 
         const bool target_column_is_nullable = header_column.type->isNullable() || arrow_column->null_count();
@@ -281,10 +293,10 @@ Block ParquetBlockInputStream::readImpl()
         // TODO: can it be done with typeid_cast?
         if (internal_nested_type_name != column_nested_type_name)
         {
-            throw Exception(
+            throw Exception{
                 "Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name + "\""
-                " is not compatible with a column type \"" + column_nested_type_name + "\""/*, ErrorCodes::TODO*/
-            );
+                " is not compatible with a column type \"" + column_nested_type_name + "\"", ErrorCodes::CANNOT_CONVERT_TYPE
+            };
         }
 
         ColumnWithTypeAndName column;
@@ -316,7 +328,7 @@ Block ParquetBlockInputStream::readImpl()
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
             default:
-                throw Exception("Unsupported parquet type \"" + arrow_column->type()->name() + "\""/*, ErrorCodes::TODO*/);
+                throw Exception{"Unsupported parquet type \"" + arrow_column->type()->name() + "\"", ErrorCodes::UNKNOWN_TYPE};
         }
 
         if (column.type->isNullable())
@@ -344,7 +356,7 @@ void registerInputFormatParquet(FormatFactory & factory)
         size_t /*max_block_size */,
         const FormatSettings & /* settings */)
     {
-        std::make_shared<ParquetBlockInputStream>(buf, sample);
+        return std::make_shared<ParquetBlockInputStream>(buf, sample);
     });
 }
 

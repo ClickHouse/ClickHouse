@@ -1,5 +1,6 @@
 #include <Common/config.h>
 #if USE_PARQUET
+#include <DataStreams/ParquetBlockOutputStream.h>
 
 // TODO: clean includes
 #include <Columns/ColumnNullable.h>
@@ -9,17 +10,24 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteHelpers.h>
-
+#include <Formats/FormatFactory.h>
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <parquet/arrow/writer.h>
 #include <parquet/util/memory.h>
 #include <parquet/exception.h>
 
-#include <DataStreams/ParquetBlockOutputStream.h>
+
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int UNKNOWN_TYPE;
+}
 
 ParquetBlockOutputStream::ParquetBlockOutputStream(WriteBuffer & ostr_, const Block & header_)
     : ostr(ostr_)
@@ -36,10 +44,10 @@ void checkAppendStatus(arrow::Status & append_status, const std::string & column
 {
     if (!append_status.ok())
     {
-        throw Exception(
-            "Error while building a parquet column \"" + column_name + "\": " + append_status.ToString()/*,
-            ErrorCodes::TODO*/
-        );
+        throw Exception{
+            "Error while building a parquet column \"" + column_name + "\": " + append_status.ToString(),
+            ErrorCodes::UNKNOWN_EXCEPTION
+        };
     }
 }
 
@@ -48,8 +56,8 @@ void checkFinishStatus(arrow::Status & finish_status, const std::string & column
     if (!finish_status.ok())
     {
         throw Exception(
-            "Error while writing a parquet column \"" + column_name + "\": " + finish_status.ToString()/*,
-            ErrorCodes::TODO*/
+            "Error while writing a parquet column \"" + column_name + "\": " + finish_status.ToString(),
+            ErrorCodes::UNKNOWN_EXCEPTION
         );
     }
 }
@@ -203,11 +211,11 @@ void ParquetBlockOutputStream::write(const Block & block)
 
         if (internal_type_to_arrow_type.find(column_nested_type_name) == internal_type_to_arrow_type.end())
         {
-            throw Exception(
+            throw Exception{
                 "The type \"" + column_nested_type_name + "\" of a column \"" + column.name + "\""
                 " is not supported for conversion into a Parquet data format"
-                /*, ErrorCodes::TODO*/
-            );
+                , ErrorCodes::UNKNOWN_TYPE
+            };
         }
 
         arrow_fields.emplace_back(new arrow::Field(
@@ -242,10 +250,10 @@ void ParquetBlockOutputStream::write(const Block & block)
         // 2. DateTime
         else
         {
-            throw Exception(
+            throw Exception{
                 "Internal type \"" + column_nested_type_name + "\" of a column \"" + column.name + "\""
-                " is not supported for conversion into a Parquet data format"/*, ErrorCodes::TODO*/
-            );
+                " is not supported for conversion into a Parquet data format", ErrorCodes::UNKNOWN_TYPE
+            };
         }
 
         arrow_arrays.emplace_back(std::move(arrow_array));
@@ -265,7 +273,7 @@ void ParquetBlockOutputStream::write(const Block & block)
         parquet::arrow::default_arrow_writer_properties()
     );
     if (!write_status.ok())
-        throw Exception("Error while writing a table: " + write_status.ToString()/*, ErrorCodes::TODO*/);
+        throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 
     std::shared_ptr<arrow::Buffer> table_buffer = sink->GetBuffer();
     writeString(reinterpret_cast<const char *>(table_buffer->data()), table_buffer->size(), ostr);
