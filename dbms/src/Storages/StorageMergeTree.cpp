@@ -190,7 +190,7 @@ void StorageMergeTree::alter(
 {
     if (!params.is_mutable())
     {
-        auto table_soft_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+        auto table_soft_lock = lockStructureForAlter();
         auto new_columns = getColumns();
         params.apply(new_columns);
         context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
@@ -201,7 +201,7 @@ void StorageMergeTree::alter(
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 
-    auto table_soft_lock = lockDataForAlter(__PRETTY_FUNCTION__);
+    auto table_soft_lock = lockDataForAlter();
 
     data.checkAlter(params);
 
@@ -234,7 +234,7 @@ void StorageMergeTree::alter(
             transactions.push_back(std::move(transaction));
     }
 
-    auto table_hard_lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+    auto table_hard_lock = lockStructureForAlter();
 
     IDatabase::ASTModifier storage_modifier;
     if (primary_key_is_modified)
@@ -400,7 +400,7 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
-    auto structure_lock = lockStructure(true, __PRETTY_FUNCTION__);
+    auto structure_lock = lockStructure(true);
 
     MergeTreeDataMergerMutator::FuturePart future_part;
 
@@ -505,7 +505,7 @@ bool StorageMergeTree::merge(
 
 bool StorageMergeTree::tryMutatePart()
 {
-    auto structure_lock = lockStructure(true, __PRETTY_FUNCTION__);
+    auto structure_lock = lockStructure(true);
 
     MergeTreeDataMergerMutator::FuturePart future_part;
     MutationCommands commands;
@@ -705,7 +705,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto merge_blocker = merger_mutator.actions_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
-    auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock_read_structure = lockStructure(false);
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
     auto parts = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
@@ -807,7 +807,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                auto lock = lockStructure(false);
                 data.freezePartition(command.partition, command.with_name, context);
             }
             break;
@@ -818,7 +818,7 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructure(false, __PRETTY_FUNCTION__);
+                auto lock = lockStructure(false);
                 data.freezeAll(command.with_name, context);
             }
             break;
@@ -836,7 +836,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger_mutator.actions_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
-        auto lock = lockForAlter(__PRETTY_FUNCTION__);
+        auto lock = lockForAlter();
 
         String partition_id = data.getPartitionIDFromQuery(partition, context);
 
@@ -919,8 +919,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
 {
-    auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
-    auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock1 = lockStructure(false);
+    auto lock2 = source_table->lockStructure(false);
 
     Stopwatch watch;
     MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
