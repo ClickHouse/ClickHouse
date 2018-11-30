@@ -31,7 +31,7 @@ elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY)
 endif ()
 
 if (USE_PARQUET)
-    message (STATUS "Using Parquet: ${ARROW_INCLUDE_DIR} ${PARQUET_INCLUDE_DIR}")
+    message (STATUS "Using Parquet: ${ARROW_LIBRARY}:${ARROW_INCLUDE_DIR} ; ${PARQUET_LIBRARY}:${PARQUET_INCLUDE_DIR}")
 else ()
     message (STATUS "Building without Parquet support")
 endif ()
