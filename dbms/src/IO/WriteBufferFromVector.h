@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+}
+
 /** Writes data to existing std::vector or similar type. When not enough space, it doubles vector size.
   *
   * In destructor, vector is cutted to the size of written data.
@@ -24,6 +29,9 @@ private:
 
     void nextImpl() override
     {
+        if (is_finished)
+            throw Exception("WriteBufferFromVector is finished", ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER);
+
         size_t old_size = vector.size();
         vector.resize(old_size * 2);
         internal_buffer = Buffer(reinterpret_cast<Position>(&vector[old_size]), reinterpret_cast<Position>(vector.data() + vector.size()));
@@ -49,6 +57,9 @@ public:
             ((position() - reinterpret_cast<Position>(vector.data()))
                 + sizeof(typename VectorType::value_type) - 1)  /// Align up.
             / sizeof(typename VectorType::value_type));
+
+        /// Prevent further writes.
+        set(nullptr, 0);
     }
 
     ~WriteBufferFromVector() override
