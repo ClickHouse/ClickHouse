@@ -287,7 +287,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                storage_p.parse(pos, storage, expected);
+                if (!storage)
+                    storage_p.parse(pos, storage, expected);
             }
         }
     }

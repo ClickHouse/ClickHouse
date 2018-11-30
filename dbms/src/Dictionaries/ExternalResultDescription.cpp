@@ -1,5 +1,5 @@
 #include <ext/range.h>
-#include <Dictionaries/ExternalResultDescription.h>
+#include "ExternalResultDescription.h"
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
