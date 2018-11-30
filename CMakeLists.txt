@@ -159,13 +159,6 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-
-    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
-    set (CMAKE_SHARED_LINKER_FLAGS       "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-endif ()
-
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads)
 
@@ -191,6 +184,13 @@ if (OS_LINUX AND COMPILER_CLANG)
             link_directories ("${LIBCXX_PATH}/lib")
         endif ()
     endif ()
+endif ()
+
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+
+    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
+    set (CMAKE_SHARED_LINKER_FLAGS       "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
 
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
