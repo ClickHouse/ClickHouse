@@ -150,7 +150,7 @@ BlockInputStreams StorageBuffer::read(
 
         /// Collect columns from the destination tables which can be requested.
         /// Find out if there is a struct mismatch and we need to convert read blocks from the destination tables.
-        auto destination_lock = destination->lockStructure(false, __PRETTY_FUNCTION__);
+        auto destination_lock = destination->lockStructure(false);
 
         Names columns_intersection;
         bool struct_mismatch = false;
