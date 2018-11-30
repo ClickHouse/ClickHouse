@@ -174,7 +174,7 @@ if (OS_LINUX AND COMPILER_CLANG)
     endif ()
 endif ()
 
-if (NOT USE_LIBCXX AND MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 
     # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
