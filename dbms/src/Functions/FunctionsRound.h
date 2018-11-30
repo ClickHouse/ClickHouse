@@ -719,10 +719,6 @@ private:
 };
 
 
-struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
-struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
-struct NameRoundAge { static constexpr auto name = "roundAge"; };
-
 struct NameRound { static constexpr auto name = "round"; };
 struct NameCeil { static constexpr auto name = "ceil"; };
 struct NameFloor { static constexpr auto name = "floor"; };
