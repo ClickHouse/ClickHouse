@@ -114,7 +114,7 @@ Block MergingSortedBlockInputStream::readImpl()
 template <typename TSortCursor>
 void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, std::priority_queue<TSortCursor> & queue)
 {
-    size_t order = current.impl->order;
+    size_t order = current->order;
     size_t size = cursors.size();
 
     if (order >= size || &cursors[order] != current.impl)
@@ -130,6 +130,16 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
     }
 }
 
+namespace {
+size_t getAvgGranularity(const std::unordered_map<size_t, size_t> & rows_granularity, size_t total_rows)
+{
+    size_t sum = 0;
+    for (const auto [granularity, rows_num] : rows_granularity)
+        sum += granularity * rows_num;
+    return sum / total_rows;
+}
+}
+
 template
 void MergingSortedBlockInputStream::fetchNextBlock<SortCursor>(const SortCursor & current, std::priority_queue<SortCursor> & queue);
 
@@ -142,10 +152,11 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 {
     size_t merged_rows = 0;
 
+    std::unordered_map<size_t, size_t> rows_granularity;
     /** Increase row counters.
       * Return true if it's time to finish generating the current data block.
       */
-    auto count_row_and_check_limit = [&, this]()
+    auto count_row_and_check_limit = [&, this](size_t current_granularity)
     {
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
@@ -156,8 +167,9 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             return true;
         }
 
+        rows_granularity[current_granularity]++;
         ++merged_rows;
-        if (merged_rows == max_block_size)
+        if (merged_rows == getAvgGranularity(rows_granularity, merged_rows))
         {
     //        std::cerr << "max_block_size reached\n";
             return true;
@@ -170,6 +182,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
     while (!queue.empty())
     {
         TSortCursor current = queue.top();
+        size_t current_block_granularity = current->rows;
         queue.pop();
 
         while (true)
@@ -177,7 +190,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             /** And what if the block is totally less or equal than the rest for the current cursor?
               * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
               */
-            if (current.impl->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
+            if (current->isFirst() && (queue.empty() || current.totallyLessOrEquals(queue.top())))
             {
     //            std::cerr << "current block is totally less or equals\n";
 
@@ -189,8 +202,8 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                     return;
                 }
 
-                /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-                size_t source_num = current.impl->order;
+                /// Actually, current->order stores source number (i.e. cursors[current->order] == current)
+                size_t source_num = current->order;
 
                 if (source_num >= cursors.size())
                     throw Exception("Logical error in MergingSortedBlockInputStream", ErrorCodes::LOGICAL_ERROR);
@@ -202,6 +215,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
                 merged_rows = merged_columns.at(0)->size();
 
+                /// Limit output
                 if (limit && total_merged_rows + merged_rows > limit)
                 {
                     merged_rows = limit - total_merged_rows;
@@ -215,6 +229,8 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                     finished = true;
                 }
 
+                /// Write order of rows for other columns
+                /// this data will be used in grather stream
                 if (out_row_sources_buf)
                 {
                     RowSourcePart row_source(source_num);
@@ -237,7 +253,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             if (out_row_sources_buf)
             {
                 /// Actually, current.impl->order stores source number (i.e. cursors[current.impl->order] == current.impl)
-                RowSourcePart row_source(current.impl->order);
+                RowSourcePart row_source(current->order);
                 out_row_sources_buf->write(row_source.data);
             }
 
@@ -248,7 +264,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
                 if (queue.empty() || !(current.greater(queue.top())))
                 {
-                    if (count_row_and_check_limit())
+                    if (count_row_and_check_limit(current_block_granularity))
                     {
     //                    std::cerr << "pushing back to queue\n";
                         queue.push(current);
@@ -275,7 +291,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
             break;
         }
 
-        if (count_row_and_check_limit())
+        if (count_row_and_check_limit(current_block_granularity))
             return;
     }
 

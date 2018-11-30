@@ -700,8 +700,17 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
+    /// If merge is vertical we cannot calculate it
+    bool calculate_index_granularity = (merge_alg != MergeAlgorithm::Vertical);
+
     MergedBlockOutputStream to{
-        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, data.settings.min_merge_bytes_to_use_direct_io};
+        data,
+        new_part_tmp_path,
+        merging_columns,
+        compression_settings,
+        merged_column_to_size,
+        data.settings.min_merge_bytes_to_use_direct_io,
+        calculate_index_granularity};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -786,7 +795,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             rows_sources_read_buf.seek(0, 0);
             ColumnGathererStream column_gathered_stream(column_name, column_part_streams, rows_sources_read_buf);
             MergedColumnOnlyOutputStream column_to(
-                data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_settings, false, written_offset_columns);
+                data, column_gathered_stream.getHeader(), new_part_tmp_path, false, compression_settings, false, written_offset_columns, to.getIndexGranularity());
             size_t column_elems_written = 0;
 
             column_to.writePrefix();
@@ -963,7 +972,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            data, in_header, new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false, unused_written_offsets);
+            data, in_header, new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false, unused_written_offsets, source_part->marks_index_granularity);
 
         in->readPrefix();
         out.writePrefix();
@@ -1002,6 +1011,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         new_data_part->rows_count = source_part->rows_count;
         new_data_part->marks_count = source_part->marks_count;
+        new_data_part->marks_index_granularity = source_part->marks_index_granularity;
         new_data_part->index = source_part->index;
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
