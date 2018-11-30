@@ -19,7 +19,8 @@ namespace DB
 class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
 {
 public:
-    using Chars = PaddedPODArray<UInt8>;
+    using Char = UInt8;
+    using Chars = PaddedPODArray<Char>;
 
 private:
     friend class COWPtrHelper<IColumn, ColumnString>;
@@ -70,22 +71,22 @@ public:
 
     Field operator[](size_t n) const override
     {
-        return Field(&chars[offsetAt(n)], sizeAt(n) - 1);
+        return Field(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1);
     }
 
     void get(size_t n, Field & res) const override
     {
-        res.assignString(&chars[offsetAt(n)], sizeAt(n) - 1);
+        res.assignString(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1);
     }
 
     StringRef getDataAt(size_t n) const override
     {
-        return StringRef(&chars[offsetAt(n)], sizeAt(n) - 1);
+        return StringRef(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n) - 1);
     }
 
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
-        return StringRef(&chars[offsetAt(n)], sizeAt(n));
+        return StringRef(reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n));
     }
 
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
@@ -121,7 +122,7 @@ public:
             if (size_to_append == 1)
             {
                 /// shortcut for empty string
-                chars.push_back(0);
+                chars.push_back(Char(0));
                 offsets.push_back(chars.size());
             }
             else
@@ -201,7 +202,7 @@ public:
 
     void insertDefault() override
     {
-        chars.push_back(0);
+        chars.push_back(Char(0));
         offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
     }
 

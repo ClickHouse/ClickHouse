@@ -104,7 +104,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
-    filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
+    filterArraysImpl<Char>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
     return res;
 }
 
