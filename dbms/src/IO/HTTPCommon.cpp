@@ -84,6 +84,8 @@ namespace
         /// doesn't work properly without patch
 #if POCO_CLICKHOUSE_PATCH
         session->setKeepAlive(keep_alive);
+#else
+        (void)keep_alive; // Avoid warning: unused parameter
 #endif
 
         return session;

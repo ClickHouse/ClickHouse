@@ -1,11 +1,17 @@
 #pragma once
 
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Exception.h>
-
 #include <common/Types.h>
-
 #include <ext/singleton.h>
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+
+    class Logger;
+}
 
 
 /** @brief Class that lets you know if a search engine or operating system belongs

@@ -1092,7 +1092,10 @@ public:
         const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
-        if (!((arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber())
+        bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
+        bool has_date = left.isDate() || right.isDate();
+
+        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
             || (left.isStringOrFixedString() && right.isStringOrFixedString())
             || (left.isDate() && right.isDate())
             || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.

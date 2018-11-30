@@ -10,7 +10,18 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE ${CONSISTENT_HASHING_LIBRARY} consistent-hashing-sumbur ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} murmurhash ${BASE64_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+target_link_libraries(clickhouse_functions
+    PUBLIC
+        dbms 
+    PRIVATE
+        clickhouse_dictionaries
+        ${CONSISTENT_HASHING_LIBRARY}
+        consistent-hashing-sumbur
+        ${FARMHASH_LIBRARIES}
+        ${METROHASH_LIBRARIES}
+        murmurhash
+        ${BASE64_LIBRARY}
+        ${OPENSSL_CRYPTO_LIBRARY})
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 
