@@ -1,7 +1,7 @@
-#include <Dictionaries/FlatDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "FlatDictionary.h"
+#include "DictionaryBlockInputStream.h"
 #include <IO/WriteHelpers.h>
-
+#include "DictionaryFactory.h"
 
 namespace DB
 {
@@ -14,8 +14,8 @@ namespace ErrorCodes
     extern const int DICTIONARY_IS_EMPTY;
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TYPE;
+    extern const int UNSUPPORTED_METHOD;
 }
-
 
 static const auto initial_array_size = 1024;
 static const auto max_array_size = 500000;
@@ -633,6 +633,34 @@ BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_nam
     using BlockInputStreamType = DictionaryBlockInputStream<FlatDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds() ,column_names);
 }
+
+void registerDictionaryFlat(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 DictionarySourcePtr source_ptr
+                                 ) -> DictionaryPtr {
+
+        if (dict_struct.key)
+            throw Exception {"'key' is not supported for dictionary of layout 'flat'", ErrorCodes::UNSUPPORTED_METHOD};
+
+        if (dict_struct.range_min || dict_struct.range_max)
+            throw Exception {name
+                                 + ": elements .structure.range_min and .structure.range_max should be defined only "
+                                   "for a dictionary of layout 'range_hashed'",
+                             ErrorCodes::BAD_ARGUMENTS};
+        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        return std::make_unique<FlatDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+
+
+    };
+    factory.registerLayout("flat", create_layout);
+}
+
 
 
 }

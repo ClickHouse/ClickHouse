@@ -1,8 +1,8 @@
 #include <ext/map.h>
 #include <ext/range.h>
-#include <Dictionaries/ComplexKeyHashedDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
-
+#include "ComplexKeyHashedDictionary.h"
+#include "DictionaryBlockInputStream.h"
+#include "DictionaryFactory.h"
 
 namespace DB
 {
@@ -659,6 +659,25 @@ BlockInputStreamPtr ComplexKeyHashedDictionary::getBlockInputStream(const Names 
 {
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyHashedDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeys(), column_names);
+}
+
+void registerDictionaryComplexKeyHashed(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 DictionarySourcePtr source_ptr
+                                 ) -> DictionaryPtr {
+        if (!dict_struct.key)
+            throw Exception {"'key' is required for dictionary of layout 'complex_key_hashed'", ErrorCodes::BAD_ARGUMENTS};
+
+        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        return std::make_unique<ComplexKeyHashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+    };
+    factory.registerLayout("complex_key_hashed", create_layout);
 }
 
 
