@@ -52,6 +52,8 @@ public:
 
     void finish()
     {
+        if (is_finished)
+            return;
         is_finished = true;
         vector.resize(
             ((position() - reinterpret_cast<Position>(vector.data()))
