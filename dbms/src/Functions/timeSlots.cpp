@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -30,10 +31,8 @@ namespace ErrorCodes
 template <typename DurationType>
 struct TimeSlotsImpl
 {
-    static constexpr UInt32 TIME_SLOT_SIZE = 1800;
-
     static void vector_vector(
-        const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations,
+        const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
@@ -44,9 +43,9 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + durations[i]) / TIME_SLOT_SIZE; ++value)
+            for (UInt32 value = starts[i] / time_slot_size; value <= (starts[i] + durations[i]) / time_slot_size; ++value)
             {
-                result_values.push_back(value * TIME_SLOT_SIZE);
+                result_values.push_back(value * time_slot_size);
                 ++current_offset;
             }
 
@@ -55,7 +54,7 @@ struct TimeSlotsImpl
     }
 
     static void vector_constant(
-        const PaddedPODArray<UInt32> & starts, DurationType duration,
+        const PaddedPODArray<UInt32> & starts, DurationType duration, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = starts.size();
@@ -66,9 +65,9 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            for (UInt32 value = starts[i] / TIME_SLOT_SIZE; value <= (starts[i] + duration) / TIME_SLOT_SIZE; ++value)
+            for (UInt32 value = starts[i] / time_slot_size; value <= (starts[i] + duration) / time_slot_size; ++value)
             {
-                result_values.push_back(value * TIME_SLOT_SIZE);
+                result_values.push_back(value * time_slot_size);
                 ++current_offset;
             }
 
@@ -77,7 +76,7 @@ struct TimeSlotsImpl
     }
 
     static void constant_vector(
-        UInt32 start, const PaddedPODArray<DurationType> & durations,
+        UInt32 start, const PaddedPODArray<DurationType> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
         size_t size = durations.size();
@@ -88,9 +87,9 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + durations[i]) / TIME_SLOT_SIZE; ++value)
+            for (UInt32 value = start / time_slot_size; value <= (start + durations[i]) / time_slot_size; ++value)
             {
-                result_values.push_back(value * TIME_SLOT_SIZE);
+                result_values.push_back(value * time_slot_size);
                 ++current_offset;
             }
 
@@ -99,11 +98,11 @@ struct TimeSlotsImpl
     }
 
     static void constant_constant(
-        UInt32 start, DurationType duration,
+        UInt32 start, DurationType duration, UInt32 time_slot_size,
         Array & result)
     {
-        for (UInt32 value = start / TIME_SLOT_SIZE; value <= (start + duration) / TIME_SLOT_SIZE; ++value)
-            result.push_back(value * TIME_SLOT_SIZE);
+        for (UInt32 value = start / time_slot_size; value <= (start + duration) / time_slot_size; ++value)
+            result.push_back(value * time_slot_size);
     }
 };
 
@@ -112,6 +111,7 @@ class FunctionTimeSlots : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";
+    static constexpr UInt32 TIME_SLOT_SIZE = 1800;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); }
 
     String getName() const override
@@ -119,10 +119,16 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.size() != 2 && arguments.size() != 3)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(arguments.size()) + ", should be 2 or 3",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         if (!WhichDataType(arguments[0].type).isDateTime())
             throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -131,9 +137,13 @@ public:
             throw Exception("Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isUInt32())
+            throw Exception("Illegal type " + arguments[1].type->getName() + " of third argument of function " + getName() + ". Must be UInt32.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
         /// If time zone is specified for source data type, attach it to the resulting type.
         /// Note that there is no explicit time zone argument for this function (we specify 2 as an argument number with explicit time zone).
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0)));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
@@ -147,30 +157,43 @@ public:
         auto res = ColumnArray::create(ColumnUInt32::create());
         ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
 
+        auto time_slot_size = TIME_SLOT_SIZE;
+
+        if (arguments.size() == 3)
+        {
+            auto time_slot_column = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[2]).column.get());
+            if (!time_slot_column)
+                throw Exception("Third argument for function " + getName() + " must be constant UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            if (time_slot_size = time_slot_column->getValue<UInt32>(); time_slot_size == 0)
+                throw Exception("Third argument for function " + getName() + " must be greater than zero", ErrorCodes::ILLEGAL_COLUMN);
+        }
+
         if (starts && durations)
         {
-            TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
         }
         else if (starts && const_durations)
         {
-            TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && durations)
         {
-            TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && const_durations)
         {
             Array const_res;
-            TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), const_res);
+            TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), time_slot_size, const_res);
             block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, const_res);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
                     + ", " + block.getByPosition(arguments[1]).column->getName()
+                    + ", " + block.getByPosition(arguments[2]).column->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }
