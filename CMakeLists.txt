@@ -25,6 +25,18 @@ endif ()
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+set(PARALLEL_COMPILE_JOBS "" CACHE STRING "Define the maximum number of concurrent compilation jobs")
+if (PARALLEL_COMPILE_JOBS)
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS compile_job_pool="${PARALLEL_COMPILE_JOBS}")
+    set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
+endif ()
+
+set(PARALLEL_LINK_JOBS "" CACHE STRING "Define the maximum number of concurrent link jobs")
+if (LLVM_PARALLEL_LINK_JOBS)
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS link_job_pool=${PARALLEL_LINK_JOBS})
+    set(CMAKE_JOB_POOL_LINK link_job_pool)
+endif ()
+
 include (cmake/find_ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -147,13 +159,6 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-
-    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
-    set (CMAKE_SHARED_LINKER_FLAGS       "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-endif ()
-
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package (Threads)
 
@@ -179,6 +184,13 @@ if (OS_LINUX AND COMPILER_CLANG)
             link_directories ("${LIBCXX_PATH}/lib")
         endif ()
     endif ()
+endif ()
+
+if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
+    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+
+    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
+    set (CMAKE_SHARED_LINKER_FLAGS       "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
 
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)

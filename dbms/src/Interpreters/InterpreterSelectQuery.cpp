@@ -182,7 +182,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
-        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+        table_lock = storage->lockStructure(false);
 
     syntax_analyzer_result = SyntaxAnalyzer(context, storage)
             .analyze(query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth);
