@@ -238,7 +238,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+        auto table_lock = table->lockForAlter();
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);

@@ -150,6 +150,8 @@ BlockInputStreams StorageBuffer::read(
 
         /// Collect columns from the destination tables which can be requested.
         /// Find out if there is a struct mismatch and we need to convert read blocks from the destination tables.
+        auto destination_lock = destination->lockStructure(false);
+
         Names columns_intersection;
         bool struct_mismatch = false;
         for (const String & column_name : column_names)
@@ -179,10 +181,9 @@ BlockInputStreams StorageBuffer::read(
                 << " has no common columns with block in buffer. Block of data is skipped.");
         else
         {
-            auto lock = destination->lockStructure(false, __PRETTY_FUNCTION__);
             streams_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
             for (auto & stream : streams_from_dst)
-                stream->addTableLock(lock);
+                stream->addTableLock(destination_lock);
         }
 
         if (struct_mismatch && !streams_from_dst.empty())
@@ -671,7 +672,7 @@ void StorageBuffer::alter(const AlterCommands & params, const String & database_
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
-    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+    auto lock = lockStructureForAlter();
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
