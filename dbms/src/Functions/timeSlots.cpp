@@ -21,11 +21,12 @@ namespace ErrorCodes
 
 /** timeSlots(StartTime, Duration)
   * - for the time interval beginning at `StartTime` and continuing `Duration` seconds,
-  *   returns an array of time points, consisting of rounding down to half an hour of points from this interval.
+  *   returns an array of time points, consisting of rounding down to half an hour (default; or another value) of points from this interval.
   *  For example, timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')].
   *  This is necessary to search for hits that are part of the corresponding visit.
   *
-  * This is obsolete function. It was developed for Yandex.Metrica, but no longer used.
+  * This is obsolete function. It was developed for Yandex.Metrica, but no longer used in Yandex.
+  * But this function was adopted by wider audience.
   */
 
 template <typename DurationType>
@@ -43,7 +44,7 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            for (UInt32 value = starts[i] / time_slot_size; value <= (starts[i] + durations[i]) / time_slot_size; ++value)
+            for (UInt32 value = starts[i] / time_slot_size, end = (starts[i] + durations[i]) / time_slot_size; value <= end; ++value)
             {
                 result_values.push_back(value * time_slot_size);
                 ++current_offset;
@@ -65,7 +66,7 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            for (UInt32 value = starts[i] / time_slot_size; value <= (starts[i] + duration) / time_slot_size; ++value)
+            for (UInt32 value = starts[i] / time_slot_size, end = (starts[i] + duration) / time_slot_size; value <= end; ++value)
             {
                 result_values.push_back(value * time_slot_size);
                 ++current_offset;
@@ -87,7 +88,7 @@ struct TimeSlotsImpl
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            for (UInt32 value = start / time_slot_size; value <= (start + durations[i]) / time_slot_size; ++value)
+            for (UInt32 value = start / time_slot_size, end = (start + durations[i]) / time_slot_size; value <= end; ++value)
             {
                 result_values.push_back(value * time_slot_size);
                 ++current_offset;
@@ -95,14 +96,6 @@ struct TimeSlotsImpl
 
             result_offsets[i] = current_offset;
         }
-    }
-
-    static void constant_constant(
-        UInt32 start, DurationType duration, UInt32 time_slot_size,
-        Array & result)
-    {
-        for (UInt32 value = start / time_slot_size; value <= (start + duration) / time_slot_size; ++value)
-            result.push_back(value * time_slot_size);
     }
 };
 
@@ -121,6 +114,8 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -137,8 +132,8 @@ public:
             throw Exception("Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isUInt32())
-            throw Exception("Illegal type " + arguments[1].type->getName() + " of third argument of function " + getName() + ". Must be UInt32.",
+        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isNativeUInt())
+            throw Exception("Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() + ". Must be UInt32.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         /// If time zone is specified for source data type, attach it to the resulting type.
@@ -146,7 +141,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         auto starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
         auto const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
@@ -161,7 +156,7 @@ public:
 
         if (arguments.size() == 3)
         {
-            auto time_slot_column = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[2]).column.get());
+            auto time_slot_column = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[2]).column.get());
             if (!time_slot_column)
                 throw Exception("Third argument for function " + getName() + " must be constant UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -183,12 +178,6 @@ public:
         {
             TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
-        }
-        else if (const_starts && const_durations)
-        {
-            Array const_res;
-            TimeSlotsImpl<UInt32>::constant_constant(const_starts->getValue<UInt32>(), const_durations->getValue<UInt32>(), time_slot_size, const_res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, const_res);
         }
         else
             throw Exception("Illegal columns " + block.getByPosition(arguments[0]).column->getName()
