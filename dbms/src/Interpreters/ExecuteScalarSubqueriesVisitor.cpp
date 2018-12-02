@@ -35,7 +35,7 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
-void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode &) const
+void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery & subquery, ASTPtr & ast) const
 {
     Context subquery_context = context;
     Settings subquery_settings = context.getSettings();
@@ -43,7 +43,7 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr 
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
-    ASTPtr subquery_select = subquery->children.at(0);
+    ASTPtr subquery_select = subquery.children.at(0);
     BlockIO res = InterpreterSelectWithUnionQuery(
         subquery_select, subquery_context, {}, QueryProcessingStage::Complete, subquery_depth + 1).execute();
 
@@ -76,14 +76,14 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr 
     if (columns == 1)
     {
         auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
-        lit->alias = subquery->alias;
-        lit->prefer_alias_to_column_name = subquery->prefer_alias_to_column_name;
+        lit->alias = subquery.alias;
+        lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
         ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
     }
     else
     {
         auto tuple = std::make_shared<ASTFunction>();
-        tuple->alias = subquery->alias;
+        tuple->alias = subquery.alias;
         ast = tuple;
         tuple->name = "tuple";
         auto exp_list = std::make_shared<ASTExpressionList>();
@@ -101,26 +101,26 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr 
 }
 
 
-void ExecuteScalarSubqueriesVisitor::visit(const ASTTableExpression *, ASTPtr &, const DumpASTNode &) const
+void ExecuteScalarSubqueriesVisitor::visit(const ASTTableExpression &, ASTPtr &) const
 {
     /// Don't descend into subqueries in FROM section.
 }
 
-void ExecuteScalarSubqueriesVisitor::visit(const ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const
+void ExecuteScalarSubqueriesVisitor::visit(const ASTFunction & func, ASTPtr & ast) const
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
 
-    if (functionIsInOrGlobalInOperator(func->name))
+    if (functionIsInOrGlobalInOperator(func.name))
     {
         for (auto & child : ast->children)
         {
-            if (child != func->arguments)
+            if (child != func.arguments)
                 visit(child);
             else
-                for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
-                    if (i != 1 || !typeid_cast<ASTSubquery *>(func->arguments->children[i].get()))
-                        visit(func->arguments->children[i]);
+                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
+                    if (i != 1 || !typeid_cast<ASTSubquery *>(func.arguments->children[i].get()))
+                        visit(func.arguments->children[i]);
         }
     }
     else

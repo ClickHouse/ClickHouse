@@ -4,7 +4,7 @@
 #include <Poco/UTF8Encoding.h>
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <common/preciseExp10.h>
 
 #include <iostream>

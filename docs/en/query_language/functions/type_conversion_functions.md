@@ -12,6 +12,10 @@
 
 ## toDate, toDateTime
 
+## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
+
+Converts `value` to [Decimal](../../data_types/decimal.md#data_type-decimal) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+
 ## toString
 
 Functions for converting between numbers, strings (but not fixed strings), dates, and dates with times.

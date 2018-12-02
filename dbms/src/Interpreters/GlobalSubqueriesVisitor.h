@@ -1,7 +1,26 @@
 #pragma once
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ActionsVisitor.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Common/typeid_cast.h>
+#include <Core/Block.h>
+#include <Core/NamesAndTypes.h>
+#include <Databases/IDatabase.h>
+#include <Storages/StorageMemory.h>
+#include <IO/WriteHelpers.h>
+
 namespace DB
 {
+
+/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
+/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /// Converts GLOBAL subqueries to external tables; Puts them into the external_tables dictionary: name -> StoragePtr.
 class GlobalSubqueriesVisitor
@@ -41,22 +60,22 @@ private:
     bool & has_global_subqueries;
 
     /// GLOBAL IN
-    void visit(ASTFunction * func, ASTPtr &) const
+    void visit(ASTFunction & func, ASTPtr &) const
     {
-        if (func->name == "globalIn" || func->name == "globalNotIn")
+        if (func.name == "globalIn" || func.name == "globalNotIn")
         {
-            addExternalStorage(func->arguments->children.at(1));
+            addExternalStorage(func.arguments->children.at(1));
             has_global_subqueries = true;
         }
     }
 
     /// GLOBAL JOIN
-    void visit(ASTTablesInSelectQueryElement * table_elem, ASTPtr &) const
+    void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &) const
     {
-        if (table_elem->table_join
-            && static_cast<const ASTTableJoin &>(*table_elem->table_join).locality == ASTTableJoin::Locality::Global)
+        if (table_elem.table_join
+            && static_cast<const ASTTableJoin &>(*table_elem.table_join).locality == ASTTableJoin::Locality::Global)
         {
-            addExternalStorage(table_elem->table_expression);
+            addExternalStorage(table_elem.table_expression);
             has_global_subqueries = true;
         }
     }
@@ -66,12 +85,15 @@ private:
     {
         if (T * t = typeid_cast<T *>(ast.get()))
         {
-            visit(t, ast);
+            visit(*t, ast);
             return true;
         }
         return false;
     }
 
+    /** Initialize InterpreterSelectQuery for a subquery in the GLOBAL IN/JOIN section,
+      * create a temporary table of type Memory and store it in the external_tables dictionary.
+      */
     void addExternalStorage(ASTPtr & subquery_or_table_name_or_table_expression) const
     {
         /// With nondistributed queries, creating temporary tables does not make sense.
@@ -139,7 +161,7 @@ private:
             *  instead of doing a subquery, you just need to read it.
             */
 
-        auto database_and_table_name = ASTIdentifier::createSpecial(external_table_name);
+        auto database_and_table_name = createDatabaseAndTableNode("", external_table_name);
 
         if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
         {

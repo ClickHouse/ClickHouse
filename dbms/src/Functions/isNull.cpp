@@ -47,7 +47,7 @@ public:
         {
             /// Since no element is nullable, return a zero-constant column representing
             /// a zero-filled null map.
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), UInt64(0));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 0u);
         }
     }
 };

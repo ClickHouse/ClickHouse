@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -9,7 +9,7 @@ namespace DB
 
 /** DROP query
   */
-class ASTDropQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTDropQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
     enum Kind
@@ -21,15 +21,15 @@ public:
 
     Kind kind;
     bool if_exists{false};
-    bool temporary{false};
-    String database;
-    String table;
 
     /** Get the text that identifies this element. */
     String getID() const override;
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        return removeOnCluster<ASTDropQuery>(clone(), new_database);
+    }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;

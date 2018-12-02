@@ -51,9 +51,6 @@ public:
 
     void setMainTable(QualifiedTableName main_table_) { main_table = std::move(main_table_); }
 
-    /// Besides blocks themself, get blocks' extra info
-    void appendExtraInfo();
-
     /// Sends query (initiates calculation) before read()
     void readPrefix() override;
 
@@ -65,11 +62,6 @@ public:
     void cancel(bool kill) override;
 
     String getName() const override { return "Remote"; }
-
-    BlockExtraInfo getBlockExtraInfo() const override
-    {
-        return multiplexed_connections->getBlockExtraInfo();
-    }
 
     Block getHeader() const override { return header; }
 
@@ -143,7 +135,6 @@ private:
       */
     std::atomic<bool> got_unknown_packet_from_replica { false };
 
-    bool append_extra_info = false;
     PoolMode pool_mode = PoolMode::GET_MANY;
     std::optional<QualifiedTableName> main_table;
 

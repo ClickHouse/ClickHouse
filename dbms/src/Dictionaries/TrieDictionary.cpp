@@ -3,16 +3,17 @@
 #include <ext/range.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/ByteOrder.h>
-#include <Dictionaries/TrieDictionary.h>
+#include "TrieDictionary.h"
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnFixedString.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "DictionaryBlockInputStream.h"
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteIntText.h>
 #include <Common/formatIPv6.h>
 #include <iostream>
 #include <btrie.h>
+#include "DictionaryFactory.h"
 
 
 namespace DB
@@ -295,7 +296,7 @@ void TrieDictionary::loadData()
 template <typename T>
 void TrieDictionary::addAttributeSize(const Attribute & attribute)
 {
-    const auto & vec = *std::get<ContainerPtrType<T>>(attribute.maps);
+    const auto & vec = std::get<ContainerType<T>>(attribute.maps);
     bytes_allocated += sizeof(ContainerType<T>) + (vec.capacity() * sizeof(T));
     bucket_count = vec.size();
 }
@@ -352,8 +353,8 @@ void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<ContainerPtrType<T>>(attribute.maps) = std::make_unique<ContainerType<T>>();
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.maps.emplace<ContainerType<T>>();
 }
 
 TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -380,8 +381,8 @@ TrieDictionary::Attribute TrieDictionary::createAttributeWithType(const Attribut
 
         case AttributeUnderlyingType::String:
         {
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<ContainerPtrType<StringRef>>(attr.maps) = std::make_unique<ContainerType<StringRef>>();
+            attr.null_values = null_value.get<String>();
+            attr.maps.emplace<ContainerType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }
@@ -428,7 +429,7 @@ void TrieDictionary::getItemsImpl(
     ValueSetter && set_value,
     DefaultGetter && get_default) const
 {
-    auto & vec = *std::get<ContainerPtrType<AttributeType>>(attribute.maps);
+    auto & vec = std::get<ContainerType<AttributeType>>(attribute.maps);
 
     const auto first_column = key_columns.front();
     const auto rows = first_column->size();
@@ -462,7 +463,7 @@ template <typename T>
 bool TrieDictionary::setAttributeValueImpl(Attribute & attribute, const StringRef key, const T value)
 {
     // Insert value into appropriate vector type
-    auto & vec = *std::get<ContainerPtrType<T>>(attribute.maps);
+    auto & vec = std::get<ContainerType<T>>(attribute.maps);
     size_t row = vec.size();
     vec.push_back(value);
 
@@ -619,12 +620,12 @@ Columns TrieDictionary::getKeyColumns() const
 #if defined(__SIZEOF_INT128__)
     auto getter = [& ip_column, & mask_column](__uint128_t ip, size_t mask)
     {
-        UInt64 * ip_array = reinterpret_cast<UInt64 *>(&ip);
+        Poco::UInt64 * ip_array = reinterpret_cast<Poco::UInt64 *>(&ip); // Poco:: for old poco + macos
         ip_array[0] = Poco::ByteOrder::fromNetwork(ip_array[0]);
         ip_array[1] = Poco::ByteOrder::fromNetwork(ip_array[1]);
         std::swap(ip_array[0], ip_array[1]);
         ip_column->insertData(reinterpret_cast<const char *>(ip_array), IPV6_BINARY_LENGTH);
-        mask_column->insert(static_cast<UInt8>(mask));
+        mask_column->insertValue(static_cast<UInt8>(mask));
     };
 
     trieTraverse<decltype(getter), __uint128_t>(trie, std::move(getter));
@@ -663,6 +664,27 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
     };
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getKeyColumns(), column_names,
         std::move(getKeys), std::move(getView));
+}
+
+
+void registerDictionaryTrie(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 DictionarySourcePtr source_ptr
+                                 ) -> DictionaryPtr {
+        if (!dict_struct.key)
+            throw Exception {"'key' is required for dictionary of layout 'ip_trie'", ErrorCodes::BAD_ARGUMENTS};
+
+        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        // This is specialised trie for storing IPv4 and IPv6 prefixes.
+        return std::make_unique<TrieDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+    };
+    factory.registerLayout("ip_trie", create_layout);
 }
 
 }

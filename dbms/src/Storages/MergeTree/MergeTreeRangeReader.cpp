@@ -3,10 +3,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnNothing.h>
 #include <ext/range.h>
+#include <DataTypes/DataTypeNothing.h>
 
 #if __SSE2__
 #include <emmintrin.h>
-#include <DataTypes/DataTypeNothing.h>
 #endif
 
 namespace DB
@@ -645,7 +645,7 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     if (remove_prewhere_column)
         result.block.erase(*prewhere_column_name);
     else
-        prewhere_column.column = prewhere_column.type->createColumnConst(getNumRows(), UInt64(1));
+        prewhere_column.column = prewhere_column.type->createColumnConst(getNumRows(), 1u);
 
     /// If block is empty, create column in order to store rows number.
     if (last_reader_in_chain && result.block.columns() == 0)

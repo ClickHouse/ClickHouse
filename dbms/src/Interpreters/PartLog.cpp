@@ -15,6 +15,8 @@
 namespace DB
 {
 
+template <> struct NearestFieldTypeImpl<PartLogElement::Type> { using Type = UInt64; };
+
 Block PartLogElement::createBlock()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
@@ -29,28 +31,28 @@ Block PartLogElement::createBlock()
 
     return
     {
-        {ColumnInt8::create(),    std::move(event_type_datatype),       "event_type"},
-        {ColumnUInt16::create(),  std::make_shared<DataTypeDate>(),     "event_date"},
-        {ColumnUInt32::create(),  std::make_shared<DataTypeDateTime>(), "event_time"},
-        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),   "duration_ms"},
+        {ColumnInt8::create(),   std::move(event_type_datatype),       "event_type"},
+        {ColumnUInt16::create(), std::make_shared<DataTypeDate>(),     "event_date"},
+        {ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(), "event_time"},
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "duration_ms"},
 
-        {ColumnString::create(),  std::make_shared<DataTypeString>(),   "database"},
-        {ColumnString::create(),  std::make_shared<DataTypeString>(),   "table"},
-        {ColumnString::create(),  std::make_shared<DataTypeString>(),   "part_name"},
-        {ColumnString::create(),  std::make_shared<DataTypeString>(),   "partition_id"},
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "database"},
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "table"},
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "part_name"},
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "partition_id"},
 
-        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),   "rows"},
-        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),   "size_in_bytes"}, // On disk
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "rows"},
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "size_in_bytes"}, // On disk
 
         /// Merge-specific info
         {ColumnArray::create(ColumnString::create()), std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "merged_from"},
-        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),   "bytes_uncompressed"}, // Result bytes
-        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),   "read_rows"},
-        {ColumnUInt64::create(),  std::make_shared<DataTypeUInt64>(),   "read_bytes"},
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "bytes_uncompressed"}, // Result bytes
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "read_rows"},
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "read_bytes"},
 
         /// Is there an error during the execution or commit
-        {ColumnUInt16::create(),  std::make_shared<DataTypeUInt16>(),   "error"},
-        {ColumnString::create(),  std::make_shared<DataTypeString>(),   "exception"},
+        {ColumnUInt16::create(), std::make_shared<DataTypeUInt16>(),   "error"},
+        {ColumnString::create(), std::make_shared<DataTypeString>(),   "exception"},
     };
 }
 
@@ -60,18 +62,18 @@ void PartLogElement::appendToBlock(Block & block) const
 
     size_t i = 0;
 
-    columns[i++]->insert(Int64(event_type));
-    columns[i++]->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
-    columns[i++]->insert(UInt64(event_time));
-    columns[i++]->insert(UInt64(duration_ms));
+    columns[i++]->insert(event_type);
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(event_time);
+    columns[i++]->insert(duration_ms);
 
     columns[i++]->insert(database_name);
     columns[i++]->insert(table_name);
     columns[i++]->insert(part_name);
     columns[i++]->insert(partition_id);
 
-    columns[i++]->insert(UInt64(rows));
-    columns[i++]->insert(UInt64(bytes_compressed_on_disk));
+    columns[i++]->insert(rows);
+    columns[i++]->insert(bytes_compressed_on_disk);
 
     Array source_part_names_array;
     source_part_names_array.reserve(source_part_names.size());
@@ -80,11 +82,11 @@ void PartLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(source_part_names_array);
 
-    columns[i++]->insert(UInt64(bytes_uncompressed));
-    columns[i++]->insert(UInt64(rows_read));
-    columns[i++]->insert(UInt64(bytes_read_uncompressed));
+    columns[i++]->insert(bytes_uncompressed);
+    columns[i++]->insert(rows_read);
+    columns[i++]->insert(bytes_read_uncompressed);
 
-    columns[i++]->insert(UInt64(error));
+    columns[i++]->insert(error);
     columns[i++]->insert(exception);
 
     block.setColumns(std::move(columns));

@@ -28,6 +28,27 @@ public:
     static bool parse(Pos & pos, std::string & cluster_str, Expected & expected);
 
     virtual ~ASTQueryWithOnCluster() = default;
+
+protected:
+    template <typename T>
+    static ASTPtr removeOnCluster(ASTPtr query_ptr, const std::string & new_database)
+    {
+        T & query = static_cast<T &>(*query_ptr);
+
+        query.cluster.clear();
+        if (query.database.empty())
+            query.database = new_database;
+
+        return query_ptr;
+    }
+
+    template <typename T>
+    static ASTPtr removeOnCluster(ASTPtr query_ptr)
+    {
+        T & query = static_cast<T &>(*query_ptr);
+        query.cluster.clear();
+        return query_ptr;
+    }
 };
 
 }

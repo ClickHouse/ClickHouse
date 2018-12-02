@@ -33,7 +33,7 @@ struct ArrayAllImpl
                 throw Exception("Unexpected type of filter column", ErrorCodes::ILLEGAL_COLUMN);
 
             if (column_filter_const->getValue<UInt8>())
-                return DataTypeUInt8().createColumnConst(array.size(), UInt64(1));
+                return DataTypeUInt8().createColumnConst(array.size(), 1u);
             else
             {
                 const IColumn::Offsets & offsets = array.getOffsets();

@@ -188,7 +188,7 @@ struct MergeTreeDataPart
 
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
-            : parallelogram(1, Range(static_cast<UInt64>(min_date), true, static_cast<UInt64>(max_date), true))
+            : parallelogram(1, Range(min_date, true, max_date, true))
             , initialized(true)
         {
         }

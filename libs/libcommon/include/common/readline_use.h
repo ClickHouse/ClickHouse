@@ -10,7 +10,6 @@
     #include <readline/history.h>
 #elif USE_LIBEDIT
     #include <editline/readline.h>
-    #include <editline/history.h> // Y_IGNORE
 #else
     #include <string>
     #include <cstring>

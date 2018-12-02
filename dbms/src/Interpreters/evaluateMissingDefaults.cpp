@@ -1,5 +1,6 @@
 #include <Core/Block.h>
 #include <Storages/ColumnDefault.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateMissingDefaults.h>
@@ -47,7 +48,8 @@ void evaluateMissingDefaults(Block & block,
     for (size_t i = 0, size = block.columns(); i < size; ++i)
         available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
 
-    ExpressionAnalyzer{default_expr_list, context, {}, available_columns}.getActions(true)->execute(copy_block);
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, available_columns);
+    ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(copy_block);
 
     /// move evaluated columns to the original block, materializing them at the same time
     size_t pos = 0;

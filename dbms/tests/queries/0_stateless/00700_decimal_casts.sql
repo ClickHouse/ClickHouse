@@ -239,4 +239,8 @@ SELECT toUInt64('2147483649') AS x, toDecimal32(x, 0); -- { serverError 407 }
 SELECT toUInt64('9223372036854775807') AS x, toDecimal64(x, 0);
 SELECT toUInt64('9223372036854775809') AS x, toDecimal64(x, 0); -- { serverError 407 }
 
+SELECT toDecimal32(0, rowNumberInBlock()); -- { serverError 44 }
+SELECT toDecimal64(0, rowNumberInBlock()); -- { serverError 44 }
+SELECT toDecimal128(0, rowNumberInBlock()); -- { serverError 44 }
+
 DROP TABLE IF EXISTS test.decimal;

@@ -27,7 +27,7 @@ public:
         unsigned num_streams) override
     {
         return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-            {part}, column_names, query_info, context, max_block_size, num_streams, 0);
+            {part}, column_names, query_info, context, max_block_size, num_streams);
     }
 
     bool supportsIndexForIn() const override { return true; }

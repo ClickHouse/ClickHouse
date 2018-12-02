@@ -28,8 +28,8 @@
 - [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
 - [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
-- [ODBC](#dicts-external_dicts_dict_sources-odbc)
 -   СУБД:
+    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
     - [MySQL](#dicts-external_dicts_dict_sources-mysql)
     - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)

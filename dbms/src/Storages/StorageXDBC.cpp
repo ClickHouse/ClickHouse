@@ -113,7 +113,7 @@ namespace
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context.getConfigRef(),
+            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context,
                 args.context.getSettingsRef().http_receive_timeout.value,
                 static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>());
             return std::make_shared<StorageXDBC>(args.table_name,

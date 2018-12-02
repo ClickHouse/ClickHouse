@@ -81,8 +81,10 @@ private:
     // in order to make various input stream parsers happy.
     char row_delimiter;
     const String schema_name;
-     /// Total number of consumers
+    /// Total number of consumers
     size_t num_consumers;
+    /// Maximum block size for insertion into this table
+    size_t max_block_size;
     /// Number of actually created consumers.
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
@@ -105,6 +107,7 @@ private:
 
     void streamThread();
     bool streamToViews();
+    bool checkDependencies(const String & database_name, const String & table_name);
 
 protected:
     StorageKafka(
@@ -113,7 +116,8 @@ protected:
         Context & context_,
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, char row_delimiter_, const String & schema_name_, size_t num_consumers_);
+        const String & format_name_, char row_delimiter_, const String & schema_name_,
+        size_t num_consumers_, size_t max_block_size_);
 };
 
 }

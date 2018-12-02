@@ -1,12 +1,12 @@
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/AlterCommands.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -79,6 +79,9 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_UPDATE_COLUMN;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MUNMAP;
+    extern const int CANNOT_MREMAP;
 }
 
 
@@ -190,7 +193,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ExpressionAction & action : expr.getActions())
     {
         if (action.type == ExpressionAction::ARRAY_JOIN)
-            throw Exception(key_name + " key cannot contain array joins");
+            throw Exception(key_name + " key cannot contain array joins", ErrorCodes::ILLEGAL_COLUMN);
 
         if (action.type == ExpressionAction::APPLY_FUNCTION)
         {
@@ -227,11 +230,11 @@ void MergeTreeData::initPrimaryKey()
     primary_sort_columns.clear();
     addSortColumns(primary_sort_columns, primary_expr_ast);
 
-    primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
-
     {
-        ExpressionActionsPtr projected_expr =
-            ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(primary_expr_ast, getColumns().getAllPhysical());
+        primary_expr = ExpressionAnalyzer(primary_expr_ast, syntax_result, context).getActions(false);
+
+        ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, syntax_result, context).getActions(true);
         primary_key_sample = projected_expr->getSampleBlock();
     }
 
@@ -246,10 +249,10 @@ void MergeTreeData::initPrimaryKey()
     if (secondary_sort_expr_ast)
     {
         addSortColumns(sort_columns, secondary_sort_expr_ast);
-        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(secondary_sort_expr_ast, getColumns().getAllPhysical());
+        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, syntax_result, context).getActions(false);
 
-        ExpressionActionsPtr projected_expr =
-            ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(true);
+        ExpressionActionsPtr projected_expr = ExpressionAnalyzer(secondary_sort_expr_ast, syntax_result, context).getActions(true);
         auto secondary_key_sample = projected_expr->getSampleBlock();
 
         checkKeyExpression(*secondary_sort_expr, secondary_key_sample, "Secondary");
@@ -262,7 +265,11 @@ void MergeTreeData::initPartitionKey()
     if (!partition_expr_ast || partition_expr_ast->children.empty())
         return;
 
-    partition_expr = ExpressionAnalyzer(partition_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
+    {
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_expr_ast, getColumns().getAllPhysical());
+        partition_expr = ExpressionAnalyzer(partition_expr_ast, syntax_result, context).getActions(false);
+    }
+
     for (const ASTPtr & ast : partition_expr_ast->children)
     {
         String col_name = ast->getColumnName();
@@ -339,7 +346,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
         if (miss_column)
-            throw Exception("Sign column " + sign_column + " does not exist in table declaration.");
+            throw Exception("Sign column " + sign_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
     /// that if the version_column column is needed, it exists and is of unsigned integer type.
@@ -368,7 +375,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             }
         }
         if (miss_column)
-            throw Exception("Version column " + version_column + " does not exist in table declaration.");
+            throw Exception("Version column " + version_column + " does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
     };
 
     if (mode == MergingParams::Collapsing)
@@ -385,7 +392,7 @@ void MergeTreeData::MergingParams::check(const NamesAndTypesList & columns) cons
             };
             if (columns.end() == std::find_if(columns.begin(), columns.end(), check_column_to_sum_exists))
                 throw Exception(
-                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.");
+                        "Column " + column_to_sum + " listed in columns to sum does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
         }
     }
 
@@ -412,7 +419,7 @@ String MergeTreeData::MergingParams::getModeName() const
         case Aggregating:   return "Aggregating";
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
-        case VersionedCollapsing:  return "VersionedCollapsing";
+        case VersionedCollapsing: return "VersionedCollapsing";
 
         default:
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
@@ -473,7 +480,10 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             /// Don't count the part as broken if there is not enough memory to load it.
             /// In fact, there can be many similar situations.
             /// But it is OK, because there is a safety guard against deleting too many parts.
-            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+                || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+                || e.code() == ErrorCodes::CANNOT_MUNMAP
+                || e.code() == ErrorCodes::CANNOT_MREMAP)
                 throw;
 
             broken = true;
@@ -909,6 +919,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 
     for (const AlterCommand & command : commands)
     {
+        if (!command.is_mutable())
+        {
+            continue;
+        }
+
         if (columns_alter_forbidden.count(command.column_name))
             throw Exception("trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
 
@@ -1006,7 +1021,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// This is temporary name for expression. TODO Invent the name more safely.
                 const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }, "", false));
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
                 const auto & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
@@ -1148,7 +1163,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// TODO: Check the order of secondary sorting key columns.
     if (new_primary_key.get() != primary_expr_ast.get())
     {
-        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(new_primary_key, context, nullptr, new_columns).getActions(true);
+        ASTPtr query = new_primary_key;
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, new_columns);
+        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
         Block new_primary_key_sample = new_primary_expr->getSampleBlock();
         size_t new_key_size = new_primary_key_sample.columns();
 
@@ -1206,10 +1223,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
-        MarkRanges ranges{MarkRange(0, part->marks_count)};
-        BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
-            *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
-            false, nullptr, false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+        BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
+            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
             part->bytes_on_disk,
@@ -1271,6 +1286,11 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     }
 
     return transaction;
+}
+
+void MergeTreeData::freezeAll(const String & with_name, const Context & context)
+{
+    freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
 }
 
 void MergeTreeData::AlterDataPartTransaction::commit()
@@ -2058,44 +2078,17 @@ void MergeTreeData::freezePartition(const ASTPtr & partition_ast, const String &
     else
         LOG_DEBUG(log, "Freezing parts with partition ID " + partition_id);
 
-    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
-    String shadow_path = clickhouse_path + "shadow/";
-    Poco::File(shadow_path).createDirectories();
-    String backup_path = shadow_path
-        + (!with_name.empty()
-            ? escapeForFileName(with_name)
-            : toString(Increment(shadow_path + "increment.txt").get(true)))
-        + "/";
 
-    LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
-
-    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
-    const auto data_parts = getDataParts();
-
-    size_t parts_processed = 0;
-    for (const auto & part : data_parts)
-    {
-        if (prefix)
+    freezePartitionsByMatcher(
+        [&prefix, &partition_id](const DataPartPtr & part)
         {
-            if (!startsWith(part->info.partition_id, *prefix))
-                continue;
-        }
-        else if (part->info.partition_id != partition_id)
-            continue;
-
-        LOG_DEBUG(log, "Freezing part " << part->name);
-
-        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
-        if (!startsWith(part_absolute_path, clickhouse_path))
-            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
-
-        String backup_part_absolute_path = part_absolute_path;
-        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
-        localBackup(part_absolute_path, backup_part_absolute_path);
-        ++parts_processed;
-    }
-
-    LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+            if (prefix)
+                return startsWith(part->info.partition_id, *prefix);
+            else
+                return part->info.partition_id == partition_id;
+        },
+        with_name,
+        context);
 }
 
 size_t MergeTreeData::getPartitionSize(const std::string & partition_id) const
@@ -2186,7 +2179,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         {
             WriteBufferFromOwnString buf;
             writeCString("Parsed partition value: ", buf);
-            partition.serializeTextQuoted(*this, buf, format_settings);
+            partition.serializeText(*this, buf, format_settings);
             writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
             writeString(existing_part_in_partition->name, buf);
             throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
@@ -2434,6 +2427,43 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
     dst_data_part->loadColumnsChecksumsIndexes(require_part_metadata, true);
     dst_data_part->modification_time = Poco::File(dst_part_absolute_path).getLastModified().epochTime();
     return dst_data_part;
+}
+
+void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & with_name, const Context & context)
+{
+    String clickhouse_path = Poco::Path(context.getPath()).makeAbsolute().toString();
+    String shadow_path = clickhouse_path + "shadow/";
+    Poco::File(shadow_path).createDirectories();
+    String backup_path = shadow_path
+        + (!with_name.empty()
+            ? escapeForFileName(with_name)
+            : toString(Increment(shadow_path + "increment.txt").get(true)))
+        + "/";
+
+    LOG_DEBUG(log, "Snapshot will be placed at " + backup_path);
+
+    /// Acquire a snapshot of active data parts to prevent removing while doing backup.
+    const auto data_parts = getDataParts();
+
+    size_t parts_processed = 0;
+    for (const auto & part : data_parts)
+    {
+        if (!matcher(part))
+            continue;
+
+        LOG_DEBUG(log, "Freezing part " << part->name);
+
+        String part_absolute_path = Poco::Path(part->getFullPath()).absolute().toString();
+        if (!startsWith(part_absolute_path, clickhouse_path))
+            throw Exception("Part path " + part_absolute_path + " is not inside " + clickhouse_path, ErrorCodes::LOGICAL_ERROR);
+
+        String backup_part_absolute_path = part_absolute_path;
+        backup_part_absolute_path.replace(0, clickhouse_path.size(), backup_path);
+        localBackup(part_absolute_path, backup_part_absolute_path);
+        ++parts_processed;
+    }
+
+    LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
 }
 
 }

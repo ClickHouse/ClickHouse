@@ -5,10 +5,10 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
-#include <Dictionaries/DictionaryBlockInputStreamBase.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/RangeHashedDictionary.h>
+#include "DictionaryBlockInputStreamBase.h"
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "RangeHashedDictionary.h"
 #include <ext/range.h>
 
 namespace DB
@@ -141,7 +141,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, RangeType, Key>::getCo
     auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     for (T value : array)
-        column_vector->insert(value);
+        column_vector->insertValue(value);
     return column_vector;
 }
 

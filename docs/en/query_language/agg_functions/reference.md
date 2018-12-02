@@ -53,6 +53,135 @@ FROM ontime
 Selects the last value encountered.
 The result is just as indeterminate as for the `any` function.
 
+##groupBitAnd
+
+Applies bitwise `AND` for series of numbers.
+
+```
+groupBitAnd(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitAnd(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+00000100 = 4
+```
+
+##groupBitOr
+
+Applies bitwise `OR` for series of numbers.
+
+```
+groupBitOr(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitOr(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01111101 = 125
+```
+
+##groupBitXor
+
+Applies bitwise `XOR` for series of numbers.
+
+```
+groupBitXor(expr)
+```
+
+**Parameters**
+
+`expr` – An expression that results in `UInt*` type.
+
+**Return value**
+
+Value of the `UInt*` type.
+
+**Example**
+
+Test data:
+
+```
+binary     decimal
+00101100 = 44
+00011100 = 28
+00001101 = 13
+01010101 = 85
+```
+
+Query:
+
+```
+SELECT groupBitXor(num) FROM t
+```
+
+Where `num` is the column with the test data.
+
+Result:
+
+```
+binary     decimal
+01101000 = 104
+```
+
 ## min(x)
 
 Calculates the minimum.
@@ -154,15 +283,17 @@ The result is determinate (it doesn't depend on the order of query processing).
 
 This function provides excellent accuracy even for data sets with extremely high cardinality (over 10 billion elements). It is recommended for default use.
 
-## uniqCombined(x)
+## uniqCombined(HLL_precision)(x)
 
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
 
-A combination of three algorithms is used: array, hash table and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table. The memory consumption is several times smaller than for the `uniq` function, and the accuracy is several times higher. Performance is slightly lower than for the `uniq` function, but sometimes it can be even higher than it, such as with distributed queries that transmit a large number of aggregation states over the network. The maximum state size is 96 KiB (HyperLogLog of 217 6-bit cells).
+A combination of three algorithms is used: array, hash table and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table. For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
 
-The result is determinate (it doesn't depend on the order of query processing).
+The parameter "HLL_precision" is the base-2 logarithm of the number of cells in HyperLogLog. You can omit the parameter (omit first parens). The default value is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each). The memory consumption is several times smaller than for the `uniq` function, and the accuracy is several times higher. Performance is slightly lower than for the `uniq` function, but sometimes it can be even higher than it, such as with distributed queries that transmit a large number of aggregation states over the network.
 
-The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error will increase for high-cardinality data sets (200M+ elements), and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+The result is deterministic (it doesn't depend on the order of query processing).
+
+The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
 
 ## uniqHLL12(x)
 
@@ -210,14 +341,14 @@ Creates an array from different argument values. Memory consumption is the same 
 
 ## quantile(level)(x)
 
-Approximates the 'level' quantile. 'level' is a constant, a floating-point number from 0 to 1.
-We recommend using a 'level' value in the range of 0.01..0.99
-Don't use a 'level' value equal to 0 or 1 – use the 'min' and 'max' functions for these cases.
+Approximates the `level` quantile. `level` is a constant, a floating-point number from 0 to 1.
+We recommend using a `level` value in the range of `[0.01, 0.99]`
+Don't use a `level` value equal to 0 or 1 – use the `min` and `max` functions for these cases.
 
-In this function, as well as in all functions for calculating quantiles, the 'level' parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
+In this function, as well as in all functions for calculating quantiles, the `level` parameter can be omitted. In this case, it is assumed to be equal to 0.5 (in other words, the function will calculate the median).
 
 Works for numbers, dates, and dates with times.
-Returns: for numbers – Float64; for dates – a date; for dates with times – a date with time.
+Returns: for numbers – `Float64`; for dates – a date; for dates with times – a date with time.
 
 Uses [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192.
 If necessary, the result is output with linear approximation from the two neighboring values.

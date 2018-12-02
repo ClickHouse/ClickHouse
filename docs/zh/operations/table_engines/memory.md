@@ -6,3 +6,4 @@ Memory 引擎是由系统用于临时表进行外部数据的查询（请参阅 
 
 
 [Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/memory/) <!--hide-->
+

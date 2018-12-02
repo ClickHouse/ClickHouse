@@ -83,7 +83,7 @@ namespace
 
 
     template <typename IndexType, typename Hash, typename HashTable, typename ColumnType, bool string_hash, bool has_base_index>
-    struct  ReverseIndexHashTableCell
+    struct ReverseIndexHashTableCell
         : public HashTableCell<IndexType, Hash, ReverseIndexHashTableState<ColumnType, string_hash, has_base_index>>
     {
         using Base = HashTableCell<IndexType, Hash, ReverseIndexHashTableState<ColumnType, string_hash, has_base_index>>;
@@ -272,7 +272,7 @@ public:
             auto hash = calcHashes();
             ptr = &hash->getData()[0];
             UInt64 * expected = nullptr;
-            if(saved_hash_ptr.compare_exchange_strong(expected, ptr))
+            if (saved_hash_ptr.compare_exchange_strong(expected, ptr))
                 saved_hash = std::move(hash);
             else
                 ptr = expected;

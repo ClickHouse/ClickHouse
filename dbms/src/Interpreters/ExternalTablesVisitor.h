@@ -1,5 +1,10 @@
 #pragma once
 
+#include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Common/typeid_cast.h>
+
 namespace DB
 {
 
@@ -25,11 +30,11 @@ private:
     const Context & context;
     Tables & external_tables;
 
-    void visit(const ASTIdentifier * node, ASTPtr &) const
+    void visit(const ASTIdentifier & node, ASTPtr &) const
     {
-        if (node->special())
-            if (StoragePtr external_storage = context.tryGetExternalTable(node->name))
-                external_tables[node->name] = external_storage;
+        if (node.special())
+            if (StoragePtr external_storage = context.tryGetExternalTable(node.name))
+                external_tables[node.name] = external_storage;
     }
 
     template <typename T>
@@ -37,7 +42,7 @@ private:
     {
         if (const T * t = typeid_cast<const T *>(ast.get()))
         {
-            visit(t, ast);
+            visit(*t, ast);
             return true;
         }
         return false;

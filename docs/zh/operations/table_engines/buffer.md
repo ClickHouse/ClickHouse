@@ -54,3 +54,4 @@ Note that it doesn't make sense to insert data one row at a time, even for Buffe
 
 
 [Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/buffer/) <!--hide-->
+

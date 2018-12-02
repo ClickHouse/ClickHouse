@@ -495,7 +495,7 @@ static const struct widechar_range widechar_widened_table[] = {
 template<typename Collection>
 bool widechar_in_table(const Collection &arr, int32_t c) {
     auto where = std::lower_bound(std::begin(arr), std::end(arr), c,
-        [](widechar_range p, wchar_t c) { return p.hi < c; });
+        [](widechar_range p, int32_t c) { return p.hi < c; });
     return where != std::end(arr) && where->lo <= c;
 }
 

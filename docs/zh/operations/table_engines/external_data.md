@@ -62,3 +62,4 @@ For distributed query processing, the temporary tables are sent to all the remot
 
 
 [Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/external_data/) <!--hide-->
+

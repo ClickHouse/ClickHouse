@@ -130,5 +130,4 @@ private:
     /// If remerge doesn't save memory at least several times, mark it as useless and don't do it anymore.
     bool remerge_is_useful = true;
 };
-
 }

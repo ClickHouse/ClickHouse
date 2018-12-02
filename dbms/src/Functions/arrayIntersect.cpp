@@ -324,9 +324,9 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
             result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
         else if (which.isDateTime())
             result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
-        else if(which.isString())
+        else if (which.isString())
             result_column = execute<StringMap, ColumnString, false>(arrays, std::move(column));
-        else if(which.isFixedString())
+        else if (which.isFixedString())
             result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
         else
         {
@@ -429,7 +429,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
             {
                 ++result_offset;
                 if constexpr (is_numeric_column)
-                    result_data.insert(pair.first);
+                    result_data.insertValue(pair.first);
                 else if constexpr (std::is_same<ColumnType, ColumnString>::value || std::is_same<ColumnType, ColumnFixedString>::value)
                     result_data.insertData(pair.first.data, pair.first.size);
                 else

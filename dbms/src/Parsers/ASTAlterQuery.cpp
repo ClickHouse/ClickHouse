@@ -128,6 +128,16 @@ void ASTAlterCommand::formatImpl(
                           << " " << std::quoted(with_name, '\'');
         }
     }
+    else if (type == ASTAlterCommand::FREEZE_ALL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE";
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+                          << " " << std::quoted(with_name, '\'');
+        }
+    }
     else if (type == ASTAlterCommand::DELETE)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DELETE WHERE " << (settings.hilite ? hilite_none : "");
@@ -140,6 +150,13 @@ void ASTAlterCommand::formatImpl(
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::COMMENT_COLUMN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_none : "");
+        column->formatImpl(settings, state, frame);
+        settings.ostr << " " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
@@ -185,18 +202,6 @@ ASTPtr ASTAlterQuery::clone() const
         res->set(res->command_list, command_list->clone());
 
     return res;
-}
-
-ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
-{
-    auto query_ptr = clone();
-    auto & query = static_cast<ASTAlterQuery &>(*query_ptr);
-
-    query.cluster.clear();
-    if (query.database.empty())
-        query.database = new_database;
-
-    return query_ptr;
 }
 
 void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

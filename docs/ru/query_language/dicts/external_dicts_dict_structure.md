@@ -60,7 +60,7 @@ ClickHouse поддерживает следующие виды ключей:
 
 ### Составной ключ
 
-Ключем может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
+Ключом может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
 
 !!! tip "Совет"
     Cоставной ключ может состоять из одного элемента. Это даёт возможность использовать в качестве ключа, например, строку.

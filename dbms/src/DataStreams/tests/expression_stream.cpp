@@ -16,6 +16,7 @@
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -35,7 +36,9 @@ try
 
     Context context = Context::createGlobal();
 
-    ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
+    NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    ExpressionAnalyzer analyzer(ast, syntax_result, context);
     ExpressionActionsChain chain(context);
     analyzer.appendSelect(chain, false);
     analyzer.appendProjectResult(chain);

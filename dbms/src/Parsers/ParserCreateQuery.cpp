@@ -287,7 +287,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                storage_p.parse(pos, storage, expected);
+                if (!storage)
+                    storage_p.parse(pos, storage, expected);
             }
         }
     }
@@ -391,7 +392,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_view = is_view;
     query->is_materialized_view = is_materialized_view;
     query->is_populate = is_populate;
-    query->is_temporary = is_temporary;
+    query->temporary = is_temporary;
 
     if (database)
         query->database = typeid_cast<ASTIdentifier &>(*database).name;

@@ -21,7 +21,7 @@ namespace ErrorCodes
 }
 
 template <typename T>
-int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int ) const
+int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
     auto other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
@@ -213,8 +213,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.size() == 0)
     {
-        min = typename NearestFieldType<T>::Type(0, scale);
-        max = typename NearestFieldType<T>::Type(0, scale);
+        min = NearestFieldType<T>(0, scale);
+        max = NearestFieldType<T>(0, scale);
         return;
     }
 
@@ -229,8 +229,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min, scale);
-    max = typename NearestFieldType<T>::Type(cur_max, scale);
+    min = NearestFieldType<T>(cur_min, scale);
+    max = NearestFieldType<T>(cur_max, scale);
 }
 
 template class ColumnDecimal<Decimal32>;
