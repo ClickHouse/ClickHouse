@@ -48,40 +48,9 @@ namespace
 
         for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
         {
-            const auto address = boost::copy_range<std::string>(*it);
-            const char * address_begin = static_cast<const char*>(address.data());
-            const char * address_end = address_begin + address.size();
-
-            Protocol::Secure secure = Protocol::Secure::Disable;
-            const char * secure_tag = "+secure";
-            if (endsWith(address, secure_tag))
-            {
-                address_end -= strlen(secure_tag);
-                secure = Protocol::Secure::Enable;
-            }
-
-            const char * user_pw_end = strchr(address.data(), '@');
-            const char * colon = strchr(address.data(), ':');
-            if (!user_pw_end || !colon)
-                throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
-                    ErrorCodes::INCORRECT_FILE_NAME};
-
-            const bool has_pw = colon < user_pw_end;
-            const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-            if (!host_end)
-                throw Exception{"Shard address '" + address + "' does not contain port", ErrorCodes::INCORRECT_FILE_NAME};
-
-            const char * has_db = strchr(address.data(), '#');
-            const char * port_end = has_db ? has_db : address_end;
-
-            const auto user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
-            const auto password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-            const auto host = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-            const auto port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-            const auto database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end))
-                                         : std::string();
-
-            pools.emplace_back(factory(host, port, secure, user, password, database));
+            Cluster::Address address;
+            Cluster::Address::fromFullString(boost::copy_range<std::string>(*it), address);
+            pools.emplace_back(factory(address));
         }
 
         return pools;
@@ -175,33 +144,29 @@ void StorageDistributedDirectoryMonitor::run()
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
-    const auto pool_factory = [&storage, &timeouts](const std::string & host, const UInt16 port,
-                                                    const Protocol::Secure secure,
-                                                    const std::string & user, const std::string & password,
-                                                    const std::string & default_database) -> ConnectionPoolPtr
+    const auto pool_factory = [&storage, &timeouts](const Cluster::Address & address) -> ConnectionPoolPtr
     {
-        ClusterPtr cluster = storage.getCluster();
-        const auto shards_info = cluster->getShardsInfo();
-        const auto shards_addresses = cluster->getShardsAddresses();
+        const auto & cluster = storage.getCluster();
+        const auto & shards_info = cluster->getShardsInfo();
+        const auto & shards_addresses = cluster->getShardsAddresses();
 
         /// existing connections pool have a higher priority
         for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
-            Cluster::Addresses replicas_addresses = shards_addresses[shard_index];
+            const Cluster::Addresses & replicas_addresses = shards_addresses[shard_index];
 
             for (size_t replica_index = 0; replica_index < replicas_addresses.size(); ++replica_index)
             {
-                Cluster::Address replica_address = replicas_addresses[replica_index];
+                const Cluster::Address & replica_address = replicas_addresses[replica_index];
 
-                if (replica_address.host_name == host && replica_address.port == port
-                    && replica_address.secure == secure && replica_address.user == user
-                    && replica_address.password == password && replica_address.default_database == default_database)
+                if (address == replica_address)
                     return shards_info[shard_index].per_replica_pools[replica_index];
             }
         }
 
-        return std::make_shared<ConnectionPool>(1, host, port, default_database, user, password, timeouts,
-                                                storage.getName() + '_' + user, Protocol::Compression::Enable, secure);
+        return std::make_shared<ConnectionPool>(
+            1, address.host_name, address.port, address.default_database, address.user, address.password, timeouts,
+            storage.getName() + '_' + address.user, Protocol::Compression::Enable, address.secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);

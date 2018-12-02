@@ -122,6 +122,47 @@ String Cluster::Address::toStringFull() const
         + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
+void Cluster::Address::fromFullString(const String & full_string, Cluster::Address & address)
+{
+    const char * address_begin = full_string.data();
+    const char * address_end = address_begin + full_string.size();
+
+    Protocol::Secure secure = Protocol::Secure::Disable;
+    const char * secure_tag = "+secure";
+    if (endsWith(full_string, secure_tag))
+    {
+        address_end -= strlen(secure_tag);
+        secure = Protocol::Secure::Enable;
+    }
+
+    const char * user_pw_end = strchr(full_string.data(), '@');
+    const char * colon = strchr(full_string.data(), ':');
+    if (!user_pw_end || !colon)
+        throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
+
+    const bool has_pw = colon < user_pw_end;
+    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+    if (!host_end)
+        throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
+
+    const char * has_db = strchr(full_string.data(), '#');
+    const char * port_end = has_db ? has_db : address_end;
+
+    address.secure = secure;
+    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
+    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+}
+
+bool Cluster::Address::operator==(const Cluster::Address & other) const
+{
+    return other.host_name == host_name && other.port == port
+           && other.secure == secure && other.user == user
+           && other.password == password && other.default_database == default_database;
+}
+
 
 /// Implementation of Clusters class
 
@@ -198,7 +239,6 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             const auto weight = config.getInt(prefix + ".weight", default_weight);
 
             addresses.emplace_back(config, prefix);
-            addresses.back().replica_num = 1;
             const auto & address = addresses.back();
 
             ShardInfo info;
@@ -253,7 +293,6 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 if (startsWith(replica_key, "replica"))
                 {
                     replica_addresses.emplace_back(config, partial_prefix + replica_key);
-                    replica_addresses.back().replica_num = current_replica_num;
                     ++current_replica_num;
 
                     if (!replica_addresses.back().is_local)
