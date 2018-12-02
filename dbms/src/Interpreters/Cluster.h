@@ -59,7 +59,6 @@ public:
         String password;
         /// This database is selected when no database is specified for Distributed table
         String default_database;
-        UInt32 replica_num;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local;
         Protocol::Compression compression = Protocol::Compression::Enable;
@@ -82,11 +81,15 @@ public:
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
         String toStringFull() const;
 
+        static void fromFullString(const String & address_full_string, Address & address);
+
         /// Returns initially resolved address
         Poco::Net::SocketAddress getResolvedAddress() const
         {
             return initially_resolved_address;
         }
+
+        bool operator==(const Address & other) const;
 
     private:
         Poco::Net::SocketAddress initially_resolved_address;
