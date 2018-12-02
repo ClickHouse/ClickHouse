@@ -1,5 +1,3 @@
-#pragma once
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -7,7 +5,6 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
@@ -23,6 +20,8 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Algorithms.h>
+#include <Functions/FunctionIfBase.h>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -164,64 +163,6 @@ public:
     template <typename... Args> static void constant_constant(Args &&...) { throw_error(); }
 };
 
-
-template <bool null_is_false>
-class FunctionIfBase : public IFunction
-{
-#if USE_EMBEDDED_COMPILER
-public:
-    bool isCompilableImpl(const DataTypes & types) const override
-    {
-        for (const auto & type : types)
-            if (!isCompilableType(removeNullable(type)))
-                return false;
-        return true;
-    }
-
-    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
-    {
-        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto type = getReturnTypeImpl(types);
-        llvm::Value * null = nullptr;
-        if (!null_is_false && type->isNullable())
-            null = b.CreateInsertValue(llvm::Constant::getNullValue(toNativeType(b, type)), b.getTrue(), {1});
-        auto * head = b.GetInsertBlock();
-        auto * join = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
-        std::vector<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
-        for (size_t i = 0; i + 1 < types.size(); i += 2)
-        {
-            auto * then = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
-            auto * next = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
-            auto * cond = values[i]();
-            if (!null_is_false && types[i]->isNullable())
-            {
-                auto * nonnull = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
-                returns.emplace_back(b.GetInsertBlock(), null);
-                b.CreateCondBr(b.CreateExtractValue(cond, {1}), join, nonnull);
-                b.SetInsertPoint(nonnull);
-                b.CreateCondBr(nativeBoolCast(b, removeNullable(types[i]), b.CreateExtractValue(cond, {0})), then, next);
-            }
-            else
-            {
-                b.CreateCondBr(nativeBoolCast(b, types[i], cond), then, next);
-            }
-            b.SetInsertPoint(then);
-            auto * value = nativeCast(b, types[i + 1], values[i + 1](), type);
-            returns.emplace_back(b.GetInsertBlock(), value);
-            b.CreateBr(join);
-            b.SetInsertPoint(next);
-        }
-        auto * value = nativeCast(b, types.back(), values.back()(), type);
-        returns.emplace_back(b.GetInsertBlock(), value);
-        b.CreateBr(join);
-        b.SetInsertPoint(join);
-        auto * phi = b.CreatePHI(toNativeType(b, type), returns.size());
-        for (const auto & r : returns)
-            phi->addIncoming(r.second, r.first);
-        return phi;
-    }
-#endif
-};
 
 class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 {
@@ -993,60 +934,9 @@ public:
     }
 };
 
-
-/// Function multiIf, which generalizes the function if.
-///
-/// Syntax: multiIf(cond_1, then_1, ..., cond_N, then_N, else)
-/// where N >= 1.
-///
-/// For all 1 <= i <= N, "cond_i" has type UInt8.
-/// Types of all the branches "then_i" and "else" are either of the following:
-///    - numeric types for which there exists a common type;
-///    - dates;
-///    - dates with time;
-///    - strings;
-///    - arrays of such types.
-///
-/// Additionally the arguments, conditions or branches, support nullable types
-/// and the NULL value, with a NULL condition treated as false.
-class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
+void registerFunctionIf(FunctionFactory & factory)
 {
-public:
-    static constexpr auto name = "multiIf";
-    static FunctionPtr create(const Context & context);
-    FunctionMultiIf(const Context & context) : context(context) {}
-
-public:
-    String getName() const override;
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool useDefaultImplementationForNulls() const override { return false; }
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override;
-
-private:
-    const Context & context;
-};
-
-
-/// Implements the CASE construction when it is
-/// provided an expression. Users should not call this function.
-class FunctionCaseWithExpression : public IFunction
-{
-public:
-    static constexpr auto name = "caseWithExpression";
-    static FunctionPtr create(const Context & context_);
-
-public:
-    FunctionCaseWithExpression(const Context & context_);
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-    String getName() const override;
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override;
-
-private:
-    const Context & context;
-};
+    factory.registerFunction<FunctionIf>();
+}
 
 }
