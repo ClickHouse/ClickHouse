@@ -39,22 +39,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Union mode.
-  */
-enum class StreamUnionMode
-{
-    Basic = 0, /// take out blocks
-    ExtraInfo  /// take out blocks + additional information
-};
-
 /// Example of the handler.
 struct ParallelInputsHandler
 {
     /// Processing the data block.
     void onBlock(Block & /*block*/, size_t /*thread_num*/) {}
-
-    /// Processing the data block + additional information.
-    void onBlock(Block & /*block*/, BlockExtraInfo & /*extra_info*/, size_t /*thread_num*/) {}
 
     /// Called for each thread, when the thread has nothing else to do.
     /// Due to the fact that part of the sources has run out, and now there are fewer sources left than streams.
@@ -70,7 +59,7 @@ struct ParallelInputsHandler
 };
 
 
-template <typename Handler, StreamUnionMode mode = StreamUnionMode::Basic>
+template <typename Handler>
 class ParallelInputsProcessor
 {
 public:
@@ -183,15 +172,9 @@ private:
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
     };
 
-    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num)
+    void publishPayload(Block & block, size_t thread_num)
     {
-        if constexpr (mode == StreamUnionMode::Basic)
-            handler.onBlock(block, thread_num);
-        else
-        {
-            BlockExtraInfo extra_info = stream->getBlockExtraInfo();
-            handler.onBlock(block, extra_info, thread_num);
-        }
+        handler.onBlock(block, thread_num);
     }
 
     void thread(ThreadGroupStatusPtr thread_group, size_t thread_num)
@@ -249,7 +232,7 @@ private:
                 {
                     additional_input_at_end->readPrefix();
                     while (Block block = additional_input_at_end->read())
-                        publishPayload(additional_input_at_end, block, thread_num);
+                        publishPayload(block, thread_num);
                 }
                 catch (...)
                 {
@@ -312,7 +295,7 @@ private:
                     break;
 
                 if (block)
-                    publishPayload(input.in, block, thread_num);
+                    publishPayload(block, thread_num);
             }
         }
     }

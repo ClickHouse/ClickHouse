@@ -344,7 +344,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false, __PRETTY_FUNCTION__));
+                selected_tables.emplace_back(table, table->lockStructure(false));
         }
 
         iterator->next();
@@ -374,7 +374,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
             if (storage.get() != this)
             {
                 virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false, __PRETTY_FUNCTION__) : TableStructureReadLockPtr{});
+                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false) : TableStructureReadLockPtr{});
             }
         }
 
@@ -396,7 +396,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
 void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+    auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();
     params.apply(new_columns);

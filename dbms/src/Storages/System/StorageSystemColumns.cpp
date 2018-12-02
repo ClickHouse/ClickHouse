@@ -98,7 +98,7 @@ protected:
 
                 try
                 {
-                    table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+                    table_lock = storage->lockStructure(false);
                 }
                 catch (const Exception & e)
                 {

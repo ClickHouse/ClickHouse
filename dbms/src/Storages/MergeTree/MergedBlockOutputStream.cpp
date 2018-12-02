@@ -256,17 +256,21 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     columns_list(columns_list_), part_path(part_path_)
 {
     init();
-    for (const auto & it : columns_list)
+
+    /// If summary size is more than threshold than we will use AIO
+    size_t total_size = 0;
+    if (aio_threshold > 0)
     {
-        size_t estimated_size = 0;
-        if (aio_threshold > 0)
+        for (const auto & it : columns_list)
         {
             auto it2 = merged_column_to_size_.find(it.name);
             if (it2 != merged_column_to_size_.end())
-                estimated_size = it2->second;
+                total_size += it2->second;
         }
-        addStreams(part_path, it.name, *it.type, estimated_size, false);
     }
+
+    for (const auto & it : columns_list)
+        addStreams(part_path, it.name, *it.type, total_size, false);
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
