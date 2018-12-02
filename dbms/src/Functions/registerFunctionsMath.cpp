@@ -25,7 +25,7 @@ void registerFunctionAcos(FunctionFactory & factory);
 void registerFunctionAtan(FunctionFactory & factory);
 void registerFunctionPow(FunctionFactory & factory);
 
-void registerFunctionsArithmetic(FunctionFactory & factory)
+void registerFunctionsMath(FunctionFactory & factory)
 {
     registerFunctionE(factory);
     registerFunctionPi(factory);

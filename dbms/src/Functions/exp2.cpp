@@ -7,7 +7,7 @@ namespace DB
 struct Exp2Name { static constexpr auto name = "exp2"; };
 using FunctionExp2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp2Name, exp2>>;
 
-void registerFunction(FunctionFactory & factory)
+void registerFunctionExp2(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionExp2>();
 }
