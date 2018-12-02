@@ -1,5 +1,3 @@
-#pragma once
-
 #include <mutex>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -835,5 +834,10 @@ private:
         initialized = true;
     }
 };
+
+void registerFunctionTransform(FunctionFactory & factory)
+{
+    factory.registerFunction<FunctionTransform>();
+}
 
 }
