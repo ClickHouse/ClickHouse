@@ -1,6 +1,6 @@
 #pragma once
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
@@ -10,13 +10,13 @@ namespace DB
 {
 
 
-/// Used to read data from single part.
-/// To read data from multiple parts, a Storage creates multiple such objects.
-/// TODO: Make special lightweight version of the reader for merges and other utilites, remove this from SelectExecutor.
-class MergeTreeBlockInputStream : public MergeTreeBaseBlockInputStream
+/// Used to read data from single part with select query
+/// Cares about PREWHERE, virtual columns, indexes etc.
+/// To read data from multiple parts, Storage (MergeTree) creates multiple such objects.
+class MergeTreeSelectBlockInputStream : public MergeTreeBaseSelectBlockInputStream
 {
 public:
-    MergeTreeBlockInputStream(
+    MergeTreeSelectBlockInputStream(
         const MergeTreeData & storage,
         const MergeTreeData::DataPartPtr & owned_data_part,
         size_t max_block_size_rows,
@@ -34,7 +34,7 @@ public:
         size_t part_index_in_query = 0,
         bool quiet = false);
 
-    ~MergeTreeBlockInputStream() override;
+    ~MergeTreeSelectBlockInputStream() override;
 
     String getName() const override { return "MergeTree"; }
 
@@ -74,7 +74,7 @@ private:
     String path;
     bool is_first_task = true;
 
-    Logger * log = &Logger::get("MergeTreeBlockInputStream");
+    Logger * log = &Logger::get("MergeTreeSelectBlockInputStream");
 };
 
 }

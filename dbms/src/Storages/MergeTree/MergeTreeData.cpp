@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageMergeTree.h>
@@ -1337,10 +1337,8 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     /// Apply the expression and write the result to temporary files.
     if (expression)
     {
-        MarkRanges ranges{MarkRange(0, part->marks_count)};
-        BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
-            *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
-            false, nullptr, false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+        BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
+            *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
             part->bytes_on_disk,

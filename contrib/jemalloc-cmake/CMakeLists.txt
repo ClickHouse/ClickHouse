@@ -52,5 +52,11 @@ target_include_directories(jemalloc PRIVATE
 target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
+    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1 -DJEMALLOC_PROF=1)
+
+    if (USE_UNWIND)
+        target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
+        target_include_directories (jemalloc BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
+        target_link_libraries (jemalloc PRIVATE ${UNWIND_LIBRARY})
+    endif ()
 endif ()

@@ -13,11 +13,11 @@ class UncompressedCache;
 class MarkCache;
 
 
-/// Base class for MergeTreeThreadBlockInputStream and MergeTreeBlockInputStream
-class MergeTreeBaseBlockInputStream : public IProfilingBlockInputStream
+/// Base class for MergeTreeThreadSelectBlockInputStream and MergeTreeSelectBlockInputStream
+class MergeTreeBaseSelectBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    MergeTreeBaseBlockInputStream(
+    MergeTreeBaseSelectBlockInputStream(
         const MergeTreeData & storage,
         const PrewhereInfoPtr & prewhere_info,
         UInt64 max_block_size_rows,
@@ -29,7 +29,7 @@ public:
         bool save_marks_in_cache = true,
         const Names & virt_column_names = {});
 
-    ~MergeTreeBaseBlockInputStream() override;
+    ~MergeTreeBaseSelectBlockInputStream() override;
 
     static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
 
