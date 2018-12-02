@@ -136,7 +136,7 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings);
-    void execute(Block & block) const;
+    void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
 };
 
@@ -217,7 +217,7 @@ public:
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
-    void execute(Block & block) const;
+    void execute(Block & block, bool dry_run = false) const;
 
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.
