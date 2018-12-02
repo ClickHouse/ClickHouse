@@ -1,5 +1,5 @@
-#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Core/Defines.h>
 
@@ -9,13 +9,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
-MergeTreeBlockInputStream::MergeTreeBlockInputStream(
+MergeTreeSelectBlockInputStream::MergeTreeSelectBlockInputStream(
     const MergeTreeData & storage_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
     size_t max_block_size_rows_,
@@ -33,7 +31,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     size_t part_index_in_query_,
     bool quiet)
     :
-    MergeTreeBaseBlockInputStream{storage_, prewhere_info, max_block_size_rows_,
+    MergeTreeBaseSelectBlockInputStream{storage_, prewhere_info, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
     required_columns{column_names},
@@ -84,13 +82,13 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
 }
 
 
-Block MergeTreeBlockInputStream::getHeader() const
+Block MergeTreeSelectBlockInputStream::getHeader() const
 {
     return header;
 }
 
 
-bool MergeTreeBlockInputStream::getNewTask()
+bool MergeTreeSelectBlockInputStream::getNewTask()
 try
 {
     /// Produce no more than one task
@@ -196,7 +194,7 @@ catch (...)
 }
 
 
-void MergeTreeBlockInputStream::finish()
+void MergeTreeSelectBlockInputStream::finish()
 {
     /** Close the files (before destroying the object).
     * When many sources are created, but simultaneously reading only a few of them,
@@ -209,7 +207,7 @@ void MergeTreeBlockInputStream::finish()
 }
 
 
-MergeTreeBlockInputStream::~MergeTreeBlockInputStream() = default;
+MergeTreeSelectBlockInputStream::~MergeTreeSelectBlockInputStream() = default;
 
 
 }

@@ -53,6 +53,10 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
 
+    /// Return the number of rows has been read or zero if there is no columns to read.
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
+    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
+
 private:
     class Stream
     {
@@ -125,9 +129,6 @@ private:
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
         bool read_offsets = true);
 
-    /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
     friend class MergeTreeRangeReader::DelayedStream;
 };
