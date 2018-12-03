@@ -265,7 +265,7 @@ public:
     static size_t getNumberOfArguments() { return 2; }
 
     /// Check the type of function arguments.
-    static void checkArguments( const DataTypes &  arguments )
+    static void checkArguments(const DataTypes & arguments)
     {
         SplitByStringImpl::checkArguments(arguments);
     }
@@ -352,12 +352,12 @@ public:
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
         ColumnArray::Offsets & res_offsets = col_res->getOffsets();
-        ColumnString::Chars_t & res_strings_chars = res_strings.getChars();
+        ColumnString::Chars & res_strings_chars = res_strings.getChars();
         ColumnString::Offsets & res_strings_offsets = res_strings.getOffsets();
 
         if (col_str)
         {
-            const ColumnString::Chars_t & src_chars = col_str->getChars();
+            const ColumnString::Chars & src_chars = col_str->getChars();
             const ColumnString::Offsets & src_offsets = col_str->getOffsets();
 
             res_offsets.reserve(src_offsets.size());
@@ -427,11 +427,11 @@ class FunctionArrayStringConcat : public IFunction
 {
 private:
     void executeInternal(
-        const ColumnString::Chars_t & src_chars,
+        const ColumnString::Chars & src_chars,
         const ColumnString::Offsets & src_string_offsets,
         const ColumnArray::Offsets & src_array_offsets,
         const char * delimiter, const size_t delimiter_size,
-        ColumnString::Chars_t & dst_chars,
+        ColumnString::Chars & dst_chars,
         ColumnString::Offsets & dst_string_offsets)
     {
         size_t size = src_array_offsets.size();

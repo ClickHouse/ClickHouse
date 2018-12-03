@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-
+#include "GeodataProviders/IHierarchiesProvider.h"
 #include <vector>
 #include <boost/noncopyable.hpp>
 #include <common/Types.h>

@@ -144,8 +144,8 @@ template <typename Op>
 struct StringComparisonImpl
 {
     static void NO_INLINE string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -174,8 +174,8 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -196,7 +196,7 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE string_vector_constant(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -220,16 +220,16 @@ struct StringComparisonImpl
     }
 
     static void fixed_string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
-        const ColumnString::Chars_t & a_data,
-        const ColumnString::Chars_t & b_data,
+        const ColumnString::Chars & a_data,
+        const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_data.size();
@@ -239,7 +239,7 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant_16(
-        const ColumnString::Chars_t & a_data,
+        const ColumnString::Chars & a_data,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -250,8 +250,8 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         /** Specialization if both sizes are 16.
@@ -275,7 +275,7 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -298,7 +298,7 @@ struct StringComparisonImpl
 
     static void constant_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a, c);
@@ -306,7 +306,7 @@ struct StringComparisonImpl
 
     static void constant_fixed_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a, c);
@@ -331,8 +331,8 @@ template <bool positive>
 struct StringEqualsImpl
 {
     static void NO_INLINE string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -344,8 +344,8 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -357,7 +357,7 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE string_vector_constant(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -373,8 +373,8 @@ struct StringEqualsImpl
 
 #if __SSE2__
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
-        const ColumnString::Chars_t & a_data,
-        const ColumnString::Chars_t & b_data,
+        const ColumnString::Chars & a_data,
+        const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = c.size();
@@ -397,7 +397,7 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant_16(
-        const ColumnString::Chars_t & a_data,
+        const ColumnString::Chars & a_data,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -421,8 +421,8 @@ struct StringEqualsImpl
 #endif
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         /** Specialization if both sizes are 16.
@@ -443,7 +443,7 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -464,8 +464,8 @@ struct StringEqualsImpl
     }
 
     static void fixed_string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
@@ -473,7 +473,7 @@ struct StringEqualsImpl
 
     static void constant_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         string_vector_constant(b_data, b_offsets, a, c);
@@ -481,7 +481,7 @@ struct StringEqualsImpl
 
     static void constant_fixed_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         fixed_string_vector_constant(b_data, b_n, a, c);
@@ -1092,7 +1092,10 @@ public:
         const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
-        if (!((arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber())
+        bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
+        bool has_date = left.isDate() || right.isDate();
+
+        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
             || (left.isStringOrFixedString() && right.isStringOrFixedString())
             || (left.isDate() && right.isDate())
             || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.
@@ -1148,7 +1151,7 @@ public:
 
         if (left_is_num && right_is_num)
         {
-            if (!( executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+            if (!(executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)

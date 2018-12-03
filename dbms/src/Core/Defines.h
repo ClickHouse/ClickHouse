@@ -66,6 +66,8 @@
 /// the number is unmotivated
 #define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
 
+#define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
+
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 
 #if defined(_MSC_VER)

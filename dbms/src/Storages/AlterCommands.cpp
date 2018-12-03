@@ -22,6 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -90,13 +91,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
-    {
-        AlterCommand command;
-        command.type = AlterCommand::MODIFY_PRIMARY_KEY;
-        command.primary_key = command_ast->primary_key;
-        return command;
-    }
     else if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
     {
         AlterCommand command;
@@ -105,6 +99,20 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.column_name = ast_identifier.name;
         const auto & ast_comment = typeid_cast<ASTLiteral &>(*command_ast->comment);
         command.comment = ast_comment.value.get<String>();
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_PRIMARY_KEY;
+        command.primary_key = command_ast->primary_key;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_ORDER_BY;
+        command.order_by = command_ast->order_by;
         return command;
     }
     else
@@ -119,7 +127,7 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
     return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
-void AlterCommand::apply(ColumnsDescription & columns_description) const
+void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -223,7 +231,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         const auto find_column = [this] (NamesAndTypesList & columns)
         {
             const auto it = std::find_if(columns.begin(), columns.end(),
-                std::bind(namesEqual, std::cref(column_name), std::placeholders::_1) );
+                std::bind(namesEqual, std::cref(column_name), std::placeholders::_1));
             if (it == columns.end())
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to modify",
                                 ErrorCodes::ILLEGAL_COLUMN);
@@ -265,12 +273,24 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     }
     else if (type == MODIFY_PRIMARY_KEY)
     {
-        /// This have no relation to changing the list of columns.
-        /// TODO Check that all columns exist, that only columns with constant defaults are added.
+        if (!primary_key_ast)
+            order_by_ast = primary_key;
+        else
+            primary_key_ast = primary_key;
+    }
+    else if (type == MODIFY_ORDER_BY)
+    {
+        if (!primary_key_ast)
+        {
+            /// Primary and sorting key become independent after this ALTER so we have to
+            /// save the old ORDER BY expression as the new primary key.
+            primary_key_ast = order_by_ast->clone();
+        }
+
+        order_by_ast = order_by;
     }
     else if (type == COMMENT_COLUMN)
     {
-
         columns_description.comments[column_name] = comment;
     }
     else
@@ -287,14 +307,18 @@ bool AlterCommand::is_mutable() const
     return true;
 }
 
-void AlterCommands::apply(ColumnsDescription & columns_description) const
+void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     auto new_columns_description = columns_description;
+    auto new_order_by_ast = order_by_ast;
+    auto new_primary_key_ast = primary_key_ast;
 
     for (const AlterCommand & command : *this)
-        command.apply(new_columns_description);
+        command.apply(new_columns_description, new_order_by_ast, new_primary_key_ast);
 
     columns_description = std::move(new_columns_description);
+    order_by_ast = std::move(new_order_by_ast);
+    primary_key_ast = std::move(new_primary_key_ast);
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
@@ -480,6 +504,21 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             command_ptr->data_type = block.getByName(column_name).type;
         }
     }
+}
+
+void AlterCommands::apply(ColumnsDescription & columns_description) const
+{
+    auto out_columns_description = columns_description;
+    ASTPtr out_order_by;
+    ASTPtr out_primary_key;
+    apply(out_columns_description, out_order_by, out_primary_key);
+
+    if (out_order_by)
+        throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
+    if (out_primary_key)
+        throw Exception("Storage doesn't support modifying PRIMARY KEY expression", ErrorCodes::NOT_IMPLEMENTED);
+
+    columns_description = std::move(out_columns_description);
 }
 
 bool AlterCommands::is_mutable() const

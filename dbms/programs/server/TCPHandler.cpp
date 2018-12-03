@@ -181,7 +181,7 @@ void TCPHandler::runImpl()
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
-                state.maybe_compressed_in.reset();  /// For more accurate accounting by MemoryTracker.
+                state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
             });
 
             /// Processing Query
