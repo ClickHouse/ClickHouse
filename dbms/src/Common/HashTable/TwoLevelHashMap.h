@@ -10,16 +10,17 @@ template
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator
+    typename Allocator = HashTableAllocator,
+    template <typename, typename, typename, typename ,typename> typename ImplTable = HashMapTable
 >
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator>>
+class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>
 {
 public:
     using key_type = Key;
     using mapped_type = typename Cell::Mapped;
     using value_type = typename Cell::value_type;
 
-    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, HashMapTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
+    using TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>::TwoLevelHashTable;
 
     mapped_type & ALWAYS_INLINE operator[](Key x)
     {
@@ -41,9 +42,10 @@ template
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator
+    typename Allocator = HashTableAllocator,
+    template <typename, typename, typename, typename ,typename> typename ImplTable = HashMapTable
 >
-using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator>;
+using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
 
 
 template
@@ -52,6 +54,7 @@ template
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
-    typename Allocator = HashTableAllocator
+    typename Allocator = HashTableAllocator,
+    template <typename, typename, typename, typename ,typename> typename ImplTable = HashMapTable
 >
-using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator>;
+using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
