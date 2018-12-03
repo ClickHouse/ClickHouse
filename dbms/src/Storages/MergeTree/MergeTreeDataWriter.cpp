@@ -76,14 +76,14 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.check(block, true);
     block.checkNumberOfRows();
 
-    if (!data.partition_expr) /// Table is not partitioned.
+    if (!data.partition_key_expr) /// Table is not partitioned.
     {
         result.emplace_back(Block(block), Row());
         return result;
     }
 
     Block block_copy = block;
-    data.partition_expr->execute(block_copy);
+    data.partition_key_expr->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
     partition_columns.reserve(data.partition_key_sample.columns());
@@ -180,15 +180,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     dir.createDirectories();
 
     /// If we need to calculate some columns to sort.
-    if (data.hasPrimaryKey())
-    {
-        data.getPrimaryExpression()->execute(block);
-        auto secondary_sort_expr = data.getSecondarySortExpression();
-        if (secondary_sort_expr)
-            secondary_sort_expr->execute(block);
-    }
+    if (data.hasSortingKey())
+        data.sorting_key_expr->execute(block);
 
-    Names sort_columns = data.getSortColumns();
+    Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -201,7 +196,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Sort.
     IColumn::Permutation * perm_ptr = nullptr;
     IColumn::Permutation perm;
-    if (data.hasPrimaryKey())
+    if (!sort_description.empty())
     {
         if (!isAlreadySorted(block, sort_description))
         {

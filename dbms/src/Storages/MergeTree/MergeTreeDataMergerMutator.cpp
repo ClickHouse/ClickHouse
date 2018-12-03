@@ -333,20 +333,15 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns,
-    const ExpressionActionsPtr & primary_key_expressions, const ExpressionActionsPtr & secondary_key_expressions,
+static void extractMergingAndGatheringColumns(
+    const NamesAndTypesList & all_columns,
+    const ExpressionActionsPtr & sorting_key_expr,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
-    NamesAndTypesList & merging_columns, Names & merging_column_names
-)
+    NamesAndTypesList & merging_columns, Names & merging_column_names)
 {
-    Names primary_key_columns_vec = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(primary_key_columns_vec.cbegin(), primary_key_columns_vec.cend());
-    if (secondary_key_expressions)
-    {
-        Names secondary_key_columns_vec = secondary_key_expressions->getRequiredColumns();
-        key_columns.insert(secondary_key_columns_vec.begin(), secondary_key_columns_vec.end());
-    }
+    Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
+    std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -366,19 +361,17 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
-    for (auto & column : all_columns)
+    for (const auto & column : all_columns)
     {
-        auto it = std::find(key_columns.cbegin(), key_columns.cend(), column.name);
-
-        if (key_columns.end() == it)
-        {
-            gathering_columns.emplace_back(column);
-            gathering_column_names.emplace_back(column.name);
-        }
-        else
+        if (key_columns.count(column.name))
         {
             merging_columns.emplace_back(column);
             merging_column_names.emplace_back(column.name);
+        }
+        else
+        {
+            gathering_columns.emplace_back(column);
+            gathering_column_names.emplace_back(column.name);
         }
     }
 }
@@ -555,8 +548,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
-    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.getSecondarySortExpression()
-            , data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+    extractMergingAndGatheringColumns(
+        all_columns, data.sorting_key_expr,
+        data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);
@@ -636,12 +630,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         if (data.hasPrimaryKey())
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
+                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.sorting_key_expr)));
         else
             src_streams.emplace_back(std::move(input));
     }
 
-    Names sort_columns = data.getSortColumns();
+    Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -908,7 +902,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         if (data.hasPrimaryKey())
             in = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
+                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
