@@ -123,7 +123,7 @@ struct Variable
 
 
 /** Scratch data for checking function signature.
-  * Variables are either assigned or checked for equality.
+  * Variables are either assigned or checked for equality, but never reassigned.
   */
 struct Variables
 {
@@ -161,6 +161,11 @@ struct Variables
         container.clear();
     }
 };
+
+
+/** A list of arguments for type function or constraint.
+  */
+using VariablesList = std::vector<Variable>;
 
 
 /** List of variables to assign or check.
@@ -398,7 +403,7 @@ struct ArgumentDescription
 
     bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars) const
     {
-        if (is_const && !column->isColumnConst())
+        if (is_const && (!column || !column->isColumnConst()))
             return false;
 
         if (is_const && !vars.assignOrCheck(argument_name, typeid_cast<const ColumnConst &>(*column).getField()))
@@ -418,21 +423,58 @@ class ITypeFunction
 {
 public:
     virtual ~ITypeFunction() {}
-    virtual DataTypePtr apply(Variables & vars, const VariableNames & args) const = 0;
+    virtual DataTypePtr apply(const VariablesList & vars) const = 0;
 };
 
 using TypeFunctionPtr = std::shared_ptr<ITypeFunction>;
-
 using TypeFunctionFactory = Factory<TypeFunctionPtr>;
+
+/// Takes one type-variable and returns it.
+class IdentityTypeFunction : public ITypeFunction
+{
+public:
+    DataTypePtr apply(const VariablesList & vars) const override
+    {
+        if (vars.size() != 1)
+            throw Exception("Logical error: identity type function have not a single argument", ErrorCodes::LOGICAL_ERROR);
+
+        auto res = std::get<DataTypePtr>(vars[0].value);
+        if (!res)
+            throw Exception("Logical error: not a type argument is passed to identity type function", ErrorCodes::LOGICAL_ERROR);
+
+        return res;
+    }
+};
+
+/// Takes zero arguments and returns pre-determined type.
+class FixedTypeFunction : public ITypeFunction
+{
+private:
+    DataTypePtr res;
+public:
+    FixedTypeFunction(const DataTypePtr & res) : res(res) {}
+
+    DataTypePtr apply(const VariablesList & vars) const override
+    {
+        if (vars.size() != 0)
+            throw Exception("Logical error: non-empty arguments list passed to fixed type function", ErrorCodes::LOGICAL_ERROR);
+        return res;
+    }
+};
 
 struct BoundTypeFunction
 {
     TypeFunctionPtr func;
-    VariableNames args;
+    VariableNames args; /// TODO Allow nested expressions with type functions.
 
-    DataTypePtr apply(Variables & vars) const
+    DataTypePtr apply(const Variables & vars) const
     {
-        return func->apply(vars, args);
+        VariablesList func_vars;
+        func_vars.reserve(args.size());
+        for (const auto & name : args)
+            func_vars.emplace_back(vars.container.at(name));
+
+        return func->apply(func_vars);
     }
 };
 
@@ -443,11 +485,10 @@ class IConstraint
 {
 public:
     virtual ~IConstraint() {}
-    virtual bool check(Variables & vars, const VariableNames & args) const = 0;
+    virtual bool check(const VariablesList & vars) const = 0;
 };
 
 using ConstraintPtr = std::shared_ptr<IConstraint>;
-
 using ConstraintFactory = Factory<ConstraintPtr>;
 
 struct BoundConstraint
@@ -455,9 +496,14 @@ struct BoundConstraint
     ConstraintPtr constraint;
     VariableNames args;
 
-    bool check(Variables & vars) const
+    bool check(const Variables & vars) const
     {
-        return constraint->check(vars, args);
+        VariablesList func_vars;
+        func_vars.reserve(args.size());
+        for (const auto & name : args)
+            func_vars.emplace_back(vars.container.at(name));
+
+        return constraint->check(func_vars);
     }
 };
 
@@ -665,7 +711,7 @@ struct AlternativeFunctionSignature : public IFunctionSignature
 };
 
 
-/** Grammar:
+/** Grammar (kinda):
   *
   * simple_signature ::= identifier '(' arguments_list ')' '->' type_func
   * simple_signature_with_constraints ::= simple_signature ('WHERE' constraints_list)?
@@ -766,12 +812,13 @@ bool parseFunctionLikeExpression(TokenIterator & pos, std::string & name, bool a
 
 bool parseTypeFunction(TokenIterator & pos, BoundTypeFunction & res)
 {
+    TokenIterator begin = pos;
     std::string name;
     if (parseFunctionLikeExpression(pos, name, true,
         [&](TokenIterator & pos)
         {
             std::string elem;
-            if (parseIdentifierOrEllipsis(pos, elem))
+            if (parseIdentifierOrEllipsis(pos, elem))   /// TODO Allow nested expressions
             {
                 res.args.emplace_back(elem);
                 return true;
@@ -779,9 +826,37 @@ bool parseTypeFunction(TokenIterator & pos, BoundTypeFunction & res)
             return false;
         }))
     {
-        /// If no arguments - it may be just a type or a variable. TODO
-        res.func = TypeFunctionFactory::instance().get(name);
-        return true;
+        /// Examples:
+        /// - variable:      f(T) -> T
+        /// - type:          f() -> UInt8
+        /// - type function: f(A, B) -> LeastCommonType(A, B)
+
+        res.func = TypeFunctionFactory::instance().tryGet(name);
+        if (res.func)
+            return true;
+
+        /// Exact type.
+
+        const auto & factory = DataTypeFactory::instance();
+        if (factory.existsCanonicalFamilyName(name))
+        {
+            auto prev_pos = pos;
+            --prev_pos;
+            const std::string full_name(begin->begin, prev_pos->end);
+            res.func = std::make_shared<FixedTypeFunction>(factory.get(full_name));
+            return true;
+        }
+
+        /// Type variable (example: T)
+
+        if (res.args.empty())
+        {
+            res.args.emplace_back(name);
+            res.func = std::make_shared<IdentityTypeFunction>();
+            return true;
+        }
+
+        throw Exception("Unknown type function: " + name, ErrorCodes::LOGICAL_ERROR);
     }
     return false;
 }
@@ -837,7 +912,9 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
         const std::string family_name(begin->begin, begin->end);
         if (factory.existsCanonicalFamilyName(family_name))
         {
-            const std::string full_name(begin->begin, pos->end);
+            auto prev_pos = pos;
+            --prev_pos;
+            const std::string full_name(begin->begin, prev_pos->end);
             res = std::make_shared<ExactTypeMatcher>(factory.get(full_name));
             return true;
         }
@@ -867,13 +944,20 @@ bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 
     if (consumeToken(next_pos, TokenType::Colon))
     {
+        std::cerr << "$\n";
+
         std::string var_name;
         if (!parseIdentifier(pos, var_name))
             return false;
 
+        std::cerr << "$$\n";
+
         if (!parseSimpleTypeMatcher(next_pos, res))
             return false;
 
+        std::cerr << "$$$\n";
+
+        pos = next_pos;
         res = std::make_shared<AssignTypeMatcher>(res, var_name);
         return true;
     }
@@ -896,6 +980,7 @@ bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescription & r
     /// T : Matcher(...)
     /// Matcher
 
+    /// If arg_name present, consume it.
     if (pos->type == TokenType::BareWord && next_pos->type == TokenType::BareWord)
         if (!parseIdentifier(pos, res.argument_name))
             return false;
@@ -912,6 +997,7 @@ bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription &
             if (!parseSimpleArgumentDescription(pos, arg))
                 return false;
             res.emplace_back(arg);
+            std::cerr << "%\n";
             return true;
         },
         [](TokenIterator & pos)
