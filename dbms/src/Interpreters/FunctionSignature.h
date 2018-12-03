@@ -687,6 +687,7 @@ bool parseIdentifier(TokenIterator & pos, std::string & res)
     if (pos->type == TokenType::BareWord)
     {
         res.assign(pos->begin, pos->end);
+        std::cerr << "Parsed identifier " << res << "\n";
         ++pos;
         return true;
     }
@@ -697,6 +698,7 @@ bool consumeToken(TokenIterator & pos, TokenType type)
 {
     if (pos->type == type)
     {
+        std::cerr << "Consuming " << std::string(pos->begin, pos->end) << "\n";
         ++pos;
         return true;
     }
@@ -777,6 +779,7 @@ bool parseTypeFunction(TokenIterator & pos, BoundTypeFunction & res)
             return false;
         }))
     {
+        /// If no arguments - it may be just a type or a variable. TODO
         res.func = TypeFunctionFactory::instance().get(name);
         return true;
     }
@@ -947,16 +950,21 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const Arg
 
 bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignature & res)
 {
+    std::cerr << "@\n";
+
     std::string name;
     if (parseFunctionLikeExpression(pos, name, true,
         [&](TokenIterator & pos)
         {
+            std::cerr << "@@\n";
             return parseList(pos, true,
                 [&](TokenIterator & pos)
                 {
+                    std::cerr << "@@@\n";
                     ArgumentsGroupPtr group;
                     if (parseArgumentsGroup(pos, group, res.groups.empty() ? nullptr : res.groups.back()))
                     {
+                        std::cerr << "@@@@\n";
                         res.groups.emplace_back(group);
                         return true;
                     }
@@ -970,6 +978,7 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
         && consumeToken(pos, TokenType::Arrow)
         && parseTypeFunction(pos, res.return_type))
     {
+        std::cerr << "#\n";
         if (consumeKeyword(pos, "WHERE"))
         {
             if (!parseList(pos, false,
@@ -1001,9 +1010,11 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
 bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignaturePtr & res)
 {
     auto signature = std::make_shared<AlternativeFunctionSignature>();
+    std::cerr << "!\n";
     if (parseList(pos, false,
         [&](TokenIterator & pos)
         {
+            std::cerr << "?\n";
             auto alternative = std::make_shared<VariadicFunctionSignature>();
             if (parseVariadicFunctionSignature(pos, *alternative))
             {
@@ -1014,9 +1025,11 @@ bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignaturePtr
         },
         [](TokenIterator & pos)
         {
+            std::cerr << "??\n";
             return consumeKeyword(pos, "OR");
         }))
     {
+        std::cerr << "!!\n";
         res = std::move(signature);
         return true;
     }
