@@ -6,32 +6,56 @@
 namespace DB
 {
 
-void ASTSource::formatImpl(const FormatSettings &settings,
-                           FormatState &state,
-                           FormatStateStacked frame) const
+String ASTSource::getID() const
 {
-
+    return "Source definition";
 }
 
-String ASTCreateDictionaryQuery::getID() const
+ASTPtr ASTSource::clone() const
 {
-    return "CreateDictionary_" + dictionary;
-}
-
-ASTPtr ASTCreateDictionaryQuery::clone() const
-{
-    auto res = std::make_shared<ASTCreateDictionaryQuery>(*this);
+    auto res = std::make_shared<ASTSource>(*this);
     res->children.clear();
 
-    // TODO: implement it later
+    if (source)
+        res->set(res->source, source->clone());
+    if (primary_key)
+        res->set(res->primary_key, primary_key->clone());
+    if (lifetime)
+        res->set(res->lifetime, lifetime->clone());
+    if (layout)
+        res->set(res->layout, layout->clone());
+
     return res;
 }
 
-void ASTCreateDictionaryQuery::formatQueryImpl(const FormatSettings &settings,
-                                               FormatState &state,
-                                               FormatStateStacked frame) const
+void ASTSource::formatImpl(const FormatSettings & settings,
+                           FormatState & state,
+                           FormatStateStacked frame) const
 {
+    if (source)
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "");
+        source->formatImpl(settings, state, frame);
+    }
 
+    if (primary_key)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws
+                      << "PRIMARY KEY" << (settings.hilite ? hilite_none : "");
+        primary_key->formatImpl(settings, state, frame);
+    }
+
+    if (lifetime)
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "");
+        lifetime->formatImpl(settings, state, frame);
+    }
+
+    if (layout)
+    {
+        settings.ostr << (settings.hilite ? hilite_none : "");
+        layout->formatImpl(settings, state, frame);
+    }
 }
 
 }

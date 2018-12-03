@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -73,7 +74,23 @@ public:
 };
 
 
-/// CREATE TABLE or ATTACH TABLE query
+class ASTSource : public IAST
+{
+public:
+    ASTFunction * source = nullptr;
+    ASTPtr primary_key;
+    ASTFunction * lifetime = nullptr;
+    ASTFunction * layout = nullptr;
+
+    String getID() const override;
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
+
+/// CREATE TABLE or ATTACH TABLE query or CREATE DICTIONARY or CREATE DATABASE
 class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
@@ -89,6 +106,8 @@ public:
     String as_database;
     String as_table;
     ASTSelectWithUnionQuery * select = nullptr;
+    ASTSource * dictionary_source = nullptr;
+
 
     /** Get the text that identifies this element. */
     String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; }
@@ -120,7 +139,7 @@ protected:
     {
         frame.need_parens = false;
 
-        if (!database.empty() && table.empty())
+        if (!database.empty() && table.empty() && dictionary.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "")
                 << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
@@ -135,6 +154,7 @@ protected:
             return;
         }
 
+        if (!table.empty())
         {
             std::string what = "TABLE";
             if (is_view)
@@ -151,6 +171,18 @@ protected:
                 << (settings.hilite ? hilite_none : "")
                 << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
                 formatOnCluster(settings);
+        }
+
+        if (!dictionary.empty())
+        {
+            settings.ostr
+                << (settings.hilite ? hilite_keyword : "")
+                << "CREATE DICTIONARY "
+                << (if_not_exists ? "IF NOT EXISTS " : "")
+                << (settings.hilite ? hilite_none : "")
+                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(dictionary);
+
+            // TODO: нужно ли делать formatOnCluster(settings). ? Скорее всего нет
         }
 
         if (!to_table.empty())
@@ -189,29 +221,10 @@ protected:
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
             select->formatImpl(settings, state, frame);
         }
+
+        if (dictionary_source)
+            dictionary_source->formatImpl(settings, state, frame);
     }
-};
-
-
-class ASTSource : public IAST
-{
-protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-};
-
-/// CREATE DICTIONARY
-class ASTCreateDictionaryQuery : public ASTQueryWithDictionaryAndOutput
-{
-public:
-    String dictionary;
-    ASTExpressionList * columns = nullptr;
-    ASTSource * source = nullptr;
-
-    String getID() const override;
-    ASTPtr clone() const override;
-
-protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

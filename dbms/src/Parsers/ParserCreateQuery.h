@@ -212,6 +212,22 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+
+/**
+  * SOURCE(SOURCE_TYPE(SOURCE PARAMS))
+  *
+  */
+class ParserDictionarySource : public IParserBase
+{
+protected:
+    const char * getName() const override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** Query like this:
+  *
+  *
+  */
 class ParserCreateDictionaryQuery : public IParserBase
 {
 protected:

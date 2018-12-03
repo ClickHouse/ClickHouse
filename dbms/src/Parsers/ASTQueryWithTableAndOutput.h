@@ -15,6 +15,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
+    String dictionary;
     bool temporary{false};
 
 protected:

@@ -417,6 +417,28 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+const char * ParserDictionarySource::getName() const
+{
+    return "source definition";
+}
+
+
+bool ParserDictionarySource::parseImpl(Pos &pos, ASTPtr &node, Expected &expected)
+{
+    ParserIdentifierWithOptionalParameters ident_with_optional_params;
+
+    ASTPtr source;
+
+    if (!ident_with_optional_params.parse(pos, source, expected))
+        return false;
+
+    auto & function = typeid_cast<ASTFunction &>(*source);
+    auto query = std::make_shared<ASTSource>();
+    query->set(query->source, function);
+    node = query;
+}
+
+
 const char * ParserCreateDictionaryQuery::getName() const
 {
     return "CREATE DICTIONARY";
@@ -432,44 +454,71 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserColumnDeclarationList columns_p;
-
+    ParserDictionarySource source_p;
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
 
     bool if_not_exists = false;
 
     ASTPtr dictionary;
     ASTPtr columns;
     ASTPtr source;
+    ASTPtr lifetime;
+    ASTPtr layout;
 
     if (!s_create.ignore(pos, expected))
-        return false;
-
-    if (!s_dictionary.ignore(pos, expected))
         return false;
 
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
+    if (!s_dictionary.ignore(pos, expected))
+        return false;
+
     if (!name_p.parse(pos, dictionary, expected))
         return false;
 
-    if (s_left_paren.ignore(pos, expected))
+    if (!s_left_paren.ignore(pos, expected))
+        return false;
+
+    if (!columns_p.parse(pos, columns, expected)) // TODO: может быть здесь не обязательно должны быть колонки
+        return false;
+
+    if (!s_right_paren.ignore(pos, expected))
+        return false;
+
+    if (!source_p.parse(pos, source, expected))
+        return false;
+
+    ASTPtr tmp;
+    while (ident_with_optional_params_p.parse(pos, tmp, expected))
     {
-        if (!columns_p.parse(pos, columns, expected))
-            return false;
+        // TODO: check that tmp is a function
+        const auto & function = typeid_cast<ASTFunction &>(*tmp);
 
-        if (!s_right_paren.ignore(pos, expected))
+        if (function.name == "LIFETIME")
+        {
+            lifetime = std::move(tmp);
+        }
+        else if (function.name == "LAYOUT")
+        {
+            layout = std::move(tmp);
+        }
+        else
             return false;
-
-        // TODO add here parsing of source and etcetera
     }
 
-    auto query = std::make_shared<ASTCreateDictionaryQuery>();
+    if (!lifetime || !layout)
+        return false;
+
+    auto query = std::make_shared<ASTCreateQuery>();
     node = query;
 
     if (dictionary)
         query->dictionary = typeid_cast<ASTIdentifier &>(*dictionary).name;
 
+    query->if_not_exists = if_not_exists;
     query->set(query->columns, columns);
+    query->set(query->dictionary_source, source);
 
     return true;
 }
