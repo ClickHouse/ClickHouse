@@ -84,7 +84,7 @@ To start the server (as a daemon), run:
 sudo service clickhouse-server start
 ```
 
-See the logs in the `/var/log/clickhouse-server/ directory.`
+See the logs in the `/var/log/clickhouse-server/` directory.
 
 If the server doesn't start, check the configurations in the file `/etc/clickhouse-server/config.xml.`
 
