@@ -46,4 +46,17 @@ Key features:
 - Table preview.
 - Autocompletion.
 
+## DataGrip
+
+[DataGrip](https://www.jetbrains.com/datagrip/) - Database IDE from JetBrains with dedicated support for ClickHouse. The same is embedded into other IntelliJ-based tools: PyCharm, IntelliJIDEA, GoLand, PhpStorm etc.
+
+Features:
+
+- Very fast code completion.
+- Clickhouse synthax highlighting.
+- Specific Clickhouse features support in SQL, i.e. nested columns, table engines.
+- Data Editor.
+- Refactorings.
+- Search and Navigation.
+
 [Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_gui/) <!--hide-->
