@@ -202,7 +202,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
+        auto table_lock = storage.lockStructure(false);
 
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))

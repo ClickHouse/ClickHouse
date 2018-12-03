@@ -1,12 +1,18 @@
-#include <iostream>
-
-#include <Poco/Exception.h>
-
+#include <Common/Exception.h>
 #include <Common/OptimizedRegularExpression.h>
 
 
 #define MIN_LENGTH_FOR_STRSTR 3
 #define MAX_SUBPATTERNS 5
+
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_COMPILE_REGEXP;
+    }
+}
 
 
 template <bool thread_safe>
@@ -254,17 +260,20 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
     /// Just three following options are supported
     if (options & (~(RE_CASELESS | RE_NO_CAPTURE | RE_DOT_NL)))
-        throw Poco::Exception("OptimizedRegularExpression: Unsupported option.");
+        throw DB::Exception("OptimizedRegularExpression: Unsupported option.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 
-    is_case_insensitive   = options & RE_CASELESS;
-    bool is_no_capture    = options & RE_NO_CAPTURE;
-    bool is_dot_nl        = options & RE_DOT_NL;
+    is_case_insensitive = options & RE_CASELESS;
+    bool is_no_capture = options & RE_NO_CAPTURE;
+    bool is_dot_nl = options & RE_DOT_NL;
 
     number_of_subpatterns = 0;
     if (!is_trivial)
     {
         /// Compile the re2 regular expression.
         typename RegexType::Options regexp_options;
+
+        /// Never write error messages to stderr. It's ignorant to do it from library code.
+        regexp_options.set_log_errors(false);
 
         if (is_case_insensitive)
             regexp_options.set_case_sensitive(false);
@@ -274,13 +283,13 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
         re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
-            throw Poco::Exception("OptimizedRegularExpression: cannot compile re2: " + regexp_ + ", error: " + re2->error());
+            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: " + regexp_ + ", error: " + re2->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
 
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
             if (number_of_subpatterns > MAX_SUBPATTERNS)
-                throw Poco::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_);
+                throw DB::Exception("OptimizedRegularExpression: too many subpatterns in regexp: " + regexp_, DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
         }
     }
 }
@@ -432,6 +441,5 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
     }
 }
 
-#undef MIN_LENGTH_FOR_STRSTR
-#undef MAX_SUBPATTERNS
-
+template class OptimizedRegularExpressionImpl<true>;
+template class OptimizedRegularExpressionImpl<false>;
