@@ -3,6 +3,9 @@
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromVector.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/copyData.h>
 
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
@@ -445,8 +448,11 @@ void executeQuery(
     else
     {
         /// If not - copy enough data into 'parse_buf'.
-        parse_buf.resize(max_query_size + 1);
-        parse_buf.resize(istr.read(parse_buf.data(), max_query_size + 1));
+        WriteBufferFromVector<PODArray<char>> out(parse_buf);
+        LimitReadBuffer limit(istr, max_query_size + 1, false);
+        copyData(limit, out);
+        out.finish();
+
         begin = parse_buf.data();
         end = begin + parse_buf.size();
     }

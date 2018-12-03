@@ -3,9 +3,9 @@
 ### Исправления ошибок:
 * Исправлена ситуация, при которой ODBC Bridge продолжал работу после завершения работы сервера ClickHouse. Теперь ODBC Bridge всегда завершает работу вместе с сервером. [#3642](https://github.com/yandex/ClickHouse/pull/3642)
 * Исправлена синхронная вставка в `Distributed` таблицу в случае явного указания неполного списка столбцов или списка столбцов в измененном порядке. [#3673](https://github.com/yandex/ClickHouse/pull/3673)
-* Исправлен race condition в `BackgroundProcessingPoolTaskInfo` возникающий при попытке выполнения задачи одновременно с инвалидацией её итератора очереди. [#3680](https://github.com/yandex/ClickHouse/pull/3680)
-* Исправлен deadlock в `ParallelInputsProcessor` возникающий в случае исключения при создании потока. [#3643](https://github.com/yandex/ClickHouse/pull/3643)
-* Исправлена ошибка парсинга `Engine` при создании таблицы с синтаксисом `AS table` в случае, когда `AS table` указывался после `Engine`, что приводило к игнорированию указанного движка. [#3692](https://github.com/yandex/ClickHouse/pull/3692)
+* Исправлен редкий race condition, который мог привести к падению сервера при удалении MergeTree-таблиц. [#3680](https://github.com/yandex/ClickHouse/pull/3680)
+* Исправлен deadlock при выполнении запроса, возникающий если создание новых потоков выполнения невозможно из-за ошибки `Resource temporarily unavailable`. [#3643](https://github.com/yandex/ClickHouse/pull/3643)
+* Исправлена ошибка парсинга `ENGINE` при создании таблицы с синтаксисом `AS table` в случае, когда `AS table` указывался после `ENGINE`, что приводило к игнорированию указанного движка. [#3692](https://github.com/yandex/ClickHouse/pull/3692)
 
 ## ClickHouse release 18.14.15, 2018-11-21
 
@@ -18,7 +18,7 @@
 * Исправлена работа запросов `ON CLUSTER` в случае, когда в конфигурации кластера включено шифрование (флаг `<secure>`). [#3599](https://github.com/yandex/ClickHouse/pull/3599)
 
 ### Улучшения процесса сборки ClickHouse:
-* Испрпавлены проблемы сборки (llvm-7 из системы, macos) [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+* Исправлены проблемы сборки (llvm-7 из системы, macos) [#3582](https://github.com/yandex/ClickHouse/pull/3582)
 
 ## ClickHouse release 18.14.13, 2018-11-08
 

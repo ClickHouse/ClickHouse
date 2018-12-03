@@ -84,21 +84,17 @@ public:
 
     String getDataPath() const override { return full_path; }
 
-    ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
+    ASTPtr getPartitionKeyAST() const override { return data.partition_by_ast; }
+    ASTPtr getSortingKeyAST() const override { return data.getSortingKeyAST(); }
+    ASTPtr getPrimaryKeyAST() const override { return data.getPrimaryKeyAST(); }
+    ASTPtr getSamplingKeyAST() const override { return data.getSamplingExpression(); }
 
-    ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
+    Names getColumnsRequiredForPartitionKey() const override { return data.getColumnsRequiredForPartitionKey(); }
+    Names getColumnsRequiredForSortingKey() const override { return data.getColumnsRequiredForSortingKey(); }
+    Names getColumnsRequiredForPrimaryKey() const override { return data.getColumnsRequiredForPrimaryKey(); }
+    Names getColumnsRequiredForSampling() const override { return data.getColumnsRequiredForSampling(); }
+    Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForSortingKey(); }
 
-    ASTPtr getPartitionExpression() const override { return data.partition_expr_ast; }
-
-    ASTPtr getOrderExpression() const override { return data.secondary_sort_expr_ast; }
-
-    Names getSamplingExpressionNames() const override;
-
-    Names getPrimaryExpressionNames() const override;
-
-    Names getPartitionExpressionNames() const override;
-
-    Names getOrderExpressionNames() const override;
 private:
     String path;
     String database_name;
@@ -164,9 +160,7 @@ protected:
       *  (correctness of names and paths are not checked)
       *  consisting of the specified columns.
       *
-      * primary_expr_ast      - expression for sorting;
-      * date_column_name      - if not empty, the name of the column with the date used for partitioning by month;
-          otherwise, partition_expr_ast is used as the partitioning expression;
+      * See MergeTreeData constructor for comments on parameters.
       */
     StorageMergeTree(
         const String & path_,
@@ -175,11 +169,11 @@ protected:
         const ColumnsDescription & columns_,
         bool attach,
         Context & context_,
-        const ASTPtr & primary_expr_ast_,
-        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
-        const ASTPtr & partition_expr_ast_,
-        const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
+        const ASTPtr & partition_by_ast_,
+        const ASTPtr & order_by_ast_,
+        const ASTPtr & primary_key_ast_,
+        const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);
