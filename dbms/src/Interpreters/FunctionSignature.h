@@ -774,9 +774,18 @@ bool parseList(TokenIterator & pos, bool allow_empty, ParseElem && parse_elem, P
 {
     if (!parse_elem(pos))
         return allow_empty;
+
+    auto prev_pos = pos;
     while (parse_delimiter(pos))
+    {
         if (!parse_elem(pos))
-            return false;
+        {
+            /// step back before delimiter. This is important for parsing lists of lists like "a, [b, c], d".
+            pos = prev_pos;
+            return true;
+        }
+        prev_pos = pos;
+    }
     return true;
 }
 
