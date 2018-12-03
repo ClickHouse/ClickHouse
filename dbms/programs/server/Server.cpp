@@ -125,12 +125,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+    zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
+            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
         config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
@@ -305,6 +306,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         include_from_path,
         config().getString("path", ""),
         std::move(main_config_zk_node_cache),
+        main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
             buildLoggers(*config);
@@ -327,6 +329,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         include_from_path,
         config().getString("path", ""),
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+        std::make_shared<Poco::Event>(),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
 

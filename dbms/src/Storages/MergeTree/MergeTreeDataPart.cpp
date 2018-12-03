@@ -491,7 +491,7 @@ void MergeTreeDataPart::loadIndex()
     if (!marks_count)
         throw Exception("Marks count is not calculated before index", ErrorCodes::LOGICAL_ERROR);
 
-    size_t key_size = storage.primary_sort_columns.size();
+    size_t key_size = storage.primary_key_columns.size();
 
     if (key_size)
     {
@@ -673,7 +673,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
     if (!checksums.empty())
     {
-        if (!storage.primary_sort_columns.empty() && !checksums.files.count("primary.idx"))
+        if (!storage.primary_key_columns.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
@@ -701,7 +701,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             if (!checksums.files.count("count.txt"))
                 throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (storage.partition_expr && !checksums.files.count("partition.dat"))
+            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             if (!isEmpty())
@@ -727,14 +727,14 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.primary_sort_columns.empty())
+        if (!storage.primary_key_columns.empty())
             check_file_not_empty(path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             check_file_not_empty(path + "count.txt");
 
-            if (storage.partition_expr)
+            if (storage.partition_key_expr)
                 check_file_not_empty(path + "partition.dat");
 
             for (const String & col_name : storage.minmax_idx_columns)
