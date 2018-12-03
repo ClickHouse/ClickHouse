@@ -103,17 +103,62 @@ namespace FunctionSignature
   */
 
 
-/** Captured type or a value of constant.
+/** Every variable can act as an array. It is intended for implementation of ellipsis (...) - recursive function signatures.
+  * Values of variables are keyed by variable name and index.
+  * Zero index is implicit if index is not specified.
   */
-struct Variable
+struct VariableKey
 {
     std::string name;
+    size_t index = 0;
+
+    auto tuple() const { return std::tie(name, index); }
+    bool operator==(const VariableKey & rhs) const { return tuple() == rhs.tuple(); }
+    bool operator<(const VariableKey & rhs) const { return tuple() < rhs.tuple(); }
+
+    std::string toString() const { return index ? name + DB::toString(index) : name; }
+
+    VariableKey() {}
+
+    VariableKey(const std::string & str) : name(str)
+    {
+        if (name.empty())
+            throw Exception("Logical error: empty variable name", ErrorCodes::LOGICAL_ERROR);
+
+        const char * begin = name.data();
+        const char * end = begin + name.size();
+        const char * pos = end - 1;
+
+        while (pos > begin && isNumericASCII(*pos))
+            --pos;
+
+        if (!isNumericASCII(*pos))
+            ++pos;
+
+        if (pos < end)
+            index = parse<size_t>(pos);
+
+        name.resize(pos - name.data());
+    }
+
+    VariableKey changeIndex(size_t new_index) const
+    {
+        VariableKey res = *this;
+        res.index = new_index;
+        return res;
+    }
+};
+
+/** Captured type or a value of a constant.
+  */
+struct VariableValue
+{
     std::variant<DataTypePtr, Field> value;
 
-    Variable(const std::string & name, const DataTypePtr & type) : name(name), value(type) {}
-    Variable(const std::string & name, const Field & field) : name(name), value(field) {}
+    VariableValue(const DataTypePtr & type) : value(type) {}
+    VariableValue(const Field & field) : value(field) {}
 
-    bool operator==(const Variable & rhs) const
+    bool operator==(const VariableValue & rhs) const
     {
         return value.index() == rhs.value.index()
             && ((value.index() == 0 && std::get<DataTypePtr>(value)->equals(*std::get<DataTypePtr>(rhs.value)))
@@ -122,118 +167,69 @@ struct Variable
 };
 
 
-/** Scratch data for checking function signature.
+/** Scratch space for checking function signature.
   * Variables are either assigned or checked for equality, but never reassigned.
   */
 struct Variables
 {
-    using Container = std::map<std::string, Variable>;
+    using Container = std::map<VariableKey, VariableValue>;
     Container container;
 
-    bool has(const std::string var_name) const
+    bool has(const VariableKey & key) const
     {
-        return container.count(var_name);
+        return container.count(key);
     }
 
-    bool assignOrCheck(const Variable & var)
+    bool assignOrCheck(const VariableKey & key, const VariableValue & var)
     {
-        if (auto it = container.find(var.name); it == container.end())
+        if (auto it = container.find(key); it == container.end())
         {
-            container.emplace(var.name, var);
+            container.emplace(key, var);
             return true;
         }
         else
             return it->second == var;
     }
 
-    bool assignOrCheck(const std::string & var_name, const DataTypePtr & type)
+    bool assignOrCheck(const VariableKey & key, const DataTypePtr & type)
     {
-        return assignOrCheck(Variable(var_name, type));
+        return assignOrCheck(key, VariableValue(type));
     }
 
-    bool assignOrCheck(const std::string & var_name, const Field & const_value)
+    bool assignOrCheck(const VariableKey & key, const Field & const_value)
     {
-        return assignOrCheck(Variable(var_name, const_value));
-    }
-
-    void reset()
-    {
-        container.clear();
+        return assignOrCheck(key, VariableValue(const_value));
     }
 };
 
 
 /** A list of arguments for type function or constraint.
   */
-using VariablesList = std::vector<Variable>;
+using VariablesList = std::vector<VariableValue>;
 
 
 /** List of variables to assign or check.
   * Empty string means that argument is unused.
   * Instead of a variable name, ellipsis ("...") may be given. It will be a subject for expansion.
   */
-using VariableNames = std::vector<std::string>;
+using VariableKeys = std::vector<VariableKey>;
 
 
-inline bool variableHasIndex(const std::string & name)
+inline VariableKeys expandEllipsis(const Variables & vars, const VariableKeys & keys)
 {
-    return !name.empty() && isNumericASCII(name.back());
-}
-
-inline size_t extractVariableIndex(const std::string & name)
-{
-    if (name.empty())
-        return 0;
-
-    const char * begin = name.data();
-    const char * end = begin + name.size();
-    const char * pos = end - 1;
-
-    while (pos > begin && isNumericASCII(*pos))
-        --pos;
-
-    if (!isNumericASCII(*pos))
-        ++pos;
-
-    if (pos >= end)
-        return 0;
-
-    return parse<size_t>(pos);
-}
-
-inline std::string changeVariableIndex(const std::string & name, size_t new_index)
-{
-    if (name.empty())
-        return {};
-
-    const char * begin = name.data();
-    const char * end = begin + name.size();
-    const char * pos = end - 1;
-
-    while (pos > begin && isNumericASCII(*pos))
-        --pos;
-
-    if (!isNumericASCII(*pos))
-        ++pos;
-
-    return name.substr(0, pos - begin) + toString(new_index);
-}
-
-inline VariableNames expandEllipsis(const Variables & vars, const VariableNames & names)
-{
-    VariableNames new_names;
+    VariableKeys new_keys;
 
     size_t length_of_group = 0;
     size_t prev_variable_index = 0;
 
-    for (size_t i = 0, size = names.size(); i < size; ++i)
+    for (size_t i = 0, size = keys.size(); i < size; ++i)
     {
-        const std::string & name = names[i];
+        const VariableKey & key = keys[i];
 
-        if (!vars.has(name))
-            throw Exception("Logical error: no variable named " + name + " exists in function signature", ErrorCodes::LOGICAL_ERROR);
+        if (!vars.has(key))
+            throw Exception("Logical error: no variable named " + key.toString() + " exists in function signature", ErrorCodes::LOGICAL_ERROR);
 
-        if (name == "...")
+        if (key.name == "...")
         {
             if (!prev_variable_index || !length_of_group)
                 throw Exception("Logical error: bad ellipsis, zero length of group to repeat", ErrorCodes::LOGICAL_ERROR);
@@ -244,13 +240,13 @@ inline VariableNames expandEllipsis(const Variables & vars, const VariableNames 
             {
                 size_t idx_in_group = 0;
                 for (; idx_in_group < length_of_group; ++idx_in_group)
-                    if (!vars.has(changeVariableIndex(names[i - length_of_group + idx_in_group], current_variable_index)))
+                    if (!vars.has(keys[i - length_of_group + idx_in_group].changeIndex(current_variable_index)))
                         break;
 
                 if (idx_in_group == length_of_group)
                 {
                     for (size_t idx_in_group_2 = 0; idx_in_group_2 < length_of_group; ++idx_in_group_2)
-                        new_names.emplace_back(changeVariableIndex(names[i - length_of_group + idx_in_group_2], current_variable_index));
+                        new_keys.emplace_back(keys[i - length_of_group + idx_in_group_2].changeIndex(current_variable_index));
                 }
                 else
                     break;
@@ -263,16 +259,15 @@ inline VariableNames expandEllipsis(const Variables & vars, const VariableNames 
         }
         else
         {
-            if (variableHasIndex(name))
+            if (key.index)
             {
-                size_t current_variable_index = extractVariableIndex(name);
-                if (prev_variable_index == current_variable_index)
+                if (prev_variable_index == key.index)
                 {
                     ++length_of_group;
                 }
                 else
                 {
-                    prev_variable_index = current_variable_index;
+                    prev_variable_index = key.index;
                     length_of_group = 1;
                 }
             }
@@ -282,11 +277,11 @@ inline VariableNames expandEllipsis(const Variables & vars, const VariableNames 
                 length_of_group = 0;
             }
 
-            new_names.emplace_back(name);
+            new_keys.emplace_back(key);
         }
     }
 
-    return new_names;
+    return new_keys;
 }
 
 
@@ -375,10 +370,10 @@ class AssignTypeMatcher : public ITypeMatcher
 {
 private:
     TypeMatcherPtr impl;
-    std::string var_name;
+    VariableKey var_key;
 
 public:
-    AssignTypeMatcher(const TypeMatcherPtr & impl, const std::string & var_name) : impl(impl), var_name(var_name) {}
+    AssignTypeMatcher(const TypeMatcherPtr & impl, const VariableKey & var_key) : impl(impl), var_key(var_key) {}
 
     std::string name() const override
     {
@@ -390,7 +385,7 @@ public:
         if (!impl->match(what, vars))
             return false;
 
-        return vars.assignOrCheck(var_name, what);
+        return vars.assignOrCheck(var_key, what);
     }
 };
 
@@ -465,14 +460,14 @@ public:
 struct BoundTypeFunction
 {
     TypeFunctionPtr func;
-    VariableNames args; /// TODO Allow nested expressions with type functions.
+    VariableKeys args; /// TODO Allow nested expressions with type functions.
 
     DataTypePtr apply(const Variables & vars) const
     {
         VariablesList func_vars;
         func_vars.reserve(args.size());
-        for (const auto & name : args)
-            func_vars.emplace_back(vars.container.at(name));
+        for (const auto & key : args)
+            func_vars.emplace_back(vars.container.at(key));
 
         return func->apply(func_vars);
     }
@@ -494,14 +489,14 @@ using ConstraintFactory = Factory<ConstraintPtr>;
 struct BoundConstraint
 {
     ConstraintPtr constraint;
-    VariableNames args;
+    VariableKeys args;
 
     bool check(const Variables & vars) const
     {
         VariablesList func_vars;
         func_vars.reserve(args.size());
-        for (const auto & name : args)
-            func_vars.emplace_back(vars.container.at(name));
+        for (const auto & key : args)
+            func_vars.emplace_back(vars.container.at(key));
 
         return constraint->check(func_vars);
     }
