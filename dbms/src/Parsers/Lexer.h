@@ -45,6 +45,8 @@ namespace DB
     M(GreaterOrEquals) \
     M(Concatenation)          /** String concatenation operator: || */ \
     \
+    M(Ellipsis)               /** ... is used for function signatures */ \
+    \
     /** Order is important. EndOfStream goes after all usual tokens, and special error tokens goes after EndOfStream. */ \
     \
     M(EndOfStream) \

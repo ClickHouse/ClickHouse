@@ -180,8 +180,15 @@ Token Lexer::nextTokenImpl()
         case ';':
             return Token(TokenType::Semicolon, token_begin, ++pos);
 
-        case '.':   /// qualifier, tuple access operator or start of floating point number
+        case '.':   /// qualifier, tuple access operator or start of floating point number or ellipsis
         {
+            /// Ellipsis
+            if (pos + 2 < end && pos[1] == '.' && pos[2] == '.')
+            {
+                pos += 3;
+                return Token(TokenType::Ellipsis, token_begin, pos);
+            }
+
             /// Just after identifier or complex expression or number (for chained tuple access like x.1.1 to work properly).
             if (pos > begin
                 && (!(pos + 1 < end && isNumericASCII(pos[1]))

@@ -31,6 +31,8 @@ public:
     DataTypePtr get(const String & family_name, const ASTPtr & parameters) const;
     DataTypePtr get(const ASTPtr & ast) const;
 
+    bool existsCanonicalFamilyName(const String & family_name) const;
+
     /// Register a type family by its name.
     void registerDataType(const String & family_name, Creator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 

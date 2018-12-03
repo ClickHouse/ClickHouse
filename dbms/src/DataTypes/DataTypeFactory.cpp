@@ -29,6 +29,11 @@ DataTypePtr DataTypeFactory::get(const String & full_name) const
     return get(ast);
 }
 
+bool DataTypeFactory::existsCanonicalFamilyName(const String & family_name) const
+{
+    return data_types.count(family_name);
+}
+
 DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 {
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(ast.get()))

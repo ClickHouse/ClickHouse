@@ -49,6 +49,9 @@ add_executable (expression_analyzer expression_analyzer.cpp)
 target_link_libraries (expression_analyzer PRIVATE dbms clickhouse_storages_system clickhouse_parsers clickhouse_common_io)
 add_check(expression_analyzer)
 
+add_executable (function_signatures function_signatures.cpp)
+target_link_libraries (function_signatures PRIVATE dbms clickhouse_parsers clickhouse_common_io)
+
 add_executable (users users.cpp)
 target_link_libraries (users PRIVATE dbms clickhouse_common_config ${Boost_FILESYSTEM_LIBRARY})
 
