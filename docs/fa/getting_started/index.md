@@ -100,7 +100,7 @@ sudo service clickhouse-server start
 
 <div dir="rtl" markdown="1">
 
-لاگ های دایرکتوری `/var/log/clickhouse-server/ directory.` را مشاهده کنید.
+لاگ های دایرکتوری `/var/log/clickhouse-server/` directory. را مشاهده کنید.
 
 اگر سرور استارت نشد، فایل تنظیمات را بررسی کنید `/etc/clickhouse-server/config.xml.`
 
