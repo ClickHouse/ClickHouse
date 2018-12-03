@@ -562,23 +562,22 @@ public:
 };
 
 
-class FunctionRoundDown : public IFunction {
+class FunctionRoundDown : public IFunction
+{
 public:
     static constexpr auto name = "roundDown";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRoundDown>(context); }
     FunctionRoundDown(const Context & context) : context(context) {}
 
 public:
-    String getName() const override
-    {
-        return name;
-    }
+    String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override {
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
         const DataTypePtr & type_x = arguments[0];
 
         if (!isNumber(type_x))
@@ -602,7 +601,8 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override {
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
         const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
         if (!array)
         {
@@ -629,7 +629,8 @@ public:
 
         const auto in = in_column.get();
         auto boundaries = array->getValue<Array>();
-        for (size_t i = 0; i < boundaries.size(); ++i) {
+        for (size_t i = 0; i < boundaries.size(); ++i)
+        {
             boundaries[i] = convertFieldToType(boundaries[i], *return_type);
         }
 
@@ -651,7 +652,8 @@ public:
     }
 
 private:
-    void executeConst(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) {
+    void executeConst(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    {
         /// Materialize the input column and compute the function as usual.
 
         Block tmp_block;
@@ -676,7 +678,8 @@ private:
     }
 
     template <typename T>
-    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries) {
+    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    {
         const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
         auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
         if (!in || !out)
@@ -688,9 +691,11 @@ private:
     }
 
     template <typename T>
-    void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst, const Array & boundaries) {
+    void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst, const Array & boundaries)
+    {
         PaddedPODArray<T> bvalues(boundaries.size());
-        for (size_t i = 0; i < boundaries.size(); ++i) {
+        for (size_t i = 0; i < boundaries.size(); ++i)
+        {
             bvalues[i] = boundaries[i].get<T>();
         }
 
