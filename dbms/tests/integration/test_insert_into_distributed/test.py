@@ -190,7 +190,7 @@ def test_prefer_localhost_replica(started_cluster):
     assert TSV(node2.query("SET load_balancing='in_order'; SET prefer_localhost_replica=0;" + test_query)) == TSV(expected_from_node1)
 
 def test_inserts_low_cardinality(started_cluster):
-    instance = node1
+    instance = shard1
     instance.query("INSERT INTO low_cardinality_all (d,x,s) VALUES ('2018-11-12',1,'123')")
     time.sleep(0.5)
     assert instance.query("SELECT count(*) FROM low_cardinality_all").strip() == '1'
