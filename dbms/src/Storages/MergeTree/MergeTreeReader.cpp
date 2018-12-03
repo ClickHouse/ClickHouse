@@ -273,6 +273,8 @@ void MergeTreeReader::Stream::loadMarks()
 
         size_t file_size = Poco::File(path).getSize();
         size_t expected_file_size = one_mark_bytes_size * marks_count;
+        std::cerr << "Marks size in bytes:" << one_mark_bytes_size << std::endl;
+        std::cerr << "Makrs count:" << marks_count << std::endl;
         if (expected_file_size != file_size)
             throw Exception(
                 "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),

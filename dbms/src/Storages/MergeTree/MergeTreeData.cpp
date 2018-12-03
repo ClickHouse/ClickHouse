@@ -2227,11 +2227,6 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
                 (*out_states)[i] = res[i]->state;
         }
     }
-    std::cerr << "NOT INITIALIZED DATA PART\n";
-    for (auto part : res) {
-        std::cerr << "FullPath:" << part->getFullPath() << std::endl;
-        std::cerr << "MarkSFileExtensSion:" << part->marks_file_extension << std::endl;
-    }
 
     return res;
 }

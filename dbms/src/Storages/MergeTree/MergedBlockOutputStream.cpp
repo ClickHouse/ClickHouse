@@ -39,12 +39,14 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , max_compress_block_size(max_compress_block_size_)
     , aio_threshold(aio_threshold_)
     , compression_settings(compression_settings_)
-    , index_granularity(index_granularity_)
     , marks_file_extension(storage.index_granularity_bytes == 0 ? FIXED_MARKS_FILE_EXTENSION : ADAPTIVE_MARKS_FILE_EXTENSION)
     , mark_size_in_bytes(storage.index_granularity_bytes == 0 ? FIXED_MARK_BYTE_SIZE : ADAPTIVE_MARK_BYTE_SIZE)
     , blocks_are_granules_size(blocks_are_granules_size_)
+    , index_granularity(index_granularity_)
     , compute_granularity(index_granularity.empty())
 {
+    if (blocks_are_granules_size && !index_granularity.empty())
+        throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity specified", ErrorCodes::LOGICAL_ERROR);
 }
 
 
