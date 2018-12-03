@@ -46,11 +46,11 @@ StorageMergeTree::StorageMergeTree(
     const ColumnsDescription & columns_,
     bool attach,
     Context & context_,
-    const ASTPtr & primary_expr_ast_,
-    const ASTPtr & secondary_sorting_expr_list_,
     const String & date_column_name,
-    const ASTPtr & partition_expr_ast_,
-    const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.
+    const ASTPtr & partition_by_ast_,
+    const ASTPtr & order_by_ast_,
+    const ASTPtr & primary_key_ast_,
+    const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -58,8 +58,8 @@ StorageMergeTree::StorageMergeTree(
     context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
-         context_, primary_expr_ast_, secondary_sorting_expr_list_, date_column_name, partition_expr_ast_,
-         sampling_expression_, merging_params_,
+         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
+         sample_by_ast_, merging_params_,
          settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
@@ -206,62 +206,60 @@ void StorageMergeTree::alter(
     data.checkAlter(params);
 
     auto new_columns = data.getColumns();
-    params.apply(new_columns);
+    ASTPtr new_order_by_ast = data.order_by_ast;
+    ASTPtr new_primary_key_ast = data.primary_key_ast;
+    params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
-
-    bool primary_key_is_modified = false;
-
-    ASTPtr new_primary_key_ast = data.primary_expr_ast;
-
+    ASTPtr primary_expr_list_for_altering_parts;
     for (const AlterCommand & param : params)
     {
         if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
         {
-            primary_key_is_modified = true;
-            new_primary_key_ast = param.primary_key;
+            if (supportsSampling())
+                throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
+
+            primary_expr_list_for_altering_parts = MergeTreeData::extractKeyExpressionList(param.primary_key);
         }
     }
 
-    if (primary_key_is_modified && supportsSampling())
-        throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
-
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
+    std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_primary_key_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, primary_expr_list_for_altering_parts, false))
             transactions.push_back(std::move(transaction));
     }
 
     auto table_hard_lock = lockStructureForAlter();
 
-    IDatabase::ASTModifier storage_modifier;
-    if (primary_key_is_modified)
+    IDatabase::ASTModifier storage_modifier = [&] (IAST & ast)
     {
-        storage_modifier = [&new_primary_key_ast] (IAST & ast)
-        {
-            auto tuple = std::make_shared<ASTFunction>();
-            tuple->name = "tuple";
-            tuple->arguments = new_primary_key_ast;
-            tuple->children.push_back(tuple->arguments);
+        auto & storage_ast = typeid_cast<ASTStorage &>(ast);
 
-            /// Primary key is in the second place in table engine description and can be represented as a tuple.
-            /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
-            auto & storage_ast = typeid_cast<ASTStorage &>(ast);
-            typeid_cast<ASTExpressionList &>(*storage_ast.engine->arguments).children.at(1) = tuple;
-        };
-    }
+        if (new_order_by_ast.get() != data.order_by_ast.get())
+        {
+            if (storage_ast.order_by)
+            {
+                /// The table was created using the "new" syntax (with key expressions in separate clauses).
+                storage_ast.set(storage_ast.order_by, new_order_by_ast);
+            }
+            else
+            {
+                /// Primary key is in the second place in table engine description and can be represented as a tuple.
+                /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
+                storage_ast.engine->arguments->children.at(1) = new_order_by_ast;
+            }
+        }
+
+        if (new_primary_key_ast.get() != data.primary_key_ast.get())
+            storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+    };
 
     context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
-    setColumns(std::move(new_columns));
 
-    if (primary_key_is_modified)
-    {
-        data.primary_expr_ast = new_primary_key_ast;
-    }
     /// Reinitialize primary key because primary key column types might have changed.
-    data.initPrimaryKey();
+    data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -269,7 +267,7 @@ void StorageMergeTree::alter(
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
 
-    if (primary_key_is_modified)
+    if (primary_expr_list_for_altering_parts)
         data.loadDataParts(false);
 }
 
@@ -717,7 +715,9 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     alter_command.column_name = get<String>(column_name);
 
     auto new_columns = getColumns();
-    alter_command.apply(new_columns);
+    ASTPtr ignored_order_by_ast;
+    ASTPtr ignored_primary_key_ast;
+    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
@@ -725,7 +725,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);
@@ -990,36 +990,6 @@ ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
         return merger_mutator.actions_blocker.cancel();
 
     return {};
-}
-
-Names StorageMergeTree::getSamplingExpressionNames() const
-{
-    NameOrderedSet names;
-    const auto & expr = data.sampling_expression;
-    if (expr)
-        expr->collectIdentifierNames(names);
-
-    return Names(names.begin(), names.end());
-}
-
-Names StorageMergeTree::getPrimaryExpressionNames() const
-{
-    return data.getPrimarySortColumns();
-}
-
-Names StorageMergeTree::getPartitionExpressionNames() const
-{
-    NameOrderedSet names;
-    const auto & expr = data.partition_expr_ast;
-    if (expr)
-        expr->collectIdentifierNames(names);
-
-    return Names(names.cbegin(), names.cend());
-}
-
-Names StorageMergeTree::getOrderExpressionNames() const
-{
-    return data.getSortColumns();
 }
 
 }
