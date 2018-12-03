@@ -229,8 +229,8 @@ public:
     void setHasZero() { has_zero = true; }
     void clearHasZero() { has_zero = false; }
 
-    Cell * zeroValue()              { return reinterpret_cast<Cell*>(&zero_value_storage); }
-    const Cell * zeroValue() const  { return reinterpret_cast<const Cell*>(&zero_value_storage); }
+    Cell * zeroValue()             { return reinterpret_cast<Cell*>(&zero_value_storage); }
+    const Cell * zeroValue() const { return reinterpret_cast<const Cell*>(&zero_value_storage); }
 };
 
 template <typename Cell>
@@ -240,8 +240,8 @@ struct ZeroValueStorage<false, Cell>
     void setHasZero() { throw DB::Exception("HashTable: logical error", DB::ErrorCodes::LOGICAL_ERROR); }
     void clearHasZero() {}
 
-    Cell * zeroValue()              { return nullptr; }
-    const Cell * zeroValue() const  { return nullptr; }
+    Cell * zeroValue()             { return nullptr; }
+    const Cell * zeroValue() const { return nullptr; }
 };
 
 

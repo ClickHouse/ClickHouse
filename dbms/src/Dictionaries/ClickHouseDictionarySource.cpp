@@ -1,14 +1,17 @@
-#include <Dictionaries/ClickHouseDictionarySource.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/writeParenthesisedString.h>
+#include "ClickHouseDictionarySource.h"
+#include "ExternalQueryBuilder.h"
+#include "writeParenthesisedString.h"
 #include <Client/ConnectionPool.h>
 #include <DataStreams/RemoteBlockInputStream.h>
-#include <Dictionaries/readInvalidateQuery.h>
+#include "readInvalidateQuery.h"
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
 #include <memory>
 #include <ext/range.h>
 #include <IO/ConnectionTimeouts.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+
 
 namespace DB
 {
@@ -173,6 +176,19 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
         RemoteBlockInputStream invalidate_stream(pool, request, invalidate_sample_block, context);
         return readInvalidateQuery(invalidate_stream);
     }
+}
+
+
+void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 Context & context) -> DictionarySourcePtr {
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
+    };
+    factory.registerSource("clickhouse", createTableSource);
 }
 
 }

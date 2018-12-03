@@ -198,7 +198,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
           */
 
         for (size_t i = 0; i < merging_threads; ++i)
-            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); } );
+            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); });
     }
 }
 

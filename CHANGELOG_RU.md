@@ -1,3 +1,12 @@
+## ClickHouse release 18.14.17, 2018-11-30
+
+### Исправления ошибок:
+* Исправлена ситуация, при которой ODBC Bridge продолжал работу после завершения работы сервера ClickHouse. Теперь ODBC Bridge всегда завершает работу вместе с сервером. [#3642](https://github.com/yandex/ClickHouse/pull/3642)
+* Исправлена синхронная вставка в `Distributed` таблицу в случае явного указания неполного списка столбцов или списка столбцов в измененном порядке. [#3673](https://github.com/yandex/ClickHouse/pull/3673)
+* Исправлен race condition в `BackgroundProcessingPoolTaskInfo` возникающий при попытке выполнения задачи одновременно с инвалидацией её итератора очереди. [#3680](https://github.com/yandex/ClickHouse/pull/3680)
+* Исправлен deadlock в `ParallelInputsProcessor` возникающий в случае исключения при создании потока. [#3643](https://github.com/yandex/ClickHouse/pull/3643)
+* Исправлена ошибка парсинга `Engine` при создании таблицы с синтаксисом `AS table` в случае, когда `AS table` указывался после `Engine`, что приводило к игнорированию указанного движка. [#3692](https://github.com/yandex/ClickHouse/pull/3692)
+
 ## ClickHouse release 18.14.15, 2018-11-21
 
 ### Исправления ошибок:

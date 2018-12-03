@@ -1,18 +1,51 @@
-#include <Common/config.h>
-#if USE_MYSQL
+#include "MySQLDictionarySource.h"
 
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/config.h>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+void registerDictionarySourceMysql(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 const Context & /* context */) -> DictionarySourcePtr {
+#if USE_MYSQL
+        return std::make_unique<MySQLDictionarySource>(dict_struct, config, config_prefix + ".mysql", sample_block);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        throw Exception {"Dictionary source of type `mysql` is disabled because ClickHouse was built without mysql support.",
+                         ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    };
+    factory.registerSource("mysql", createTableSource);
+}
+
+}
+
+
+#if USE_MYSQL
 #include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Poco/Util/AbstractConfiguration.h>
-
 #include <common/logger_useful.h>
 #include <common/LocalDateTime.h>
-
-#include <Dictionaries/MySQLDictionarySource.h>
-#include <Dictionaries/MySQLBlockInputStream.h>
-#include <Dictionaries/readInvalidateQuery.h>
-
+#include "MySQLBlockInputStream.h"
+#include "readInvalidateQuery.h"
 #include <IO/WriteHelpers.h>
 
 

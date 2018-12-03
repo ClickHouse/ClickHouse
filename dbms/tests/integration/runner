@@ -27,12 +27,24 @@ if __name__ == "__main__":
         default=DEFAULT_CLICKHOUSE_ROOT,
         help="Path to repository root folder"
     )
+    parser.add_argument(
+        "--disable-net-host",
+        action='store_true',
+        default=False,
+        help="Don't use net host in parent docker container"
+    )
+
     parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
 
     args = parser.parse_args()
 
-    cmd = "docker run --net=host --privileged --volume={bin}:/clickhouse \
+    net = ""
+    if not args.disable_net_host:
+        net = "--net=host"
+
+    cmd = "docker run {net} --privileged --volume={bin}:/clickhouse \
         --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img}".format(
+        net=net,
         bin=args.binary,
         cfg=args.configs_dir,
         pth=args.clickhouse_root,

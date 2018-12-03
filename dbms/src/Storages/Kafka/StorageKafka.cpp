@@ -530,7 +530,7 @@ bool StorageKafka::streamToViews()
     // Join multiple streams if necessary
     BlockInputStreamPtr in;
     if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, streams.size());
+        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
     else
         in = streams[0];
 

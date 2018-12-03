@@ -68,7 +68,7 @@ struct DefaultHash<STRUCT> \
 { \
     size_t operator() (STRUCT x) const \
     { \
-        return CityHash_v1_0_2::CityHash64(x.data, x.size);  \
+        return CityHash_v1_0_2::CityHash64(x.data, x.size); \
     } \
 };
 
