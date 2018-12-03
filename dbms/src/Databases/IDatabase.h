@@ -91,7 +91,7 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) = 0;
 
-    /// Delete the table from the database and return it. Delete the metadata.
+    /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
         const Context & context,
         const String & name) = 0;

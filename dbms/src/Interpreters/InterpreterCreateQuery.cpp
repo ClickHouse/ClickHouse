@@ -103,7 +103,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTStorage & storage = *create.storage;
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
-        if (engine.arguments || engine.parameters || storage.partition_by || storage.order_by || storage.sample_by || storage.settings)
+        if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key || storage.order_by || storage.sample_by || storage.settings)
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -547,7 +547,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (!as_table_name.empty())
     {
         as_storage = context.getTable(as_database_name, as_table_name);
-        as_storage_lock = as_storage->lockStructure(false, __PRETTY_FUNCTION__);
+        as_storage_lock = as_storage->lockStructure(false);
     }
 
     /// Set and retrieve list of columns.

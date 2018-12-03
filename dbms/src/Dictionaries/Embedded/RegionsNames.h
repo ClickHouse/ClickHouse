@@ -1,12 +1,9 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
-
+#include "GeodataProviders/INamesProvider.h"
 #include <Poco/Exception.h>
-
 #include <common/Types.h>
 #include <common/StringRef.h>
-
 #include <string>
 #include <vector>
 

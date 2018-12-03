@@ -61,7 +61,7 @@ int main(int argc, char ** argv)
         formatted.reserve(n * 21);
 
         {
-            DB::WriteBufferFromVector<> wb(formatted);
+            DB::WriteBufferFromVector wb(formatted);
         //    DB::CompressedWriteBuffer wb2(wb1);
         //    DB::AsynchronousWriteBuffer wb(wb2);
             Stopwatch watch;

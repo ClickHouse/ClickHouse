@@ -12,7 +12,7 @@ namespace DB
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
 
-/**    Provides read tasks for MergeTreeThreadBlockInputStream`s in fine-grained batches, allowing for more
+/**   Provides read tasks for MergeTreeThreadSelectBlockInputStream`s in fine-grained batches, allowing for more
  *    uniform distribution of work amongst multiple threads. All parts and their ranges are divided into `threads`
  *    workloads with at most `sum_marks / threads` marks. Then, threads are performing reads from these workloads
  *    in "sequential" manner, requesting work in small batches. As soon as some thread has exhausted

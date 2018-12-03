@@ -204,7 +204,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             /// so we don't want to unfold non deterministic functions
             if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
-                function->execute(sample_block, arguments, result_position, sample_block.rows());
+                function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -325,7 +325,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 }
 
 
-void ExpressionAction::execute(Block & block) const
+void ExpressionAction::execute(Block & block, bool dry_run) const
 {
     size_t input_rows_count = block.rows();
 
@@ -355,7 +355,7 @@ void ExpressionAction::execute(Block & block) const
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            function->execute(block, arguments, num_columns_without_result, input_rows_count);
+            function->execute(block, arguments, num_columns_without_result, input_rows_count, dry_run);
 
             break;
         }
@@ -383,7 +383,7 @@ void ExpressionAction::execute(Block & block) const
 
                     Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-                    function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size());
+                    function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size(), dry_run);
                     non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
                 }
 
@@ -492,7 +492,7 @@ void ExpressionAction::execute(Block & block) const
 void ExpressionAction::executeOnTotals(Block & block) const
 {
     if (type != JOIN)
-        execute(block);
+        execute(block, false);
     else
         join->joinTotals(block);
 }
@@ -704,11 +704,11 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
     return true;
 }
 
-void ExpressionActions::execute(Block & block) const
+void ExpressionActions::execute(Block & block, bool dry_run) const
 {
     for (const auto & action : actions)
     {
-        action.execute(block);
+        action.execute(block, dry_run);
         checkLimits(block);
     }
 }
