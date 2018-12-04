@@ -1,6 +1,8 @@
 # Visual Interfaces from Third-party Developers
 
-## Tabix
+## Open-Source
+
+### Tabix
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
@@ -14,7 +16,7 @@ Features:
 
 [Tabix documentation](https://tabix.io/doc/).
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) is a UI/IDE for OSX, Linux and Windows.
 
@@ -36,7 +38,9 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
-## DBeaver
+## Commercial
+
+### DBeaver
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
 
@@ -46,7 +50,7 @@ Features:
 - Table preview.
 - Autocompletion.
 
-## DataGrip
+### DataGrip
 
 [DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded into other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
 

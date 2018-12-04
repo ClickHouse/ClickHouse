@@ -1,6 +1,8 @@
 # 第三方开发的可视化界面
 
-## Tabix
+## 开源
+
+### Tabix
 
 ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
@@ -15,7 +17,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 [Tabix 文档](https://tabix.io/doc/).
 
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) 是一个交互式 UI/IDE 工具，可以运行在 OSX, Linux and Windows 平台中。
 
@@ -36,7 +38,9 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
-## DBeaver
+## 广告
+
+### DBeaver
 
 [DBeaver](https://dbeaver.io/) - 具有ClickHouse支持的通用桌面数据库客户端。
 
@@ -46,7 +50,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 表格预览。
  - 自动完成。
 
-## DataGrip
+### DataGrip
 
 [DataGrip](https://www.jetbrains.com/datagrip/)是JetBrains的数据库IDE，专门支持ClickHouse。 它还嵌入到其他基于IntelliJ的工具中：PyCharm，IntelliJ IDEA，GoLand，PhpStorm等。
 
