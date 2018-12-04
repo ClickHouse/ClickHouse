@@ -37,7 +37,7 @@ static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & requi
 void evaluateMissingDefaults(Block & block,
     const NamesAndTypesList & required_columns,
     const ColumnDefaults & column_defaults,
-    const Context & context, bool save_unneded_columns)
+    const Context & context, bool save_unneeded_columns)
 {
     if (column_defaults.empty())
         return;
@@ -46,7 +46,7 @@ void evaluateMissingDefaults(Block & block,
     if (!default_expr_list)
         return;
 
-    if (!save_unneded_columns)
+    if (!save_unneeded_columns)
     {
         auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
         ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
