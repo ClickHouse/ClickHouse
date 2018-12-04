@@ -1683,20 +1683,21 @@ private:
 template <typename T>
 static const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage)
 {
-    if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(&column))
+    if (!column.isColumnConst())
     {
-        return vector_col->getData();
-    }
-    if (const auto const_col = checkAndGetColumnConstData<ColumnVector<T>>(&column))
-    {
-        return const_col->getData();
+        if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(&column))
+        {
+            return vector_col->getData();
+        }
     }
 
-    // With type conversion, need to use backup storage here
-    const auto size = column.size();
+    const auto full_column = column.isColumnConst() ? column.convertToFullColumnIfConst() : column.getPtr();
+
+    // With type conversion and const columns we need to use backup storage here
+    const auto size = full_column->size();
     backup_storage.resize(size);
     for (size_t i = 0; i < size; ++i)
-        backup_storage[i] = column.getUInt(i);
+        backup_storage[i] = full_column->getUInt(i);
 
     return backup_storage;
 }
