@@ -72,7 +72,7 @@ Always pair it with `input_format_allow_errors_ratio`. To skip errors, both sett
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_num`is exceeded, ClickHouse throws an exception.
+If `input_format_allow_errors_num` is exceeded, ClickHouse throws an exception.
 
 ## input_format_allow_errors_ratio
 
@@ -86,6 +86,22 @@ Always pair it with `input_format_allow_errors_num`. To skip errors, both settin
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+
+<a name="session-setting-join_default_strictness"></a>
+
+## join_default_strictness
+
+Sets default strictness for [JOIN clause](../../query_language/select.md#query-language-join).
+
+**Possible values**
+
+- `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
+- `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `Empty string` — If `ALL` or `ANY` not specified in query, ClickHouse throws exception.
+
+**Default value**
+
+`ALL`
 
 ## max_block_size
 
