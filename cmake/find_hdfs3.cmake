@@ -6,7 +6,7 @@ endif ()
 
 if (HDFS3_LIBRARY AND HDFS3_INCLUDE_DIR)
 else ()
-    set(HDFS3_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/src/client")
+    set(HDFS3_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
     set(HDFS3_LIBRARY hdfs3)
 endif()
 
