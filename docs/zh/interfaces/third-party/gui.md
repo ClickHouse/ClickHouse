@@ -37,4 +37,18 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 监控副本情况以及 Kafka 引擎表
 
 
+
+## DataGrip
+
+[DataGrip](https://www.jetbrains.com/datagrip/)是JetBrains的数据库IDE，专门支持ClickHouse。 它还嵌入到其他基于IntelliJ的工具中：PyCharm，IntelliJ IDEA，GoLand，PhpStorm等。
+
+特征：
+
+ - 非常快速的代码完成。
+ - ClickHouse语法高亮显示。
+ - 支持ClickHouse特有的功能，例如嵌套列，表引擎。
+ - 数据编辑器。
+ - 重构。
+ - 搜索和导航。
+
 [来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->

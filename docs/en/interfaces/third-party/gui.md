@@ -53,7 +53,7 @@ Features:
 Features:
 
 - Very fast code completion.
-- ClickHouse synthax highlighting.
+- ClickHouse syntax highlighting.
 - Support for features specific to ClickHouse, for example nested columns, table engines.
 - Data Editor.
 - Refactorings.
