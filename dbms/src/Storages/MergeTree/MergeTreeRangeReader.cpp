@@ -122,6 +122,13 @@ MergeTreeRangeReader::Stream::Stream(
         , current_mark_index_granularity(merge_tree_reader->data_part->marks_index_granularity[from_mark])
         , stream(from_mark, merge_tree_reader)
 {
+    if (from_mark >= merge_tree_reader->data_part->marks_index_granularity.size())
+        throw Exception("Trying create stream to read from mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(merge_tree_reader->data_part->marks_index_granularity.size()), ErrorCodes::LOGICAL_ERROR);
+
+    if (last_mark > merge_tree_reader->data_part->marks_index_granularity.size())
+        throw Exception("Trying create stream to read to mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(merge_tree_reader->data_part->marks_index_granularity.size()), ErrorCodes::LOGICAL_ERROR);
 }
 
 void MergeTreeRangeReader::Stream::checkNotFinished() const
@@ -149,11 +156,13 @@ size_t MergeTreeRangeReader::Stream::readRows(Block & block, size_t num_rows)
 void MergeTreeRangeReader::Stream::toNextMark()
 {
     ++current_mark;
-    if (current_mark >= merge_tree_reader->data_part->marks_index_granularity.size())
-        throw Exception("Trying to read mark №"+ toString(current_mark) + " but total marks count is "
-            + toString(merge_tree_reader->data_part->marks_index_granularity.size()), ErrorCodes::LOGICAL_ERROR);
 
-    current_mark_index_granularity = merge_tree_reader->data_part->marks_index_granularity[current_mark];
+    /// TODO(alesap) clumsy logic, fixme
+    if (current_mark < merge_tree_reader->data_part->marks_index_granularity.size())
+        current_mark_index_granularity = merge_tree_reader->data_part->marks_index_granularity[current_mark];
+    else
+        current_mark_index_granularity = 0;
+
     offset_after_current_mark = 0;
 }
 
@@ -169,6 +178,8 @@ size_t MergeTreeRangeReader::Stream::read(Block & block, size_t num_rows, bool s
         offset_after_current_mark += num_rows;
 
         /// Start new granule; skipped_rows_after_offset is already zero.
+        std::cerr << "Offset after current mark:" << offset_after_current_mark << std::endl;
+        std::cerr << "Current Index granularity:" << current_mark_index_granularity << std::endl;
         if (offset_after_current_mark == current_mark_index_granularity || skip_remaining_rows_in_current_granule)
             toNextMark();
 
@@ -604,11 +615,6 @@ Block MergeTreeRangeReader::continueReadingChain(ReadResult & result)
             added_rows += stream.finalize(block);
             auto & range = started_ranges[next_range_to_start].range;
             ++next_range_to_start;
-            if (merge_tree_reader == nullptr)
-            {
-                std::cerr << "HERE IS NULL\n";
-                //std::cerr << StackTrace().toString();
-            }
             stream = Stream(range.begin, range.end, merge_tree_reader);
         }
 

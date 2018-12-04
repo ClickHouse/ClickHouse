@@ -107,6 +107,8 @@ Block MergingSortedBlockInputStream::readImpl()
     else
         merge(merged_columns, queue_without_collation);
 
+    std::cerr << "MERGED COLUMNS SIZE:" << merged_columns[0]->size() << std::endl;
+
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -197,7 +199,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                 /// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
                 if (merged_rows != 0)
                 {
-    //                std::cerr << "merged rows is non-zero\n";
+                    std::cerr << "merged rows is non-zero\n";
                     queue.push(current);
                     return;
                 }
@@ -238,7 +240,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                         out_row_sources_buf->write(row_source.data);
                 }
 
-    //            std::cerr << "fetching next block\n";
+                std::cerr << "fetching next block\n";
 
                 total_merged_rows += merged_rows;
                 fetchNextBlock(current, queue);
