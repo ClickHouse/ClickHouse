@@ -105,16 +105,16 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
 void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
     size_t rows = block.rows();
-    std::cerr << "Writing block:" << block.dumpStructure() << std::endl;
-    std::cerr << "BlockRows:" << rows << std::endl;
+    //std::cerr << "Writing block:" << block.dumpStructure() << std::endl;
+    //std::cerr << "BlockRows:" << rows << std::endl;
     size_t index_granularity_for_block;
     if (storage.index_granularity_bytes == 0)
         index_granularity_for_block = storage.index_granularity;
     else
     {
-        std::cerr << "BlockSizeInMemory:" << block.allocatedBytes() << std::endl;
-        std::cerr << "Storage index granularity:" << storage.index_granularity_bytes << std::endl;
-        std::cerr << "Blocks are granules size:" << blocks_are_granules_size << std::endl;
+        //std::cerr << "BlockSizeInMemory:" << block.allocatedBytes() << std::endl;
+        //std::cerr << "Storage index granularity:" << storage.index_granularity_bytes << std::endl;
+        //std::cerr << "Blocks are granules size:" << blocks_are_granules_size << std::endl;
         size_t block_size_in_memory = block.allocatedBytes();
         if (blocks_are_granules_size)
             index_granularity_for_block = rows;
@@ -124,12 +124,12 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
             index_granularity_for_block = storage.index_granularity_bytes / (block_size_in_memory / rows);
     }
 
-    std::cerr << "Final granularity:" << index_granularity_for_block << std::endl;
-    std::cerr << "Already existing granules:" << index_granularity.size() << std::endl;
+    //std::cerr << "Final granularity:" << index_granularity_for_block << std::endl;
+    //std::cerr << "Already existing granules:" << index_granularity.size() << std::endl;
     for (size_t current_row = index_offset; current_row < rows; current_row += index_granularity_for_block)
         index_granularity.push_back(index_granularity_for_block);
 
-    std::cerr << "Total written granules:" << index_granularity.size() << std::endl;
+    //std::cerr << "Total written granules:" << index_granularity.size() << std::endl;
 }
 
 size_t IMergedBlockOutputStream::writeSingleGranule(
@@ -221,7 +221,6 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
         if (current_row == 0 && index_offset != 0)
         {
-            std::cerr << "Has Offset:" << index_offset << std::endl;
             write_marks = false;
             rows_to_write = index_offset;
         }
