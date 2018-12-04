@@ -1652,6 +1652,13 @@ public:
         Arena * arena) const;
 
 protected:
+    /// Merge NULL key data from hash table `src` into `dst`.
+    template <typename Method, typename Table>
+    void mergeDataNullKey(
+            Table & table_dst,
+            Table & table_src,
+            Arena * arena) const;
+
     /// Merge data from hash table `src` into `dst`.
     template <typename Method, typename Table>
     void mergeDataImpl(
