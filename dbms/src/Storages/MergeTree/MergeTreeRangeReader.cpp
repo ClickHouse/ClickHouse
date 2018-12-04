@@ -34,6 +34,8 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(Block & block, size_t num_r
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(current_mark, continue_reading, num_rows, block);
+        std::cerr << "Rows read:" << rows_read << std::endl;
+        std::cerr << "Num rows:" << num_rows << std::endl;
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -147,8 +149,11 @@ size_t MergeTreeRangeReader::Stream::readRows(Block & block, size_t num_rows)
 void MergeTreeRangeReader::Stream::toNextMark()
 {
     ++current_mark;
+    if (current_mark >= merge_tree_reader->data_part->marks_index_granularity.size())
+        throw Exception("Trying to read mark №"+ toString(current_mark) + " but total marks count is "
+            + toString(merge_tree_reader->data_part->marks_index_granularity.size()), ErrorCodes::LOGICAL_ERROR);
+
     current_mark_index_granularity = merge_tree_reader->data_part->marks_index_granularity[current_mark];
-    std::cerr << "Current mark granularity:" << current_mark_index_granularity << std::endl;
     offset_after_current_mark = 0;
 }
 
@@ -556,6 +561,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             }
 
             auto rows_to_read = std::min(space_left, stream.numPendingRowsInCurrentGranule());
+            std::cerr << "Rows To Read:" << rows_to_read << std::endl;
             bool last = rows_to_read == space_left;
             result.addRows(stream.read(result.block, rows_to_read, !last));
             result.addGranule(rows_to_read);
