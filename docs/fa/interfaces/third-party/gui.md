@@ -37,9 +37,19 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - مانیتورینگ کافکا و جداول replicate (بزودی);
 - و بسیاری از ویژگی های دیگر برای شما.
 
+## DBeaver
+
+[DBeaver](https://dbeaver.io/) - مشتری دسکتاپ دسکتاپ دسکتاپ با پشتیبانی ClickHouse.
+
+امکانات:
+
+- توسعه پرس و جو با برجسته نحو
+- پیش نمایش جدول
+- تکمیل خودکار
+
 ## DataGrip
 
-[DataGrip] (https://www.jetbrains.com/datagrip/) IDE پایگاه داده از JetBrains با پشتیبانی اختصاصی برای ClickHouse است. این ابزار همچنین به سایر ابزارهای مبتنی بر IntelliJ تعبیه شده است: PyCharm، IntelliJ IDEA، GoLand، PhpStorm و دیگران.
+[DataGrip](https://www.jetbrains.com/datagrip/) IDE پایگاه داده از JetBrains با پشتیبانی اختصاصی برای ClickHouse است. این ابزار همچنین به سایر ابزارهای مبتنی بر IntelliJ تعبیه شده است: PyCharm، IntelliJ IDEA، GoLand، PhpStorm و دیگران.
 
 امکانات:
 
