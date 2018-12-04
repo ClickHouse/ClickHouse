@@ -16,7 +16,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 Яндекс рекомендует использовать официальные скомпилированные `deb` пакеты для Debian или Ubuntu.
 
-Чтобы установить официальные пакеты, пропишите репозиторий Яндекс в `/etc/apt/sources.list` или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`:
+Чтобы установить официальные пакеты, пропишите репозиторий Яндекса в `/etc/apt/sources.list` или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`:
 
 ```
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/

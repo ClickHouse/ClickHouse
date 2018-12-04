@@ -4,7 +4,7 @@
 
 ClickHouse can run on any Linux, FreeBSD or Mac OS X with x86\_64 CPU architecture.
 
-Though pre-built binaries are typically compiled to leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports them becomes an additional system requirement. Here's the command to check if current CPU has support for SSE 4.2:
+Though pre-built binaries are typically compiled to leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here's the command to check if current CPU has support for SSE 4.2:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
@@ -14,7 +14,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 ### From DEB Packages
 
-Yandex recommends using official pre-compiled `deb` packages for Debian or Ubuntu.
+Yandex ClickHouse team recommends using official pre-compiled `deb` packages for Debian or Ubuntu.
 
 To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
 
@@ -45,7 +45,7 @@ For CentOS, RHEL or Fedora there are the following options:
 
 ### From Docker Image
 
-Just follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
+To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
 
 ### From Sources
 
@@ -99,7 +99,7 @@ $ clickhouse-client
 
 By default it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
-The terminal must use UTF-8 encoding
+The terminal must use UTF-8 encoding.
 For more information, see the section ["Command-line client"](../interfaces/cli.md).
 
 Example:
