@@ -396,10 +396,6 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
 void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    for (const auto & param : params)
-        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-            throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
-
     auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();

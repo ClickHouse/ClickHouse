@@ -33,19 +33,7 @@ set the following environment variables:
   
 ### Running with runner script
 
-The only requirement is fresh docker with access to the internet. You can check it with:
-```
-$ docker run ubuntu:14.04 ping github.com
-PING github.com (140.82.118.3) 56(84) bytes of data.
-64 bytes from 140.82.118.3: icmp_seq=1 ttl=53 time=40.1 ms
-64 bytes from 140.82.118.3: icmp_seq=2 ttl=53 time=40.4 ms
-64 bytes from 140.82.118.3: icmp_seq=3 ttl=53 time=40.3 ms
-64 bytes from 140.82.118.3: icmp_seq=4 ttl=53 time=40.1 ms
-
---- github.com ping statistics ---
-4 packets transmitted, 4 received, 0% packet loss, time 19823ms
-rtt min/avg/max/mdev = 40.157/40.284/40.463/0.278 ms
-```
+The only requirement is fresh docker.
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```

@@ -89,25 +89,22 @@ MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
     const String & full_path_, const ColumnsDescription & columns_,
     Context & context_,
-    const ASTPtr & primary_expr_ast_,
-    const ASTPtr & secondary_sort_expr_ast_,
     const String & date_column_name,
-    const ASTPtr & partition_expr_ast_,
-    const ASTPtr & sampling_expression_,
+    const ASTPtr & partition_by_ast_,
+    const ASTPtr & order_by_ast_,
+    const ASTPtr & primary_key_ast_,
+    const ASTPtr & sample_by_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : ITableDeclaration{columns_},
-    context(context_),
-    sampling_expression(sampling_expression_),
-    index_granularity(settings_.index_granularity),
+    : context(context_),
     merging_params(merging_params_),
+    index_granularity(settings_.index_granularity),
     settings(settings_),
-    primary_expr_ast(primary_expr_ast_),
-    secondary_sort_expr_ast(secondary_sort_expr_ast_),
-    partition_expr_ast(partition_expr_ast_),
+    partition_by_ast(partition_by_ast_),
+    sample_by_ast(sample_by_ast_),
     require_part_metadata(require_part_metadata_),
     database_name(database_), table_name(table_),
     full_path(full_path_),
@@ -116,28 +113,30 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
+    setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
+
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
 
-    if (!primary_expr_ast)
-        throw Exception("Primary key cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+    if (sample_by_ast)
+    {
+        sampling_expr_column_name = sample_by_ast->getColumnName();
 
-    initPrimaryKey();
+        if (!primary_key_sample.has(sampling_expr_column_name)
+            && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
+            throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-    if (sampling_expression && (!primary_key_sample.has(sampling_expression->getColumnName()))
-        && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
-        throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
+        auto syntax = SyntaxAnalyzer(context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
+        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, context)
+            .getRequiredSourceColumns();
+    }
 
     MergeTreeDataFormatVersion min_format_version(0);
     if (!date_column_name.empty())
     {
         try
         {
-            String partition_expr_str = "toYYYYMM(" + backQuoteIfNeed(date_column_name) + ")";
-            ParserNotEmptyExpressionList parser(/* allow_alias_without_as_keyword = */ false);
-            partition_expr_ast = parseQuery(
-                parser, partition_expr_str.data(), partition_expr_str.data() + partition_expr_str.length(), "partition expression", 0);
-
+            partition_by_ast = makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column_name));
             initPartitionKey();
 
             if (minmax_idx_date_column_pos == -1)
@@ -152,6 +151,7 @@ MergeTreeData::MergeTreeData(
     }
     else
     {
+        is_custom_partitioned = true;
         initPartitionKey();
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
@@ -217,69 +217,177 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::initPrimaryKey()
+void MergeTreeData::setPrimaryKeyAndColumns(
+    const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check)
 {
-    auto addSortColumns = [](Names & out, const ASTPtr & expr_ast)
+    if (!new_order_by_ast)
+        throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
+
+    ASTPtr new_sorting_key_expr_list = extractKeyExpressionList(new_order_by_ast);
+    ASTPtr new_primary_key_expr_list = new_primary_key_ast
+        ? extractKeyExpressionList(new_primary_key_ast) : new_sorting_key_expr_list->clone();
+
+    if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+        new_sorting_key_expr_list->children.push_back(std::make_shared<ASTIdentifier>(merging_params.version_column));
+
+    size_t primary_key_size = new_primary_key_expr_list->children.size();
+    size_t sorting_key_size = new_sorting_key_expr_list->children.size();
+    if (primary_key_size > sorting_key_size)
+        throw Exception("Primary key must be a prefix of the sorting key, but its length: "
+            + toString(primary_key_size) + " is greater than the sorting key length: " + toString(sorting_key_size),
+            ErrorCodes::BAD_ARGUMENTS);
+
+    Names new_primary_key_columns;
+    Names new_sorting_key_columns;
+
+    for (size_t i = 0; i < sorting_key_size; ++i)
     {
-        out.reserve(out.size() + expr_ast->children.size());
-        for (const ASTPtr & ast : expr_ast->children)
-            out.emplace_back(ast->getColumnName());
-    };
+        String sorting_key_column = new_sorting_key_expr_list->children[i]->getColumnName();
+        new_sorting_key_columns.push_back(sorting_key_column);
 
-    /// Initialize description of sorting for primary key.
-    primary_sort_columns.clear();
-    addSortColumns(primary_sort_columns, primary_expr_ast);
+        if (i < primary_key_size)
+        {
+            String pk_column = new_primary_key_expr_list->children[i]->getColumnName();
+            if (pk_column != sorting_key_column)
+                throw Exception("Primary key must be a prefix of the sorting key, but in position "
+                    + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
+                    ErrorCodes::BAD_ARGUMENTS);
 
-    {
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(primary_expr_ast, getColumns().getAllPhysical());
-        primary_expr = ExpressionAnalyzer(primary_expr_ast, syntax_result, context).getActions(false);
-
-        ExpressionActionsPtr projected_expr = ExpressionAnalyzer(primary_expr_ast, syntax_result, context).getActions(true);
-        primary_key_sample = projected_expr->getSampleBlock();
+            new_primary_key_columns.push_back(pk_column);
+        }
     }
 
-    checkKeyExpression(*primary_expr, primary_key_sample, "Primary");
+    auto all_columns = new_columns.getAllPhysical();
 
-    size_t primary_key_size = primary_key_sample.columns();
-    primary_key_data_types.resize(primary_key_size);
-    for (size_t i = 0; i < primary_key_size; ++i)
-        primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
-
-    sort_columns = primary_sort_columns;
-    if (secondary_sort_expr_ast)
+    if (order_by_ast && only_check)
     {
-        addSortColumns(sort_columns, secondary_sort_expr_ast);
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(secondary_sort_expr_ast, getColumns().getAllPhysical());
-        secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, syntax_result, context).getActions(false);
+        /// This is ALTER, not CREATE/ATTACH TABLE. Let us check that all new columns used in the sorting key
+        /// expression have just been added (so that the sorting order is guaranteed to be valid with the new key).
 
-        ExpressionActionsPtr projected_expr = ExpressionAnalyzer(secondary_sort_expr_ast, syntax_result, context).getActions(true);
-        auto secondary_key_sample = projected_expr->getSampleBlock();
+        ASTPtr added_key_column_expr_list = std::make_shared<ASTExpressionList>();
+        for (size_t new_i = 0, old_i = 0; new_i < sorting_key_size; ++new_i)
+        {
+            if (old_i < sorting_key_columns.size())
+            {
+                if (new_sorting_key_columns[new_i] != sorting_key_columns[old_i])
+                    added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
+                else
+                    ++old_i;
+            }
+            else
+                added_key_column_expr_list->children.push_back(new_sorting_key_expr_list->children[new_i]);
+        }
 
-        checkKeyExpression(*secondary_sort_expr, secondary_key_sample, "Secondary");
+        if (!added_key_column_expr_list->children.empty())
+        {
+            auto syntax = SyntaxAnalyzer(context, {}).analyze(added_key_column_expr_list, all_columns);
+            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, context)
+                .getRequiredSourceColumns();
+
+            NamesAndTypesList deleted_columns;
+            NamesAndTypesList added_columns;
+            getColumns().getAllPhysical().getDifference(all_columns, deleted_columns, added_columns);
+
+            for (const String & col : used_columns)
+            {
+                if (!added_columns.contains(col) || deleted_columns.contains(col))
+                    throw Exception("Existing column " + col + " is used in the expression that was "
+                        "added to the sorting key. You can add expressions that use only the newly added columns",
+                        ErrorCodes::BAD_ARGUMENTS);
+
+                if (new_columns.defaults.count(col))
+                    throw Exception("Newly added column " + col + " has a default expression, so adding "
+                        "expressions that use it to the sorting key is forbidden",
+                        ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+    }
+
+    auto new_sorting_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_sorting_key_expr_list, all_columns);
+    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
+        .getActions(false);
+    auto new_sorting_key_sample =
+        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
+        .getActions(true)->getSampleBlock();
+
+    checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
+
+    auto new_primary_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_primary_key_expr_list, all_columns);
+    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, context)
+        .getActions(false);
+
+    Block new_primary_key_sample;
+    DataTypes new_primary_key_data_types;
+    for (size_t i = 0; i < primary_key_size; ++i)
+    {
+        const auto & elem = new_sorting_key_sample.getByPosition(i);
+        new_primary_key_sample.insert(elem);
+        new_primary_key_data_types.push_back(elem.type);
+    }
+
+    if (!only_check)
+    {
+        setColumns(new_columns);
+
+        order_by_ast = new_order_by_ast;
+        sorting_key_columns = std::move(new_sorting_key_columns);
+        sorting_key_expr_ast = std::move(new_sorting_key_expr_list);
+        sorting_key_expr = std::move(new_sorting_key_expr);
+
+        primary_key_ast = new_primary_key_ast;
+        primary_key_columns = std::move(new_primary_key_columns);
+        primary_key_expr_ast = std::move(new_primary_key_expr_list);
+        primary_key_expr = std::move(new_primary_key_expr);
+        primary_key_sample = std::move(new_primary_key_sample);
+        primary_key_data_types = std::move(new_primary_key_data_types);
+    }
+}
+
+
+ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
+{
+    if (!node)
+        return std::make_shared<ASTExpressionList>();
+
+    const ASTFunction * expr_func = typeid_cast<const ASTFunction *>(node.get());
+
+    if (expr_func && expr_func->name == "tuple")
+    {
+        /// Primary key is specified in tuple.
+        return expr_func->children.at(0);
+    }
+    else
+    {
+        /// Primary key consists of one column.
+        auto res = std::make_shared<ASTExpressionList>();
+        res->children.push_back(node);
+        return res;
     }
 }
 
 
 void MergeTreeData::initPartitionKey()
 {
-    if (!partition_expr_ast || partition_expr_ast->children.empty())
+    ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
+
+    if (partition_key_expr_list->children.empty())
         return;
 
     {
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_expr_ast, getColumns().getAllPhysical());
-        partition_expr = ExpressionAnalyzer(partition_expr_ast, syntax_result, context).getActions(false);
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
+        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, context).getActions(false);
     }
 
-    for (const ASTPtr & ast : partition_expr_ast->children)
+    for (const ASTPtr & ast : partition_key_expr_list->children)
     {
         String col_name = ast->getColumnName();
-        partition_key_sample.insert(partition_expr->getSampleBlock().getByName(col_name));
+        partition_key_sample.insert(partition_key_expr->getSampleBlock().getByName(col_name));
     }
 
-    checkKeyExpression(*partition_expr, partition_key_sample, "Partition");
+    checkKeyExpression(*partition_key_expr, partition_key_sample, "Partition");
 
     /// Add all columns used in the partition key to the min-max index.
-    const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
+    const NamesAndTypesList & minmax_idx_columns_with_types = partition_key_expr->getRequiredColumnsWithTypes();
     minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
@@ -873,7 +981,9 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
-    commands.apply(new_columns);
+    ASTPtr new_order_by_ast = order_by_ast;
+    ASTPtr new_primary_key_ast = primary_key_ast;
+    commands.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -882,33 +992,28 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     /// (and not as a part of some expression) and if the ALTER only affects column metadata.
     NameSet columns_alter_metadata_only;
 
-    if (partition_expr)
+    if (partition_key_expr)
     {
         /// Forbid altering partition key columns because it can change partition ID format.
         /// TODO: in some cases (e.g. adding an Enum value) a partition key column can still be ALTERed.
         /// We should allow it.
-        for (const String & col : partition_expr->getRequiredColumns())
+        for (const String & col : partition_key_expr->getRequiredColumns())
             columns_alter_forbidden.insert(col);
     }
 
-    auto processSortingColumns =
-            [&columns_alter_forbidden, &columns_alter_metadata_only] (const ExpressionActionsPtr & expression)
+    if (sorting_key_expr)
     {
-        for (const ExpressionAction & action : expression->getActions())
+        for (const ExpressionAction & action : sorting_key_expr->getActions())
         {
             auto action_columns = action.getNeededColumns();
             columns_alter_forbidden.insert(action_columns.begin(), action_columns.end());
         }
-        for (const String & col : expression->getRequiredColumns())
+        for (const String & col : sorting_key_expr->getRequiredColumns())
             columns_alter_metadata_only.insert(col);
-    };
 
-    if (primary_expr)
-        processSortingColumns(primary_expr);
-    /// We don't process sampling_expression separately because it must be among the primary key columns.
-
-    if (secondary_sort_expr)
-        processSortingColumns(secondary_sort_expr);
+        /// We don't process sample_by_ast separately because it must be among the primary key columns
+        /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
+    }
 
     if (!merging_params.sign_column.empty())
         columns_alter_forbidden.insert(merging_params.sign_column);
@@ -940,7 +1045,17 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
                     "ALTER of key column " + command.column_name + " must be metadata-only",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
+
+        if (command.type == AlterCommand::MODIFY_ORDER_BY)
+        {
+            if (!is_custom_partitioned)
+                throw Exception(
+                    "ALTER MODIFY ORDER BY is not supported for default-partitioned tables created with the old syntax",
+                    ErrorCodes::BAD_ARGUMENTS);
+        }
     }
+
+    setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1095,7 +1210,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
-    const ASTPtr & new_primary_key,
+    const ASTPtr & new_primary_key_expr_list,
     bool skip_sanity_checks)
 {
     ExpressionActionsPtr expression;
@@ -1160,10 +1275,9 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     size_t new_primary_key_file_size{};
     MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
 
-    /// TODO: Check the order of secondary sorting key columns.
-    if (new_primary_key.get() != primary_expr_ast.get())
+    if (new_primary_key_expr_list)
     {
-        ASTPtr query = new_primary_key;
+        ASTPtr query = new_primary_key_expr_list;
         auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, new_columns);
         ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
         Block new_primary_key_sample = new_primary_expr->getSampleBlock();
@@ -2335,7 +2449,7 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const A
 {
     const String column_name = node->getColumnName();
 
-    for (const auto & name : primary_sort_columns)
+    for (const auto & name : primary_key_columns)
         if (column_name == name)
             return true;
 
@@ -2392,10 +2506,10 @@ MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(secondary_sort_expr_ast) != query_to_string(src_data->secondary_sort_expr_ast))
+    if (query_to_string(order_by_ast) != query_to_string(src_data->order_by_ast))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
-    if (query_to_string(partition_expr_ast) != query_to_string(src_data->partition_expr_ast))
+    if (query_to_string(partition_by_ast) != query_to_string(src_data->partition_by_ast))
         throw Exception("Tables have different partition key", ErrorCodes::BAD_ARGUMENTS);
 
     if (format_version != src_data->format_version)
