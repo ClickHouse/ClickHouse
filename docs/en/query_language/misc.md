@@ -213,7 +213,7 @@ See also the section "LIKE operator".
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-Removes all data from the table. If `IF EXISTS` is specified, the query doesn't return an error if the table doesn't exist.
+Removes all data from a table. If `IF EXISTS` is specified, the query doesn't return an error if the table doesn't exist.
 
 The TRUNCATE query is not supported for View, File, URL and Null table engines.
 
