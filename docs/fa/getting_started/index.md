@@ -4,7 +4,7 @@
 
 ## نیازمندی های سیستم
 
-این یک سیستم چند سکویی (Cross-Platform) نمی باشد. این ابزار نیاز به Linux Ubuntu Precise (12.04) یا جدیدتر، با معماری x86_64 و پشتیبانی از SSE 4.2 می باشد. برای چک کردن SSE 4.2 خروجی دستور زیر را بررسی کنید:
+این یک سیستم چند سکویی (Cross-Platform) نمی باشد. این ابزار نیاز به Linux Ubuntu Precise (12.04) یا جدیدتر، با معماری x86\_64 و پشتیبانی از SSE 4.2 می باشد. برای چک کردن SSE 4.2 خروجی دستور زیر را بررسی کنید:
 
 </div>
 
@@ -17,8 +17,6 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 پیشنهاد می کنیم از Ubuntu TrustyT، Ubuntu Xenial یا Ubuntu Precise استفاده کنید. ترمینال باید از UTF-8 پشتیبانی کند. (به صورت پیش فرض در Ubuntu پشتیبانی می شود).
 
 ## نصب
-
-برای تست و توسعه، ClickHouse می تواند در یک سرور یا در یک کامپیوتر desktop نصب شود.
 
 ### نصب از طریق پکیج های Debian/Ubuntu
 
@@ -100,7 +98,7 @@ sudo service clickhouse-server start
 
 <div dir="rtl" markdown="1">
 
-لاگ های دایرکتوری `/var/log/clickhouse-server/ directory.` را مشاهده کنید.
+لاگ های دایرکتوری `/var/log/clickhouse-server/` directory. را مشاهده کنید.
 
 اگر سرور استارت نشد، فایل تنظیمات را بررسی کنید `/etc/clickhouse-server/config.xml.`
 
