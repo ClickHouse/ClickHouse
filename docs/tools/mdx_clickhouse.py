@@ -41,7 +41,7 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
     def extendMarkdown(self, md, md_globals):
         md.preprocessors['clickhouse'] = ClickHousePreprocessor()
         md.inlinePatterns['link'] = NofollowLinkPattern(markdown.inlinepatterns.LINK_RE, md)
-        md.inlinePatterns['autolink'] = NofollowLinkPattern(markdown.inlinepatterns.AUTOLINK_RE, md)
+        md.inlinePatterns['autolink'] = NofollowAutolinkPattern(markdown.inlinepatterns.AUTOLINK_RE, md)
 
 
 def makeExtension(**kwargs):
