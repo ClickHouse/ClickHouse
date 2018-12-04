@@ -1,3 +1,14 @@
+## ClickHouse release 18.14.18, 2018-12-04
+
+### Исправления ошибок:
+* Исправлена ошибка в функции `dictGet...` для словарей типа `range`, если один из аргументов константный, а другой - нет. [#3751](https://github.com/yandex/ClickHouse/pull/3751)
+* Исправлена ошибка, приводящая к выводу сообщений `netlink: '...': attribute type 1 has an invalid length` в логе ядра Linux, проявляющаяся на достаточно новых ядрах Linux. [#3749](https://github.com/yandex/ClickHouse/pull/3749)
+* Исправлен segfault при выполнении функции `empty` от аргумента типа `FixedString`. [#3703](https://github.com/yandex/ClickHouse/pull/3703)
+* Исправлено избыточная аллокация памяти при большом значении настройки `max_query_size` (кусок памяти размера `max_query_size` выделялся сразу). [#3720](https://github.com/yandex/ClickHouse/pull/3720)
+
+### Улучшения процесса сборки ClickHouse:
+* Исправлена сборка с использованием библиотек LLVM/Clang версии 7 из пакетов ОС (эти библиотеки используются для динамической компиляции запросов). [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+
 ## ClickHouse release 18.14.17, 2018-11-30
 
 ### Исправления ошибок:
