@@ -2,7 +2,7 @@
 
 # SummingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for  `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key with one row which contains summarized values for the columns with the numeric data type. If the primary key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for  `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md#table_engines-mergetree-sorting_key)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend to use the engine together with `MergeTree`. Store complete data in `MergeTree`  table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
