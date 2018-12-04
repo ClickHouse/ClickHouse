@@ -46,7 +46,6 @@ private:
     String uri;
     String format_name;
     String table_name;
-    Context & context_global;
 
     Logger * log = &Logger::get("StorageHDFS");
 };
