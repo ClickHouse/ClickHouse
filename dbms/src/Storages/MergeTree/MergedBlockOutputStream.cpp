@@ -46,7 +46,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , compute_granularity(index_granularity.empty())
 {
     if (blocks_are_granules_size && !index_granularity.empty())
-        throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity specified", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Can't take information about index granularity from blocks, when non empty index_granularity array specified", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -105,7 +105,8 @@ IDataType::OutputStreamGetter IMergedBlockOutputStream::createStreamGetter(
 void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
 {
     size_t rows = block.rows();
-    std::cerr << "Total Rows:" << rows << std::endl;
+    std::cerr << "Writing block:" << block.dumpStructure() << std::endl;
+    std::cerr << "BlockRows:" << rows << std::endl;
     size_t index_granularity_for_block;
     if (storage.index_granularity_bytes == 0)
         index_granularity_for_block = storage.index_granularity;
@@ -113,20 +114,21 @@ void IMergedBlockOutputStream::fillIndexGranularity(const Block & block)
     {
         std::cerr << "BlockSizeInMemory:" << block.allocatedBytes() << std::endl;
         std::cerr << "Storage index granularity:" << storage.index_granularity_bytes << std::endl;
+        std::cerr << "Blocks are granules size:" << blocks_are_granules_size << std::endl;
         size_t block_size_in_memory = block.allocatedBytes();
         if (blocks_are_granules_size)
             index_granularity_for_block = rows;
+        else if (block_size_in_memory >= storage.index_granularity_bytes)
+            index_granularity_for_block = block_size_in_memory / storage.index_granularity_bytes;
         else
-            index_granularity_for_block = std::max(block_size_in_memory / storage.index_granularity_bytes, rows);
+            index_granularity_for_block = storage.index_granularity_bytes / (block_size_in_memory / rows);
     }
-    size_t current_row = 0;
 
     std::cerr << "Final granularity:" << index_granularity_for_block << std::endl;
-    while (current_row < rows)
-    {
+    std::cerr << "Already existing granules:" << index_granularity.size() << std::endl;
+    for (size_t current_row = index_offset; current_row < rows; current_row += index_granularity_for_block)
         index_granularity.push_back(index_granularity_for_block);
-        current_row += index_granularity_for_block;
-    }
+
     std::cerr << "Total written granules:" << index_granularity.size() << std::endl;
 }
 
@@ -211,12 +213,15 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
     size_t current_column_mark = from_mark;
     while (current_row < total_rows)
     {
+        //std::cerr << "CURRENT ROW:" << current_row << std::endl;
+        //std::cerr << "CURRENT MARK:" << current_column_mark <<  std::endl;
         size_t rows_to_write;
         bool write_marks = true;
 
         /// If there is `index_offset`, then the first mark goes not immediately, but after this number of rows.
         if (current_row == 0 && index_offset != 0)
         {
+            std::cerr << "Has Offset:" << index_offset << std::endl;
             write_marks = false;
             rows_to_write = index_offset;
         }
@@ -243,7 +248,8 @@ std::pair<size_t, size_t> IMergedBlockOutputStream::writeColumn(
             write_marks
         );
 
-        current_column_mark++;
+        if (write_marks)
+            current_column_mark++;
     }
 
     /// Memoize offsets for Nested types, that are already written. They will not be written again for next columns of Nested structure.
@@ -494,6 +500,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
+    if (!rows)
+        return;
 
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
@@ -585,9 +593,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
-        std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
-        std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
-        for (size_t i = index_offset; i < rows; i += index_granularity.at(current_mark))
+        //std::cerr << "Index Granularity size:" << index_granularity.size() << std::endl;
+        //std::cerr << "Index Granularity first elem:" << index_granularity[0] << std::endl;
+        for (size_t i = index_offset; i < rows && current_mark < index_granularity.size(); i += index_granularity[current_mark])
         {
             if (storage.hasPrimaryKey())
             {
@@ -604,6 +612,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             ++current_mark;
         }
     }
+    std::cerr << "Index granularity size:" << index_granularity.size() << std::endl;
     std::cerr << "block written, total marks:" << current_mark << std::endl;
 
     index_offset = new_index_offset;
