@@ -84,7 +84,7 @@ public:
     }
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
-    /// If column stores floting point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
+    /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
     virtual UInt64 get64(size_t /*n*/) const
     {
