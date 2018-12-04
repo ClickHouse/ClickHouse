@@ -36,7 +36,15 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
+## DBeaver
 
+[DBeaver](https://dbeaver.io/) - 具有ClickHouse支持的通用桌面数据库客户端。
+
+特征：
+
+ - 使用语法高亮显示查询开发。
+ - 表格预览。
+ - 自动完成。
 
 ## DataGrip
 
