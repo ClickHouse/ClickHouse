@@ -53,7 +53,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 {
     size_t num_columns = sample.columns();
     MutableColumns columns = sample.cloneEmptyColumns();
-    delayed_defaults.clear();
+    block_missing_values.clear();
 
     try
     {
@@ -62,8 +62,8 @@ Block BlockInputStreamFromRowInputStream::readImpl()
             try
             {
                 ++total_rows;
-                RowReadExtention info;
-                if (!row_input->extendedRead(columns, info))
+                RowReadExtension info;
+                if (!row_input->read(columns, info))
                     break;
 
                 for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
@@ -73,7 +73,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
                         size_t column_size = columns[column_idx]->size();
                         if (column_size == 0)
                             throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-                        delayed_defaults.setBit(column_idx, column_size - 1);
+                        block_missing_values.setBit(column_idx, column_size - 1);
                     }
                 }
             }

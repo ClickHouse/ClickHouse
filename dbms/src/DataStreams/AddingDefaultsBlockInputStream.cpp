@@ -51,17 +51,15 @@ Block AddingDefaultsBlockInputStream::readImpl()
     if (column_defaults.empty())
         return res;
 
-    const BlockMissingValues & delayed_defaults = children.back()->getMissingValues();
-    if (delayed_defaults.empty())
+    const BlockMissingValues & block_missing_values = children.back()->getMissingValues();
+    if (block_missing_values.empty())
         return res;
 
     Block evaluate_block{res};
+    /// remove columns for recalculation
     for (const auto & column : column_defaults)
-    {
-        /// column_defaults contain aliases that could be ommited in evaluate_block
         if (evaluate_block.has(column.first))
             evaluate_block.erase(column.first);
-    }
 
     evaluateMissingDefaults(evaluate_block, header.getNamesAndTypesList(), column_defaults, context, false);
 
@@ -76,7 +74,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
 
         size_t block_column_position = res.getPositionByName(column_name);
         ColumnWithTypeAndName & column_read = res.getByPosition(block_column_position);
-        const auto & defaults_mask = delayed_defaults.getDefaultsBitmask(block_column_position);
+        const auto & defaults_mask = block_missing_values.getDefaultsBitmask(block_column_position);
 
         checkCalculated(column_read, column_def, defaults_mask.size());
 

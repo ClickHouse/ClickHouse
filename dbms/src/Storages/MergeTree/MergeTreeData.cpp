@@ -2173,7 +2173,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
         MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
-        if (!input_stream.read(columns))
+        RowReadExtension unused;
+        if (!input_stream.read(columns, unused))
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);

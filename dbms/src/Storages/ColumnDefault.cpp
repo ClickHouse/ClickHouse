@@ -1,5 +1,3 @@
-#include <iomanip>
-
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
