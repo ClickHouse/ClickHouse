@@ -46,12 +46,12 @@
 [submodule "contrib/protobuf"]
 	path = contrib/protobuf
 	url = https://github.com/ClickHouse-Extras/protobuf.git
-[submodule "contrib/libhdfs3"]
-	path = contrib/libhdfs3
-	url = https://github.com/ClickHouse-Extras/libhdfs3.git
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost-extra.git
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/libhdfs3"]
+	path = contrib/libhdfs3
+	url = https://github.com/ClickHouse-Extras/libhdfs3.git
