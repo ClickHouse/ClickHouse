@@ -2,7 +2,7 @@
 
 ## System Requirements
 
-ClickHouse can run on any Linux, FreeBSD or Mac OS X with x86\_64 architecture.
+ClickHouse can run on any Linux, FreeBSD or Mac OS X with x86\_64 CPU architecture.
 
 Though pre-built binaries are typically compiled to leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports them becomes an additional system requirement. Here's the command to check if current CPU has support for SSE 4.2:
 
@@ -36,18 +36,16 @@ You can also download and install packages manually from here: <https://repo.yan
 
 ### From RPM Packages
 
-Yandex does not run ClickHouse on `rpm` based distributions and `rpm` packages are not as thoroughly tested. So use them at your own risk, but there are many other companies that do successfully run them in production without any major issues.
+Yandex does not run ClickHouse on `rpm` based Linux distributions and `rpm` packages are not as thoroughly tested. So use them at your own risk, but there are many other companies that do successfully run them in production without any major issues.
 
-So for CentOS, RHEL or Fedora you have the following options:
+For CentOS, RHEL or Fedora there are the following options:
 * Packages from <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64/> are generated from official `deb` packages by Yandex and have byte-identical binaries.
 * Packages from <https://github.com/Altinity/clickhouse-rpm-install> are built by independent company Altinity, but are used widely without any complaints.
 * Or you can use Docker (see below).
 
 ### From Docker Image
 
-Just follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/).
-
-Inside it uses official `deb` packages, so SSE 4.2 support is also required.
+Just follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
 
 ### From Sources
 
@@ -60,15 +58,11 @@ Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
-<details><summary>Additional notes</summary>
-You'll need to create a data and metadata folders and `chown` them for the desired. Their paths can be changed in server config, by default they are:
+You'll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
 ```
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```
-
-Note the path to logs in the server config (src/dbms/programs/server/config.xml).
-</details>
 
 On Gentoo you can just use `emerge clickhouse` to install ClickHouse from sources.
 
@@ -76,8 +70,8 @@ On Gentoo you can just use `emerge clickhouse` to install ClickHouse from source
 
 To start the server as a daemon, run:
 
-```bash
-sudo service clickhouse-server start
+``` bash
+$ sudo service clickhouse-server start
 ```
 
 See the logs in the `/var/log/clickhouse-server/` directory.
@@ -86,8 +80,8 @@ If the server doesn't start, check the configurations in the file `/etc/clickhou
 
 You can also manually launch the server from the console:
 
-```bash
-clickhouse-server --config-file=/etc/clickhouse-server/config.xml
+``` bash
+$ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
 In this case, the log will be printed to the console, which is convenient during development.
@@ -99,18 +93,17 @@ For more information, see the section ["Configuration Files"](../operations/conf
 
 After launching server, you can use the command-line client to connect to it:
 
-```bash
-clickhouse-client
+``` bash
+$ clickhouse-client
 ```
 
 By default it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
 
-The terminal must use UTF-8 encoding.
-
+The terminal must use UTF-8 encoding
 For more information, see the section ["Command-line client"](../interfaces/cli.md).
 
 Example:
-```bash
+``` bash
 $ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
@@ -131,7 +124,7 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can try to download from the test data sets or go through [tutorial](https://clickhouse.yandex/tutorial.html).
+To continue experimenting, you can download one of test data sets or go through [tutorial](https://clickhouse.yandex/tutorial.html).
 
 
 [Original article](https://clickhouse.yandex/docs/en/getting_started/) <!--hide-->
