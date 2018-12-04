@@ -27,8 +27,8 @@ StorageHDFS::StorageHDFS(const String & uri_,
     const std::string & table_name_,
     const String & format_name_,
     const ColumnsDescription & columns_,
-    Context & context_)
-    : IStorage(columns_), uri(uri_), format_name(format_name_), table_name(table_name_), context_global(context_)
+    Context &)
+    : IStorage(columns_), uri(uri_), format_name(format_name_), table_name(table_name_)
 {
 }
 
@@ -88,7 +88,7 @@ namespace
             }
             else
             {
-                reader = std::make_shared<UnionBlockInputStream<> >(inputs, nullptr, context.getSettingsRef().max_distributed_connections);
+                reader = std::make_shared<UnionBlockInputStream>(inputs, nullptr, context.getSettingsRef().max_distributed_connections);
             }
         }
 
@@ -114,7 +114,7 @@ namespace
 
         void readSuffixImpl() override
         {
-            auto explicitReader = dynamic_cast<UnionBlockInputStream<> *>(reader.get());
+            auto explicitReader = dynamic_cast<UnionBlockInputStream *>(reader.get());
             if (explicitReader) explicitReader->cancel(false); // skip Union read suffix assertion
 
             reader->readSuffix();
