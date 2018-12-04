@@ -12,10 +12,9 @@ class Context;
 class NamesAndTypesList;
 struct ColumnDefault;
 
-///
 void evaluateMissingDefaults(Block & block,
     const NamesAndTypesList & required_columns,
     const std::unordered_map<std::string, ColumnDefault> & column_defaults,
-    const Context & context, bool save_unneded_columns = true);
+    const Context & context, bool save_unneeded_columns = true);
 
 }

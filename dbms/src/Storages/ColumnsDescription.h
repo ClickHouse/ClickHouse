@@ -57,6 +57,7 @@ struct ColumnsDescription
     String toString() const;
 
     static ColumnsDescription parse(const String & str);
+    static const ColumnsDescription * loadFromContext(const Context & context, const String & db, const String & table);
 };
 
 }

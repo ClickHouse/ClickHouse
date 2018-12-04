@@ -10,6 +10,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/Exception.h>
+#include <Interpreters/Context.h>
+#include <Storages/IStorage.h>
 
 #include <ext/collection_cast.h>
 #include <ext/map.h>
@@ -160,6 +162,22 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
     assertEOF(buf);
 
     return result;
+}
+
+const ColumnsDescription * ColumnsDescription::loadFromContext(const Context & context, const String & db, const String & table)
+{
+    if (context.getSettingsRef().insert_sample_with_metadata)
+    {
+        auto db_and_table = context.getInsertionTable();
+
+        if (context.isTableExist(db, table))
+        {
+            StoragePtr storage = context.getTable(db, table);
+            return &storage->getColumns();
+        }
+    }
+
+    return nullptr;
 }
 
 }
