@@ -147,6 +147,11 @@ struct VariableKey
         res.index = new_index;
         return res;
     }
+
+    VariableKey incrementIndex(size_t amount) const
+    {
+        return changeIndex(index + amount);
+    }
 };
 
 /** Captured type or a value of a constant.
@@ -286,13 +291,14 @@ inline VariableKeys expandEllipsis(const Variables & vars, const VariableKeys & 
 
 
 /** Check type to match some criteria, possibly set some variables.
+  * iteration - all variable indices are incremented by this number - used for implementation of ellipsis.
   */
 class ITypeMatcher
 {
 public:
     virtual ~ITypeMatcher() {}
     virtual std::string name() const = 0;
-    virtual bool match(const DataTypePtr & what, Variables & vars) const = 0;
+    virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const = 0;
 };
 
 using TypeMatcherPtr = std::shared_ptr<ITypeMatcher>;
@@ -340,7 +346,7 @@ class AnyTypeMatcher : public ITypeMatcher
 {
 public:
     std::string name() const override { return "Any"; }
-    bool match(const DataTypePtr &, Variables &) const override { return true; }
+    bool match(const DataTypePtr &, Variables &, size_t) const override { return true; }
 };
 
 
@@ -358,7 +364,7 @@ public:
         return type->getName();
     }
 
-    bool match(const DataTypePtr & what, Variables &) const override
+    bool match(const DataTypePtr & what, Variables &, size_t) const override
     {
         return type->equals(*what);
     }
@@ -380,12 +386,12 @@ public:
         return impl->name();
     }
 
-    bool match(const DataTypePtr & what, Variables & vars) const override
+    bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const override
     {
-        if (!impl->match(what, vars))
+        if (!impl->match(what, vars, iteration))
             return false;
 
-        return vars.assignOrCheck(var_key, what);
+        return vars.assignOrCheck(var_key.incrementIndex(iteration), what);
     }
 };
 
@@ -393,18 +399,19 @@ public:
 struct ArgumentDescription
 {
     bool is_const = false;
-    std::string argument_name;
+    VariableKey argument_name;
     TypeMatcherPtr type_matcher;
+    size_t iteration = 0;   /// Repeating arguments after expansion of ellipsis.
 
     bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars) const
     {
         if (is_const && (!column || !column->isColumnConst()))
             return false;
 
-        if (is_const && !vars.assignOrCheck(argument_name, typeid_cast<const ColumnConst &>(*column).getField()))
+        if (is_const && !vars.assignOrCheck(argument_name.incrementIndex(iteration), typeid_cast<const ColumnConst &>(*column).getField()))
             return false;
 
-        return type_matcher->match(type, vars);
+        return type_matcher->match(type, vars, iteration);
     }
 };
 
@@ -620,23 +627,24 @@ private:
 public:
     EllipsisArgumentsGroup(const ArgumentsDescription & args) : args(args) {}
 
+    /// Append 'args' to 'to' 1 + iteration number of times.
     bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
     {
         size_t repeat_count = iteration + 1;
 
-        if (to.size() + repeat_count > max_args)
+        if (to.size() + repeat_count * args.size() > max_args)
             return false;
 
-        if (iteration == 0)
-            return true;
-
-        if (iteration == 1)
+        for (size_t iter_num = 0; iter_num < iteration; ++iter_num)
         {
-            to.insert(to.end(), args.begin(), args.end());
-            return true;
+            for (const auto & arg : args)
+            {
+                to.emplace_back(arg);
+                to.back().iteration = iter_num;
+            }
         }
 
-        return false;
+        return true;
     }
 };
 
@@ -986,8 +994,12 @@ bool parseSimpleArgumentDescription(TokenIterator & pos, ArgumentDescription & r
 
     /// If arg_name present, consume it.
     if (pos->type == TokenType::BareWord && next_pos->type == TokenType::BareWord)
-        if (!parseIdentifier(pos, res.argument_name))
+    {
+        std::string identifier;
+        if (!parseIdentifier(pos, identifier))
             return false;
+        res.argument_name = identifier;
+    }
 
     return parseTypeMatcher(pos, res.type_matcher);
 }
