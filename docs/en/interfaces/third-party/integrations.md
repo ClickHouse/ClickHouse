@@ -3,6 +3,11 @@
 !!! warning "Disclaimer"
     Yandex does **not** maintain the libraries listed below and haven't done any extensive testing to ensure their quality.
 
+- Relational database management systems
+    - [MySQL](https://www.mysql.com)
+        - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
+    - [PostgreSQL](https://www.postgresql.org)
+        - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
         - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))

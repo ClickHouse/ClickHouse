@@ -5,12 +5,17 @@
 !!! warning "سلب مسئولیت"
     Yandex نه حفظ کتابخانه ها در زیر ذکر شده و نشده انجام هر آزمایش های گسترده ای برای اطمینان از کیفیت آنها.
 
+- سیستم های مدیریت پایگاه داده رابطه ای
+    - [MySQL](https://www.mysql.com)
+        - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
+    - [PostgreSQL](https://www.postgresql.org)
+        - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (استفاده می کند [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
-        - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+        - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (استفاده می کند [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
 - Java
     - [Hadoop](http://hadoop.apache.org)
-        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../jdbc.md))
+        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده می کند [JDBC](../jdbc.md))
 - Scala
     - [Akka](https://akka.io)
         - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
