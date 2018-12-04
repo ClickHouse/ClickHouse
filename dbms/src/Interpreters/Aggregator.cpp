@@ -1513,7 +1513,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 }
 
 
-template <typename Table>
+template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataNullKey(
     Table & table_dst,
     Table & table_src,
@@ -1555,7 +1555,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     Arena * arena) const
 {
     if constexpr (Method::low_cardinality_optimization)
-        mergeDataNullKey(table_dst, table_src, arena);
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
     for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
@@ -1596,7 +1596,7 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 {
     /// Note : will create data for NULL key if not exist
     if constexpr (Method::low_cardinality_optimization)
-        mergeDataNullKey(table_dst, table_src, arena);
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
     for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
@@ -1630,7 +1630,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 {
     /// Note : will create data for NULL key if not exist
     if constexpr (Method::low_cardinality_optimization)
-        mergeDataNullKey(table_dst, table_src, arena);
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
 
     for (auto it = table_src.begin(); it != table_src.end(); ++it)
     {
