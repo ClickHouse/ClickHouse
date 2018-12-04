@@ -115,7 +115,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
 
 void MergeTreePartition::load(const MergeTreeData & storage, const String & part_path)
 {
-    if (!storage.partition_expr)
+    if (!storage.partition_key_expr)
         return;
 
     ReadBufferFromFile file = openForReading(part_path + "partition.dat");
@@ -126,7 +126,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const String & part
 
 void MergeTreePartition::store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    if (!storage.partition_expr)
+    if (!storage.partition_key_expr)
         return;
 
     WriteBufferFromFile out(part_path + "partition.dat");

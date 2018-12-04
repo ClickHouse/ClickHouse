@@ -21,8 +21,9 @@ struct AlterCommand
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
-        MODIFY_PRIMARY_KEY,
         COMMENT_COLUMN,
+        MODIFY_PRIMARY_KEY,
+        MODIFY_ORDER_BY,
         UKNOWN_TYPE,
     };
 
@@ -46,6 +47,9 @@ struct AlterCommand
     /// For MODIFY_PRIMARY_KEY
     ASTPtr primary_key;
 
+    /// For MODIFY_ORDER_BY
+    ASTPtr order_by;
+
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
@@ -56,8 +60,7 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(ColumnsDescription & columns_description) const;
-
+    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
     /// Checks that not only metadata touched by that command
     bool is_mutable() const;
 };
@@ -68,6 +71,9 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
+    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+
+    /// For storages that don't support MODIFY_PRIMARY_KEY or MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);

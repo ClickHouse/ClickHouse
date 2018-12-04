@@ -17,11 +17,13 @@ ConfigReloader::ConfigReloader(
         const std::string & include_from_path_,
         const std::string & preprocessed_dir_,
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
+        const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_,
         bool already_loaded)
     : path(path_), include_from_path(include_from_path_)
     , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))
+    , zk_changed_event(zk_changed_event_)
     , updater(std::move(updater_))
 {
     if (!already_loaded)
@@ -40,7 +42,7 @@ ConfigReloader::~ConfigReloader()
     try
     {
         quit = true;
-        zk_node_cache.getChangedEvent().set();
+        zk_changed_event->set();
 
         if (thread.joinable())
             thread.join();
@@ -60,7 +62,7 @@ void ConfigReloader::run()
     {
         try
         {
-            bool zk_changed = zk_node_cache.getChangedEvent().tryWait(std::chrono::milliseconds(reload_interval).count());
+            bool zk_changed = zk_changed_event->tryWait(std::chrono::milliseconds(reload_interval).count());
             if (quit)
                 return;
 
@@ -90,7 +92,7 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-                        zk_node_cache, fallback_to_preprocessed);
+                    zk_node_cache, zk_changed_event, fallback_to_preprocessed);
         }
         catch (...)
         {

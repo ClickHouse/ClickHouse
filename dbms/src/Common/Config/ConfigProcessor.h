@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>
@@ -22,6 +23,7 @@
 namespace zkutil
 {
     class ZooKeeperNodeCache;
+    using EventPtr = std::shared_ptr<Poco::Event>;
 }
 
 namespace DB
@@ -61,7 +63,8 @@ public:
     /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
-        zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr);
+        zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
+        const zkutil::EventPtr & zk_changed_event = nullptr);
 
 
     /// loadConfig* functions apply processConfig and create Poco::Util::XMLConfiguration.
@@ -87,6 +90,7 @@ public:
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
     /// Save preprocessed config to specified directory.
@@ -134,6 +138,7 @@ private:
             XMLDocumentPtr include_from,
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
+            const zkutil::EventPtr & zk_changed_event,
             std::unordered_set<std::string> & contributing_zk_paths);
 };
 

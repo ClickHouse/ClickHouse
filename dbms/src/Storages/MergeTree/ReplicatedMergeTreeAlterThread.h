@@ -3,6 +3,7 @@
 #include <thread>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Core/Types.h>
 #include <common/logger_useful.h>
 
@@ -31,6 +32,7 @@ private:
     void run();
 
     StorageReplicatedMergeTree & storage;
+    zkutil::ZooKeeperNodeCache zk_node_cache;
     String log_name;
     Logger * log;
     BackgroundSchedulePool::TaskHolder task;
