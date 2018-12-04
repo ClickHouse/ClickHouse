@@ -49,4 +49,17 @@
 - Просмотр таблиц;
 - Автодополнение команд.
 
+## DataGrip
+
+[DataGrip](https://www.jetbrains.com/datagrip/) — это IDE для баз данных о JetBrains с выделенной поддержкой ClickHouse. Он также встроен в другие инструменты на основе IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm и другие.
+
+Основные возможности:
+
+- Очень быстрое дополнение кода.
+- Подсветка синтаксиса для SQL диалекта ClickHouse.
+- Поддержка функций, специфичных для ClickHouse, например вложенных столбцов, движков таблиц.
+- Редактор данных.
+- Рефакторинги.
+- Поиск и навигация.
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party_gui/) <!--hide-->
