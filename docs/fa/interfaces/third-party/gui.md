@@ -2,7 +2,9 @@
 
 # interface های visual توسعه دهندگان third-party
 
-## Tabix
+## متن باز
+
+### Tabix
 
 interface تحت وب برای ClickHouse در پروژه [Tabix](https://github.com/tabixio/tabix).
 
@@ -17,7 +19,7 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 [مستندات Tabix](https://tabix.io/doc/).
 
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) نرم افزار Desktop برای سیستم عامل های Linux و OSX و Windows می باشد..
 
@@ -37,7 +39,9 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - مانیتورینگ کافکا و جداول replicate (بزودی);
 - و بسیاری از ویژگی های دیگر برای شما.
 
-## DBeaver
+## تجاری
+
+### DBeaver
 
 [DBeaver](https://dbeaver.io/) - مشتری دسکتاپ دسکتاپ دسکتاپ با پشتیبانی ClickHouse.
 
@@ -47,7 +51,7 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - پیش نمایش جدول
 - تکمیل خودکار
 
-## DataGrip
+### DataGrip
 
 [DataGrip](https://www.jetbrains.com/datagrip/) IDE پایگاه داده از JetBrains با پشتیبانی اختصاصی برای ClickHouse است. این ابزار همچنین به سایر ابزارهای مبتنی بر IntelliJ تعبیه شده است: PyCharm، IntelliJ IDEA، GoLand، PhpStorm و دیگران.
 

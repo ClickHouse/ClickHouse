@@ -1,6 +1,8 @@
 # Визуальные интерфейсы от сторонних разработчиков
 
-## Tabix
+## С открытым исходным кодом
+
+### Tabix
 
 Веб-интерфейс для ClickHouse в проекте [Tabix](https://github.com/tabixio/tabix).
 
@@ -14,7 +16,7 @@
 
 [Документация Tabix](https://tabix.io/doc/).
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) — UI/IDE для OSX, Linux и Windows.
 
@@ -39,7 +41,9 @@
 - Управление кластером;
 - Мониторинг реплицированных и Kafka таблиц.
 
-## DBeaver
+## Коммерческие
+
+### DBeaver
 
 [DBeaver](https://dbeaver.io/) - универсальный desktop клиент баз данных с поддержкой ClickHouse.
 
@@ -49,7 +53,7 @@
 - Просмотр таблиц;
 - Автодополнение команд.
 
-## DataGrip
+### DataGrip
 
 [DataGrip](https://www.jetbrains.com/datagrip/) — это IDE для баз данных о JetBrains с выделенной поддержкой ClickHouse. Он также встроен в другие инструменты на основе IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm и другие.
 
