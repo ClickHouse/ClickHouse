@@ -1653,7 +1653,7 @@ public:
 
 protected:
     /// Merge NULL key data from hash table `src` into `dst`.
-    template <typename Method, typename Table>
+    template <typename Table>
     void mergeDataNullKey(
             Table & table_dst,
             Table & table_src,
