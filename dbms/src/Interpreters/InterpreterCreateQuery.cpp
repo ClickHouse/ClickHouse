@@ -4,6 +4,8 @@
 
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <Common/escapeForFileName.h>
 
@@ -40,6 +42,8 @@
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+
+#include <Dictionaries/DictionaryFactory.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -625,6 +629,37 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 }
 
 
+using Poco::Util::AbstractConfiguration;
+using Poco::AutoPtr;
+AutoPtr<AbstractConfiguration> getConfigFromAST(ASTCreateQuery & create)
+{
+    (void)create;
+    return {};
+}
+
+
+BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
+{
+    String dictionary_name = create.dictionary;
+    String database_name = context.getCurrentDatabase();
+
+    auto guard = context.getDDLGuard(database_name, dictionary_name);
+    DatabasePtr database = context.getDatabase(database_name);
+    if (database->isDictionaryExist(context, dictionary_name))
+    {
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception("Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    }
+
+    AutoPtr<Poco::Util::AbstractConfiguration> config;
+    auto res = DictionaryFactory::instance().create(dictionary_name, *config, "", context);
+
+    return {};
+}
+
+
 BlockIO InterpreterCreateQuery::execute()
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
@@ -632,12 +667,18 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-    if (!create.database.empty() && create.table.empty())
+    if (!create.database.empty() && create.table.empty() && create.dictionary.empty())
     {
         return createDatabase(create);
     }
-    else
+    else if (create.dictionary.empty())
+    {
         return createTable(create);
+    }
+    else
+    {
+        return createDictionary(create);
+    }
 }
 
 
@@ -655,7 +696,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
         return;
 
     /// CREATE|ATTACH DATABASE
-    if (!create.database.empty() && create.table.empty())
+    if (!create.database.empty() && create.table.empty() && create.dictionary.empty())
     {
         if (readonly)
             throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
@@ -666,9 +707,17 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
     if (create.temporary && readonly >= 2)
         return;
 
-    if (readonly)
-        throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+    if (!create.table.empty())
+    {
+        if (readonly)
+            throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
 
-    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+        throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+    }
+
+    if (readonly)
+        throw Exception("Cannot create dictionary in readonly mode", ErrorCodes::READONLY);
+
+    throw Exception("Cannot create dictionary. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 }

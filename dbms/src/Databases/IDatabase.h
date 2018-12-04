@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Dictionaries/IDictionary.h>
 #include <Storages/ColumnsDescription.h>
 #include <ctime>
 #include <memory>
@@ -76,6 +77,16 @@ public:
     virtual StoragePtr tryGetTable(
         const Context & context,
         const String & name) const = 0;
+
+    /// Check the existence of the dictionary.
+    virtual bool isDictionaryExist(
+        const Context & context,
+        const String & name) const = 0;
+
+    /// Get the dictionary for work. Return nullptr if there is no dictionary.
+    virtual DictionaryPtr tryGetDictionary(
+        const Context & context,
+        const String & dictionary_name) const = 0;
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
