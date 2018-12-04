@@ -354,7 +354,9 @@ void RangeHashedDictionary::getItemsImpl(
             out[i] = static_cast<OutputType>(val_it != std::end(ranges_and_values) ? val_it->value : null_value);
         }
         else
+        {
             out[i] = static_cast<OutputType>(null_value);
+        }
     }
 
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);

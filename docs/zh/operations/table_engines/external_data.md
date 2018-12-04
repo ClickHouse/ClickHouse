@@ -1,36 +1,34 @@
-<a name="external-data"></a>
-
 # External Data for Query Processing
 
-ClickHouse allows sending a server the data that is needed for processing a query, together with a SELECT query. This data is put in a temporary table (see the section "Temporary tables") and can be used in the query (for example, in IN operators).
+ClickHouse 允许向服务器发送处理查询所需的数据以及 SELECT 查询。这些数据放在一个临时表中（请参阅 "临时表" 一节），可以在查询中使用（例如，在 IN 操作符中）。
 
-For example, if you have a text file with important user identifiers, you can upload it to the server along with a query that uses filtration by this list.
+例如，如果您有一个包含重要用户标识符的文本文件，则可以将其与使用此列表过滤的查询一起上传到服务器。
 
-If you need to run more than one query with a large volume of external data, don't use this feature. It is better to upload the data to the DB ahead of time.
+如果需要使用大量外部数据运行多个查询，请不要使用该特性。最好提前把数据上传到数据库。
 
-External data can be uploaded using the command-line client (in non-interactive mode), or using the HTTP interface.
+可以使用命令行客户端（在非交互模式下）或使用 HTTP 接口上传外部数据。
 
-In the command-line client, you can specify a parameters section in the format
+在命令行客户端中，您可以指定格式的参数部分
 
 ```bash
 --external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 ```
 
-You may have multiple sections like this, for the number of tables being transmitted.
+对于传输的表的数量，可能有多个这样的部分。
 
-**--external** – Marks the beginning of a clause.
-**--file** – Path to the file with the table dump, or -, which refers to stdin.
-Only a single table can be retrieved from stdin.
+**--external** – 标记子句的开始。
+**--file** – 带有表存储的文件的路径，或者，它指的是STDIN。
+只能从 stdin 中检索单个表。
 
-The following parameters are optional: **--name**– Name of the table. If omitted, _data is used.
-**--format** – Data format in the file. If omitted, TabSeparated is used.
+以下的参数是可选的：**--name** – 表的名称，如果省略，则采用 _data。
+**--format** – 文件中的数据格式。 如果省略，则使用 TabSeparated。
 
-One of the following parameters is required:**--types** – A list of comma-separated column types. For example: `UInt64,String`. The columns will be named _1, _2, ...
-**--structure**– The table structure in the format`UserID UInt64`, `URL String`. Defines the column names and types.
+以下的参数必选一个：**--types** – 逗号分隔列类型的列表。例如：`UInt64,String`。列将被命名为 _1，_2，...
+**--structure**– 表结构的格式 `UserID UInt64`，`URL String`。定义列的名字以及类型。
 
-The files specified in 'file' will be parsed by the format specified in 'format', using the data types specified in 'types' or 'structure'. The table will be uploaded to the server and accessible there as a temporary table with the name in 'name'.
+在 "file" 中指定的文件将由 "format" 中指定的格式解析，使用在 "types" 或 "structure" 中指定的数据类型。该表将被上传到服务器，并在作为名称为 "name"临时表。
 
-Examples:
+示例：
 
 ```bash
 echo -ne "1\n2\n3\n" | clickhouse-client --query="SELECT count() FROM test.visits WHERE TraficSourceID IN _data" --external --file=- --types=Int8
@@ -43,9 +41,9 @@ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, coun
 /bin/sync       1
 ```
 
-When using the HTTP interface, external data is passed in the multipart/form-data format. Each table is transmitted as a separate file. The table name is taken from the file name. The 'query_string' is passed the parameters 'name_format', 'name_types', and 'name_structure', where 'name' is the name of the table that these parameters correspond to. The meaning of the parameters is the same as when using the command-line client.
+当使用HTTP接口时，外部数据以 multipart/form-data 格式传递。每个表作为一个单独的文件传输。表名取自文件名。"query_string" 传递参数 "name_format"、"name_types"和"name_structure"，其中 "name" 是这些参数对应的表的名称。参数的含义与使用命令行客户端时的含义相同。
 
-Example:
+示例：
 
 ```bash
 cat /etc/passwd | sed 's/:/\t/g' > passwd.tsv
@@ -58,7 +56,7 @@ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+count(
 /bin/sync       1
 ```
 
-For distributed query processing, the temporary tables are sent to all the remote servers.
+对于分布式查询，将临时表发送到所有远程服务器。
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/external_data/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/external_data/) <!--hide-->
