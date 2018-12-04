@@ -1514,11 +1514,49 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 
 template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataNullKey(
+    Table & table_dst,
+    Table & table_src,
+    Arena * arena) const
+{
+    if constexpr (Method::low_cardinality_optimization)
+    {
+        if (table_src.hasNullKeyData())
+        {
+            if (!table_dst.hasNullKeyData())
+            {
+                table_dst.hasNullKeyData() = true;
+                table_dst.getNullKeyData() = table_src.getNullKeyData();
+            }
+            else
+            {
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->merge(
+                            table_dst.getNullKeyData() + offsets_of_aggregate_states[i],
+                            table_src.getNullKeyData() + offsets_of_aggregate_states[i],
+                            arena);
+
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->destroy(
+                            table_src.getNullKeyData() + offsets_of_aggregate_states[i]);
+            }
+
+            table_src.hasNullKeyData() = false;
+            table_src.getNullKeyData() = nullptr;
+        }
+    }
+}
+
+
+template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst,
     Table & table_src,
     Arena * arena) const
 {
+    if constexpr (Method::low_cardinality_optimization)
+        mergeDataNullKey(table_dst, table_src, arena);
+
     for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
         typename Table::iterator res_it;
@@ -1556,6 +1594,10 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
+    /// Note : will create data for NULL key if not exist
+    if constexpr (Method::low_cardinality_optimization)
+        mergeDataNullKey(table_dst, table_src, arena);
+
     for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
         typename Table::iterator res_it = table_dst.find(it->first, it.getHash());
@@ -1586,6 +1628,10 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
+    /// Note : will create data for NULL key if not exist
+    if constexpr (Method::low_cardinality_optimization)
+        mergeDataNullKey(table_dst, table_src, arena);
+
     for (auto it = table_src.begin(); it != table_src.end(); ++it)
     {
         decltype(it) res_it = table_dst.find(it->first, it.getHash());
