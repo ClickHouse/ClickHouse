@@ -209,13 +209,8 @@ void JSONEachRowRowInputStream::readNestedData(const String & name, MutableColum
     nested_prefix_length = 0;
 }
 
-bool JSONEachRowRowInputStream::read(MutableColumns & columns)
-{
-    RowReadExtention tmp;
-    return extendedRead(columns, tmp);
-}
 
-bool JSONEachRowRowInputStream::extendedRead(MutableColumns & columns, RowReadExtention & ext)
+bool JSONEachRowRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 {
     skipWhitespaceIfAny(istr);
 

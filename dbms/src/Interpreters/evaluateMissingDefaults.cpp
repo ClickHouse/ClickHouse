@@ -37,7 +37,7 @@ static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & requi
 void evaluateMissingDefaults(Block & block,
     const NamesAndTypesList & required_columns,
     const ColumnDefaults & column_defaults,
-    const Context & context, bool with_block_copy)
+    const Context & context, bool save_unneded_columns)
 {
     if (column_defaults.empty())
         return;
@@ -46,7 +46,7 @@ void evaluateMissingDefaults(Block & block,
     if (!default_expr_list)
         return;
 
-    if (!with_block_copy)
+    if (!save_unneded_columns)
     {
         auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
         ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
@@ -56,7 +56,6 @@ void evaluateMissingDefaults(Block & block,
     /** ExpressionAnalyzer eliminates "unused" columns, in order to ensure their safety
       * we are going to operate on a copy instead of the original block */
     Block copy_block{block};
-    /// evaluate default values for defaulted columns
 
     auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
     ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(copy_block);

@@ -11,7 +11,7 @@ namespace DB
 {
 
 /// A way to set some extentions to read and return extra information too. IRowInputStream.extendedRead() output.
-struct RowReadExtention
+struct RowReadExtension
 {
     /// IRowInputStream.extendedRead() output value.
     /// Contains one bit per column in resently read row. IRowInputStream could leave it empty, or partialy set.
@@ -27,8 +27,7 @@ public:
     /** Read next row and append it to the columns.
       * If no more rows - return false.
       */
-    virtual bool read(MutableColumns & columns) = 0;
-    virtual bool extendedRead(MutableColumns & columns, RowReadExtention & ) { return read(columns); }
+    virtual bool read(MutableColumns & columns, RowReadExtension & extra) = 0;
 
     virtual void readPrefix() {}                /// delimiter before begin of result
     virtual void readSuffix() {}                /// delimiter after end of result

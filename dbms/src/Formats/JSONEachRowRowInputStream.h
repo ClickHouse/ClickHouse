@@ -22,8 +22,7 @@ class JSONEachRowRowInputStream : public IRowInputStream
 public:
     JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings);
 
-    bool read(MutableColumns & columns) override;
-    bool extendedRead(MutableColumns & columns, RowReadExtention & ext) override;
+    bool read(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
