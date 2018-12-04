@@ -38,8 +38,8 @@ target_include_directories(parquet_shared PUBLIC ${ClickHouse_SOURCE_DIR}/contri
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake)
 #configure_file("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/config.h.in" "${ClickHouse_BINARY_DIR}/contrib/thrift/thrift/config.h")
 
-#target_link_libraries(parquet_static PRIVATE thrift_static)
-#target_link_libraries(parquet_shared PRIVATE thrift)
+target_link_libraries(parquet_static PRIVATE thrift_static)
+target_link_libraries(parquet_shared PRIVATE thrift)
 
 target_include_directories(parquet_static PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
 target_include_directories(parquet_shared PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
@@ -88,6 +88,15 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/util/thread-pool.cc
   ${LIBRARY_DIR}/util/utf8.cc
 )
+
+  set(ARROW_SRCS ${ARROW_SRCS}
+    ${LIBRARY_DIR}/compute/context.cc
+    ${LIBRARY_DIR}/compute/kernels/boolean.cc
+    ${LIBRARY_DIR}/compute/kernels/cast.cc
+    ${LIBRARY_DIR}/compute/kernels/hash.cc
+    ${LIBRARY_DIR}/compute/kernels/util-internal.cc
+  )
+
 #list(TRANSFORM ARROW_SRCS PREPEND ${LIBRARY_DIR}/) # cmake 3.12
 add_library(arrow_static STATIC ${ARROW_SRCS})
 add_library(arrow_shared SHARED ${ARROW_SRCS})
