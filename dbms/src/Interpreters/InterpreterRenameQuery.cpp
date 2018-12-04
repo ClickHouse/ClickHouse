@@ -101,7 +101,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     for (const auto & names : unique_tables_from)
         if (auto table = context.tryGetTable(names.database_name, names.table_name))
-            locks.emplace_back(table->lockForAlter(__PRETTY_FUNCTION__));
+            locks.emplace_back(table->lockForAlter());
 
     /** All tables are locked. If there are more than one rename in chain,
       *  we need to hold global lock while doing all renames. Order matters to avoid deadlocks.
