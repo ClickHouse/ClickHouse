@@ -53,16 +53,16 @@ public:
 
     const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
     void setBit(size_t column_idx, size_t row_idx);
-    bool empty() const { return columns_defaults.empty(); }
-    size_t size() const { return columns_defaults.size(); }
-    void clear() { columns_defaults.clear(); }
+    bool empty() const { return rows_mask_by_column_id.empty(); }
+    size_t size() const { return rows_mask_by_column_id.size(); }
+    void clear() { rows_mask_by_column_id.clear(); }
 
 private:
     using RowsMaskByColumnId = std::unordered_map<size_t, RowsBitMask>;
 
-    /// If columns_defaults[column_id][row_id] is true related value in Block should be replaced with column default.
+    /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
     /// It could contain less columns and rows then related block.
-    RowsMaskByColumnId columns_defaults;
+    RowsMaskByColumnId rows_mask_by_column_id;
 };
 
 }
