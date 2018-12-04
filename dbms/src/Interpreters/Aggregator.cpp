@@ -1513,7 +1513,7 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 }
 
 
-template <typename Method, typename Table>
+template <typename Table>
 void NO_INLINE Aggregator::mergeDataNullKey(
     Table & table_dst,
     Table & table_src,
