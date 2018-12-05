@@ -25,7 +25,7 @@ if (ENABLE_JEMALLOC)
 
     if ((NOT JEMALLOC_LIBRARIES OR NOT JEMALLOC_INCLUDE_DIR) AND NOT MISSING_INTERNAL_JEMALLOC_LIBRARY)
         set (JEMALLOC_LIBRARIES "jemalloc")
-        set (JEMALLOC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc/include")
+        set (JEMALLOC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc-cmake/include" "${ClickHouse_SOURCE_DIR}/contrib/jemalloc-cmake/include_linux_x86_64")
         set (USE_INTERNAL_JEMALLOC_LIBRARY 1)
     endif ()
 

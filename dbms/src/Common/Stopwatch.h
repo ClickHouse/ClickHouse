@@ -28,15 +28,15 @@ public:
       */
     Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { start(); }
 
-    void start()                        { start_ns = nanoseconds(); is_running = true; }
-    void stop()                         { stop_ns = nanoseconds(); is_running = false; }
-    void reset()                        { start_ns = 0; stop_ns = 0; is_running = false; }
-    void restart()                      { start(); }
-    UInt64 elapsed() const              { return elapsedNanoseconds(); }
-    UInt64 elapsedNanoseconds() const   { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
-    UInt64 elapsedMicroseconds() const  { return elapsedNanoseconds() / 1000U; }
-    UInt64 elapsedMilliseconds() const  { return elapsedNanoseconds() / 1000000UL; }
-    double elapsedSeconds() const       { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
+    void start()                       { start_ns = nanoseconds(); is_running = true; }
+    void stop()                        { stop_ns = nanoseconds(); is_running = false; }
+    void reset()                       { start_ns = 0; stop_ns = 0; is_running = false; }
+    void restart()                     { start(); }
+    UInt64 elapsed() const             { return elapsedNanoseconds(); }
+    UInt64 elapsedNanoseconds() const  { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
+    UInt64 elapsedMicroseconds() const { return elapsedNanoseconds() / 1000U; }
+    UInt64 elapsedMilliseconds() const { return elapsedNanoseconds() / 1000000UL; }
+    double elapsedSeconds() const      { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
 private:
     UInt64 start_ns = 0;
@@ -53,10 +53,10 @@ class AtomicStopwatch
 public:
     AtomicStopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
 
-    void restart()                      { start_ns = nanoseconds(); }
-    UInt64 elapsed() const              { return nanoseconds() - start_ns; }
-    UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }
-    double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
+    void restart()                     { start_ns = nanoseconds(); }
+    UInt64 elapsed() const             { return nanoseconds() - start_ns; }
+    UInt64 elapsedMilliseconds() const { return elapsed() / 1000000UL; }
+    double elapsedSeconds() const      { return static_cast<double>(elapsed()) / 1000000000ULL; }
 
     /** If specified amount of time has passed, then restarts timer and returns true.
       * Otherwise returns false.
@@ -140,10 +140,10 @@ struct StopwatchRUsage
 {
     StopwatchRUsage() = default;
 
-    void start()    { start_ts = Timestamp::current(); is_running = true; }
-    void stop()     { stop_ts = Timestamp::current(); is_running = false; }
-    void reset()    { start_ts = Timestamp(); stop_ts = Timestamp(); is_running = false; }
-    void restart()  { start(); }
+    void start()   { start_ts = Timestamp::current(); is_running = true; }
+    void stop()    { stop_ts = Timestamp::current(); is_running = false; }
+    void reset()   { start_ts = Timestamp(); stop_ts = Timestamp(); is_running = false; }
+    void restart() { start(); }
 
     UInt64 elapsed(bool count_user = true, bool count_sys = true) const
     {

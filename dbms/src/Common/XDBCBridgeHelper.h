@@ -68,6 +68,7 @@ protected:
 public:
     using Configuration = Poco::Util::AbstractConfiguration;
 
+    Context & context;
     const Configuration & config;
 
     static constexpr inline auto DEFAULT_HOST = "localhost";
@@ -78,8 +79,8 @@ public:
     static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
-    XDBCBridgeHelper(const Configuration & config_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
-        : http_timeout(http_timeout_), connection_string(connection_string_), config(config_)
+    XDBCBridgeHelper(Context & global_context_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
+        : http_timeout(http_timeout_), connection_string(connection_string_), context(global_context_), config(context.getConfigRef())
     {
         size_t bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
         std::string bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
@@ -210,7 +211,8 @@ private:
     /* Contains logic for instantiation of the bridge instance */
     void startBridge() const
     {
-        BridgeHelperMixin::startBridge(config, log, http_timeout);
+        auto cmd = BridgeHelperMixin::startBridge(config, log, http_timeout);
+        context.addXDBCBridgeCommand(std::move(cmd));
     }
 };
 
@@ -230,7 +232,7 @@ struct JDBCBridgeMixin
         return "JDBC";
     }
 
-    static void startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, const Poco::Timespan &)
+    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, const Poco::Timespan &)
     {
         throw Exception("jdbc-bridge is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
     }
@@ -253,11 +255,13 @@ struct ODBCBridgeMixin
         return "ODBC";
     }
 
-    static void startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
+    static std::unique_ptr<ShellCommand> startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
         /// Path to executable folder
         Poco::Path path{config.getString("application.dir", "/usr/bin")};
 
+
+        std::vector<std::string> cmd_args;
         path.setFileName(
 #if CLICKHOUSE_SPLIT_BINARY
             "clickhouse-odbc-bridge"
@@ -268,34 +272,35 @@ struct ODBCBridgeMixin
 
         std::stringstream command;
 
-        command << path.toString() <<
-#if CLICKHOUSE_SPLIT_BINARY
-            " "
-#else
-            " odbc-bridge "
+#if !CLICKHOUSE_SPLIT_BINARY
+        cmd_args.push_back("odbc-bridge");
 #endif
-            ;
 
-        command << "--http-port " << config.getUInt(configPrefix() + ".port", DEFAULT_PORT) << ' ';
-        command << "--listen-host " << config.getString(configPrefix() + ".listen_host", XDBCBridgeHelper<ODBCBridgeMixin>::DEFAULT_HOST)
-                << ' ';
-        command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
+        cmd_args.push_back("--http-port");
+        cmd_args.push_back(std::to_string(config.getUInt(configPrefix() + ".port", DEFAULT_PORT)));
+        cmd_args.push_back("--listen-host");
+        cmd_args.push_back(config.getString(configPrefix() + ".listen_host", XDBCBridgeHelper<ODBCBridgeMixin>::DEFAULT_HOST));
+        cmd_args.push_back("--http-timeout");
+        cmd_args.push_back(std::to_string(http_timeout.totalMicroseconds()));
         if (config.has("logger." + configPrefix() + "_log"))
-            command << "--log-path " << config.getString("logger." + configPrefix() + "_log") << ' ';
+        {
+            cmd_args.push_back("--log-path");
+            cmd_args.push_back(config.getString("logger." + configPrefix() + "_log"));
+        }
         if (config.has("logger." + configPrefix() + "_errlog"))
-            command << "--err-log-path " << config.getString("logger." + configPrefix() + "_errlog") << ' ';
+        {
+            cmd_args.push_back("--err-log-path");
+            cmd_args.push_back(config.getString("logger." + configPrefix() + "_errlog"));
+        }
         if (config.has("logger." + configPrefix() + "_level"))
-            command << "--log-level " << config.getString("logger." + configPrefix() + "_level") << ' ';
-        command << "&"; /// we don't want to wait this process
+        {
+            cmd_args.push_back("--log-level");
+            cmd_args.push_back(config.getString("logger." + configPrefix() + "_level"));
+        }
 
-        auto command_str = command.str();
+        LOG_TRACE(log, "Starting " + serviceAlias());
 
-        std::cerr << command_str << std::endl;
-
-        LOG_TRACE(log, "Starting " + serviceAlias() + " with command: " << command_str);
-
-        auto cmd = ShellCommand::execute(command_str);
-        cmd->wait();
+        return ShellCommand::executeDirect(path.toString(), cmd_args, true);
     }
 };
 }

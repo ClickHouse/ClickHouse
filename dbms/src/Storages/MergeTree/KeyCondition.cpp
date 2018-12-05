@@ -663,7 +663,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             key_arg_pos = 1;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            &&  canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+            && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
         {
             key_arg_pos = 1;
             is_constant_transformed = true;
