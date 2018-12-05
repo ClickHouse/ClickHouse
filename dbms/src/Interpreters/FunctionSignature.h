@@ -151,6 +151,14 @@ struct Key
     }
 };
 
+
+inline size_t getCommonIndex(size_t i, size_t j)
+{
+    if (i && j && i != j)
+        throw Exception("Different indices of variables in subexpression", ErrorCodes::LOGICAL_ERROR);
+    return i ? i : j;
+}
+
 /** Captured type or a value of a constant.
   */
 struct Value
@@ -165,6 +173,11 @@ struct Value
         return value.index() == rhs.value.index()
             && ((value.index() == 0 && std::get<DataTypePtr>(value)->equals(*std::get<DataTypePtr>(rhs.value)))
                 || (value.index() == 1 && std::get<Field>(value) == std::get<Field>(rhs.value)));
+    }
+
+    const DataTypePtr & type() const
+    {
+        return std::get<DataTypePtr>(value);
     }
 
     /// For implementation of constraints.
@@ -337,7 +350,10 @@ public:
         return vars.assignOrCheck(var_key.incrementIndex(iteration), what);
     }
 
-    size_t getIndex() const override { return var_key.index; }
+    size_t getIndex() const override
+    {
+        return getCommonIndex(var_key.index, impl->getIndex());
+    }
 };
 
 
@@ -363,14 +379,7 @@ struct ArgumentDescription
     /// Extract common index of variables participating in expression.
     size_t getIndex() const
     {
-        size_t arg_name_index = argument_name.index;
-        size_t type_matcher_index = type_matcher->getIndex();
-
-        if (arg_name_index && type_matcher_index && arg_name_index != type_matcher_index)
-            throw Exception("Different indices of variables in subexpression", ErrorCodes::LOGICAL_ERROR);
-        if (arg_name_index)
-            return arg_name_index;
-        return type_matcher_index;
+        return getCommonIndex(argument_name.index, type_matcher->getIndex());
     }
 };
 
@@ -424,6 +433,7 @@ public:
 
     bool hasEnoughContext(const Variables & context, size_t iteration) const override
     {
+        std::cerr << key.incrementIndex(iteration).toString() << ", " << (int)context.has(key.incrementIndex(iteration)) << "\n";
         return context.has(key.incrementIndex(iteration));
     }
 
@@ -481,18 +491,25 @@ public:
                 args.emplace_back(child->apply(context, iteration));
 
                 size_t current_index = child->getIndex();
-                if (!current_index || prev_index != current_index)
+                if (!current_index || (prev_index && prev_index != current_index))
                     group_to_repeat.clear();
                 else if (current_index)
                     group_to_repeat.emplace_back(child);
             }
             else
             {
+                if (group_to_repeat.empty())
+                     throw Exception("No group to repeat in type function", ErrorCodes::LOGICAL_ERROR);
+
+                std::cerr << "group size: " << group_to_repeat.size() << "\n";
+
                 /// Repeat accumulated group of children while there are enough variables in context.
                 size_t repeat_iteration = iteration;
                 while (true)
                 {
                     ++repeat_iteration;
+
+                    std::cerr << "repeat iteration: " << repeat_iteration << "\n";
 
                     auto it = group_to_repeat.begin();
                     for (; it != group_to_repeat.end(); ++it)
@@ -521,16 +538,7 @@ public:
     {
         size_t res = 0;
         for (const auto & child : children)
-        {
-            size_t child_index = child->getIndex();
-            if (child_index)
-            {
-                if (!res)
-                    res = child_index;
-                else if (res != child_index)
-                    throw Exception("Different indices of variables in subexpression", ErrorCodes::LOGICAL_ERROR);
-            }
-        }
+            res = getCommonIndex(res, child->getIndex());
         return res;
     }
 };
@@ -657,6 +665,9 @@ private:
 public:
     EllipsisArgumentsGroup(const ArgumentsDescription & args) : args(args)
     {
+        for (const auto & arg : args)
+            std::cerr << "...: " << arg.type_matcher->name() << "\n";
+
         if (args.empty())
             throw Exception("Logical error: cannot repeat empty arguments group", ErrorCodes::LOGICAL_ERROR);
     }
@@ -711,17 +722,19 @@ struct VariadicFunctionSignature : public IFunctionSignature
                 std::cerr << "Appended " << current_signature.arguments_description.size() << " arguments\n";
             }
 
+            /// Successfully appended all groups.
             if (group_idx == num_groups)
             {
-                ++iterators[current_iterator_idx];
-
                 current_signature.return_type = return_type;
                 current_signature.constraints = constraints;
 
                 if (DataTypePtr res = current_signature.check(args))
                     return res;
+
+                /// Try to append more on next iteration.
+                ++iterators[current_iterator_idx];
             }
-            else
+            else    /// Cannot append group_idx because the result is too large
             {
                 if (group_idx + 1 == num_groups)
                     break;
@@ -1073,7 +1086,7 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const Arg
                 else if (prev_index != current_index)
                     break;
 
-                args.emplace_back(*it);
+                args.emplace(args.begin(), *it);
             }
 
             res = std::make_shared<EllipsisArgumentsGroup>(args);
