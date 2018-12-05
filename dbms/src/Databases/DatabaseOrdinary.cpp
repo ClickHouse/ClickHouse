@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -167,6 +168,11 @@ void DatabaseOrdinary::loadTables(
 
     auto task_function = [&](const String & table)
     {
+        SCOPE_EXIT(
+                if (++tables_processed == total_tables)
+                    all_tables_processed.set()
+        );
+
         /// Messages, so that it's not boring to wait for the server to load for a long time.
         if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
             || watch.compareAndRestart(PRINT_MESSAGE_EACH_N_SECONDS))
@@ -176,9 +182,6 @@ void DatabaseOrdinary::loadTables(
         }
 
         loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
-
-        if (++tables_processed == total_tables)
-            all_tables_processed.set();
     };
 
     for (const auto & filename : file_names)
