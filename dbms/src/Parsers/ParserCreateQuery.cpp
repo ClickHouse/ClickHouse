@@ -432,10 +432,12 @@ bool ParserDictionarySource::parseImpl(Pos &pos, ASTPtr &node, Expected &expecte
     if (!ident_with_optional_params.parse(pos, source, expected))
         return false;
 
-    auto & function = typeid_cast<ASTFunction &>(*source);
+    // auto & function = typeid_cast<ASTFunction &>(*source);
     auto query = std::make_shared<ASTSource>();
-    query->set(query->source, function);
+    query->set(query->source, source);
     node = query;
+
+    return true;
 }
 
 

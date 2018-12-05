@@ -78,9 +78,16 @@ class ASTSource : public IAST
 {
 public:
     ASTFunction * source = nullptr;
-    ASTPtr primary_key;
-    ASTFunction * lifetime = nullptr;
-    ASTFunction * layout = nullptr;
+    String password;
+    UInt16 port;
+    String user;
+    ASTFunction * replica = nullptr;
+    String database;
+    String table;
+    UInt64 min_lifetime;
+    UInt64 max_lifetime;
+    String layout;
+    IAST * primary_key;
 
     String getID() const override;
 

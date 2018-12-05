@@ -44,6 +44,7 @@
 #include <Databases/IDatabase.h>
 
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -53,6 +54,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
@@ -629,15 +631,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 }
 
 
-using Poco::Util::AbstractConfiguration;
-using Poco::AutoPtr;
-AutoPtr<AbstractConfiguration> getConfigFromAST(ASTCreateQuery & create)
-{
-    (void)create;
-    return {};
-}
-
-
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
 {
     String dictionary_name = create.dictionary;
@@ -650,12 +643,11 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
         if (create.if_not_exists)
             return {};
         else
-            throw Exception("Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+            throw Exception("Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    AutoPtr<Poco::Util::AbstractConfiguration> config;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = getDictionaryConfigFromAST(create);
     auto res = DictionaryFactory::instance().create(dictionary_name, *config, "", context);
-
     return {};
 }
 
