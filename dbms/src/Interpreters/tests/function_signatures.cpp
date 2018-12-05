@@ -169,13 +169,14 @@ Example: ./function_signatures "multiIf(cond1 UInt8, then1 T1, ..., else U) -> l
         Tokens tokens(signature.data(), signature.data() + signature.size());
         TokenIterator it(tokens);
 
+        FunctionSignature::Variables vars;
         FunctionSignature::FunctionSignaturePtr res;
         if (FunctionSignature::parseFunctionSignature(it, res))
         {
             std::cerr << "Parsed successfully.\n";
             std::cerr << res->toString() << "\n";
 
-            auto return_type = res->check(args);
+            auto return_type = res->check(args, vars);
 
             if (!return_type)
                 std::cerr << "Check fail.\n";

@@ -121,6 +121,7 @@ struct Key
     std::string toString() const { return index ? name + DB::toString(index) : name; }
 
     Key() {}
+    Key(const std::string & str, size_t index) : name(str), index(index) {}
 
     Key(const std::string & str) : name(str)
     {
@@ -220,6 +221,7 @@ void writeList(Container && container, WriteElem && write_elem, WriteDelim && wr
 
 /** Scratch space for checking function signature.
   * Variables are either assigned or checked for equality, but never reassigned.
+  * Special variable named "..." is used for matched length of ellipsis.
   */
 struct Variables
 {
@@ -258,6 +260,11 @@ struct Variables
             return it->second;
         else
             throw Exception("Variable " + key.toString() + " was not captured", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    void reset()
+    {
+        container.clear();
     }
 
     std::string toString() const
@@ -719,7 +726,7 @@ class IFunctionSignature
 {
 public:
     virtual ~IFunctionSignature() {}
-    virtual DataTypePtr check(const ColumnsWithTypeAndName & args) const = 0;
+    virtual DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars) const = 0;
     virtual std::string toString() const = 0 ;
 };
 
@@ -733,11 +740,9 @@ struct VariadicFunctionSignature : public IFunctionSignature
     TypeExpressionPtr return_type;
     TypeExpressions constraints;
 
-    DataTypePtr check(const ColumnsWithTypeAndName & args) const override
+    DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars) const override
     {
         /// Apply type matchers and assign variables.
-
-        Variables vars;
 
         std::cerr << "%\n";
 
@@ -777,10 +782,10 @@ struct AlternativeFunctionSignature : public IFunctionSignature
 {
     FunctionSignatures alternatives;
 
-    DataTypePtr check(const ColumnsWithTypeAndName & args) const override
+    DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars) const override
     {
         for (const auto & alternative : alternatives)
-            if (DataTypePtr res = alternative->check(args))
+            if (vars.reset(); DataTypePtr res = alternative->check(args, vars))
                 return res;
         return nullptr;
     }
