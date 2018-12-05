@@ -1,3 +1,14 @@
+## ClickHouse release 18.14.18, 2018-12-04
+
+### Bug fixes:
+* Fixed error in `dictGet...` function for dictionaries of type `range`, if one of the arguments is constant and other is not. [#3751](https://github.com/yandex/ClickHouse/pull/3751)
+* Fixed error that caused messages `netlink: '...': attribute type 1 has an invalid length` to be printed in Linux kernel log, that was happening only on fresh enough versions of Linux kernel. [#3749](https://github.com/yandex/ClickHouse/pull/3749)
+* Fixed segfault in function `empty` for argument of `FixedString` type. [#3703](https://github.com/yandex/ClickHouse/pull/3703)
+* Fixed excessive memory allocation when using large value of `max_query_size` setting (a memory chunk of `max_query_size` bytes was preallocated at once). [#3720](https://github.com/yandex/ClickHouse/pull/3720)
+
+### Build changes:
+* Fixed build with LLVM/Clang libraries of version 7 from the OS packages (these libraries are used for runtime query compilation). [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+
 ## ClickHouse release 18.14.17, 2018-11-30
 
 ### Bug fixes:
