@@ -25,6 +25,7 @@
 #include <IO/WriteBufferFromString.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #include <arrow/buffer.h>
 #include <arrow/api.h>
 #include <arrow/io/api.h>

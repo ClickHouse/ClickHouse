@@ -12,29 +12,21 @@
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/boost)
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/boost)
 
-if (NOT MSVC)
+if(NOT MSVC)
     add_definitions(-Wno-unused-variable -Wno-deprecated-declarations)
-endif ()
+endif()
 
-add_headers_and_sources(boost_program_options ${LIBRARY_DIR}/libs/program_options/src)
-add_library(boost_program_options_internal ${LINK_MODE} ${boost_program_options_sources})
-add_headers_and_sources(boost_filesystem ${LIBRARY_DIR}/libs/filesystem/src)
-add_library(boost_filesystem_internal ${LINK_MODE} ${boost_filesystem_sources})
-add_headers_and_sources(boost_system ${LIBRARY_DIR}/libs/system/src)
-add_library(boost_system_internal ${LINK_MODE} ${boost_system_sources})
-add_headers_and_sources(boost_regex ${LIBRARY_DIR}/libs/regex/src)
-add_library(boost_regex_internal ${LINK_MODE} ${boost_regex_sources})
+macro(add_boost_lib lib_name)
+    add_headers_and_sources(boost_${lib_name} ${LIBRARY_DIR}/libs/${lib_name}/src)
+    add_library(boost_${lib_name}_internal ${LINK_MODE} ${boost_${lib_name}_sources})
+    target_include_directories(boost_${lib_name}_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+    target_compile_definitions(boost_${lib_name}_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
+endmacro()
 
-target_link_libraries (boost_filesystem_internal PRIVATE boost_system_internal)
-
-target_include_directories (boost_program_options_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_filesystem_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_system_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_regex_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-
-target_compile_definitions (boost_program_options_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
-target_compile_definitions (boost_filesystem_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
-target_compile_definitions (boost_system_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
-target_compile_definitions (boost_regex_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
+add_boost_lib(system)
+add_boost_lib(program_options)
+add_boost_lib(filesystem)
+target_link_libraries(boost_filesystem_internal PRIVATE boost_system_internal)
+add_boost_lib(regex)
