@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class BlockExtraInfo;
+
 /** Adds to one stream additional block information that is specified
   * as the constructor parameter.
   */
