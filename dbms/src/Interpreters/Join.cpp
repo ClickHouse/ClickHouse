@@ -960,7 +960,7 @@ struct AdderNonJoined;
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 {
-    static void add(const Mapped & mapped,
+    static void add(const Mapped & mapped, size_t & rows_added,
         size_t num_columns_left, MutableColumns & columns_left,
         size_t num_columns_right, MutableColumns & columns_right)
     {
@@ -969,13 +969,15 @@ struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 
         for (size_t j = 0; j < num_columns_right; ++j)
             columns_right[j]->insertFrom(*mapped.block->getByPosition(j).column.get(), mapped.row_num);
+
+        ++rows_added;
     }
 };
 
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
-    static void add(const Mapped & mapped,
+    static void add(const Mapped & mapped, size_t & rows_added,
         size_t num_columns_left, MutableColumns & columns_left,
         size_t num_columns_right, MutableColumns & columns_right)
     {
@@ -986,6 +988,8 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 
             for (size_t j = 0; j < num_columns_right; ++j)
                 columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);
+
+            ++rows_added;
         }
     }
 };
@@ -1155,10 +1159,9 @@ private:
             if (it->second.getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, num_columns_left, columns_left, num_columns_right, columns_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, num_columns_left, columns_left, num_columns_right, columns_right);
 
-            ++rows_added;
-            if (rows_added == max_block_size)
+            if (rows_added >= max_block_size)
             {
                 ++it;
                 break;

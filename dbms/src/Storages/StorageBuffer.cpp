@@ -1,7 +1,11 @@
+#include <boost/range/algorithm_ext/erase.hpp>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <DataStreams/AddingDefaultBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
@@ -145,7 +149,65 @@ BlockInputStreams StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+        auto destination_lock = destination->lockStructure(false);
+
+        const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
+        {
+            return destination->hasColumn(column_name) &&
+                   destination->getColumn(column_name).type->equals(*getColumn(column_name).type);
+        });
+
+        if (dst_has_same_structure)
+        {
+            /// The destination table has the same structure of the requested columns and we can simply read blocks from there.
+            streams_from_dst = destination->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+        }
+        else
+        {
+            /// There is a struct mismatch and we need to convert read blocks from the destination table.
+            const Block header = getSampleBlock();
+            Names columns_intersection = column_names;
+            Block header_after_adding_defaults = header;
+            for (const String & column_name : column_names)
+            {
+                if (!destination->hasColumn(column_name))
+                {
+                    LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                        << " doesn't have column " << backQuoteIfNeed(column_name) << ". The default values are used.");
+                    boost::range::remove_erase(columns_intersection, column_name);
+                    continue;
+                }
+                const auto & dst_col = destination->getColumn(column_name);
+                const auto & col = getColumn(column_name);
+                if (!dst_col.type->equals(*col.type))
+                {
+                    LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                        << " has different type of column " << backQuoteIfNeed(column_name) << " ("
+                        << dst_col.type->getName() << " != " << col.type->getName() << "). Data from destination table are converted.");
+                    header_after_adding_defaults.getByName(column_name) = ColumnWithTypeAndName(dst_col.type, column_name);
+                }
+            }
+
+            if (columns_intersection.empty())
+            {
+                LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                    << " has no common columns with block in buffer. Block of data is skipped.");
+            }
+            else
+            {
+                streams_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
+                for (auto & stream : streams_from_dst)
+                {
+                    stream = std::make_shared<AddingDefaultBlockInputStream>(
+                                stream, header_after_adding_defaults, getColumns().defaults, context);
+                    stream = std::make_shared<ConvertingBlockInputStream>(
+                                context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);
+                }
+            }
+        }
+
+        for (auto & stream : streams_from_dst)
+            stream->addTableLock(destination_lock);
     }
 
     BlockInputStreams streams_from_buffers;
@@ -233,6 +295,9 @@ public:
         if (!block)
             return;
 
+        // Check table structure.
+        storage.check(block, true);
+
         size_t rows = block.rows();
         if (!rows)
             return;
@@ -241,23 +306,8 @@ public:
         if (!storage.no_destination)
         {
             destination = storage.context.tryGetTable(storage.destination_database, storage.destination_table);
-
-            if (destination)
-            {
-                if (destination.get() == &storage)
-                    throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
-
-                /// Check table structure.
-                try
-                {
-                    destination->check(block, true);
-                }
-                catch (Exception & e)
-                {
-                    e.addMessage("(when looking at destination table " + storage.destination_database + "." + storage.destination_table + ")");
-                    throw;
-                }
-            }
+            if (destination.get() == &storage)
+                throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
 
         size_t bytes = block.bytes();
@@ -548,7 +598,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
     if (!table)
     {
-        LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table << " doesn't exist. Block of data is discarded.");
+        LOG_ERROR(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table) << " doesn't exist. Block of data is discarded.");
         return;
     }
 
@@ -561,47 +611,45 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
       * This will support some of the cases (but not all) when the table structure does not match.
       */
     Block structure_of_destination_table = allow_materialized ? table->getSampleBlock() : table->getSampleBlockNonMaterialized();
-    Names columns_intersection;
-    columns_intersection.reserve(block.columns());
+    Block block_to_write;
     for (size_t i : ext::range(0, structure_of_destination_table.columns()))
     {
         auto dst_col = structure_of_destination_table.getByPosition(i);
         if (block.has(dst_col.name))
         {
-            if (!block.getByName(dst_col.name).type->equals(*dst_col.type))
+            auto column = block.getByName(dst_col.name);
+            if (!column.type->equals(*dst_col.type))
             {
-                LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table
-                    << " have different type of column " << dst_col.name << " ("
-                    << block.getByName(dst_col.name).type->getName() << " != " << dst_col.type->getName()
-                    << "). Block of data is discarded.");
-                return;
+                LOG_WARNING(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+                    << " have different type of column " << backQuoteIfNeed(column.name) << " ("
+                    << dst_col.type->getName() << " != " << column.type->getName()
+                    << "). Block of data is converted.");
+                column.column = castColumn(column, dst_col.type, context);
+                column.type = dst_col.type;
             }
 
-            columns_intersection.push_back(dst_col.name);
+            block_to_write.insert(column);
         }
     }
 
-    if (columns_intersection.empty())
+    if (block_to_write.columns() == 0)
     {
-        LOG_ERROR(log, "Destination table " << destination_database << "." << destination_table << " have no common columns with block in buffer. Block of data is discarded.");
+        LOG_ERROR(log, "Destination table " << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table)
+            << " have no common columns with block in buffer. Block of data is discarded.");
         return;
     }
 
-    if (columns_intersection.size() != block.columns())
+    if (block_to_write.columns() != block.columns())
         LOG_WARNING(log, "Not all columns from block in buffer exist in destination table "
-            << destination_database << "." << destination_table << ". Some columns are discarded.");
+            << backQuoteIfNeed(destination_database) << "." << backQuoteIfNeed(destination_table) << ". Some columns are discarded.");
 
     auto list_of_columns = std::make_shared<ASTExpressionList>();
     insert->columns = list_of_columns;
-    list_of_columns->children.reserve(columns_intersection.size());
-    for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column));
+    list_of_columns->children.reserve(block_to_write.columns());
+    for (const auto & column : block_to_write)
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
-
-    Block block_to_write;
-    for (const auto & name : columns_intersection)
-        block_to_write.insert(block.getByName(name));
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
@@ -630,11 +678,7 @@ void StorageBuffer::flushThread()
 
 void StorageBuffer::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    for (const auto & param : params)
-        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-            throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
-
-    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+    auto lock = lockStructureForAlter();
 
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);

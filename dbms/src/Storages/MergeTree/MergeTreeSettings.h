@@ -91,6 +91,10 @@ struct MergeTreeSettings
     /** Limit parallel fetches */                                                                             \
     M(SettingUInt64, replicated_max_parallel_fetches, 0)                                                      \
     M(SettingUInt64, replicated_max_parallel_fetches_for_table, 0)                                            \
+                                                                                                              \
+    /** Limit parallel fetches from endpoint (actually pool size) */                                          \
+    M(SettingUInt64, replicated_max_parallel_fetches_for_host, DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)\
+                                                                                                              \
     /** Limit parallel sends */                                                                               \
     M(SettingUInt64, replicated_max_parallel_sends, 0)                                                        \
     M(SettingUInt64, replicated_max_parallel_sends_for_table, 0)                                              \
@@ -152,7 +156,7 @@ struct MergeTreeSettings
     M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024)
 
     /// Settings that should not change after the creation of a table.
-#define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \
+#define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
 
 #define DECLARE(TYPE, NAME, DEFAULT) \

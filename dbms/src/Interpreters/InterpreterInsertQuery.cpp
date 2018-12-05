@@ -92,7 +92,7 @@ BlockIO InterpreterInsertQuery::execute()
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
+    auto table_lock = table->lockStructure(true);
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
