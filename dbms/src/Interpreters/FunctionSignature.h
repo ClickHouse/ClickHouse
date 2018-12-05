@@ -11,6 +11,7 @@
 
 #include <Core/Field.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Common/FieldVisitors.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -20,6 +21,7 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <Parsers/IParser.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -185,7 +187,35 @@ struct Value
     {
         return std::get<Field>(value).safeGet<UInt64>() == 1;
     }
+
+    std::string toString() const
+    {
+        if (value.index() == 0)
+        {
+            const auto & t = type();
+            if (!t)
+                return "nullptr";
+            else
+                return t->getName();
+        }
+        else
+            return applyVisitor(FieldVisitorToString(), std::get<Field>(value));
+    }
 };
+
+
+template <typename Container, typename WriteElem, typename WriteDelim>
+void writeList(Container && container, WriteElem && write_elem, WriteDelim && write_delim)
+{
+    bool is_first = true;
+    for (const auto & elem : container)
+    {
+        if (!is_first)
+            write_delim();
+        is_first = false;
+        write_elem(elem);
+    }
+}
 
 
 /** Scratch space for checking function signature.
@@ -228,6 +258,13 @@ struct Variables
             return it->second;
         else
             throw Exception("Variable " + key.toString() + " was not captured", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    std::string toString() const
+    {
+        WriteBufferFromOwnString out;
+        writeList(container, [&](const auto & elem){ out << elem.first.toString() << " = " << elem.second.toString(); }, [&]{ out << ", "; });
+        return out.str();
     }
 };
 
@@ -283,7 +320,7 @@ class ITypeMatcher
 {
 public:
     virtual ~ITypeMatcher() {}
-    virtual std::string name() const = 0;
+    virtual std::string toString() const = 0;
     virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const = 0;
 
     /// Extract common index of variables participating in expression.
@@ -298,7 +335,7 @@ using TypeMatcherFactory = Factory<TypeMatcherPtr, const TypeMatchers &>;
 class AnyTypeMatcher : public ITypeMatcher
 {
 public:
-    std::string name() const override { return "Any"; }
+    std::string toString() const override { return "Any"; }
     bool match(const DataTypePtr &, Variables &, size_t) const override { return true; }
     size_t getIndex() const override { return 0; }
 };
@@ -313,7 +350,7 @@ private:
 public:
     ExactTypeMatcher(const DataTypePtr & type) : type(type) {}
 
-    std::string name() const override
+    std::string toString() const override
     {
         return type->getName();
     }
@@ -337,9 +374,9 @@ private:
 public:
     AssignTypeMatcher(const TypeMatcherPtr & impl, const Key & var_key) : impl(impl), var_key(var_key) {}
 
-    std::string name() const override
+    std::string toString() const override
     {
-        return impl->name();
+        return var_key.toString() + " : " + impl->toString();
     }
 
     bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const override
@@ -371,7 +408,7 @@ struct ArgumentDescription
         if (is_const && !vars.assignOrCheck(argument_name.incrementIndex(iteration), typeid_cast<const ColumnConst &>(*column).getField()))
             return false;
 
-        std::cerr << type_matcher->name() << "\n";
+        std::cerr << type_matcher->toString() << "\n";
         return type_matcher->match(type, vars, iteration);
     }
 
@@ -379,6 +416,17 @@ struct ArgumentDescription
     size_t getIndex() const
     {
         return getCommonIndex(argument_name.index, type_matcher->getIndex());
+    }
+
+    std::string toString() const
+    {
+        WriteBufferFromOwnString out;
+        if (is_const)
+            out << "const ";
+        if (!argument_name.name.empty())
+            out << argument_name.toString() << " ";
+        out << type_matcher->toString();
+        return out.str();
     }
 };
 
@@ -415,6 +463,27 @@ struct ArgumentsGroup
         }
         return true;
     }
+
+    std::string toString() const
+    {
+        WriteBufferFromOwnString out;
+
+        if (type == Ellipsis)
+        {
+            out << "...";
+            return out.str();
+        }
+
+        if (type == Optional)
+            out << "[";
+
+        writeList(elems, [&](const auto & elem){ out << elem.toString(); }, [&]{ out << ", "; });
+
+        if (type == Optional)
+            out << "]";
+
+        return out.str();
+    }
 };
 
 using ArgumentsGroups = std::vector<ArgumentsGroup>;
@@ -425,9 +494,12 @@ struct VariadicArguments
 
     bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t group_offset, size_t args_offset, size_t iteration) const
     {
+        /// All groups have matched all arguments.
         if (group_offset == groups.size() && args_offset == args.size())
             return true;
-        if (group_offset >= groups.size() || args_offset >= args.size())
+
+        /// Not enough groups to match all arguments. Or all arguments has been matched but there are more groups.
+        if (group_offset >= groups.size() || args_offset > args.size())
             return false;
 
         std::cerr << "group_offset: " << group_offset << "\n";
@@ -441,17 +513,24 @@ struct VariadicArguments
                     && match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration);
 
             case ArgumentsGroup::Optional:
-                return match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration) /// Skip group
-                    || (group.match(args, vars, args_offset, 0)                                         /// Match group
+                return match(args, vars, group_offset + 1, args_offset, iteration)                            /// Skip group
+                    || (group.match(args, vars, args_offset, 0)                                               /// Match group
                         && match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration)); /// and continue from next group
 
             case ArgumentsGroup::Ellipsis:
-                return match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration) /// Skip group
+                return match(args, vars, group_offset + 1, args_offset, iteration)                            /// Skip group
                     || (group.match(args, vars, args_offset, iteration + 1)                                   /// Match group
                         && match(args, vars, group_offset, args_offset + group.elems.size(), iteration + 1)); ///  and try to match again
             default:
                 throw Exception("Wrong type of ArgumentsGroup", ErrorCodes::LOGICAL_ERROR);
         }
+    }
+
+    std::string toString() const
+    {
+        WriteBufferFromOwnString out;
+        writeList(groups, [&](const auto & elem){ out << elem.toString(); }, [&]{ out << ", "; });
+        return out.str();
     }
 };
 
@@ -464,6 +543,7 @@ class ITypeFunction
 public:
     virtual ~ITypeFunction() {}
     virtual Value apply(const Values & args) const = 0;
+    virtual std::string name() const = 0;
 };
 
 using TypeFunctionPtr = std::shared_ptr<ITypeFunction>;
@@ -483,6 +563,8 @@ public:
 
     /// Extract common index of variables participating in expression.
     virtual size_t getIndex() const = 0;
+
+    virtual std::string toString() const = 0;
 };
 
 using TypeExpressionPtr = std::shared_ptr<ITypeExpression>;
@@ -511,6 +593,11 @@ public:
     {
         return key.index;
     }
+
+    std::string toString() const override
+    {
+        return key.toString();
+    }
 };
 
 /// Takes zero arguments and returns pre-determined value. It allows to represent a value as a function without arguments.
@@ -534,6 +621,11 @@ public:
     size_t getIndex() const override
     {
         return 0;
+    }
+
+    std::string toString() const override
+    {
+        return res.toString();
     }
 };
 
@@ -611,6 +703,15 @@ public:
             res = getCommonIndex(res, child->getIndex());
         return res;
     }
+
+    std::string toString() const override
+    {
+        WriteBufferFromOwnString out;
+        out << func->name() << "(";
+        writeList(children, [&](const auto & elem){ out << (elem ? elem->toString() : "..."); }, [&]{ out << ", "; });
+        out << ")";
+        return out.str();
+    }
 };
 
 
@@ -619,6 +720,7 @@ class IFunctionSignature
 public:
     virtual ~IFunctionSignature() {}
     virtual DataTypePtr check(const ColumnsWithTypeAndName & args) const = 0;
+    virtual std::string toString() const = 0 ;
 };
 
 using FunctionSignaturePtr = std::shared_ptr<IFunctionSignature>;
@@ -650,9 +752,23 @@ struct VariadicFunctionSignature : public IFunctionSignature
             if (!constraint->apply(vars, 0).isTrue())
                 return nullptr;
 
-        std::cerr << "%%%\n";
+        std::cerr << vars.toString() << "\n";
 
         return std::get<DataTypePtr>(return_type->apply(vars, 0).value);
+    }
+
+    std::string toString() const override
+    {
+        WriteBufferFromOwnString out;
+        out << "f(" << arguments_description.toString() << ") -> " << return_type->toString();
+
+        if (!constraints.empty())
+        {
+            out << " WHERE ";
+            writeList(constraints, [&](const auto & elem){ out << elem->toString(); }, [&]{ out << ", "; });
+        }
+
+        return out.str();
     }
 };
 
@@ -667,6 +783,13 @@ struct AlternativeFunctionSignature : public IFunctionSignature
             if (DataTypePtr res = alternative->check(args))
                 return res;
         return nullptr;
+    }
+
+    std::string toString() const override
+    {
+        WriteBufferFromOwnString out;
+        writeList(alternatives, [&](const auto & elem){ out << elem->toString(); }, [&]{ out << "\n OR "; });
+        return out.str();
     }
 };
 

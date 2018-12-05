@@ -21,7 +21,7 @@ namespace DB
         class TypeMatcherUnsignedInteger : public ITypeMatcher
         {
         public:
-            std::string name() const override { return "UnsignedInteger"; }
+            std::string toString() const override { return "UnsignedInteger"; }
             bool match(const DataTypePtr & type, Variables &, size_t) const override { return isUnsignedInteger(type); }
             size_t getIndex() const override { return 0; }
         };
@@ -33,7 +33,7 @@ namespace DB
         public:
             TypeMatcherArray(const TypeMatcherPtr & child_matcher) : child_matcher(child_matcher) {}
 
-            std::string name() const override { return "Array"; }
+            std::string toString() const override { return "Array(" + child_matcher->toString() + ")"; }
 
             bool match(const DataTypePtr & type, Variables & variables, size_t iteration) const override
             {
@@ -79,7 +79,7 @@ namespace DB
         class TypeFunctionLeastSupertype : public ITypeFunction
         {
         public:
-            Value apply(const Values & args) const
+            Value apply(const Values & args) const override
             {
                 DataTypes types;
                 types.reserve(args.size());
@@ -87,17 +87,21 @@ namespace DB
                     types.emplace_back(arg.type());
                 return getLeastSupertype(types);
             }
+
+            std::string name() const override { return "leastSupertype"; }
         };
 
         class TypeFunctionArray : public ITypeFunction
         {
         public:
-            Value apply(const Values & args) const
+            Value apply(const Values & args) const override
             {
                 if (args.size() != 1)
                     throw Exception("Wrong number of arguments for type function Array", ErrorCodes::LOGICAL_ERROR);
                 return DataTypePtr(std::make_shared<DataTypeArray>(args.front().type()));
             }
+
+            std::string name() const override { return "Array"; }
         };
 
         void registerTypeFunctions()
@@ -169,6 +173,7 @@ Example: ./function_signatures "multiIf(cond1 UInt8, then1 T1, ..., else U) -> l
         if (FunctionSignature::parseFunctionSignature(it, res))
         {
             std::cerr << "Parsed successfully.\n";
+            std::cerr << res->toString() << "\n";
 
             auto return_type = res->check(args);
 
