@@ -63,6 +63,12 @@ public:
       */
     virtual Block read() = 0;
 
+    virtual const BlockMissingValues & getMissingValues() const
+    {
+        static const BlockMissingValues none;
+        return none;
+    }
+
     /** Read something before starting all data or after the end of all data.
       * In the `readSuffix` function, you can implement a finalization that can lead to an exception.
       * readPrefix() must be called before the first call to read().

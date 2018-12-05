@@ -14,10 +14,10 @@ namespace DB
   * 3. Columns that materialized from other columns (materialized columns)
   * All three types of columns are materialized (not constants).
   */
-class AddingDefaultBlockInputStream : public IProfilingBlockInputStream
+class AddingMissedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    AddingDefaultBlockInputStream(
+    AddingMissedBlockInputStream(
         const BlockInputStreamPtr & input_,
         const Block & header_,
         const ColumnDefaults & column_defaults_,
