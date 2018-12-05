@@ -427,8 +427,11 @@ struct VariadicArguments
     {
         if (group_offset == groups.size() && args_offset == args.size())
             return true;
-        if (group_offset > groups.size() && args_offset > args.size())
+        if (group_offset >= groups.size() || args_offset >= args.size())
             return false;
+
+        std::cerr << "group_offset: " << group_offset << "\n";
+        std::cerr << "groups.size(): " << groups.size() << "\n";
 
         const ArgumentsGroup & group = groups[group_offset];
         switch (group.type)
@@ -444,8 +447,8 @@ struct VariadicArguments
 
             case ArgumentsGroup::Ellipsis:
                 return match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration) /// Skip group
-                    || (group.match(args, vars, args_offset, iteration + 1)                     /// Match group
-                        && match(args, vars, group_offset, args_offset, iteration + 1));        ///  and try to match again
+                    || (group.match(args, vars, args_offset, iteration + 1)                                   /// Match group
+                        && match(args, vars, group_offset, args_offset + group.elems.size(), iteration + 1)); ///  and try to match again
             default:
                 throw Exception("Wrong type of ArgumentsGroup", ErrorCodes::LOGICAL_ERROR);
         }
