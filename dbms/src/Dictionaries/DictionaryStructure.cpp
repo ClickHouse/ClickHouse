@@ -374,7 +374,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 }
 
 
-Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryStructureFromAST(const ASTCreateQuery & create)
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(const ASTCreateQuery & create)
 {
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> configuration = new Poco::Util::LayeredConfiguration();
     if (create.dictionary.empty())
