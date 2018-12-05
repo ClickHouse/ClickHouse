@@ -441,7 +441,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     auto Pair = StringRef(S).split('=');
     auto Sym = Pair.first;
     auto Val = Pair.second;
-    int64_t Value;
+    int64_t Value = 0;
     // We have already error checked this in the driver.
     Val.getAsInteger(0, Value);
     Ctx.setSymbolValue(Parser->getStreamer(), Sym, Value);

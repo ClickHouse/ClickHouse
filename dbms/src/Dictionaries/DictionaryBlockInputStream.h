@@ -6,9 +6,9 @@
 #include <Columns/IColumn.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Dictionaries/DictionaryBlockInputStreamBase.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
+#include "DictionaryBlockInputStreamBase.h"
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
 #include <ext/range.h>
 #include <common/logger_useful.h>
 #include <Core/Names.h>

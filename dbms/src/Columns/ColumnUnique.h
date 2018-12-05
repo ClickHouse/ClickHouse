@@ -81,12 +81,14 @@ public:
     {
         return column_holder->allocatedBytes()
                + index.allocatedBytes()
-               + (cached_null_mask ? cached_null_mask->allocatedBytes() : 0);
+               + (nested_null_mask ? nested_null_mask->allocatedBytes() : 0);
     }
     void forEachSubcolumn(IColumn::ColumnCallback callback) override
     {
         callback(column_holder);
         index.setColumn(getRawColumnPtr());
+        if (is_nullable)
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
     }
 
     const UInt64 * tryGetSavedHash() const override { return index.tryGetSavedHash(); }
@@ -100,8 +102,8 @@ private:
     ReverseIndex<UInt64, ColumnType> index;
 
     /// For DataTypeNullable, stores null map.
-    mutable ColumnPtr cached_null_mask;
-    mutable ColumnPtr cached_column_nullable;
+    ColumnPtr nested_null_mask;
+    ColumnPtr nested_column_nullable;
 
     class IncrementalHash
     {
@@ -117,6 +119,9 @@ private:
     };
 
     mutable IncrementalHash hash;
+
+    void createNullMask();
+    void updateNullMask();
 
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
@@ -148,6 +153,7 @@ ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
     , index(numSpecialValues(is_nullable), 0)
 {
     index.setColumn(getRawColumnPtr());
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -158,6 +164,7 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
     index.setColumn(getRawColumnPtr());
+    createNullMask();
 }
 
 template <typename ColumnType>
@@ -172,32 +179,51 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 
     index.setColumn(getRawColumnPtr());
+    createNullMask();
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::createNullMask()
+{
+    if (is_nullable)
+    {
+        size_t size = getRawColumnPtr()->size();
+        if (!nested_null_mask)
+        {
+            ColumnUInt8::MutablePtr null_mask = ColumnUInt8::create(size, UInt8(0));
+            null_mask->getData()[getNullValueIndex()] = 1;
+            nested_null_mask = std::move(null_mask);
+            nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
+        }
+        else
+            throw Exception("Null mask for ColumnUnique is already created.", ErrorCodes::LOGICAL_ERROR);
+    }
+}
+
+template <typename ColumnType>
+void ColumnUnique<ColumnType>::updateNullMask()
+{
+    if (is_nullable)
+    {
+        if (!nested_null_mask)
+            throw Exception("Null mask for ColumnUnique is was not created.", ErrorCodes::LOGICAL_ERROR);
+
+        size_t size = getRawColumnPtr()->size();
+
+        if (nested_null_mask->size() != size)
+        {
+            IColumn & null_mask = nested_null_mask->assumeMutableRef();
+            static_cast<ColumnUInt8 &>(null_mask).getData().resize_fill(size);
+        }
+    }
 }
 
 template <typename ColumnType>
 const ColumnPtr & ColumnUnique<ColumnType>::getNestedColumn() const
 {
     if (is_nullable)
-    {
-        size_t size = getRawColumnPtr()->size();
-        if (!cached_null_mask)
-        {
-            ColumnUInt8::MutablePtr null_mask = ColumnUInt8::create(size, UInt8(0));
-            null_mask->getData()[getNullValueIndex()] = 1;
-            cached_null_mask = std::move(null_mask);
-            cached_column_nullable = ColumnNullable::create(column_holder, cached_null_mask);
-        }
+        return nested_column_nullable;
 
-        if (cached_null_mask->size() != size)
-        {
-            MutableColumnPtr null_mask = (*std::move(cached_null_mask)).mutate();
-            static_cast<ColumnUInt8 &>(*null_mask).getData().resize_fill(size);
-            cached_null_mask = std::move(null_mask);
-            cached_column_nullable = ColumnNullable::create(column_holder, cached_null_mask);
-        }
-
-        return cached_column_nullable;
-    }
     return column_holder;
 }
 
@@ -226,6 +252,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     auto pos = index.insert(prev_size);
     if (pos != prev_size)
         column->popBack(1);
+
+    updateNullMask();
 
     return pos;
 }
@@ -260,6 +288,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
         index.insertFromLastRow();
     }
 
+    updateNullMask();
+
     return insertion_point;
 }
 
@@ -288,6 +318,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsertDataWithTerminatingZero(const char 
     if (position != prev_size)
         column->popBack(1);
 
+    updateNullMask();
+
     return static_cast<size_t>(position);
 }
 
@@ -305,7 +337,7 @@ StringRef ColumnUnique<ColumnType>::serializeValueIntoArena(size_t n, Arena & ar
 
         size_t nested_size = 0;
 
-        if (n == getNullValueIndex())
+        if (n != getNullValueIndex())
             nested_size = column_holder->serializeValueIntoArena(n, arena, begin).size;
 
         return StringRef(pos, sizeof(null_flag) + nested_size);
@@ -342,6 +374,8 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
     auto index_pos = index.insert(prev_size);
     if (index_pos != prev_size)
         column->popBack(1);
+
+    updateNullMask();
 
     return static_cast<size_t>(index_pos);
 }
@@ -533,6 +567,8 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn &
     if (!positions_column)
         throw Exception("Can't find index type for ColumnUnique", ErrorCodes::LOGICAL_ERROR);
 
+    updateNullMask();
+
     return positions_column;
 }
 
@@ -576,6 +612,8 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
         positions_column = callForType(UInt64());
     if (!positions_column)
         throw Exception("Can't find index type for ColumnUnique", ErrorCodes::LOGICAL_ERROR);
+
+    updateNullMask();
 
     IColumnUnique::IndexesWithOverflow indexes_with_overflow;
     indexes_with_overflow.indexes = std::move(positions_column);

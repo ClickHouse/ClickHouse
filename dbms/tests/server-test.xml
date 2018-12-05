@@ -75,6 +75,20 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_cluster_two_shards_localhost>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>59000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>59000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards_localhost>
         <test_shard_localhost_secure>
             <shard>
                 <replica>

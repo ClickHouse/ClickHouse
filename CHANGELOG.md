@@ -1,3 +1,59 @@
+## ClickHouse release 18.14.18, 2018-12-04
+
+### Bug fixes:
+* Fixed error in `dictGet...` function for dictionaries of type `range`, if one of the arguments is constant and other is not. [#3751](https://github.com/yandex/ClickHouse/pull/3751)
+* Fixed error that caused messages `netlink: '...': attribute type 1 has an invalid length` to be printed in Linux kernel log, that was happening only on fresh enough versions of Linux kernel. [#3749](https://github.com/yandex/ClickHouse/pull/3749)
+* Fixed segfault in function `empty` for argument of `FixedString` type. [#3703](https://github.com/yandex/ClickHouse/pull/3703)
+* Fixed excessive memory allocation when using large value of `max_query_size` setting (a memory chunk of `max_query_size` bytes was preallocated at once). [#3720](https://github.com/yandex/ClickHouse/pull/3720)
+
+### Build changes:
+* Fixed build with LLVM/Clang libraries of version 7 from the OS packages (these libraries are used for runtime query compilation). [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+
+## ClickHouse release 18.14.17, 2018-11-30
+
+### Bug fixes:
+* Fixed cases when the ODBC bridge process did not terminate with the main server process. [#3642](https://github.com/yandex/ClickHouse/pull/3642)
+* Fixed synchronous insertion into the `Distributed` table with a columns list that differs from the column list of the remote table. [#3673](https://github.com/yandex/ClickHouse/pull/3673)
+* Fixed a rare race condition that can lead to a crash when dropping a MergeTree table. [#3643](https://github.com/yandex/ClickHouse/pull/3643)
+* Fixed a query deadlock in case when query thread creation fails with the `Resource temporarily unavailable` error. [#3643](https://github.com/yandex/ClickHouse/pull/3643)
+* Fixed parsing of the `ENGINE` clause when the `CREATE AS table` syntax was used and the `ENGINE` clause was specified before the `AS table` (the error resulted in ignoring the specified engine). [#3692](https://github.com/yandex/ClickHouse/pull/3692)
+
+## ClickHouse release 18.14.15, 2018-11-21
+
+### Bug fixes:
+* The size of memory chunk was overestimated while deserializing the column of type `Array(String)` that leads to "Memory limit exceeded" errors. The issue appeared in version 18.12.13. [#3589](https://github.com/yandex/ClickHouse/issues/3589)
+
+## ClickHouse release 18.14.14, 2018-11-20
+
+### Bug fixes:
+* Fixed `ON CLUSTER` queries when cluster configured as secure (flag `<secure>`). [#3599](https://github.com/yandex/ClickHouse/pull/3599)
+
+### Build changes:
+* Fixed problems (llvm-7 from system, macos) [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+
+## ClickHouse release 18.14.13, 2018-11-08
+
+### Bug fixes:
+* Fixed the `Block structure mismatch in MergingSorted stream` error. [#3162](https://github.com/yandex/ClickHouse/issues/3162)
+* Fixed `ON CLUSTER` queries in case when secure connections were turned on in the cluster config (the `<secure>` flag). [#3465](https://github.com/yandex/ClickHouse/pull/3465)
+* Fixed an error in queries that used `SAMPLE`, `PREWHERE` and alias columns. [#3543](https://github.com/yandex/ClickHouse/pull/3543)
+* Fixed a rare `unknown compression method` error when the `min_bytes_to_use_direct_io` setting was enabled. [3544](https://github.com/yandex/ClickHouse/pull/3544)
+
+### Performance improvements:
+* Fixed performance regression of queries with `GROUP BY` of columns of UInt16 or Date type when executing on AMD EPYC processors. [Igor Lapko](https://github.com/yandex/ClickHouse/pull/3512)
+* Fixed performance regression of queries that process long strings. [#3530](https://github.com/yandex/ClickHouse/pull/3530)
+
+### Build improvements:
+* Improvements for simplifying the Arcadia build. [#3475](https://github.com/yandex/ClickHouse/pull/3475), [#3535](https://github.com/yandex/ClickHouse/pull/3535)
+
+## ClickHouse release 18.14.12, 2018-11-02
+
+### Bug fixes:
+
+* Fixed a crash on joining two unnamed subqueries. [#3505](https://github.com/yandex/ClickHouse/pull/3505)
+* Fixed generating incorrect queries (with an empty `WHERE` clause) when querying external databases. [hotid](https://github.com/yandex/ClickHouse/pull/3477)
+* Fixed using an incorrect timeout value in ODBC dictionaries. [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3511)
+
 ## ClickHouse release 18.14.11, 2018-10-29
 
 ### Bug fixes:

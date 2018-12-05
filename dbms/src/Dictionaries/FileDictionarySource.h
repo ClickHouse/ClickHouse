@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
+#include "IDictionarySource.h"
 #include <Poco/Timestamp.h>
 
 
@@ -8,7 +8,6 @@ namespace DB
 {
 
 class Context;
-
 
 /// Allows loading dictionaries from a file with given format, does not support "random access"
 class FileDictionarySource final : public IDictionarySource

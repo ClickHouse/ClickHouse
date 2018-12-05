@@ -80,6 +80,8 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
+<a name="select-array-join"></a>
+
 ### ARRAY JOIN Clause
 
 Allows executing JOIN with an array or nested data structure. The intent is similar to the 'arrayJoin' function, but its functionality is broader.
@@ -332,42 +334,55 @@ The query can only specify a single ARRAY JOIN clause.
 
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
+<a name="query-language-join"></a>
+
 ### JOIN Clause
 
-The normal JOIN, which is not related to ARRAY JOIN described above.
+Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
+
+!!! info "Note"
+    Not related to [ARRAY JOIN](#select-array-join).
+
 
 ``` sql
-[GLOBAL] ANY|ALL INNER|LEFT [OUTER] JOIN (subquery)|table USING columns_list
+SELECT <expr_list>
+FROM <left_subquery>
+[GLOBAL] [ANY|ALL] INNER|LEFT|RIGHT|FULL|CROSS [OUTER] JOIN <right_subquery>
+(ON <expr_list>)|(USING <column_list>) ...
 ```
 
-Performs joins with data from the subquery. At the beginning of query processing, the subquery specified after JOIN is run, and its result is saved in memory. Then it is read from the "left" table specified in the FROM clause, and while it is being read, for each of the read rows from the "left" table, rows are selected from the subquery results table (the "right" table) that meet the condition for matching the values of the columns specified in USING.
+The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md#table-engine-join) engine – an array prepared for joining.
 
-The table name can be specified instead of a subquery. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the Join engine – an array prepared for joining.
+**Supported types of `JOIN`**
 
-All columns that are not needed for the JOIN are deleted from the subquery.
+- `INNER JOIN`
+- `LEFT OUTER JOIN`
+- `RIGHT OUTER JOIN`
+- `FULL OUTER JOIN`
+- `CROSS JOIN`
 
-There are several types of JOINs:
+You may skip the `OUTER` keyword it is implied by default.
 
-`INNER` or `LEFT` type:If INNER is specified, the result will contain only those rows that have a matching row in the right table.
-If LEFT is specified, any rows in the left table that don't have matching rows in the right table will be assigned the default value - zeros or empty rows. LEFT OUTER may be written instead of LEFT; the word OUTER does not affect anything.
+**`ANY` or `ALL` strictness**
 
-`ANY` or `ALL` stringency:If `ANY` is specified and the right table has several matching rows, only the first one found is joined.
-If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows.
+If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
+If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 
-Using ALL corresponds to the normal JOIN semantic from standard SQL.
-Using ANY is optimal. If the right table has only one matching row, the results of ANY and ALL are the same. You must specify either ANY or ALL (neither of them is selected by default).
+You can set the default value of strictness with session configuration parameter [join_default_strictness](../operations/settings/settings.md#session-setting-join_default_strictness).
 
-`GLOBAL` distribution:
+**`GLOBAL` distribution**
 
-When using a normal JOIN, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
+When using a normal `JOIN`, the query is sent to remote servers. Subqueries are run on each of them in order to make the right table, and the join is performed with this table. In other words, the right table is formed on each server separately.
 
 When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using GLOBAL JOINs. For more information, see the section "Distributed subqueries".
+Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#queries-distributed-subqueries).
 
-Any combination of JOINs is possible. For example, `GLOBAL ANY LEFT OUTER JOIN`.
+**Usage Recommendations**
 
-When running a JOIN, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in WHERE and before aggregation. In order to explicitly set the processing order, we recommend running a JOIN subquery with a subquery.
+All columns that are not needed for the `JOIN` are deleted from the subquery.
+
+When running a `JOIN`, there is no optimization of the order of execution in relation to other stages of the query. The join (a search in the right table) is run before filtering in `WHERE` and before aggregation. In order to explicitly set the processing order, we recommend running a `JOIN` subquery with a subquery.
 
 Example:
 
@@ -411,20 +426,20 @@ LIMIT 10
 ```
 
 Subqueries don't allow you to set names or use them for referencing a column from a specific subquery.
-The columns specified in USING must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases 'hits' and 'visits').
+The columns specified in `USING` must have the same names in both subqueries, and the other columns must be named differently. You can use aliases to change the names of columns in subqueries (the example uses the aliases 'hits' and 'visits').
 
-The USING clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
+The `USING` clause specifies one or more columns to join, which establishes the equality of these columns. The list of columns is set without brackets. More complex join conditions are not supported.
 
-The right table (the subquery result) resides in RAM. If there isn't enough memory, you can't run a JOIN.
+The right table (the subquery result) resides in RAM. If there isn't enough memory, you can't run a `JOIN`.
 
-Only one JOIN can be specified in a query (on a single level). To run multiple JOINs, you can put them in subqueries.
+Only one `JOIN` can be specified in a query (on a single level). To run multiple `JOIN`, you can put them in subqueries.
 
-Each time a query is run with the same JOIN, the subquery is run again – the result is not cached. To avoid this, use the special 'Join' table engine, which is a prepared array for joining that is always in RAM. For more information, see the section "Table engines, Join".
+Each time a query is run with the same `JOIN`, the subquery is run again – the result is not cached. To avoid this, use the special 'Join' table engine, which is a prepared array for joining that is always in RAM. For more information, see the section "Table engines, Join".
 
-In some cases, it is more efficient to use IN instead of JOIN.
-Among the various types of JOINs, the most efficient is ANY LEFT JOIN, then ANY INNER JOIN. The least efficient are ALL LEFT JOIN and ALL INNER JOIN.
+In some cases, it is more efficient to use `IN` instead of `JOIN`.
+Among the various types of `JOIN`, the most efficient is ANY `LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
 
-If you need a JOIN for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a JOIN might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of JOIN. For more information, see the section "External dictionaries".
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md#dicts-external_dicts).
 
 <a name="query_language-queries-where"></a>
 
@@ -446,15 +461,13 @@ If indexes are supported by the database table engine, the expression is evaluat
 This clause has the same meaning as the WHERE clause. The difference is in which data is read from the table.
 When using PREWHERE, first only the columns necessary for executing PREWHERE are read. Then the other columns are read that are needed for running the query, but only those blocks where the PREWHERE expression is true.
 
-It makes sense to use PREWHERE if there are filtration conditions that are not suitable for indexes that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
+It makes sense to use PREWHERE if there are filtration conditions that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
 
 For example, it is useful to write PREWHERE for queries that extract a large number of columns, but that only have filtration for a few columns.
 
 PREWHERE is only supported by tables from the `*MergeTree` family.
 
 A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE precedes WHERE.
-
-Keep in mind that it does not make much sense for PREWHERE to only specify those columns that have an index, because when using an index, only the data blocks that match the index are read.
 
 If the 'optimize_move_to_prewhere' setting is set to 1 and PREWHERE is omitted, the system uses heuristics to automatically move parts of expressions from WHERE to PREWHERE.
 
@@ -500,35 +513,35 @@ A constant can't be specified as arguments for aggregate functions. Example: sum
 
 #### NULL processing
 
- For grouping, ClickHouse interprets [NULL](syntax.md#null-literal) as a value, and `NULL=NULL`.
+For grouping, ClickHouse interprets [NULL](syntax.md#null-literal) as a value, and `NULL=NULL`.
 
- Here's an example to show what this means.
+Here's an example to show what this means.
 
- Assume you have this table:
+Assume you have this table:
 
- ```
- ┌─x─┬────y─┐
- │ 1 │    2 │
- │ 2 │ ᴺᵁᴸᴸ │
- │ 3 │    2 │
- │ 3 │    3 │
- │ 3 │ ᴺᵁᴸᴸ │
- └───┴──────┘
- ```
+```
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
 
- The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
+The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 
- ```
- ┌─sum(x)─┬────y─┐
- │      4 │    2 │
- │      3 │    3 │
- │      5 │ ᴺᵁᴸᴸ │
- └────────┴──────┘
- ```
+```
+┌─sum(x)─┬────y─┐
+│      4 │    2 │
+│      3 │    3 │
+│      5 │ ᴺᵁᴸᴸ │
+└────────┴──────┘
+```
 
- You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this value.
+You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this value.
 
- If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
+If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
 #### WITH TOTALS Modifier
 
@@ -615,45 +628,45 @@ If the ORDER BY clause is omitted, the order of the rows is also undefined, and 
 
 `NaN` and `NULL` sorting order:
 
- - With the modifier `NULLS FIRST` — First `NULL`, then `NaN`, then other values.
- - With the modifier `NULLS LAST` — First the values, then `NaN`, then `NULL`.
- - Default — The same as with the `NULLS LAST` modifier.
+- With the modifier `NULLS FIRST` — First `NULL`, then `NaN`, then other values.
+- With the modifier `NULLS LAST` — First the values, then `NaN`, then `NULL`.
+- Default — The same as with the `NULLS LAST` modifier.
 
- Example:
+Example:
 
- For the table
+For the table
 
- ```
- ┌─x─┬────y─┐
- │ 1 │ ᴺᵁᴸᴸ │
- │ 2 │    2 │
- │ 1 │  nan │
- │ 2 │    2 │
- │ 3 │    4 │
- │ 5 │    6 │
- │ 6 │  nan │
- │ 7 │ ᴺᵁᴸᴸ │
- │ 6 │    7 │
- │ 8 │    9 │
- └───┴──────┘
- ```
+```
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    2 │
+│ 1 │  nan │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │  nan │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
 
- Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
+Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
 
- ```
- ┌─x─┬────y─┐
- │ 1 │ ᴺᵁᴸᴸ │
- │ 7 │ ᴺᵁᴸᴸ │
- │ 1 │  nan │
- │ 6 │  nan │
- │ 2 │    2 │
- │ 2 │    2 │
- │ 3 │    4 │
- │ 5 │    6 │
- │ 6 │    7 │
- │ 8 │    9 │
- └───┴──────┘
- ```
+```
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 1 │  nan │
+│ 6 │  nan │
+│ 2 │    2 │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
 
 When floating point numbers are sorted, NaNs are separate from the other values. Regardless of the sorting order, NaNs come at the end. In other words, for ascending sorting they are placed as if they are larger than all the other numbers, while for descending sorting they are placed as if they are smaller than the rest.
 
@@ -804,38 +817,38 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 #### NULL processing
 
- During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 
- Here is an example with the `t_null` table:
+Here is an example with the `t_null` table:
 
- ```
- ┌─x─┬────y─┐
- │ 1 │ ᴺᵁᴸᴸ │
- │ 2 │    3 │
- └───┴──────┘
- ```
+```
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    3 │
+└───┴──────┘
+```
 
- Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
+Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
 
- ```
- ┌─x─┐
- │ 2 │
- └───┘
- ```
+```
+┌─x─┐
+│ 2 │
+└───┘
+```
 
- You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
+You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
 
- ```
- SELECT y IN (NULL, 3)
- FROM t_null
+```
+SELECT y IN (NULL, 3)
+FROM t_null
 
- ┌─in(y, tuple(NULL, 3))─┐
- │                     0 │
- │                     1 │
- └───────────────────────┘
- ```
+┌─in(y, tuple(NULL, 3))─┐
+│                     0 │
+│                     1 │
+└───────────────────────┘
+```
 
-<a name="queries-distributed-subrequests"></a>
+<a name="queries-distributed-subqueries"></a>
 
 #### Distributed Subqueries
 

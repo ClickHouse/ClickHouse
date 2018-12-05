@@ -20,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
@@ -200,14 +202,15 @@ private:
         if (arguments.size() < 6 || arguments.size() % 4 != 2)
         {
             throw Exception(
-                "Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).");
+                "Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
         /// For array on stack, see below.
         if (arguments.size() > 10000)
         {
             throw Exception(
-                "Number of arguments of function " + getName() + " is too large.");
+                "Number of arguments of function " + getName() + " is too large.", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
         }
 
         for (const auto arg_idx : ext::range(0, arguments.size()))

@@ -3,10 +3,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnNothing.h>
 #include <ext/range.h>
+#include <DataTypes/DataTypeNothing.h>
 
 #if __SSE2__
 #include <emmintrin.h>
-#include <DataTypes/DataTypeNothing.h>
 #endif
 
 namespace DB
