@@ -21,6 +21,10 @@
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
 #include <ext/range.h>
+#include <IO/copyData.h>
+#include <IO/WriteBufferFromString.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <arrow/buffer.h>
 #include <arrow/api.h>
 #include <arrow/io/api.h>
@@ -28,8 +32,7 @@
 #include <parquet/arrow/writer.h>
 #include <parquet/exception.h>
 #include <parquet/file_reader.h>
-#include <IO/copyData.h>
-#include <IO/WriteBufferFromString.h>
+#pragma GCC diagnostic pop
 
 namespace DB
 {

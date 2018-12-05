@@ -11,11 +11,15 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/FormatFactory.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <parquet/arrow/writer.h>
 #include <parquet/util/memory.h>
 #include <parquet/exception.h>
+#pragma GCC diagnostic pop
 
 
 
