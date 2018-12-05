@@ -1,22 +1,14 @@
-#include <Columns/ColumnConst.h>
-#include <Core/Block.h>
+#include <Storages/StorageDistributed.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
 
-#include <Interpreters/Cluster.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/createBlockSelector.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-
-#include <Storages/StorageDistributedShardsOptimizer.h>
-
-#include <deque>
 
 namespace DB
 {
@@ -25,6 +17,8 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+namespace
+{
 /// Contains a list of columns for conjunction: columns[0] AND columns[1] AND ...
 struct Conjunction
 {
@@ -37,8 +31,8 @@ struct Disjunction
     std::vector<Conjunction> conjunctions;
 };
 
-using DisjunctionsPtr = std::shared_ptr<std::vector<Disjunction>>;
 using Disjunctions = std::vector<Disjunction>;
+using DisjunctionsPtr = std::shared_ptr<Disjunctions>;
 
 static constexpr auto and_function_name = "and";
 static constexpr auto equals_function_name = "equals";
@@ -313,12 +307,11 @@ bool hasRequiredColumns(const Block & block, ExpressionActionsPtr sharding_key_e
     return true;
 }
 
-StorageDistributedShardsOptimizer::StorageDistributedShardsOptimizer() {}
+}
 
 /** Returns a new cluster with fewer shards if constant folding for sharding_key_expr is possible
  * using constraints from WHERE condition, otherwise, returns nullptr. */
-ClusterPtr StorageDistributedShardsOptimizer::skipUnusedShards(
-    ClusterPtr cluster, const SelectQueryInfo & query_info, ExpressionActionsPtr sharding_key_expr, std::string sharding_key_column_name)
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
 {
     const auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
 
@@ -352,7 +345,7 @@ ClusterPtr StorageDistributedShardsOptimizer::skipUnusedShards(
             sharding_key_expr->execute(block);
 
             if (!block || block.rows() != 1 || !block.has(sharding_key_column_name))
-                throw Exception("Logical error: sharding_key_expr should evaluate as 1 row");
+                throw Exception("Logical error: sharding_key_expr should evaluate as 1 row", ErrorCodes::TYPE_MISMATCH);
 
             const auto result = block.getByName(sharding_key_column_name);
             const auto selector = createSelector(cluster, result);
@@ -363,4 +356,5 @@ ClusterPtr StorageDistributedShardsOptimizer::skipUnusedShards(
 
     return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
 }
+
 }
