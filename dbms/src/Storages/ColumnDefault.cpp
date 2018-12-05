@@ -1,12 +1,5 @@
 #include <Storages/ColumnDefault.h>
-#include <Storages/ColumnsDescription.h>
-#include <Storages/IStorage.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Interpreters/Context.h>
-#include <DataTypes/DataTypeString.h>
 
 namespace
 {
