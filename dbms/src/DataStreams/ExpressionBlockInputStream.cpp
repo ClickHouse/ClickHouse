@@ -27,7 +27,7 @@ Block ExpressionBlockInputStream::getTotals()
 Block ExpressionBlockInputStream::getHeader() const
 {
     Block res = children.back()->getHeader();
-    expression->execute(res);
+    expression->execute(res, true);
     return res;
 }
 

@@ -542,7 +542,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - database - Имя базы данных.
 - table - Имя таблицы.
 - partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
-- flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
+- flush_interval_milliseconds - Период сброса данных из буфера в памяти в таблицу.
 
 
 **Пример**
@@ -584,7 +584,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - database - Имя базы данных.
 - table - Имя таблицы.
 - partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
-- flush_interval_milliseconds - Период сброса данных из оперативной памяти на диск.
+- flush_interval_milliseconds - Период сброса данных из буфера в памяти в таблицу.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
 

@@ -79,7 +79,7 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
         }
 
         // Process next buffered message
-        rd_kafka_message_t * msg = rd_kafka_consumer_poll(consumer, READ_POLL_MS);
+        rd_kafka_message_t * msg = rd_kafka_consumer_poll(consumer, READ_POLL_MS); // XXX: use RAII.
         if (msg == nullptr)
             return false;
 
@@ -530,7 +530,7 @@ bool StorageKafka::streamToViews()
     // Join multiple streams if necessary
     BlockInputStreamPtr in;
     if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, streams.size());
+        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
     else
         in = streams[0];
 

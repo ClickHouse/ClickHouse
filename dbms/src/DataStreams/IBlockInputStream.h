@@ -63,13 +63,6 @@ public:
       */
     virtual Block read() = 0;
 
-    /** Get information about the last block received.
-      */
-    virtual BlockExtraInfo getBlockExtraInfo() const
-    {
-        throw Exception("Method getBlockExtraInfo is not supported by the data stream " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
-
     /** Read something before starting all data or after the end of all data.
       * In the `readSuffix` function, you can implement a finalization that can lead to an exception.
       * readPrefix() must be called before the first call to read().

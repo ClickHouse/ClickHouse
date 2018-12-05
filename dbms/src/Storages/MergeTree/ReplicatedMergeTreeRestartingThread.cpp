@@ -202,7 +202,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     }
     catch (...)
     {
-        storage.replica_is_active_node  = nullptr;
+        storage.replica_is_active_node = nullptr;
 
         try
         {

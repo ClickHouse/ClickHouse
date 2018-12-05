@@ -97,7 +97,8 @@ ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
     OSNAME=debian
-    MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    #MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
+    MIRRORSITE=${SET_MIRRORSITE="http://mirror.yandex.ru/$OSNAME/"}
     COMPONENTS="main contrib non-free"
     if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
@@ -117,7 +118,8 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     OSNAME=ubuntu
 
     if [[ "$ARCH" == "amd64" || "$ARCH" == "i386" ]]; then
-        MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/ubuntu/"}
+        #MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/$OSNAME/"}
+        MIRRORSITE=${SET_MIRRORSITE="http://mirror.yandex.ru/$OSNAME/"}
     else
         MIRRORSITE=${SET_MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
     fi
@@ -126,6 +128,7 @@ elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
 
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-security main restricted universe multiverse"
+    OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-proposed main restricted universe multiverse"
 
     case "$DIST" in
        "trusty" | "xenial" )
@@ -161,11 +164,11 @@ esac
 
 if [ "$ARCH" != arm64 ]; then
     case "$DIST" in
-    "unstable")
+    "experimental")
         EXTRAPACKAGES+=" liblld-8-dev libclang-8-dev llvm-8-dev liblld-8 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-8 $CMAKE_FLAGS"
         ;;
-    "cosmic" | "experimental" | "testing")
+    "cosmic" | "testing" | "unstable")
         EXTRAPACKAGES+=" liblld-7-dev libclang-7-dev llvm-7-dev liblld-7 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-7 $CMAKE_FLAGS"
         ;;

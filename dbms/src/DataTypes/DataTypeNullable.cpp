@@ -161,7 +161,7 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) co
 {
     safeDeserialize(column,
         [&istr] { bool is_null = 0; readBinary(is_null, istr); return is_null; },
-        [this, &istr] (IColumn & nested) { nested_data_type->deserializeBinary(nested, istr); } );
+        [this, &istr] (IColumn & nested) { nested_data_type->deserializeBinary(nested, istr); });
 }
 
 
@@ -188,7 +188,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
     {
         safeDeserialize(column,
             [] { return false; },
-            [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextEscaped(nested, istr, settings); } );
+            [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextEscaped(nested, istr, settings); });
     }
     else
     {
@@ -248,7 +248,7 @@ void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
-        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr, settings); } );
+        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr, settings); });
 }
 
 void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -265,7 +265,7 @@ void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("\\N", istr); },
-        [this, &settings, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr, settings); } );
+        [this, &settings, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr, settings); });
 }
 
 void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -298,7 +298,7 @@ void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, 
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("null", istr); },
-        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextJSON(nested, istr, settings); } );
+        [this, &istr, &settings] (IColumn & nested) { nested_data_type->deserializeTextJSON(nested, istr, settings); });
 }
 
 void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
