@@ -388,7 +388,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     catch (...)
     {
-        LOG_ERROR(log, "Caught exception while loading metadata.");
+        tryLogCurrentException(log, "Caught exception while loading metadata");
         throw;
     }
     LOG_DEBUG(log, "Loaded metadata.");
