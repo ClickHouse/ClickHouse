@@ -146,5 +146,5 @@ add_library(arrow_shared SHARED ${ARROW_SRCS})
 target_include_directories(arrow_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
 target_include_directories(arrow_shared PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
 
-target_link_libraries(arrow_static PRIVATE ${DOUBLE_CONVERSION_LIBRARIES})
-target_link_libraries(arrow_shared PRIVATE ${DOUBLE_CONVERSION_LIBRARIES})
+target_link_libraries(arrow_static PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
+target_link_libraries(arrow_shared PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
