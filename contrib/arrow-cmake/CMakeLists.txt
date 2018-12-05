@@ -34,8 +34,14 @@ set( thriftcpp_SOURCES
    ${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp
 )
 
-add_library(thrift_static STATIC ${thriftcpp_SOURCES})
-add_library(thrift SHARED ${thriftcpp_SOURCES})
+set( thriftcpp_threads_SOURCES
+    ${LIBRARY_DIR}/src/thrift/concurrency/PosixThreadFactory.cpp
+    ${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp
+    ${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp
+)
+
+add_library(thrift_static STATIC ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+add_library(thrift SHARED ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 
 target_include_directories(thrift_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS}) # ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src
 target_include_directories(thrift PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
