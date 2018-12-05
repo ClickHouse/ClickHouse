@@ -1,3 +1,44 @@
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp)
+# contrib/thrift/lib/cpp/CMakeLists.txt
+set( thriftcpp_SOURCES
+   ${LIBRARY_DIR}/src/thrift/TApplicationException.cpp
+   ${LIBRARY_DIR}/src/thrift/TOutput.cpp
+   ${LIBRARY_DIR}/src/thrift/async/TAsyncChannel.cpp
+   ${LIBRARY_DIR}/src/thrift/async/TAsyncProtocolProcessor.cpp
+   ${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.h
+   ${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.cpp
+   ${LIBRARY_DIR}/src/thrift/concurrency/ThreadManager.cpp
+   ${LIBRARY_DIR}/src/thrift/concurrency/TimerManager.cpp
+   ${LIBRARY_DIR}/src/thrift/concurrency/Util.cpp
+   ${LIBRARY_DIR}/src/thrift/processor/PeekProcessor.cpp
+   ${LIBRARY_DIR}/src/thrift/protocol/TBase64Utils.cpp
+   ${LIBRARY_DIR}/src/thrift/protocol/TDebugProtocol.cpp
+   ${LIBRARY_DIR}/src/thrift/protocol/TJSONProtocol.cpp
+   ${LIBRARY_DIR}/src/thrift/protocol/TMultiplexedProtocol.cpp
+   ${LIBRARY_DIR}/src/thrift/protocol/TProtocol.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TTransportException.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TFDTransport.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TSimpleFileTransport.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/THttpTransport.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/THttpClient.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/THttpServer.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TSocket.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TSocketPool.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TServerSocket.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TTransportUtils.cpp
+   ${LIBRARY_DIR}/src/thrift/transport/TBufferTransports.cpp
+   ${LIBRARY_DIR}/src/thrift/server/TConnectedClient.cpp
+   ${LIBRARY_DIR}/src/thrift/server/TServerFramework.cpp
+   ${LIBRARY_DIR}/src/thrift/server/TSimpleServer.cpp
+   ${LIBRARY_DIR}/src/thrift/server/TThreadPoolServer.cpp
+   ${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp
+)
+
+add_library(thrift_static STATIC ${thriftcpp_SOURCES})
+add_library(thrift SHARED ${thriftcpp_SOURCES})
+
+target_include_directories(thrift_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS}) # ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src
+target_include_directories(thrift PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 
@@ -41,8 +82,10 @@ include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmak
 target_link_libraries(parquet_static PRIVATE thrift_static)
 target_link_libraries(parquet_shared PRIVATE thrift)
 
-target_include_directories(parquet_static PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
-target_include_directories(parquet_shared PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
+#target_include_directories(parquet_static PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
+#target_include_directories(parquet_shared PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
+target_include_directories(parquet_static PRIVATE ${Boost_INCLUDE_DIRS})
+target_include_directories(parquet_shared PRIVATE ${Boost_INCLUDE_DIRS})
 
 
 

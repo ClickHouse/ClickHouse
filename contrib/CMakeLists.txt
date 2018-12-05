@@ -182,7 +182,7 @@ if(USE_INTERNAL_PARQUET_LIBRARY)
     set(BUILD_EXAMPLES 0 CACHE INTERNAL "")
     set(BUILD_TUTORIALS 0 CACHE INTERNAL "")
     set(WITH_C_GLIB 0 CACHE INTERNAL "")
-    add_subdirectory(thrift)
+    #add_subdirectory(thrift)
     add_subdirectory(arrow-cmake)
 endif()
 
