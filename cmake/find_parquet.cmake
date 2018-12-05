@@ -1,4 +1,6 @@
-option (USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
+if (NOT OS_FREEBSD) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
+    option (USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
+endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/CMakeLists.txt")
     if (USE_INTERNAL_PARQUET_LIBRARY)
@@ -14,7 +16,7 @@ if (NOT USE_INTERNAL_PARQUET_LIBRARY)
 endif ()
 
 if (ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
-elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY)
+elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     set (USE_INTERNAL_PARQUET_LIBRARY 1)
     # TODO: is it required?
     # set (ARROW_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
