@@ -11,6 +11,7 @@
 
 #include <TableFunctions/TableFunctionRemote.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <TableFunctions/parseRemoteDescription.h>
 
 
 namespace DB
@@ -145,11 +146,11 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
-        std::vector<String> shards = parseDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+        std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
         for (size_t i = 0; i < shards.size(); ++i)
-            names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
+            names.push_back(parseRemoteDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
 
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);

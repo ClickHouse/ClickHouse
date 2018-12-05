@@ -1,3 +1,6 @@
+#include <Common/config.h>
+
+#if USE_HDFS
 #include <Storages/StorageHDFS.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionHDFS.h>
@@ -19,3 +22,4 @@ void registerTableFunctionHDFS(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionHDFS>();
 }
 }
+#endif

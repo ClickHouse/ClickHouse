@@ -1,4 +1,6 @@
 #pragma once
+#include <Common/config.h>
+#if USE_HDFS
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
@@ -50,3 +52,5 @@ private:
     Logger * log = &Logger::get("StorageHDFS");
 };
 }
+
+#endif

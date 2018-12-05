@@ -1,4 +1,8 @@
 #pragma once
+
+#include <Common/config.h>
+
+#if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <Poco/URI.h>
 #include <hdfs/hdfs.h>
@@ -89,3 +93,4 @@ namespace DB
             }
     };
 }
+#endif

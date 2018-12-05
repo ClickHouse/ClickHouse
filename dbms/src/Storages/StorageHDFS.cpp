@@ -1,3 +1,7 @@
+#include <Common/config.h>
+
+#if USE_HDFS
+
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageHDFS.h>
 #include <Interpreters/Context.h>
@@ -11,8 +15,9 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Poco/Path.h>
-#include <TableFunctions/ITableFunction.h>
+#include <TableFunctions/parseRemoteDescription.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -59,16 +64,10 @@ namespace
                 fuzzyFileNames = uri.substr(uriPrefix.length());
             }
 
-            std::vector<String> fuzzyNameList = parseDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',' , 100/* hard coded max files */);
-
-            // Don't support | for globs compatible
-            //std::vector<std::vector<String> > fileNames;
-            //for(auto fuzzyName : fuzzyNameList)
-            //    fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
+            std::vector<String> fuzzyNameList = parseRemoteDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',' , 100/* hard coded max files */);
 
             BlockInputStreams inputs;
 
-            //for (auto & vecNames : fileNames)
             for (auto & name: fuzzyNameList)
             {
                 std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
@@ -176,3 +175,5 @@ void registerStorageHDFS(StorageFactory & factory)
 }
 
 }
+
+#endif
