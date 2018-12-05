@@ -27,35 +27,6 @@ add_library(boost_system_internal ${LINK_MODE} ${boost_system_sources})
 add_headers_and_sources(boost_regex ${LIBRARY_DIR}/libs/regex/src)
 add_library(boost_regex_internal ${LINK_MODE} ${boost_regex_sources})
 
-if (0)
-add_library(boost_program_options_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/program_options/src/cmdline.cpp
-${LIBRARY_DIR}/libs/program_options/src/config_file.cpp
-${LIBRARY_DIR}/libs/program_options/src/convert.cpp
-${LIBRARY_DIR}/libs/program_options/src/options_description.cpp
-${LIBRARY_DIR}/libs/program_options/src/parsers.cpp
-${LIBRARY_DIR}/libs/program_options/src/positional_options.cpp
-${LIBRARY_DIR}/libs/program_options/src/split.cpp
-${LIBRARY_DIR}/libs/program_options/src/utf8_codecvt_facet.cpp
-${LIBRARY_DIR}/libs/program_options/src/value_semantic.cpp
-${LIBRARY_DIR}/libs/program_options/src/variables_map.cpp
-${LIBRARY_DIR}/libs/program_options/src/winmain.cpp)
-
-add_library(boost_filesystem_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/filesystem/src/codecvt_error_category.cpp
-${LIBRARY_DIR}/libs/filesystem/src/operations.cpp
-${LIBRARY_DIR}/libs/filesystem/src/path.cpp
-${LIBRARY_DIR}/libs/filesystem/src/path_traits.cpp
-${LIBRARY_DIR}/libs/filesystem/src/portability.cpp
-${LIBRARY_DIR}/libs/filesystem/src/unique_path.cpp
-${LIBRARY_DIR}/libs/filesystem/src/utf8_codecvt_facet.cpp
-${LIBRARY_DIR}/libs/filesystem/src/windows_file_codecvt.cpp)
-
-add_library(boost_system_internal ${LINK_MODE}
-${LIBRARY_DIR}/libs/system/src/error_code.cpp)
-endif ()
-
-
 target_link_libraries (boost_filesystem_internal PRIVATE boost_system_internal)
 
 target_include_directories (boost_program_options_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
