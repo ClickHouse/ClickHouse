@@ -170,6 +170,7 @@ endif ()
 if (USE_INTERNAL_LLVM_LIBRARY)
     file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
     add_library(LLVM0 ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp) # silly cmake bug fix
+    add_library(LLVMOFF ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")

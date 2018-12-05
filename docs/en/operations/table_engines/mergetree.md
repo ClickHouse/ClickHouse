@@ -40,6 +40,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
+[PRIMARY KEY expr]
 [SAMPLE BY expr]
 [SETTINGS name=value, ...]
 ```
@@ -50,10 +51,12 @@ For a description of request parameters, see [request description](../../query_l
 
 - `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
-- `ORDER BY` — Primary key.
+- `ORDER BY` — Primary key (or sorting key if the separate `PRIMARY KEY` clause is present).
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounterID, EventDate, intHash32(UserID))`.
+
+- `PRIMARY KEY` - Primary key if it differs from the [sorting key](mergetree.md#table_engines-mergetree-sorting_key) (the sorting key in this case is specified by the `ORDER BY` clause).
 
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md#table_engines-custom_partitioning_key).
 
@@ -161,9 +164,32 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 - Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md#table_engine-summingmergetree) engines.
 
-    You may need many fields in the primary key even if they are not necessary for the previous steps.
+    If you need this, it makes sense to specify the *sorting key* that is distinct from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
+
+<a name="table_engines-mergetree-sorting_key"></a>
+
+### Choosing the Sorting Key that is distinct from the Primary Key
+
+It is possible to specify the sorting key (the expression for sorting the rows in data parts) that is distinct
+from the primary key (the expression, values of which are written into the index file for each mark). In this
+case primary key expression tuple must be a prefix of the sorting key expression tuple.
+
+This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
+[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines the
+table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure
+columns with arbitrary `GROUP BY` and filtering by dimensions. As SummingMergeTree and AggregatingMergeTree
+aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result
+the key expression consists of a long list of columns and this list must be frequently updated with newly
+added dimensions.
+
+In this case it makes sense to leave only a few columns in the primary key that will provide efficient
+range scans and add the remaining dimension columns to the sorting key tuple.
+
+[ALTER of the sorting key](../../query_language/alter.md#query_language-queries-alter-key_alters) is a
+lightweight operation because when a new column is simultaneously added to the table and to the sorting key
+data parts need not be changed (they remain sorted by the new sorting key expression).
 
 ### Use of Indexes and Partitions in Queries
 
