@@ -107,20 +107,20 @@ namespace FunctionSignature
   * Values of variables are keyed by variable name and index.
   * Zero index is implicit if index is not specified.
   */
-struct VariableKey
+struct Key
 {
     std::string name;
     size_t index = 0;
 
     auto tuple() const { return std::tie(name, index); }
-    bool operator==(const VariableKey & rhs) const { return tuple() == rhs.tuple(); }
-    bool operator<(const VariableKey & rhs) const { return tuple() < rhs.tuple(); }
+    bool operator==(const Key & rhs) const { return tuple() == rhs.tuple(); }
+    bool operator<(const Key & rhs) const { return tuple() < rhs.tuple(); }
 
     std::string toString() const { return index ? name + DB::toString(index) : name; }
 
-    VariableKey() {}
+    Key() {}
 
-    VariableKey(const std::string & str) : name(str)
+    Key(const std::string & str) : name(str)
     {
         if (name.empty())
             throw Exception("Logical error: empty variable name", ErrorCodes::LOGICAL_ERROR);
@@ -141,33 +141,36 @@ struct VariableKey
         name.resize(pos - name.data());
     }
 
-    VariableKey changeIndex(size_t new_index) const
+    /// Increment index if it exists.
+    Key incrementIndex(size_t amount) const
     {
-        VariableKey res = *this;
-        res.index = new_index;
+        Key res = *this;
+        if (res.index)
+            res.index += amount;
         return res;
-    }
-
-    VariableKey incrementIndex(size_t amount) const
-    {
-        return changeIndex(index + amount);
     }
 };
 
 /** Captured type or a value of a constant.
   */
-struct VariableValue
+struct Value
 {
     std::variant<DataTypePtr, Field> value;
 
-    VariableValue(const DataTypePtr & type) : value(type) {}
-    VariableValue(const Field & field) : value(field) {}
+    Value(const DataTypePtr & type) : value(type) {}
+    Value(const Field & field) : value(field) {}
 
-    bool operator==(const VariableValue & rhs) const
+    bool operator==(const Value & rhs) const
     {
         return value.index() == rhs.value.index()
             && ((value.index() == 0 && std::get<DataTypePtr>(value)->equals(*std::get<DataTypePtr>(rhs.value)))
                 || (value.index() == 1 && std::get<Field>(value) == std::get<Field>(rhs.value)));
+    }
+
+    /// For implementation of constraints.
+    bool isTrue() const
+    {
+        return std::get<Field>(value).safeGet<UInt64>() == 1;
     }
 };
 
@@ -177,15 +180,15 @@ struct VariableValue
   */
 struct Variables
 {
-    using Container = std::map<VariableKey, VariableValue>;
+    using Container = std::map<Key, Value>;
     Container container;
 
-    bool has(const VariableKey & key) const
+    bool has(const Key & key) const
     {
         return container.count(key);
     }
 
-    bool assignOrCheck(const VariableKey & key, const VariableValue & var)
+    bool assignOrCheck(const Key & key, const Value & var)
     {
         if (auto it = container.find(key); it == container.end())
         {
@@ -196,113 +199,36 @@ struct Variables
             return it->second == var;
     }
 
-    bool assignOrCheck(const VariableKey & key, const DataTypePtr & type)
+    bool assignOrCheck(const Key & key, const DataTypePtr & type)
     {
-        return assignOrCheck(key, VariableValue(type));
+        return assignOrCheck(key, Value(type));
     }
 
-    bool assignOrCheck(const VariableKey & key, const Field & const_value)
+    bool assignOrCheck(const Key & key, const Field & const_value)
     {
-        return assignOrCheck(key, VariableValue(const_value));
+        return assignOrCheck(key, Value(const_value));
+    }
+
+    Value get(const Key & key) const
+    {
+        if (auto it = container.find(key); it != container.end())
+            return it->second;
+        else
+            throw Exception("Variable " + key.toString() + " was not captured", ErrorCodes::LOGICAL_ERROR);
     }
 };
 
 
 /** A list of arguments for type function or constraint.
   */
-using VariablesList = std::vector<VariableValue>;
+using Values = std::vector<Value>;
 
 
 /** List of variables to assign or check.
   * Empty string means that argument is unused.
   * Instead of a variable name, ellipsis ("...") may be given. It will be a subject for expansion.
   */
-using VariableKeys = std::vector<VariableKey>;
-
-
-inline VariableKeys expandEllipsis(const Variables & vars, const VariableKeys & keys)
-{
-    VariableKeys new_keys;
-
-    size_t length_of_group = 0;
-    size_t prev_variable_index = 0;
-
-    for (size_t i = 0, size = keys.size(); i < size; ++i)
-    {
-        const VariableKey & key = keys[i];
-
-        if (!vars.has(key))
-            throw Exception("Logical error: no variable named " + key.toString() + " exists in function signature", ErrorCodes::LOGICAL_ERROR);
-
-        if (key.name == "...")
-        {
-            if (!prev_variable_index || !length_of_group)
-                throw Exception("Logical error: bad ellipsis, zero length of group to repeat", ErrorCodes::LOGICAL_ERROR);
-
-            size_t current_variable_index = prev_variable_index + 1;
-
-            while (true)
-            {
-                size_t idx_in_group = 0;
-                for (; idx_in_group < length_of_group; ++idx_in_group)
-                    if (!vars.has(keys[i - length_of_group + idx_in_group].changeIndex(current_variable_index)))
-                        break;
-
-                if (idx_in_group == length_of_group)
-                {
-                    for (size_t idx_in_group_2 = 0; idx_in_group_2 < length_of_group; ++idx_in_group_2)
-                        new_keys.emplace_back(keys[i - length_of_group + idx_in_group_2].changeIndex(current_variable_index));
-                }
-                else
-                    break;
-
-                ++current_variable_index;
-            }
-
-            prev_variable_index = 0;
-            length_of_group = 0;
-        }
-        else
-        {
-            if (key.index)
-            {
-                if (prev_variable_index == key.index)
-                {
-                    ++length_of_group;
-                }
-                else
-                {
-                    prev_variable_index = key.index;
-                    length_of_group = 1;
-                }
-            }
-            else
-            {
-                prev_variable_index = 0;
-                length_of_group = 0;
-            }
-
-            new_keys.emplace_back(key);
-        }
-    }
-
-    return new_keys;
-}
-
-
-/** Check type to match some criteria, possibly set some variables.
-  * iteration - all variable indices are incremented by this number - used for implementation of ellipsis.
-  */
-class ITypeMatcher
-{
-public:
-    virtual ~ITypeMatcher() {}
-    virtual std::string name() const = 0;
-    virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const = 0;
-};
-
-using TypeMatcherPtr = std::shared_ptr<ITypeMatcher>;
-using TypeMatchers = std::vector<TypeMatcherPtr>;
+using Keys = std::vector<Key>;
 
 
 template <typename What, typename... Args>
@@ -336,10 +262,24 @@ public:
     }
 };
 
-/** Find type matcher by its name.
-  */
-using TypeMatcherFactory = Factory<TypeMatcherPtr, const TypeMatchers &>;
 
+/** Check type to match some criteria, possibly set some variables.
+  * iteration - all variable indices are incremented by this number - used for implementation of ellipsis.
+  */
+class ITypeMatcher
+{
+public:
+    virtual ~ITypeMatcher() {}
+    virtual std::string name() const = 0;
+    virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const = 0;
+
+    /// Extract common index of variables participating in expression.
+    virtual size_t getIndex() const = 0;
+};
+
+using TypeMatcherPtr = std::shared_ptr<ITypeMatcher>;
+using TypeMatchers = std::vector<TypeMatcherPtr>;
+using TypeMatcherFactory = Factory<TypeMatcherPtr, const TypeMatchers &>;
 
 /// Matches any type.
 class AnyTypeMatcher : public ITypeMatcher
@@ -347,6 +287,7 @@ class AnyTypeMatcher : public ITypeMatcher
 public:
     std::string name() const override { return "Any"; }
     bool match(const DataTypePtr &, Variables &, size_t) const override { return true; }
+    size_t getIndex() const override { return 0; }
 };
 
 
@@ -368,6 +309,8 @@ public:
     {
         return type->equals(*what);
     }
+
+    size_t getIndex() const override { return 0; }
 };
 
 
@@ -376,10 +319,10 @@ class AssignTypeMatcher : public ITypeMatcher
 {
 private:
     TypeMatcherPtr impl;
-    VariableKey var_key;
+    Key var_key;
 
 public:
-    AssignTypeMatcher(const TypeMatcherPtr & impl, const VariableKey & var_key) : impl(impl), var_key(var_key) {}
+    AssignTypeMatcher(const TypeMatcherPtr & impl, const Key & var_key) : impl(impl), var_key(var_key) {}
 
     std::string name() const override
     {
@@ -393,13 +336,15 @@ public:
 
         return vars.assignOrCheck(var_key.incrementIndex(iteration), what);
     }
+
+    size_t getIndex() const override { return var_key.index; }
 };
 
 
 struct ArgumentDescription
 {
     bool is_const = false;
-    VariableKey argument_name;
+    Key argument_name;
     TypeMatcherPtr type_matcher;
     size_t iteration = 0;   /// Repeating arguments after expansion of ellipsis.
 
@@ -411,105 +356,184 @@ struct ArgumentDescription
         if (is_const && !vars.assignOrCheck(argument_name.incrementIndex(iteration), typeid_cast<const ColumnConst &>(*column).getField()))
             return false;
 
+        std::cerr << type_matcher->name() << "\n";
         return type_matcher->match(type, vars, iteration);
+    }
+
+    /// Extract common index of variables participating in expression.
+    size_t getIndex() const
+    {
+        size_t arg_name_index = argument_name.index;
+        size_t type_matcher_index = type_matcher->getIndex();
+
+        if (arg_name_index && type_matcher_index && arg_name_index != type_matcher_index)
+            throw Exception("Different indices of variables in subexpression", ErrorCodes::LOGICAL_ERROR);
+        if (arg_name_index)
+            return arg_name_index;
+        return type_matcher_index;
     }
 };
 
 using ArgumentsDescription = std::vector<ArgumentDescription>;
 
 
-/** A function of variables (types and constants) that returns a type.
-  * It also may return nullptr that means that it is not applicable.
+/** A function of variables (types and constants) that returns variable (type or constant).
+  * It also may return nullptr type that means that it is not applicable.
   */
 class ITypeFunction
 {
 public:
     virtual ~ITypeFunction() {}
-    virtual DataTypePtr apply(const VariablesList & vars) const = 0;
+    virtual Value apply(const Values & args) const = 0;
 };
 
 using TypeFunctionPtr = std::shared_ptr<ITypeFunction>;
 using TypeFunctionFactory = Factory<TypeFunctionPtr>;
 
-/// Takes one type-variable and returns it.
-class IdentityTypeFunction : public ITypeFunction
+
+/** Part of expression tree that contains type functions, variables and constants.
+  */
+class ITypeExpression
 {
 public:
-    DataTypePtr apply(const VariablesList & vars) const override
-    {
-        if (vars.size() != 1)
-            throw Exception("Logical error: identity type function have not a single argument", ErrorCodes::LOGICAL_ERROR);
+    virtual ~ITypeExpression() {}
+    virtual Value apply(const Variables & context, size_t iteration) const = 0;
 
-        auto res = std::get<DataTypePtr>(vars[0].value);
-        if (!res)
-            throw Exception("Logical error: not a type argument is passed to identity type function", ErrorCodes::LOGICAL_ERROR);
+    /// All variables from context that the function depends on are available.
+    virtual bool hasEnoughContext(const Variables & context, size_t iteration) const = 0;
 
-        return res;
-    }
+    /// Extract common index of variables participating in expression.
+    virtual size_t getIndex() const = 0;
 };
 
-/// Takes zero arguments and returns pre-determined type.
-class FixedTypeFunction : public ITypeFunction
+using TypeExpressionPtr = std::shared_ptr<ITypeExpression>;
+using TypeExpressions = std::vector<TypeExpressionPtr>;
+
+/// Takes no arguments and returns a value of variable from context.
+class VariableTypeExpression : public ITypeExpression
 {
 private:
-    DataTypePtr res;
+    Key key;
 public:
-    FixedTypeFunction(const DataTypePtr & res) : res(res) {}
+    VariableTypeExpression(const Key & key) : key(key) {}
 
-    DataTypePtr apply(const VariablesList & vars) const override
+    Value apply(const Variables & context, size_t iteration) const override
     {
-        if (vars.size() != 0)
-            throw Exception("Logical error: non-empty arguments list passed to fixed type function", ErrorCodes::LOGICAL_ERROR);
+        return context.get(key.incrementIndex(iteration));
+    }
+
+    bool hasEnoughContext(const Variables & context, size_t iteration) const override
+    {
+        return context.has(key.incrementIndex(iteration));
+    }
+
+    size_t getIndex() const override
+    {
+        return key.index;
+    }
+};
+
+/// Takes zero arguments and returns pre-determined value. It allows to represent a value as a function without arguments.
+class ConstantTypeExpression : public ITypeExpression
+{
+private:
+    Value res;
+public:
+    ConstantTypeExpression(const Value & res) : res(res) {}
+
+    Value apply(const Variables &, size_t) const override
+    {
+        return res;
+    }
+
+    bool hasEnoughContext(const Variables &, size_t) const override
+    {
+        return true;
+    }
+
+    size_t getIndex() const override
+    {
+        return 0;
+    }
+};
+
+class TypeExpressionTree : public ITypeExpression
+{
+private:
+    TypeFunctionPtr func;
+    TypeExpressions children;   /// nullptr child means ellipsis
+
+public:
+    TypeExpressionTree(const TypeFunctionPtr & func, const TypeExpressions & children) : func(func), children(children) {}
+
+    Value apply(const Variables & context, size_t iteration) const override
+    {
+        Values args;
+
+        /// Accumulate a group of children to repeat when ellipsis is encountered.
+        TypeExpressions group_to_repeat;
+        size_t prev_index = 0;
+
+        for (const auto & child : children)
+        {
+            if (child)
+            {
+                args.emplace_back(child->apply(context, iteration));
+
+                size_t current_index = child->getIndex();
+                if (!current_index || prev_index != current_index)
+                    group_to_repeat.clear();
+                else if (current_index)
+                    group_to_repeat.emplace_back(child);
+            }
+            else
+            {
+                /// Repeat accumulated group of children while there are enough variables in context.
+                size_t repeat_iteration = iteration;
+                while (true)
+                {
+                    ++repeat_iteration;
+
+                    auto it = group_to_repeat.begin();
+                    for (; it != group_to_repeat.end(); ++it)
+                        if (!(*it)->hasEnoughContext(context, repeat_iteration))
+                            break;
+                    if (it != group_to_repeat.end())
+                        break;
+
+                    for (it = group_to_repeat.begin(); it != group_to_repeat.end(); ++it)
+                        args.emplace_back((*it)->apply(context, repeat_iteration));
+                }
+            }
+        }
+        return func->apply(args);
+    }
+
+    bool hasEnoughContext(const Variables & context, size_t iteration) const override
+    {
+        for (const auto & child : children)
+            if (!child->hasEnoughContext(context, iteration))
+                return false;
+        return true;
+    }
+
+    size_t getIndex() const override
+    {
+        size_t res = 0;
+        for (const auto & child : children)
+        {
+            size_t child_index = child->getIndex();
+            if (child_index)
+            {
+                if (!res)
+                    res = child_index;
+                else if (res != child_index)
+                    throw Exception("Different indices of variables in subexpression", ErrorCodes::LOGICAL_ERROR);
+            }
+        }
         return res;
     }
 };
-
-struct BoundTypeFunction
-{
-    TypeFunctionPtr func;
-    VariableKeys args; /// TODO Allow nested expressions with type functions.
-
-    DataTypePtr apply(const Variables & vars) const
-    {
-        VariablesList func_vars;
-        func_vars.reserve(args.size());
-        for (const auto & key : args)
-            func_vars.emplace_back(vars.container.at(key));
-
-        return func->apply(func_vars);
-    }
-};
-
-
-/** Check some criteria on variables (types and constants).
-  */
-class IConstraint
-{
-public:
-    virtual ~IConstraint() {}
-    virtual bool check(const VariablesList & vars) const = 0;
-};
-
-using ConstraintPtr = std::shared_ptr<IConstraint>;
-using ConstraintFactory = Factory<ConstraintPtr>;
-
-struct BoundConstraint
-{
-    ConstraintPtr constraint;
-    VariableKeys args;
-
-    bool check(const Variables & vars) const
-    {
-        VariablesList func_vars;
-        func_vars.reserve(args.size());
-        for (const auto & key : args)
-            func_vars.emplace_back(vars.container.at(key));
-
-        return constraint->check(func_vars);
-    }
-};
-
-using BoundConstraints = std::vector<BoundConstraint>;
 
 
 class IFunctionSignature
@@ -528,32 +552,38 @@ using FunctionSignatures = std::vector<FunctionSignaturePtr>;
 struct FixedFunctionSignature : public IFunctionSignature
 {
     ArgumentsDescription arguments_description;
-    BoundTypeFunction return_type;
-    BoundConstraints constraints;
+    TypeExpressionPtr return_type;
+    TypeExpressions constraints;
 
     DataTypePtr check(const ColumnsWithTypeAndName & args) const override
     {
+        /// Apply type matchers and assign variables.
+
         Variables vars;
+
+        std::cerr << "%\n";
 
         size_t num_args = args.size();
         if (num_args != arguments_description.size())
             return nullptr;
 
+        std::cerr << "%%\n";
+
         for (size_t i = 0; i < num_args; ++i)
             if (!arguments_description[i].match(args[i].type, args[i].column, vars))
                 return nullptr;
 
-        for (const BoundConstraint & constraint : constraints)
-        {
-            BoundConstraint expanded_constraint = constraint;
-            expanded_constraint.args = expandEllipsis(vars, expanded_constraint.args);
-            if (!expanded_constraint.check(vars))
-                return nullptr;
-        }
+        std::cerr << "%%%\n";
 
-        BoundTypeFunction expanded_return_type = return_type;
-        expanded_return_type.args = expandEllipsis(vars, expanded_return_type.args);
-        return expanded_return_type.apply(vars);
+        /// Check constraints against variables.
+
+        for (const TypeExpressionPtr & constraint : constraints)
+            if (!constraint->apply(vars, 0).isTrue())
+                return nullptr;
+
+        std::cerr << "%%%%\n";
+
+        return std::get<DataTypePtr>(return_type->apply(vars, 0).value);
     }
 };
 
@@ -575,9 +605,9 @@ using ArgumentsGroups = std::vector<ArgumentsGroupPtr>;
 
 class FixedArgumentsGroup : public IVariadicArgumentsGroup
 {
-private:
-    ArgumentsDescription args;
 public:
+    ArgumentsDescription args;
+
     FixedArgumentsGroup(const ArgumentsDescription & args) : args(args) {}
 
     bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
@@ -596,9 +626,9 @@ public:
 
 class OptionalArgumentsGroup : public IVariadicArgumentsGroup
 {
-private:
-    ArgumentsDescription args;
 public:
+    ArgumentsDescription args;
+
     OptionalArgumentsGroup(const ArgumentsDescription & args) : args(args) {}
 
     bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
@@ -625,14 +655,16 @@ class EllipsisArgumentsGroup : public IVariadicArgumentsGroup
 private:
     ArgumentsDescription args;
 public:
-    EllipsisArgumentsGroup(const ArgumentsDescription & args) : args(args) {}
+    EllipsisArgumentsGroup(const ArgumentsDescription & args) : args(args)
+    {
+        if (args.empty())
+            throw Exception("Logical error: cannot repeat empty arguments group", ErrorCodes::LOGICAL_ERROR);
+    }
 
     /// Append 'args' to 'to' 1 + iteration number of times.
     bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
     {
-        size_t repeat_count = iteration + 1;
-
-        if (to.size() + repeat_count * args.size() > max_args)
+        if (to.size() + iteration * args.size() > max_args)
             return false;
 
         for (size_t iter_num = 0; iter_num < iteration; ++iter_num)
@@ -640,7 +672,7 @@ public:
             for (const auto & arg : args)
             {
                 to.emplace_back(arg);
-                to.back().iteration = iter_num;
+                to.back().iteration = iter_num + 1;
             }
         }
 
@@ -652,8 +684,8 @@ public:
 struct VariadicFunctionSignature : public IFunctionSignature
 {
     ArgumentsGroups groups;
-    BoundTypeFunction return_type;
-    BoundConstraints constraints;
+    TypeExpressionPtr return_type;
+    TypeExpressions constraints;
 
     DataTypePtr check(const ColumnsWithTypeAndName & args) const override
     {
@@ -663,14 +695,21 @@ struct VariadicFunctionSignature : public IFunctionSignature
         std::vector<size_t> iterators(groups.size());
         size_t current_iterator_idx = 0;
 
+        std::cerr << "num_groups: " << num_groups << "\n";
         while (current_iterator_idx < num_groups)
         {
+            std::cerr << "current_iterator_idx: " << current_iterator_idx << "\n";
             FixedFunctionSignature current_signature;
 
             size_t group_idx = 0;
             for (; group_idx < num_groups; ++group_idx)
+            {
+                std::cerr << "iterators[" << group_idx << "]: " << iterators[group_idx] << "\n";
                 if (!groups[group_idx]->append(current_signature.arguments_description, iterators[group_idx], num_args))
                     break;
+
+                std::cerr << "Appended " << current_signature.arguments_description.size() << " arguments\n";
+            }
 
             if (group_idx == num_groups)
             {
@@ -766,17 +805,6 @@ bool consumeKeyword(TokenIterator & pos, const std::string & keyword)
     return false;
 }
 
-bool parseIdentifierOrEllipsis(TokenIterator & pos, std::string & res)
-{
-    if (pos->type == TokenType::BareWord || pos->type == TokenType::Ellipsis)
-    {
-        res.assign(pos->begin, pos->end);
-        ++pos;
-        return true;
-    }
-    return false;
-}
-
 template <typename ParseElem, typename ParseDelimiter>
 bool parseList(TokenIterator & pos, bool allow_empty, ParseElem && parse_elem, ParseDelimiter && parse_delimiter)
 {
@@ -794,13 +822,6 @@ bool parseList(TokenIterator & pos, bool allow_empty, ParseElem && parse_elem, P
         }
         prev_pos = pos;
     }
-    return true;
-}
-
-template <typename ParseElem>
-bool parseOptional(TokenIterator & pos, ParseElem && parse_elem)
-{
-    parse_elem(pos);
     return true;
 }
 
@@ -822,17 +843,18 @@ bool parseFunctionLikeExpression(TokenIterator & pos, std::string & name, bool a
         && consumeToken(pos, TokenType::ClosingRoundBracket);
 }
 
-bool parseTypeFunction(TokenIterator & pos, BoundTypeFunction & res)
+bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
 {
     TokenIterator begin = pos;
     std::string name;
+    TypeExpressions children;
     if (parseFunctionLikeExpression(pos, name, true,
         [&](TokenIterator & pos)
         {
-            std::string elem;
-            if (parseIdentifierOrEllipsis(pos, elem))   /// TODO Allow nested expressions
+            TypeExpressionPtr elem;
+            if (parseTypeExpression(pos, elem) || consumeToken(pos, TokenType::Ellipsis))
             {
-                res.args.emplace_back(elem);
+                children.emplace_back(elem);
                 return true;
             }
             return false;
@@ -843,53 +865,37 @@ bool parseTypeFunction(TokenIterator & pos, BoundTypeFunction & res)
         /// - type:          f() -> UInt8
         /// - type function: f(A, B) -> LeastCommonType(A, B)
 
-        res.func = TypeFunctionFactory::instance().tryGet(name);
-        if (res.func)
+        TypeFunctionPtr func = TypeFunctionFactory::instance().tryGet(name);
+        if (func)
+        {
+            std::cerr << "Type func\n";
+            res = std::make_shared<TypeExpressionTree>(func, children);
             return true;
+        }
 
         /// Exact type.
 
         const auto & factory = DataTypeFactory::instance();
         if (factory.existsCanonicalFamilyName(name))
         {
+            std::cerr << "Exact type\n";
             auto prev_pos = pos;
             --prev_pos;
             const std::string full_name(begin->begin, prev_pos->end);
-            res.func = std::make_shared<FixedTypeFunction>(factory.get(full_name));
+            res = std::make_shared<ConstantTypeExpression>(factory.get(full_name));
             return true;
         }
 
         /// Type variable (example: T)
 
-        if (res.args.empty())
+        if (children.empty())
         {
-            res.args.emplace_back(name);
-            res.func = std::make_shared<IdentityTypeFunction>();
+            std::cerr << "Type variable\n";
+            res = std::make_shared<VariableTypeExpression>(name);
             return true;
         }
 
         throw Exception("Unknown type function: " + name, ErrorCodes::LOGICAL_ERROR);
-    }
-    return false;
-}
-
-bool parseConstraint(TokenIterator & pos, BoundConstraint & res)
-{
-    std::string name;
-    if (parseFunctionLikeExpression(pos, name, false,
-        [&](TokenIterator & pos)
-        {
-            std::string elem;
-            if (parseIdentifierOrEllipsis(pos, elem))
-            {
-                res.args.emplace_back(elem);
-                return true;
-            }
-            return false;
-        }))
-    {
-        res.constraint = ConstraintFactory::instance().get(name);
-        return true;
     }
     return false;
 }
@@ -1022,7 +1028,7 @@ bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription &
         });
 }
 
-bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const ArgumentsGroupPtr & /*prev_group*/)
+bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const ArgumentsGroupPtr & prev_group)
 {
     ArgumentsDescription args;
 
@@ -1042,9 +1048,45 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const Arg
 
     if (consumeToken(pos, TokenType::Ellipsis))
     {
-        /// TODO calculate args
-        res = std::make_shared<EllipsisArgumentsGroup>(args);
-        return true;
+        if (!prev_group)
+        {
+            ArgumentDescription arg;
+            arg.type_matcher = std::make_shared<AnyTypeMatcher>();
+            args.emplace_back(std::move(arg));
+            res = std::make_shared<EllipsisArgumentsGroup>(args);
+            return true;
+        }
+        else if (auto fixed_group = typeid_cast<const FixedArgumentsGroup *>(prev_group.get()))
+        {
+            size_t prev_index = 0;
+            for (auto it = fixed_group->args.rbegin(); it != fixed_group->args.rend(); ++it)
+            {
+                size_t current_index = it->getIndex();
+                if (!current_index)
+                {
+                    args.emplace_back(*it);
+                    break;
+                }
+
+                if (!prev_index)
+                    prev_index = current_index;
+                else if (prev_index != current_index)
+                    break;
+
+                args.emplace_back(*it);
+            }
+
+            res = std::make_shared<EllipsisArgumentsGroup>(args);
+            return true;
+        }
+        else if (auto optional_group = typeid_cast<const OptionalArgumentsGroup *>(prev_group.get()))
+        {
+            /// Repeat the whole group.
+            res = std::make_shared<EllipsisArgumentsGroup>(optional_group->args);
+            return true;
+        }
+        else
+            throw Exception("Bad arguments group before ellipsis", ErrorCodes::LOGICAL_ERROR);
     }
 
     return false;
@@ -1078,7 +1120,7 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
                 });
         })
         && consumeToken(pos, TokenType::Arrow)
-        && parseTypeFunction(pos, res.return_type))
+        && parseTypeExpression(pos, res.return_type))
     {
         std::cerr << "#\n";
         if (consumeKeyword(pos, "WHERE"))
@@ -1086,8 +1128,8 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
             if (!parseList(pos, false,
                 [&](TokenIterator & pos)
                 {
-                    BoundConstraint constraint;
-                    if (parseConstraint(pos, constraint))
+                    TypeExpressionPtr constraint;
+                    if (parseTypeExpression(pos, constraint))
                     {
                         res.constraints.emplace_back(constraint);
                         return true;
