@@ -1,6 +1,5 @@
 #include <iomanip>
 #include <Parsers/ASTInsertQuery.h>
-#include <Common/config.h>
 
 
 namespace DB
@@ -37,27 +36,10 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         if (!format.empty())
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FORMAT " << (settings.hilite ? hilite_none : "") << format;
-#if ENABLE_INSERT_INFILE
-            if (in_file)
-            {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << " INFILE " << (settings.hilite ? hilite_none : "");
-                in_file->formatImpl(settings, state, frame);
-            }
-#endif
         }
         else
         {
-#if ENABLE_INSERT_INFILE
-            if (in_file)
-            {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << " INFILE " << (settings.hilite ? hilite_none : "");
-                in_file->formatImpl(settings, state, frame);
-            }
-            else
-#endif
-            {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << " VALUES" << (settings.hilite ? hilite_none : "");
-            }
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " VALUES" << (settings.hilite ? hilite_none : "");
         }
     }
 }

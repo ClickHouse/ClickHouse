@@ -191,6 +191,14 @@ if (USE_INTERNAL_LLVM_LIBRARY)
     add_subdirectory (llvm/llvm)
 endif ()
 
+if (USE_INTERNAL_LIBGSASL_LIBRARY)
+  add_subdirectory(libgsasl)
+endif()
+
+if (USE_INTERNAL_LIBXML2_LIBRARY)
+    add_subdirectory(libxml2-cmake)
+endif ()
+
 if (USE_INTERNAL_HDFS3_LIBRARY)
     include(${CMAKE_SOURCE_DIR}/cmake/find_protobuf.cmake)
     if (USE_INTERNAL_PROTOBUF_LIBRARY)

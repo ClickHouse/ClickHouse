@@ -1,7 +1,6 @@
 #include <IO/ConcatReadBuffer.h>
 
 #include <Common/typeid_cast.h>
-#include <Common/config.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
@@ -10,23 +9,15 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
-#include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
-
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadBufferFromHDFS.h>
-
-#include <Poco/URI.h>
 
 
 namespace DB
@@ -37,7 +28,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
-    extern const int BAD_ARGUMETNS;
 }
 
 
@@ -151,84 +141,6 @@ BlockIO InterpreterInsertQuery::execute()
                     throw Exception("Cannot insert column " + name_type.name + ", because it is MATERIALIZED column.", ErrorCodes::ILLEGAL_COLUMN);
         }
     }
-#if ENABLE_INSERT_INFILE
-    else if (query.in_file)
-    {
-        // read data stream from in_file, and copy it to out
-        // Special handling in_file based on url type:
-        String uristr = typeid_cast<const ASTLiteral &>(*query.in_file).value.safeGet<String>();
-        // create Datastream based on Format:
-        String format = query.format;
-        if (format.empty())
-            format = context.getDefaultFormat();
-
-        auto & settings = context.getSettingsRef();
-
-        // Assume no query and fragment in uri, todo, add sanity check
-        String fuzzyFileNames;
-        String uriPrefix = uristr.substr(0, uristr.find_last_of('/'));
-        if (uriPrefix.length() == uristr.length())
-        {
-            fuzzyFileNames = uristr;
-            uriPrefix.clear();
-        }
-        else
-        {
-            uriPrefix += "/";
-            fuzzyFileNames = uristr.substr(uriPrefix.length());
-        }
-
-        Poco::URI uri(uriPrefix);
-        String scheme = uri.getScheme();
-
-        std::vector<String> fuzzyNameList = parseDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',', 100/* hard coded max files */);
-
-        //std::vector<std::vector<String> > fileNames;
-
-        //for (const auto & fuzzyName : fuzzyNameList)
-        //    fileNames.push_back(parseDescription(fuzzyName, 0, fuzzyName.length(), '|', 100));
-
-        BlockInputStreams inputs;
-
-        for (const auto & name : fuzzyNameList)
-        {
-            std::unique_ptr<ReadBuffer> read_buf;
-
-            if (scheme.empty() || scheme == "file")
-            {
-                read_buf = std::make_unique<ReadBufferFromFile>(Poco::URI(uriPrefix + name).getPath());
-            }
-            else if (scheme == "hdfs")
-            {
-                read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
-            }
-            else
-            {
-                throw Exception("URI scheme " + scheme + " is not supported with insert statement yet", ErrorCodes::BAD_ARGUMENTS);
-            }
-
-            inputs.emplace_back(
-                std::make_shared<OwningBlockInputStream<ReadBuffer>>(
-                    context.getInputFormat(format, *read_buf,
-                                           res.out->getHeader(), // sample_block
-                                           settings.max_insert_block_size),
-                    std::move(read_buf)));
-        }
-
-        if (inputs.size() == 0)
-            throw Exception("Inputs interpreter error", ErrorCodes::BAD_ARGUMENTS);
-
-        auto stream = inputs[0];
-        if (inputs.size() > 1)
-        {
-            stream = std::make_shared<UnionBlockInputStream<> >(inputs, nullptr, settings.max_distributed_connections);
-        }
-
-        res.in = std::make_shared<NullAndDoCopyBlockInputStream>(stream, res.out);
-
-        res.out = nullptr;
-    }
-#endif
 
     return res;
 }

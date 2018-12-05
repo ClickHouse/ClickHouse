@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/config.h>
+
+#if USE_HDFS
+
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <Interpreters/Context.h>
 #include <Core/Block.h>
@@ -24,3 +28,5 @@ private:
         const String & source, const String & format, const Block & sample_block, Context & global_context) const override;
 };
 }
+
+#endif
