@@ -76,7 +76,7 @@ MODIFY COLUMN name [type] [default_expr]
 MODIFY ORDER BY new_expression
 ```
 
-Работает только для таблиц семейства `MergeTree` (в том числе реплицированных). После выполнения запроса
+Работает только для таблиц семейства [`MergeTree`](../operations/table_engines/mergetree.md) (в том числе [реплицированных](../operations/table_engines/replication.md)). После выполнения запроса
 [ключ сортировки](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) таблицы
 заменяется на `new_expression` (выражение или кортеж выражений). Первичный ключ при этом остаётся прежним.
 
@@ -86,7 +86,7 @@ MODIFY ORDER BY new_expression
 
 ### Манипуляции с партициями и кусками
 
-Работает только для таблиц семейства `MergeTree` (в том числе реплицированных). Существуют следующие виды
+Работает только для таблиц семейства [`MergeTree`](../operations/table_engines/mergetree.md) (в том числе [реплицированных](../operations/table_engines/replication.md)). Существуют следующие виды
 операций:
 
 -   `DETACH PARTITION` - перенести партицию в директорию detached и забыть про неё.
