@@ -162,11 +162,6 @@ public:
       */
     void disconnect();
 
-    /** Fill in the information that is needed when getting the block for some tasks
-      * (so far only for a DESCRIBE TABLE query with Distributed tables).
-      */
-    void fillBlockExtraInfo(BlockExtraInfo & info) const;
-
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 

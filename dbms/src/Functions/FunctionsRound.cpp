@@ -6,10 +6,6 @@ namespace DB
 
 void registerFunctionsRound(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRoundToExp2>();
-    factory.registerFunction<FunctionRoundDuration>();
-    factory.registerFunction<FunctionRoundAge>();
-
     factory.registerFunction<FunctionRound>("round", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionFloor>("floor", FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionCeil>("ceil", FunctionFactory::CaseInsensitive);

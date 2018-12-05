@@ -31,7 +31,7 @@ void registerStorageNull(StorageFactory & factory)
 
 void StorageNull::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+    auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();
     params.apply(new_columns);

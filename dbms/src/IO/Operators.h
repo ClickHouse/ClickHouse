@@ -75,10 +75,10 @@ template <> inline    ReadBuffer & operator>> (ReadBuffer & buf, char & x)      
 /// If you specify a string literal for reading, this will mean - make sure there is a sequence of bytes and skip it.
 inline ReadBuffer & operator>> (ReadBuffer & buf, const char * x)     { assertString(x, buf); return buf; }
 
-inline EscapeManipReadBuffer &       operator>> (ReadBuffer & buf, EscapeManip)      { return static_cast<EscapeManipReadBuffer &>(buf); }
-inline QuoteManipReadBuffer &        operator>> (ReadBuffer & buf, QuoteManip)       { return static_cast<QuoteManipReadBuffer &>(buf); }
-inline DoubleQuoteManipReadBuffer &  operator>> (ReadBuffer & buf, DoubleQuoteManip) { return static_cast<DoubleQuoteManipReadBuffer &>(buf); }
-inline BinaryManipReadBuffer &       operator>> (ReadBuffer & buf, BinaryManip)      { return static_cast<BinaryManipReadBuffer &>(buf); }
+inline EscapeManipReadBuffer &      operator>> (ReadBuffer & buf, EscapeManip)      { return static_cast<EscapeManipReadBuffer &>(buf); }
+inline QuoteManipReadBuffer &       operator>> (ReadBuffer & buf, QuoteManip)       { return static_cast<QuoteManipReadBuffer &>(buf); }
+inline DoubleQuoteManipReadBuffer & operator>> (ReadBuffer & buf, DoubleQuoteManip) { return static_cast<DoubleQuoteManipReadBuffer &>(buf); }
+inline BinaryManipReadBuffer &      operator>> (ReadBuffer & buf, BinaryManip)      { return static_cast<BinaryManipReadBuffer &>(buf); }
 
 template <typename T> ReadBuffer & operator>> (EscapeManipReadBuffer & buf,      T & x) { readText(x, buf);         return buf; }
 template <typename T> ReadBuffer & operator>> (QuoteManipReadBuffer & buf,       T & x) { readQuoted(x, buf);       return buf; }

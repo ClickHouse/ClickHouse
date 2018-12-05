@@ -290,7 +290,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             auto col_to = ColumnString::create();
 
             const typename ColVecType::Container & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
+            ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
 
@@ -303,7 +303,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
             offsets_to.resize(size);
 
-            WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+            WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -312,8 +312,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
                 offsets_to[i] = write_buffer.count();
             }
 
-            data_to.resize(write_buffer.count());
-
+            write_buffer.finish();
             block.getByPosition(result).column = std::move(col_to);
         }
         else
@@ -337,13 +336,13 @@ struct ConvertImplGenericToString
 
         auto col_to = ColumnString::create();
 
-        ColumnString::Chars_t & data_to = col_to->getChars();
+        ColumnString::Chars & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
         data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitrary.
         offsets_to.resize(size);
 
-        WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+        WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
         FormatSettings format_settings;
         for (size_t i = 0; i < size; ++i)
@@ -353,7 +352,7 @@ struct ConvertImplGenericToString
             offsets_to[i] = write_buffer.count();
         }
 
-        data_to.resize(write_buffer.count());
+        write_buffer.finish();
         block.getByPosition(result).column = std::move(col_to);
     }
 };
@@ -520,7 +519,7 @@ struct ConvertThroughParsing
             vec_null_map_to = &col_null_map_to->getData();
         }
 
-        const ColumnString::Chars_t * chars = nullptr;
+        const ColumnString::Chars * chars = nullptr;
         const IColumn::Offsets * offsets = nullptr;
         size_t fixed_string_size = 0;
 
@@ -622,7 +621,7 @@ struct ConvertImplGenericFromString
             IColumn & column_to = *res;
             column_to.reserve(size);
 
-            const ColumnString::Chars_t & chars = col_from_string->getChars();
+            const ColumnString::Chars & chars = col_from_string->getChars();
             const IColumn::Offsets & offsets = col_from_string->getOffsets();
 
             size_t current_offset = 0;
@@ -682,8 +681,8 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
         {
             auto col_to = ColumnString::create();
 
-            const ColumnFixedString::Chars_t & data_from = col_from->getChars();
-            ColumnString::Chars_t & data_to = col_to->getChars();
+            const ColumnFixedString::Chars & data_from = col_from->getChars();
+            ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = col_from->size();
             size_t n = col_from->getN();
@@ -793,7 +792,7 @@ public:
                 return createDecimal(9, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal64>)
                 return createDecimal(18, scale);
-            else if constexpr ( std::is_same_v<Name, NameToDecimal128>)
+            else if constexpr (std::is_same_v<Name, NameToDecimal128>)
                 return createDecimal(38, scale);
 
             throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);

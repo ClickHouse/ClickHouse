@@ -23,6 +23,12 @@ struct AliasNames
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
 {
     static const std::unordered_map<std::string, ColumnDefaultKind> map{
@@ -32,7 +38,7 @@ ColumnDefaultKind columnDefaultKindFromString(const std::string & str)
     };
 
     const auto it = map.find(str);
-    return it != std::end(map) ? it->second : throw Exception{"Unknown column default specifier: " + str};
+    return it != std::end(map) ? it->second : throw Exception{"Unknown column default specifier: " + str, ErrorCodes::LOGICAL_ERROR};
 }
 
 
@@ -45,7 +51,7 @@ std::string toString(const ColumnDefaultKind kind)
     };
 
     const auto it = map.find(kind);
-    return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultKind"};
+    return it != std::end(map) ? it->second : throw Exception{"Invalid ColumnDefaultKind", ErrorCodes::LOGICAL_ERROR};
 }
 
 

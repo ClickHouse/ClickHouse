@@ -29,6 +29,7 @@
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCObjectFileInfo.h"
+#include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCTargetAsmParser.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -59,10 +60,9 @@ using namespace clang::driver::options;
 using namespace llvm;
 using namespace llvm::opt;
 
-
 namespace {
 
-/// \brief Helper class for representing a single invocation of the assembler.
+/// Helper class for representing a single invocation of the assembler.
 struct AssemblerInvocation {
   /// @name Target Options
   /// @{
@@ -94,9 +94,11 @@ struct AssemblerInvocation {
   std::string DwarfDebugFlags;
   std::string DwarfDebugProducer;
   std::string DebugCompilationDir;
+  std::map<const std::string, const std::string> DebugPrefixMap;
   llvm::DebugCompressionType CompressDebugSections =
       llvm::DebugCompressionType::None;
   std::string MainFileName;
+  std::string SplitDwarfFile;
 
   /// @}
   /// @name Frontend Options
@@ -232,6 +234,9 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
   Opts.DebugCompilationDir = Args.getLastArgValue(OPT_fdebug_compilation_dir);
   Opts.MainFileName = Args.getLastArgValue(OPT_main_file_name);
 
+  for (const auto &Arg : Args.getAllArgValues(OPT_fdebug_prefix_map_EQ))
+    Opts.DebugPrefixMap.insert(StringRef(Arg).split('='));
+
   // Frontend Options
   if (Args.hasArg(OPT_INPUT)) {
     bool First = true;
@@ -247,6 +252,7 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
   }
   Opts.LLVMArgs = Args.getAllArgValues(OPT_mllvm);
   Opts.OutputPath = Args.getLastArgValue(OPT_o);
+  Opts.SplitDwarfFile = Args.getLastArgValue(OPT_split_dwarf_file);
   if (Arg *A = Args.getLastArg(OPT_filetype)) {
     StringRef Name = A->getValue();
     unsigned OutputType = StringSwitch<unsigned>(Name)
@@ -282,22 +288,17 @@ bool AssemblerInvocation::CreateFromArgs(AssemblerInvocation &Opts,
 }
 
 static std::unique_ptr<raw_fd_ostream>
-getOutputStream(AssemblerInvocation &Opts, DiagnosticsEngine &Diags,
-                bool Binary) {
-  if (Opts.OutputPath.empty())
-    Opts.OutputPath = "-";
-
+getOutputStream(StringRef Path, DiagnosticsEngine &Diags, bool Binary) {
   // Make sure that the Out file gets unlinked from the disk if we get a
   // SIGINT.
-  if (Opts.OutputPath != "-")
-    sys::RemoveFileOnSignal(Opts.OutputPath);
+  if (Path != "-")
+    sys::RemoveFileOnSignal(Path);
 
   std::error_code EC;
   auto Out = llvm::make_unique<raw_fd_ostream>(
-      Opts.OutputPath, EC, (Binary ? sys::fs::F_None : sys::fs::F_Text));
+      Path, EC, (Binary ? sys::fs::F_None : sys::fs::F_Text));
   if (EC) {
-    Diags.Report(diag::err_fe_unable_to_open_output) << Opts.OutputPath
-                                                     << EC.message();
+    Diags.Report(diag::err_fe_unable_to_open_output) << Path << EC.message();
     return nullptr;
   }
 
@@ -342,9 +343,15 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
   MAI->setRelaxELFRelocations(Opts.RelaxELFRelocations);
 
   bool IsBinary = Opts.OutputType == AssemblerInvocation::FT_Obj;
-  std::unique_ptr<raw_fd_ostream> FDOS = getOutputStream(Opts, Diags, IsBinary);
+  if (Opts.OutputPath.empty())
+    Opts.OutputPath = "-";
+  std::unique_ptr<raw_fd_ostream> FDOS =
+      getOutputStream(Opts.OutputPath, Diags, IsBinary);
   if (!FDOS)
     return true;
+  std::unique_ptr<raw_fd_ostream> DwoOS;
+  if (!Opts.SplitDwarfFile.empty())
+    DwoOS = getOutputStream(Opts.SplitDwarfFile, Diags, IsBinary);
 
   // FIXME: This is not pretty. MCContext has a ptr to MCObjectFileInfo and
   // MCObjectFileInfo needs a MCContext reference in order to initialize itself.
@@ -374,6 +381,9 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     Ctx.setDwarfDebugProducer(StringRef(Opts.DwarfDebugProducer));
   if (!Opts.DebugCompilationDir.empty())
     Ctx.setCompilationDir(Opts.DebugCompilationDir);
+  if (!Opts.DebugPrefixMap.empty())
+    for (const auto &KV : Opts.DebugPrefixMap)
+      Ctx.addDebugPrefixMapEntry(KV.first, KV.second);
   if (!Opts.MainFileName.empty())
     Ctx.setMainFileName(StringRef(Opts.MainFileName));
   Ctx.setDwarfVersion(Opts.DwarfVersion);
@@ -427,11 +437,14 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     MCTargetOptions MCOptions;
     std::unique_ptr<MCAsmBackend> MAB(
         TheTarget->createMCAsmBackend(*STI, *MRI, MCOptions));
+    std::unique_ptr<MCObjectWriter> OW =
+        DwoOS ? MAB->createDwoObjectWriter(*Out, *DwoOS)
+              : MAB->createObjectWriter(*Out);
 
     Triple T(Opts.Triple);
     Str.reset(TheTarget->createMCObjectStreamer(
-        T, Ctx, std::move(MAB), *Out, std::move(CE), *STI, Opts.RelaxAll,
-        Opts.IncrementalLinkerCompatible,
+        T, Ctx, std::move(MAB), std::move(OW), std::move(CE), *STI,
+        Opts.RelaxAll, Opts.IncrementalLinkerCompatible,
         /*DWARFMustBeAtTheEnd*/ true));
     Str.get()->InitSections(Opts.NoExecStack);
   }
@@ -456,7 +469,7 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
     auto Pair = StringRef(S).split('=');
     auto Sym = Pair.first;
     auto Val = Pair.second;
-    int64_t Value;
+    int64_t Value = 1;
     // We have already error checked this in the driver.
     Val.getAsInteger(0, Value);
     Ctx.setSymbolValue(Parser->getStreamer(), Sym, Value);
@@ -475,14 +488,18 @@ static bool ExecuteAssembler(AssemblerInvocation &Opts,
   FDOS.reset();
 
   // Delete output file if there were errors.
-  if (Failed && Opts.OutputPath != "-")
-    sys::fs::remove(Opts.OutputPath);
+  if (Failed) {
+    if (Opts.OutputPath != "-")
+      sys::fs::remove(Opts.OutputPath);
+    if (!Opts.SplitDwarfFile.empty() && Opts.SplitDwarfFile != "-")
+      sys::fs::remove(Opts.SplitDwarfFile);
+  }
 
   return Failed;
 }
 
 static void LLVMErrorHandler(void *UserData, const std::string &Message,
-                             bool /*GenCrashDiag*/) {
+                             bool GenCrashDiag) {
   DiagnosticsEngine &Diags = *static_cast<DiagnosticsEngine*>(UserData);
 
   Diags.Report(diag::err_fe_error_backend) << Message;
@@ -491,7 +508,7 @@ static void LLVMErrorHandler(void *UserData, const std::string &Message,
   exit(1);
 }
 
-int cc1as_main(ArrayRef<const char *> Argv, const char */*Argv0*/, void */*MainAddr*/) {
+int cc1as_main(ArrayRef<const char *> Argv, const char *Argv0, void *MainAddr) {
   // Initialize targets and assembly printers/parsers.
   InitializeAllTargetInfos();
   InitializeAllTargetMCs();

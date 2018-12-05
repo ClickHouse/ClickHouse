@@ -130,7 +130,7 @@ static std::vector<String> parseDescription(const String & description, size_t l
                     throw Exception("Table function 'remote': incorrect argument in braces (left number is greater then right): "
                                     + description.substr(i, m - i + 1),
                                     ErrorCodes::BAD_ARGUMENTS);
-                if (right - left + 1 >  max_addresses)
+                if (right - left + 1 > max_addresses)
                     throw Exception("Table function 'remote': first argument generates too many result addresses",
                         ErrorCodes::BAD_ARGUMENTS);
                 bool add_leading_zeroes = false;

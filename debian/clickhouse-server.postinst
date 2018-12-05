@@ -9,7 +9,7 @@ CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR=/var/log/clickhouse-server}
 CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR=/usr/bin}
 CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM=clickhouse}
 
-OS=${OS=`lsb_release -is 2>/dev/null || uname -s || true`}
+OS=${OS=`lsb_release -is 2>/dev/null || uname -s ||:`}
 
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
@@ -68,15 +68,18 @@ Please fix this and reinstall this package." >&2
         exit 1
     fi
 
-    if [ -d ${CLICKHOUSE_CONFDIR} ]; then
-        su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_CONFDIR}" || chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}
-    fi
 
     if [ ! -d ${CLICKHOUSE_DATADIR} ]; then
         mkdir -p ${CLICKHOUSE_DATADIR}
         chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_DATADIR}
         chmod 700 ${CLICKHOUSE_DATADIR}
     fi
+
+    if [ -d ${CLICKHOUSE_CONFDIR} ]; then
+        rm -v ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
+    fi
+
+    ln -s ${CLICKHOUSE_DATADIR}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:
 
     if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
         mkdir -p ${CLICKHOUSE_LOGDIR}

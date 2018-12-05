@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class IAST;
+class IAST; // XXX: should include full class - for proper use inside inline methods
 using ASTPtr = std::shared_ptr<IAST>;
 
 
@@ -35,10 +35,8 @@ public:
 
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
+
     void mutate(const MutationCommands & commands, const Context & context) override;
 
     void shutdown() override;

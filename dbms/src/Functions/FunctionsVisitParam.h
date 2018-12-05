@@ -90,7 +90,7 @@ struct ExtractRaw
     static constexpr size_t bytes_on_stack = 64;
     using ExpectChars = PODArray<char, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
+    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
     {
         ExpectChars expects_end;
         UInt8 current_expect_end = 0;
@@ -104,7 +104,7 @@ struct ExtractRaw
             }
             else
             {
-                switch(*pos)
+                switch (*pos)
                 {
                     case '[':
                         expects_end.push_back((current_expect_end = ']'));
@@ -134,7 +134,7 @@ struct ExtractRaw
 
 struct ExtractString
 {
-    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
+    static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars & res_data)
     {
         size_t old_size = res_data.size();
         ReadBufferFromMemory in(pos, end - pos);
@@ -158,7 +158,7 @@ struct ExtractParamImpl
     using ResultType = typename ParamExtractor::ResultType;
 
     /// It is assumed that `res` is the correct size and initialized with zeros.
-    static void vector_constant(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
+    static void vector_constant(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         std::string needle,
         PaddedPODArray<ResultType> & res)
     {
@@ -228,12 +228,12 @@ struct ExtractParamImpl
 template <typename ParamExtractor>
 struct ExtractParamToStringImpl
 {
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets,
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
                        std::string needle,
-                       ColumnString::Chars_t & res_data, ColumnString::Offsets & res_offsets)
+                       ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
     {
         /// Constant 5 is taken from a function that performs a similar task FunctionsStringSearch.h::ExtractImpl
-        res_data.reserve(data.size()  / 5);
+        res_data.reserve(data.size() / 5);
         res_offsets.resize(offsets.size());
 
         /// We are looking for a parameter simply as a substring of the form "name"

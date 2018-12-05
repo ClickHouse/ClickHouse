@@ -165,22 +165,4 @@ void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const 
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
-
-/** Additional data to the blocks. They are only needed for a query
-  * DESCRIBE TABLE with Distributed tables.
-  */
-struct BlockExtraInfo
-{
-    BlockExtraInfo() {}
-    operator bool() const { return is_valid; }
-    bool operator!() const { return !is_valid; }
-
-    std::string host;
-    std::string resolved_address;
-    std::string user;
-    UInt16 port = 0;
-
-    bool is_valid = false;
-};
-
 }
