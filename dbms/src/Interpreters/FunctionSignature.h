@@ -362,9 +362,8 @@ struct ArgumentDescription
     bool is_const = false;
     Key argument_name;
     TypeMatcherPtr type_matcher;
-    size_t iteration = 0;   /// Repeating arguments after expansion of ellipsis.
 
-    bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars) const
+    bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars, size_t iteration) const
     {
         if (is_const && (!column || !column->isColumnConst()))
             return false;
@@ -384,6 +383,74 @@ struct ArgumentDescription
 };
 
 using ArgumentsDescription = std::vector<ArgumentDescription>;
+
+struct ArgumentsGroup
+{
+    ArgumentsDescription elems;
+    enum Type
+    {
+        NoType,
+        Fixed,      /// As is
+        Optional,   /// Zero or one time
+        Ellipsis    /// Zero or any number of times
+    } type = NoType;
+
+    bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t offset, size_t iteration) const
+    {
+        std::cerr << "^\n";
+        size_t size = elems.size();
+
+        if (size + offset > args.size())
+            return false;
+
+        std::cerr << "^^\n";
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const auto & col = args[offset + i];
+            if (!elems[i].match(col.type, col.column, vars, iteration))
+                return false;
+
+            std::cerr << "^^^\n";
+        }
+        return true;
+    }
+};
+
+using ArgumentsGroups = std::vector<ArgumentsGroup>;
+
+struct VariadicArguments
+{
+    ArgumentsGroups groups;
+
+    bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t group_offset, size_t args_offset, size_t iteration) const
+    {
+        if (group_offset == groups.size() && args_offset == args.size())
+            return true;
+        if (group_offset > groups.size() && args_offset > args.size())
+            return false;
+
+        const ArgumentsGroup & group = groups[group_offset];
+        switch (group.type)
+        {
+            case ArgumentsGroup::Fixed:
+                return group.match(args, vars, args_offset, 0)
+                    && match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration);
+
+            case ArgumentsGroup::Optional:
+                return match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration) /// Skip group
+                    || (group.match(args, vars, args_offset, 0)                                         /// Match group
+                        && match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration)); /// and continue from next group
+
+            case ArgumentsGroup::Ellipsis:
+                return match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration) /// Skip group
+                    || (group.match(args, vars, args_offset, iteration)                         /// Match group
+                        && match(args, vars, group_offset, args_offset, iteration + 1));        ///  and try to match again
+            default:
+                throw Exception("Wrong type of ArgumentsGroup", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
+};
 
 
 /** A function of variables (types and constants) that returns variable (type or constant).
@@ -555,11 +622,9 @@ using FunctionSignaturePtr = std::shared_ptr<IFunctionSignature>;
 using FunctionSignatures = std::vector<FunctionSignaturePtr>;
 
 
-/** A signature of a function that has fixed number of arguments.
-  */
-struct FixedFunctionSignature : public IFunctionSignature
+struct VariadicFunctionSignature : public IFunctionSignature
 {
-    ArgumentsDescription arguments_description;
+    VariadicArguments arguments_description;
     TypeExpressionPtr return_type;
     TypeExpressions constraints;
 
@@ -571,17 +636,10 @@ struct FixedFunctionSignature : public IFunctionSignature
 
         std::cerr << "%\n";
 
-        size_t num_args = args.size();
-        if (num_args != arguments_description.size())
+        if (!arguments_description.match(args, vars, 0, 0, 0))
             return nullptr;
 
         std::cerr << "%%\n";
-
-        for (size_t i = 0; i < num_args; ++i)
-            if (!arguments_description[i].match(args[i].type, args[i].column, vars))
-                return nullptr;
-
-        std::cerr << "%%%\n";
 
         /// Check constraints against variables.
 
@@ -589,165 +647,9 @@ struct FixedFunctionSignature : public IFunctionSignature
             if (!constraint->apply(vars, 0).isTrue())
                 return nullptr;
 
-        std::cerr << "%%%%\n";
+        std::cerr << "%%%\n";
 
         return std::get<DataTypePtr>(return_type->apply(vars, 0).value);
-    }
-};
-
-
-/// Generates alternative sequences of arguments.
-class IVariadicArgumentsGroup
-{
-public:
-    virtual ~IVariadicArgumentsGroup() {}
-
-    /// Appends arguments to 'to'.
-    /// The caller passes increasing 'iteration' values starting from 0 until the function returns false.
-    virtual bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const = 0;
-};
-
-using ArgumentsGroupPtr = std::shared_ptr<IVariadicArgumentsGroup>;
-using ArgumentsGroups = std::vector<ArgumentsGroupPtr>;
-
-
-class FixedArgumentsGroup : public IVariadicArgumentsGroup
-{
-public:
-    ArgumentsDescription args;
-
-    FixedArgumentsGroup(const ArgumentsDescription & args) : args(args) {}
-
-    bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
-    {
-        if (iteration != 0)
-            return false;
-
-        if (to.size() + args.size() > max_args)
-            return false;
-
-        to.insert(to.end(), args.begin(), args.end());
-        return true;
-    }
-};
-
-
-class OptionalArgumentsGroup : public IVariadicArgumentsGroup
-{
-public:
-    ArgumentsDescription args;
-
-    OptionalArgumentsGroup(const ArgumentsDescription & args) : args(args) {}
-
-    bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
-    {
-        if (to.size() + iteration > max_args)
-            return false;
-
-        if (iteration == 0)
-            return true;
-
-        if (iteration == 1)
-        {
-            to.insert(to.end(), args.begin(), args.end());
-            return true;
-        }
-
-        return false;
-    }
-};
-
-
-class EllipsisArgumentsGroup : public IVariadicArgumentsGroup
-{
-private:
-    ArgumentsDescription args;
-public:
-    EllipsisArgumentsGroup(const ArgumentsDescription & args) : args(args)
-    {
-        for (const auto & arg : args)
-            std::cerr << "...: " << arg.type_matcher->name() << "\n";
-
-        if (args.empty())
-            throw Exception("Logical error: cannot repeat empty arguments group", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    /// Append 'args' to 'to' 1 + iteration number of times.
-    bool append(ArgumentsDescription & to, size_t iteration, size_t max_args) const override
-    {
-        if (to.size() + iteration * args.size() > max_args)
-            return false;
-
-        for (size_t iter_num = 0; iter_num < iteration; ++iter_num)
-        {
-            for (const auto & arg : args)
-            {
-                to.emplace_back(arg);
-                to.back().iteration = iter_num + 1;
-            }
-        }
-
-        return true;
-    }
-};
-
-
-struct VariadicFunctionSignature : public IFunctionSignature
-{
-    ArgumentsGroups groups;
-    TypeExpressionPtr return_type;
-    TypeExpressions constraints;
-
-    DataTypePtr check(const ColumnsWithTypeAndName & args) const override
-    {
-        size_t num_args = args.size();
-        size_t num_groups = groups.size();
-
-        std::vector<size_t> iterators(groups.size());
-        size_t current_iterator_idx = 0;
-
-        std::cerr << "num_groups: " << num_groups << "\n";
-        while (current_iterator_idx < num_groups)
-        {
-            std::cerr << "current_iterator_idx: " << current_iterator_idx << "\n";
-            FixedFunctionSignature current_signature;
-
-            size_t group_idx = 0;
-            for (; group_idx < num_groups; ++group_idx)
-            {
-                std::cerr << "iterators[" << group_idx << "]: " << iterators[group_idx] << "\n";
-                if (!groups[group_idx]->append(current_signature.arguments_description, iterators[group_idx], num_args))
-                    break;
-
-                std::cerr << "Appended " << current_signature.arguments_description.size() << " arguments\n";
-            }
-
-            /// Successfully appended all groups.
-            if (group_idx == num_groups)
-            {
-                current_signature.return_type = return_type;
-                current_signature.constraints = constraints;
-
-                if (DataTypePtr res = current_signature.check(args))
-                    return res;
-
-                /// Try to append more on next iteration.
-                ++iterators[current_iterator_idx];
-            }
-            else    /// Cannot append group_idx because the result is too large
-            {
-                if (group_idx + 1 == num_groups)
-                    break;
-
-                current_iterator_idx = group_idx + 1;
-                ++iterators[current_iterator_idx];
-
-                for (size_t i = 0; i < current_iterator_idx; ++i)
-                    iterators[i] = 0;
-            }
-        }
-
-        return nullptr;
     }
 };
 
@@ -1041,43 +943,42 @@ bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription &
         });
 }
 
-bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const ArgumentsGroupPtr & prev_group)
+bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const ArgumentsGroup & prev_group)
 {
-    ArgumentsDescription args;
-
     if (consumeToken(pos, TokenType::OpeningSquareBracket)
-        && parseSimpleArgumentsDescription(pos, args)
+        && parseSimpleArgumentsDescription(pos, res.elems)
         && consumeToken(pos, TokenType::ClosingSquareBracket))
     {
-        res = std::make_shared<OptionalArgumentsGroup>(args);
+        res.type = ArgumentsGroup::Optional;
         return true;
     }
 
-    if (parseSimpleArgumentsDescription(pos, args))
+    if (parseSimpleArgumentsDescription(pos, res.elems))
     {
-        res = std::make_shared<FixedArgumentsGroup>(args);
+        res.type = ArgumentsGroup::Fixed;
         return true;
     }
 
     if (consumeToken(pos, TokenType::Ellipsis))
     {
-        if (!prev_group)
+        res.type = ArgumentsGroup::Ellipsis;
+
+        if (prev_group.type == ArgumentsGroup::NoType)
         {
             ArgumentDescription arg;
             arg.type_matcher = std::make_shared<AnyTypeMatcher>();
-            args.emplace_back(std::move(arg));
-            res = std::make_shared<EllipsisArgumentsGroup>(args);
+            res.elems.emplace_back(std::move(arg));
             return true;
         }
-        else if (auto fixed_group = typeid_cast<const FixedArgumentsGroup *>(prev_group.get()))
+        else if (prev_group.type == ArgumentsGroup::Fixed)
         {
             size_t prev_index = 0;
-            for (auto it = fixed_group->args.rbegin(); it != fixed_group->args.rend(); ++it)
+            for (auto it = prev_group.elems.rbegin(); it != prev_group.elems.rend(); ++it)
             {
                 size_t current_index = it->getIndex();
                 if (!current_index)
                 {
-                    args.emplace_back(*it);
+                    res.elems.emplace_back(*it);
                     break;
                 }
 
@@ -1086,16 +987,14 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroupPtr & res, const Arg
                 else if (prev_index != current_index)
                     break;
 
-                args.emplace(args.begin(), *it);
+                res.elems.emplace(res.elems.begin(), *it);
             }
-
-            res = std::make_shared<EllipsisArgumentsGroup>(args);
             return true;
         }
-        else if (auto optional_group = typeid_cast<const OptionalArgumentsGroup *>(prev_group.get()))
+        else if (prev_group.type == ArgumentsGroup::Optional)
         {
             /// Repeat the whole group.
-            res = std::make_shared<EllipsisArgumentsGroup>(optional_group->args);
+            res.elems = prev_group.elems;
             return true;
         }
         else
@@ -1118,11 +1017,11 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
                 [&](TokenIterator & pos)
                 {
                     std::cerr << "@@@\n";
-                    ArgumentsGroupPtr group;
-                    if (parseArgumentsGroup(pos, group, res.groups.empty() ? nullptr : res.groups.back()))
+                    ArgumentsGroup group;
+                    if (parseArgumentsGroup(pos, group, res.arguments_description.groups.empty() ? ArgumentsGroup() : res.arguments_description.groups.back()))
                     {
                         std::cerr << "@@@@\n";
-                        res.groups.emplace_back(group);
+                        res.arguments_description.groups.emplace_back(group);
                         return true;
                     }
                     return false;
