@@ -38,7 +38,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
-## 广告
+## 商业
 
 ### DBeaver
 
