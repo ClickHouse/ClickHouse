@@ -61,36 +61,12 @@ private:
 class ExceptionHandler
 {
 public:
-    void setException(std::exception_ptr && exception)
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        if (!first_exception)
-            first_exception = std::move(exception);
-    }
-
-    void throwIfException()
-    {
-        std::unique_lock<std::mutex> lock(mutex);
-        if (first_exception)
-            std::rethrow_exception(first_exception);
-    }
+    void setException(std::exception_ptr && exception);
+    void throwIfException();
 
 private:
     std::exception_ptr first_exception;
     std::mutex mutex;
 };
 
-ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler)
-{
-    return [job{std::move(job)}, &handler] ()
-    {
-        try
-        {
-            job();
-        }
-        catch (...)
-        {
-            handler.setException(std::current_exception());
-        }
-    };
-}
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler);
