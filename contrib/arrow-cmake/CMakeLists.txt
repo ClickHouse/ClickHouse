@@ -40,11 +40,13 @@ set( thriftcpp_threads_SOURCES
     ${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp
 )
 
-add_library(thrift_static STATIC ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-add_library(thrift SHARED ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+#add_library(thrift_static STATIC ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+#add_library(thrift SHARED ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
+add_library(${THRIFT_LIBRARY} ${LINK_MODE} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 
-target_include_directories(thrift_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS}) # ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src
-target_include_directories(thrift PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
+#target_include_directories(thrift_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS}) # ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src
+#target_include_directories(thrift PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
+target_include_directories(${THRIFT_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 
@@ -76,22 +78,26 @@ list(APPEND PARQUET_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_types.cpp
 )
 
-add_library(parquet_static STATIC ${PARQUET_SRCS})
-add_library(parquet_shared SHARED ${PARQUET_SRCS})
+#add_library(parquet_static STATIC ${PARQUET_SRCS})
+#add_library(parquet_shared SHARED ${PARQUET_SRCS})
+add_library(${PARQUET_LIBRARY} ${LINK_MODE} ${PARQUET_SRCS})
 
-target_include_directories(parquet_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
-target_include_directories(parquet_shared PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
+#target_include_directories(parquet_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
+#target_include_directories(parquet_shared PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
+target_include_directories(${PARQUET_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake)
 #configure_file("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/config.h.in" "${ClickHouse_BINARY_DIR}/contrib/thrift/thrift/config.h")
 
-target_link_libraries(parquet_static PRIVATE thrift_static)
-target_link_libraries(parquet_shared PRIVATE thrift)
+#target_link_libraries(parquet_static PRIVATE thrift_static)
+#target_link_libraries(parquet_shared PRIVATE thrift)
+target_link_libraries(${PARQUET_LIBRARY} PRIVATE ${THRIFT_LIBRARY})
 
 #target_include_directories(parquet_static PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
 #target_include_directories(parquet_shared PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src ${ClickHouse_BINARY_DIR}/contrib/thrift ${Boost_INCLUDE_DIRS})
-target_include_directories(parquet_static PRIVATE ${Boost_INCLUDE_DIRS})
-target_include_directories(parquet_shared PRIVATE ${Boost_INCLUDE_DIRS})
+#target_include_directories(parquet_static PRIVATE ${Boost_INCLUDE_DIRS})
+#target_include_directories(parquet_shared PRIVATE ${Boost_INCLUDE_DIRS})
+target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
 
 
@@ -147,10 +153,13 @@ set(ARROW_SRCS
   )
 
 #list(TRANSFORM ARROW_SRCS PREPEND ${LIBRARY_DIR}/) # cmake 3.12
-add_library(arrow_static STATIC ${ARROW_SRCS})
-add_library(arrow_shared SHARED ${ARROW_SRCS})
-target_include_directories(arrow_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
-target_include_directories(arrow_shared PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+#add_library(arrow_static STATIC ${ARROW_SRCS})
+#add_library(arrow_shared SHARED ${ARROW_SRCS})
+#target_include_directories(arrow_static PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+#target_include_directories(arrow_shared PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+#target_link_libraries(arrow_static PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
+#target_link_libraries(arrow_shared PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
 
-target_link_libraries(arrow_static PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
-target_link_libraries(arrow_shared PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
+add_library(${ARROW_LIBRARY} ${LINK_MODE} ${ARROW_SRCS})
+target_include_directories(${ARROW_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Boost_REGEX_LIBRARY})
