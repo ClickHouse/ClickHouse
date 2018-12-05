@@ -3,6 +3,9 @@
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IExternalLoadable.h>
+#include <Parsers/ASTCreateQuery.h>
+
+#include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <vector>
@@ -108,4 +111,6 @@ private:
         const bool hierarchy_allowed = true, const bool allow_null_values = true);
 };
 
+
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryStructureFromAST(const ASTCreateQuery & create);
 }

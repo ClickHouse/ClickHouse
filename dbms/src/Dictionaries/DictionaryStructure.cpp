@@ -6,6 +6,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/LayeredConfiguration.h>
+
 #include <ext/range.h>
 #include <numeric>
 #include <unordered_set>
@@ -367,6 +371,18 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     }
 
     return res_attributes;
+}
+
+
+Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryStructureFromAST(const ASTCreateQuery & create)
+{
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> configuration = new Poco::Util::LayeredConfiguration();
+    if (create.dictionary.empty())
+        return configuration;
+
+    configuration->setString("name", create.dictionary);
+    // TODO: implement here
+    return configuration;
 }
 
 }
