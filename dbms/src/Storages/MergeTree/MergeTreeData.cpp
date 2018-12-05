@@ -353,8 +353,8 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 
     if (expr_func && expr_func->name == "tuple")
     {
-        /// Primary key is specified in tuple.
-        return expr_func->children.at(0);
+        /// Primary key is specified in tuple, extract its arguments.
+        return expr_func->arguments->clone();
     }
     else
     {
