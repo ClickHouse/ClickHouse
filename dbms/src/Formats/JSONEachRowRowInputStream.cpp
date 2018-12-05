@@ -30,9 +30,6 @@ enum
 JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
     : istr(istr_), header(header_), format_settings(format_settings), name_map(header.columns())
 {
-    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(istr);
-
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -50,6 +47,12 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
     }
 
     prev_positions.assign(num_columns, name_map.end());
+}
+
+void JSONEachRowRowInputStream::readPrefix()
+{
+    /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
+    skipBOMIfExists(istr);
 }
 
 const String & JSONEachRowRowInputStream::columnName(size_t i) const

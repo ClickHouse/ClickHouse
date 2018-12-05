@@ -19,13 +19,17 @@ namespace ErrorCodes
 TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
     : istr(istr_), header(header_), format_settings(format_settings), name_map(header.columns())
 {
-    /// In this format, we assume that column name cannot contain BOM,
-    ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
-    skipBOMIfExists(istr);
-
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
         name_map[header.safeGetByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
+}
+
+
+void TSKVRowInputStream::readPrefix()
+{
+    /// In this format, we assume that column name cannot contain BOM,
+    ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
+    skipBOMIfExists(istr);
 }
 
 

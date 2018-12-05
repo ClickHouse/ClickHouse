@@ -23,6 +23,7 @@ public:
       */
     ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings);
 
+    void readPrefix() override;
     bool read(MutableColumns & columns) override;
 
 private:

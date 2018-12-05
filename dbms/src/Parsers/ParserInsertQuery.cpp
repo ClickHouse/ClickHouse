@@ -121,6 +121,12 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         pos = before_select;
         ParserSelectWithUnionQuery select_p;
         select_p.parse(pos, select, expected);
+
+        if (s_format.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, format, expected))
+                return false;
+        }
     }
     else
     {

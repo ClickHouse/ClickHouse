@@ -29,39 +29,47 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-    if (args.size() != 3)
-        throw Exception("Table function '" + getName() + "' requires exactly 3 arguments: filename, format and structure.",
+    if (args.size() != 1 && args.size() != 3)
+        throw Exception("Table function '" + getName() + "' requires 1 argument: filename or exactly 3 arguments: filename, format and structure.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (size_t i = 0; i < 3; ++i)
+    for (size_t i = 0; i < args.size(); ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
-
-    std::string filename = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-    std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
-    std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
-
-    // Create sample block
-    std::vector<std::string> structure_vals;
-    boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
-
-    if (structure_vals.size() % 2 != 0)
-        throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
 
     Block sample_block;
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
+    std::string filename = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+
+    StoragePtr storage;
+    if (args.size() == 1)
     {
-        ColumnWithTypeAndName column;
-        column.name = structure_vals[i];
-        column.type = data_type_factory.get(structure_vals[i + 1]);
-        column.column = column.type->createColumn();
-        sample_block.insert(std::move(column));
+        auto string = data_type_factory.get("String");
+        sample_block.insert({string->createColumn(), string, "line"});
+        storage = getStorage(filename, "TSV", sample_block, const_cast<Context &>(context));
     }
+    else
+    {
+        std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
-    // Create table
-    StoragePtr storage = getStorage(filename, format, sample_block, const_cast<Context &>(context));
+        // Create sample block
+        std::vector<std::string> structure_vals;
+        boost::split(structure_vals, structure, boost::algorithm::is_any_of(" ,"), boost::algorithm::token_compress_on);
 
+        if (structure_vals.size() % 2 != 0)
+            throw Exception("Odd number of elements in section structure: must be a list of name type pairs", ErrorCodes::LOGICAL_ERROR);
+
+        for (size_t i = 0, size = structure_vals.size(); i < size; i += 2)
+        {
+            ColumnWithTypeAndName column;
+            column.name = structure_vals[i];
+            column.type = data_type_factory.get(structure_vals[i + 1]);
+            column.column = column.type->createColumn();
+            sample_block.insert(std::move(column));
+        }
+        storage = getStorage(filename, format, sample_block, const_cast<Context &>(context));
+    }
     storage->startup();
 
     return storage;

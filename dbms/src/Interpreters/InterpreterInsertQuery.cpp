@@ -1,15 +1,20 @@
+#include <IO/AsynchronousWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 
 #include <Common/typeid_cast.h>
 
+#include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
-#include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/CountingBlockOutputStream.h>
 #include <DataStreams/NullAndDoCopyBlockInputStream.h>
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/TextRowOutputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
@@ -17,7 +22,6 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -128,7 +132,27 @@ BlockIO InterpreterInsertQuery::execute()
 
         res.in = interpreter_select.execute().in;
 
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, res.out->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
+        auto sample_block = res.out->getHeader();
+
+        if (query.format.size())
+        {
+            if(!isString(res.in->getHeader().safeGetByPosition(0).type))
+                throw Exception("INSERT INTO SELECT FROM FORMAT requires one string column returned by the SELECT expression", ErrorCodes::ILLEGAL_COLUMN);
+
+            auto output = std::make_shared<TextRowOutputStream>(sample_block);
+            auto & read_buffer = output->getReadBuffer();
+            BlockInputStreams inputs;
+            inputs.push_back(
+                context.getInputFormat(query.format, read_buffer, sample_block, context.getSettings().max_insert_block_size));
+            inputs.push_back(
+                std::make_shared<AsynchronousBlockInputStream>(std::make_shared<TextDoCopyBlockInputStream>(res.in, output)));
+            res.in = std::make_shared<UnionBlockInputStream>(inputs, nullptr, 2);
+        }
+        else
+        {
+            res.in = std::make_shared<ConvertingBlockInputStream>(
+                context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        }
         res.in = std::make_shared<NullAndDoCopyBlockInputStream>(res.in, res.out);
 
         res.out = nullptr;

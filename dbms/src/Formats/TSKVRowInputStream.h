@@ -25,6 +25,7 @@ class TSKVRowInputStream : public IRowInputStream
 public:
     TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings);
 
+    void readPrefix() override;
     bool read(MutableColumns & columns) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
