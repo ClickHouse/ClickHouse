@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Storages/StorageDistributed.h>
-#include <Storages/StorageDistributedShardsOptimizer.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageFactory.h>
@@ -270,8 +269,7 @@ BlockInputStreams StorageDistributed::read(
 
     if (settings.distributed_optimize_skip_select_on_unused_shards)
     {
-        auto optimizer = StorageDistributedShardsOptimizer();
-        auto smaller_cluster = optimizer.skipUnusedShards(cluster, query_info, sharding_key_expr, sharding_key_column_name);
+        auto smaller_cluster = skipUnusedShards(cluster, query_info);
 
         if (smaller_cluster)
             cluster = smaller_cluster;
