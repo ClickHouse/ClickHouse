@@ -444,7 +444,7 @@ struct VariadicArguments
 
             case ArgumentsGroup::Ellipsis:
                 return match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration) /// Skip group
-                    || (group.match(args, vars, args_offset, iteration)                         /// Match group
+                    || (group.match(args, vars, args_offset, iteration + 1)                     /// Match group
                         && match(args, vars, group_offset, args_offset, iteration + 1));        ///  and try to match again
             default:
                 throw Exception("Wrong type of ArgumentsGroup", ErrorCodes::LOGICAL_ERROR);
