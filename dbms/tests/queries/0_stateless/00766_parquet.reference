@@ -1,0 +1,12 @@
+64999
+64998
+64997
+64996
+64995
+64994
+64993
+64992
+64991
+64990
+ContextLock	Number of times the lock of Context was acquired or tried to acquire. This is global lock.
+Query	Number of queries started to be interpreted and maybe executed. Does not include queries that are failed to parse, that are rejected due to AST size limits; rejected due to quota limits or limits on number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.
