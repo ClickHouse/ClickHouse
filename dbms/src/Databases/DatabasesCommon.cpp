@@ -92,6 +92,13 @@ bool DatabaseWithOwnTablesBase::isTableExist(
     return tables.find(table_name) != tables.end();
 }
 
+
+bool DatabaseWithOwnTablesBase::isDictionaryExist(const Context &context, const String &) const
+{
+    throw Exception("Dictionaries isn't supported in " + context.getDatabase(name)->getEngineName() + " database engine.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     const Context & /*context*/,
     const String & table_name) const
@@ -102,6 +109,13 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
         return {};
     return it->second;
 }
+
+
+DictionaryPtr DatabaseWithOwnTablesBase::tryGetDictionary(const Context &context, const String &) const
+{
+    throw Exception("Dictionaries aren't supported in " + context.getDatabase(name)->getEngineName() + " database engine.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 
 DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
 {
