@@ -101,13 +101,41 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 ## Synonyms
 
-In the SELECT query, expressions can specify synonyms using the AS keyword. Any expression is placed to the left of AS. The identifier name for the synonym is placed to the right of AS. As opposed to standard SQL, synonyms are not only declared on the top level of expressions:
+Use `AS` keyword to define a synonym.
 
-``` sql
-SELECT (1 AS n) + 2, n
+```
+expr AS synonym
 ```
 
-In contrast to standard SQL, synonyms can be used in all parts of a query, not just `SELECT`.
+- The `expr` can be any. For example, `SELECT (1 AS n) + 2, n` is valid.
+- The `synonym` should be a string. If a synonym contains spaces enclose it in quotes. For example, `SELECT "table t".col_name FROM t AS "table t"`.
+- You can define synonyms in any part of a query. Synonyms are global for query and not visible in subqueries and outside the query.
+- You can declare synonyms for table or a column names skipping `AS` keyword. For example, `SELECT b.column_name from t b`.
+
+Avoid the synonyms the same as the column or table names.
+
+Let's consider the following example:
+
+```
+CREATE TABLE t
+(
+    a Int,
+    b Int
+)
+ENGINE = TinyLog()
+```
+
+```
+SELECT
+    argMax(a, b),
+    sum(b) AS b
+FROM t
+
+Received exception from server (version 18.14.17):
+Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(a) is found inside another aggregate function in query.
+```
+
+In this example, we declared table `t` with column `b`. Then, when selecting data, we defined synonym `sum(b) AS b`. As synonyms are global, ClickHouse substituted `b` literal in `argMax(a, b)` with `sub(b)`. This substitution caused the exception.
 
 ## Asterisk
 
