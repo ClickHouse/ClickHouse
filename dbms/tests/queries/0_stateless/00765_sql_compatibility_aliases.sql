@@ -5,3 +5,4 @@ select ucase('foo');
 select LOWER('Foo');
 select UPPER('Foo');
 select REPLACE('bar', 'r', 'z');
+select Locate('foo', 'o');
