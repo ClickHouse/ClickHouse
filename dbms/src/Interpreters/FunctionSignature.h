@@ -616,6 +616,7 @@ private:
                 }
 
                 ellipsis_size = expected_num_args_in_ellipsis / num_args_in_ellipsis_group;
+                std::cerr << "ellipsis_size: " << *ellipsis_size << "\n";
             }
         }
 
@@ -638,9 +639,19 @@ private:
         if (group_offset == groups.size() && args_offset == args.size())
             return true;
 
-        /// Not enough groups to match all arguments. Or all arguments has been matched but there are more groups.
-        if (group_offset >= groups.size() || args_offset > args.size())
+        /// Not enough groups to match all arguments.
+        if (group_offset >= groups.size())
+        {
+            out_reason = "too many arguments (" + DB::toString(args.size()) + ")";
             return false;
+        }
+
+        /// All arguments has been matched but there are more groups. NOTE Should not happen.
+        if (args_offset > args.size())
+        {
+            out_reason = "too few arguments (" + DB::toString(args.size()) + ")";
+            return false;
+        }
 
         const ArgumentsGroup & group = groups[group_offset];
         size_t group_size = group.elems.size();
@@ -661,9 +672,9 @@ private:
                 if (ellipsis_size)
                 {
                     for (size_t i = 0; i < *ellipsis_size; ++i)
-                        if (!group.match(args, vars, args_offset, iteration + 1 + i, out_reason))
+                        if (!group.match(args, vars, args_offset + group_size * i, iteration + 1 + i, out_reason))
                             return false;
-                    return matchAt(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
+                    return matchAt(args, vars, group_offset + 1, args_offset + group_size * *ellipsis_size, iteration, ellipsis_size, out_reason);
                 }
                 else
                 {
