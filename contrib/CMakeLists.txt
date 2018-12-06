@@ -137,14 +137,21 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
     target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
 
-if (0)
-# if use arrow's cmakefiles they wants too lot depends, downloads some libs
 if (USE_INTERNAL_PARQUET_LIBRARY)
+if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
+    # if use arrow's cmakefiles they wants too lot depends, downloads some libs
+    # But this mode can be used for updating auto-generated parquet files:
+    # cmake -DUSE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE=1 -DUSE_STATIC_LIBRARIES=0
+    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> /contrib/arrow-cmake/cpp/src/parquet/
+
     set (ARROW_COMPUTE ON CACHE INTERNAL "")
     set (ARROW_PARQUET ON CACHE INTERNAL "")
     set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
-
-    if (${MAKE_STATIC_LIBRARIES})
+    set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
+    set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
+    #set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
+    set (Boost_FOUND 1 CACHE INTERNAL "")
+    if (MAKE_STATIC_LIBRARIES)
         set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
@@ -152,13 +159,6 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
         set (PARQUET_ARROW_LINKAGE "shared" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "shared" CACHE INTERNAL "")
     endif()
-    set (ARROW_BUILD_SHARED 1 CACHE INTERNAL "")
-
-    set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
-
-    set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
-    set (Boost_FOUND 1 CACHE INTERNAL "")
-
 
     if(CMAKE_BUILD_TYPE STREQUAL "RELWITHDEBINFO")
         set(_save_build_type ${CMAKE_BUILD_TYPE})
@@ -173,17 +173,10 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     if(_save_build_type)
         set(CMAKE_BUILD_TYPE ${_save_build_type})
     endif()
-endif ()
-endif ()
 
-if(USE_INTERNAL_PARQUET_LIBRARY)
-    set(BUILD_PYTHON 0 CACHE INTERNAL "")
-    set(BUILD_TESTING 0 CACHE INTERNAL "")
-    set(BUILD_EXAMPLES 0 CACHE INTERNAL "")
-    set(BUILD_TUTORIALS 0 CACHE INTERNAL "")
-    set(WITH_C_GLIB 0 CACHE INTERNAL "")
-    #add_subdirectory(thrift)
+else()
     add_subdirectory(arrow-cmake)
+endif()
 endif()
 
 

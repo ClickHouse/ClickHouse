@@ -261,7 +261,7 @@ endif ()
 
 if (USE_PARQUET)
     target_link_libraries(dbms PRIVATE ${PARQUET_LIBRARY} ${ARROW_LIBRARY})
-    if (NOT USE_INTERNAL_PARQUET_LIBRARY)
+    if (NOT USE_INTERNAL_PARQUET_LIBRARY OR USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         target_include_directories (dbms BEFORE PRIVATE ${PARQUET_INCLUDE_DIR} ${ARROW_INCLUDE_DIR})
     endif ()
 endif ()
