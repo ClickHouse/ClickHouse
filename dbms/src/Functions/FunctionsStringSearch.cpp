@@ -1088,5 +1088,6 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionLike>();
     factory.registerFunction<FunctionNotLike>();
     factory.registerFunction<FunctionExtract>();
+    factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
 }
 }
