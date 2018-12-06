@@ -78,17 +78,19 @@ The following command is supported:
 MODIFY ORDER BY new_expression
 ```
 
-It only works for tables in the `MergeTree` family (including replicated tables). The command changes the
+It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The command changes the
 [sorting key](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) of the table
 to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part
-rows are sorted by the sorting key expression you cannot add expressions containing existing columns
+rows are ordered by the sorting key expression you cannot add expressions containing existing columns
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
 ### Manipulations With Partitions and Parts
 
-It only works for tables in the `MergeTree` family (including replicated tables). The following operations
+It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The following operations
 are available:
 
 - `DETACH PARTITION` – Move a partition to the 'detached' directory and forget it.
