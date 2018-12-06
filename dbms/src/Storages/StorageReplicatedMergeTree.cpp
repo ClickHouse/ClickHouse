@@ -3042,7 +3042,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
     if (!is_leader)
     {
-        sendRequestToLeaderReplica(query, context.getSettingsRef());
+        sendRequestToLeaderReplica(query, context);
         return true;
     }
 
@@ -3380,7 +3380,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     if (!is_leader)
     {
-        sendRequestToLeaderReplica(query, context.getSettingsRef());
+        sendRequestToLeaderReplica(query, context);
         return;
     }
 
@@ -3409,7 +3409,7 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 
     if (!is_leader)
     {
-        sendRequestToLeaderReplica(query, context.getSettingsRef());
+        sendRequestToLeaderReplica(query, context);
         return;
     }
 
@@ -3835,8 +3835,9 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
 
 /// TODO: Probably it is better to have queue in ZK with tasks for leader (like DDL)
-void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings)
+void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query, const Context & ctx)
 {
+    const Settings & settings = ctx.getSettingsRef();
     auto live_replicas = getZooKeeper()->getChildren(zookeeper_path + "/leader_election");
     if (live_replicas.empty())
         throw Exception("No active replicas", ErrorCodes::NO_ACTIVE_REPLICAS);
@@ -3876,7 +3877,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
+        ctx.getClientInfo().current_user, ctx.getClientInfo().current_password, timeouts, "ClickHouse replica");
 
     RemoteBlockInputStream stream(connection, formattedAST(new_query), {}, context, &settings);
     NullBlockOutputStream output({});

@@ -488,7 +488,7 @@ private:
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
     /// Choose leader replica, send requst to it and wait.
-    void sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings);
+    void sendRequestToLeaderReplica(const ASTPtr & query, const Context & context);
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
