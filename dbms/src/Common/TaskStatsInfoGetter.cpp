@@ -155,7 +155,7 @@ NetlinkMessage query(
     request.generic_header.version = 1;
 
     request.payload.attribute.header.nla_type = attribute_type;
-    request.payload.attribute.header.nla_len = attribute_size + 1 + NLA_HDRLEN;
+    request.payload.attribute.header.nla_len = attribute_size + NLA_HDRLEN;
 
     memcpy(&request.payload.attribute.payload, attribute_data, attribute_size);
 

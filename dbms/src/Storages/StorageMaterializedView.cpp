@@ -186,7 +186,7 @@ BlockInputStreams StorageMaterializedView::read(
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock = storage->lockStructure(false);
     auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
     for (auto & stream : streams)
         stream->addTableLock(lock);
@@ -196,7 +196,7 @@ BlockInputStreams StorageMaterializedView::read(
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructure(true, __PRETTY_FUNCTION__);
+    auto lock = storage->lockStructure(true);
     auto stream = storage->write(query, settings);
     stream->addTableLock(lock);
     return stream;

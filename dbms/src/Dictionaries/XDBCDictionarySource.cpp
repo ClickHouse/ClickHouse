@@ -246,6 +246,11 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
         return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
 #else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        (void)context;
         throw Exception {"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
                          ErrorCodes::SUPPORT_IS_DISABLED};
 #endif

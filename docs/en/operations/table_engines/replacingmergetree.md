@@ -1,6 +1,6 @@
 # ReplacingMergeTree
 
-The engine differs from [MergeTree](mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same primary key value.
+The engine differs from [MergeTree](mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same primary key value (or more accurately, with the same [sorting key](mergetree.md#table_engines-mergetree-sorting_key) value).
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, don't count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
