@@ -38,7 +38,7 @@ public:
     }
 
 private:
-    MatcherData & data;
+    Data & data;
     size_t visit_depth;
     std::ostream * ostr;
 

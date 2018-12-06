@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Common/typeid_cast.h>
-#include <Parsers/DumpASTNode.h>
 #include <unordered_map>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {
@@ -14,47 +13,27 @@ struct ASTArrayJoin;
 
 using Aliases = std::unordered_map<String, ASTPtr>;
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
-/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
-
-/// Visits AST nodes and collect their aliases in one map (with links to source nodes).
-class QueryAliasesVisitor
+/// Visits AST node to collect aliases.
+class QueryAliasesMatcher
 {
 public:
-    QueryAliasesVisitor(Aliases & aliases_, std::ostream * ostr_ = nullptr)
-    :   aliases(aliases_),
-        visit_depth(0),
-        ostr(ostr_)
-    {}
+    struct Data
+    {
+        Aliases & aliases;
+    };
 
-    void visit(const ASTPtr & ast) const;
+    static constexpr const char * label = __FILE__;
+
+    static std::vector<ASTPtr> visit(ASTPtr & ast, Data & data);
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    Aliases & aliases;
-    mutable size_t visit_depth;
-    std::ostream * ostr;
-
-    void visit(const ASTTableExpression &, const ASTPtr &) const {}
-    void visit(const ASTSelectWithUnionQuery &, const ASTPtr &) const {}
-
-    void visit(ASTSubquery & subquery, const ASTPtr & ast) const;
-    void visit(const ASTArrayJoin &, const ASTPtr & ast) const;
-    void visitOther(const ASTPtr & ast) const;
-    void visitChildren(const ASTPtr & ast) const;
-
-    template <typename T>
-    bool tryVisit(const ASTPtr & ast) const
-    {
-        if (T * t = typeid_cast<T *>(ast.get()))
-        {
-            DumpASTNode dump(*ast, ostr, visit_depth, "getQueryAliases");
-            visit(*t, ast);
-            return true;
-        }
-        return false;
-    }
-
-    String wrongAliasMessage(const ASTPtr & ast, const String & alias) const;
+    static std::vector<ASTPtr> visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr> visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
+    static void visitOther(const ASTPtr & ast, Data & data);
 };
+
+/// Visits AST nodes and collect their aliases in one map (with links to source nodes).
+using QueryAliasesVisitor = InDepthNodeVisitor<QueryAliasesMatcher, false>;
 
 }
