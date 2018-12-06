@@ -26,7 +26,6 @@ Returns two `String`-type columns: `name` and `type`, which indicate the names a
 
 Nested data structures are output in "expanded" format. Each column is shown separately, with the name after a dot.
 
-
 ## DETACH
 
 Deletes information about the 'name' table from the server. The server stops knowing about the table's existence.
@@ -148,7 +147,6 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
 
-
 ## SHOW DATABASES
 
 ``` sql
@@ -213,10 +211,9 @@ See also the section "LIKE operator".
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-Removes all data from a table. If `IF EXISTS` is specified, the query doesn't return an error if the table doesn't exist.
+Removes all data from a table. When the clause `IF EXISTS` is omitted, the query returns an error if the table does not exist.
 
-The TRUNCATE query is not supported for View, File, URL and Null table engines.
-
+The `TRUNCATE` query is not supported for [View](../operations/table_engines/view.md#table_engines-view), [File](../operations/table_engines/file.md#table_engines-file), [URL](../operations/table_engines/url.md#table_engines-url) and [Null](../operations/table_engines/null.md#table_engines-null) table engines.
 
 ## USE
 
