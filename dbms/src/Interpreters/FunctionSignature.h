@@ -254,7 +254,7 @@ struct Variables
                 return true;
 
             out_reason = "argument " + DB::toString(arg_num + 1) + " must be of type " + key.toString()
-                + " that was captured as " + var->getName();
+                + " that was captured as " + it->second.toString();
 
             if (it->second.captured_at_arg_num)
                 out_reason += " at argument " + DB::toString(*it->second.captured_at_arg_num + 1);
@@ -553,15 +553,72 @@ struct ArgumentsGroup
 
 using ArgumentsGroups = std::vector<ArgumentsGroup>;
 
-struct VariadicArguments
+class VariadicArguments
 {
+public:
     ArgumentsGroups groups;
 
-    bool match(const ColumnsWithTypeAndName & args, Variables & vars,
+    bool match(const ColumnsWithTypeAndName & args, Variables & vars, std::optional<size_t> & ellipsis_size, std::string & out_reason) const
+    {
+        return matchAt(args, vars, 0, 0, 0, ellipsis_size, out_reason);
+    }
+
+    std::string toString() const
+    {
+        WriteBufferFromOwnString out;
+        writeList(groups, [&](const auto & elem){ out << elem.toString(); }, [&]{ out << ", "; });
+        return out.str();
+    }
+
+private:
+    bool matchAt(const ColumnsWithTypeAndName & args, Variables & vars,
         size_t group_offset, size_t args_offset, size_t iteration,
         std::optional<size_t> & ellipsis_size,
         std::string & out_reason) const
     {
+        /// Tweak for better out_reason message: if all groups are fixed and one group is ellipsis: determine ellipsis size.
+        if (args_offset == 0 && group_offset == 0)
+        {
+            size_t num_ellipsis_groups = 0;
+            size_t num_fixed_groups = 0;
+            size_t num_fixed_args = 0;
+            size_t num_args_in_ellipsis_group = 0;
+
+            for (const auto & group : groups)
+            {
+                if (group.type == ArgumentsGroup::Fixed)
+                {
+                    ++num_fixed_groups;
+                    num_fixed_args += group.elems.size();
+                }
+                if (group.type == ArgumentsGroup::Ellipsis)
+                {
+                    ++num_ellipsis_groups;
+                    num_args_in_ellipsis_group += group.elems.size();
+                }
+            }
+
+            if (num_ellipsis_groups == 1 && num_fixed_groups + num_ellipsis_groups == groups.size())
+            {
+                if (args.size() < num_fixed_args)
+                {
+                    out_reason = "too few arguments (" + DB::toString(args.size()) + "), must be at least " + DB::toString(num_fixed_args);
+                    return false;
+                }
+
+                size_t expected_num_args_in_ellipsis = args.size() - num_fixed_args;
+
+                if (expected_num_args_in_ellipsis % num_args_in_ellipsis_group != 0)
+                {
+                    out_reason = "number of arguments (" + DB::toString(args.size()) + ") doesn't match, expected "
+                        + DB::toString(num_fixed_args) + " + n * " + DB::toString(num_args_in_ellipsis_group);
+                    return false;
+                }
+
+                ellipsis_size = expected_num_args_in_ellipsis / num_args_in_ellipsis_group;
+            }
+        }
+
         auto new_vars = vars;
         if (matchImpl(args, new_vars, group_offset, args_offset, iteration, ellipsis_size, out_reason))
         {
@@ -585,21 +642,19 @@ struct VariadicArguments
         if (group_offset >= groups.size() || args_offset > args.size())
             return false;
 
-        std::cerr << "group_offset: " << group_offset << ", groups.size(): " << groups.size() << "\n";
-
         const ArgumentsGroup & group = groups[group_offset];
         size_t group_size = group.elems.size();
         switch (group.type)
         {
             case ArgumentsGroup::Fixed:
                 return group.match(args, vars, args_offset, 0, out_reason)
-                    && match(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
+                    && matchAt(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
 
             case ArgumentsGroup::Optional:
                 /// Skip group or match group and continue
-                return match(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason)
+                return matchAt(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason)
                     || (group.match(args, vars, args_offset, 0, out_reason)
-                        && match(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason));
+                        && matchAt(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason));
 
             case ArgumentsGroup::Ellipsis:
             {
@@ -608,7 +663,7 @@ struct VariadicArguments
                     for (size_t i = 0; i < *ellipsis_size; ++i)
                         if (!group.match(args, vars, args_offset, iteration + 1 + i, out_reason))
                             return false;
-                    return match(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
+                    return matchAt(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
                 }
                 else
                 {
@@ -619,7 +674,7 @@ struct VariadicArguments
 
                         /// Ellipsis is ended, match from next group
                         ellipsis_size = repeat_count;
-                        if (match(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason))
+                        if (matchAt(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason))
                             return true;
                         else
                         {
@@ -640,13 +695,6 @@ struct VariadicArguments
             default:
                 throw Exception("Wrong type of ArgumentsGroup", ErrorCodes::LOGICAL_ERROR);
         }
-    }
-
-    std::string toString() const
-    {
-        WriteBufferFromOwnString out;
-        writeList(groups, [&](const auto & elem){ out << elem.toString(); }, [&]{ out << ", "; });
-        return out.str();
     }
 };
 
@@ -822,7 +870,7 @@ struct VariadicFunctionSignature : public IFunctionSignature
         std::cerr << "%\n";
 
         std::optional<size_t> ellipsis_size;
-        if (!arguments_description.match(args, vars, 0, 0, 0, ellipsis_size, out_reason))
+        if (!arguments_description.match(args, vars, ellipsis_size, out_reason))
             return nullptr;
 
         std::cerr << "%%\n";
