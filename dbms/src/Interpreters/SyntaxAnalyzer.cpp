@@ -228,7 +228,8 @@ void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
     LogAST log;
-    TranslateQualifiedNamesVisitor visitor(source_columns, tables, log.stream());
+    TranslateQualifiedNamesMatcher::Data visitor_data{source_columns, tables};
+    TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }
 
