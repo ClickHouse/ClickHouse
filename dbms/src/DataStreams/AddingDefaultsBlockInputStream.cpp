@@ -118,12 +118,12 @@ void AddingDefaultsBlockInputStream::checkCalculated(const ColumnWithTypeAndName
     size_t column_size = col_read.column->size();
 
     if (column_size != col_defaults.column->size())
-        throw Exception("Mismach column sizes while adding defaults", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception("Mismatch column sizes while adding defaults", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     if (column_size < defaults_needed)
         throw Exception("Unexpected defaults count", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-    if (col_read.type->getTypeId() != col_defaults.type->getTypeId())
+    if (!col_read.type->equals(*col_defaults.type))
         throw Exception("Mismach column types while adding defaults", ErrorCodes::TYPE_MISMATCH);
 }
 

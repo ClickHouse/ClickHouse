@@ -23,7 +23,7 @@ public:
         const ColumnDefaults & column_defaults_,
         const Context & context_);
 
-    String getName() const override { return "AddingDefault"; }
+    String getName() const override { return "AddingMissed"; }
     Block getHeader() const override { return header; }
 
 private:

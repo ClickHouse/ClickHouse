@@ -221,8 +221,6 @@ const ColumnsDescription * ColumnsDescription::loadFromContext(const Context & c
 {
     if (context.getSettingsRef().insert_sample_with_metadata)
     {
-        auto db_and_table = context.getInsertionTable();
-
         if (context.isTableExist(db, table))
         {
             StoragePtr storage = context.getTable(db, table);

@@ -10,12 +10,11 @@
 namespace DB
 {
 
-/// A way to set some extentions to read and return extra information too. IRowInputStream.extendedRead() output.
+/// Contains extra information about read data.
 struct RowReadExtension
 {
-    /// IRowInputStream.extendedRead() output value.
-    /// Contains one bit per column in resently read row. IRowInputStream could leave it empty, or partialy set.
-    /// It should contain true for columns that actually read from the source and false for defaults.
+    /// IRowInputStream.read() output. It contains non zero for columns that actually read from the source and zero otherwise.
+    /// It's used to attach defaults for partially filled rows.
     std::vector<UInt8> read_columns;
 };
 
