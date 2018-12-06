@@ -564,7 +564,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     String table_pattern = context.getSettingsRef().replace_type_to_low_cardinality_table;
-    bool replace_to_lc = !create.attach && re2_st::RE2::FullMatch(create.table == table_pattern);
+    bool replace_to_lc = !create.attach && re2_st::RE2::FullMatch(create.table, table_pattern);
 
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage, replace_to_lc);
