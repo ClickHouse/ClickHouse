@@ -117,7 +117,7 @@ public:
 
     void getExtremes(Field & min, Field & max) const override
     {
-        return getDictionary().index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
+        return dictionary.getColumnUnique().getNestedColumn()->index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
     void reserve(size_t n) override { idx.reserve(n); }

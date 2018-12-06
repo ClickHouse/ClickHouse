@@ -532,6 +532,7 @@ Columns in the log:
 - database_name – The name of the database.
 - table_name – Name of the table.
 - part_name – Name of the data part.
+- partition_id – The identifier of the partition.
 - size_in_bytes – Size of the data part in bytes.
 - merged_from – An array of names of data parts that make up the merge (also used when downloading a merged part).
 - merge_time_ms – Time spent on the merge.
@@ -541,7 +542,7 @@ Use the following parameters to configure logging:
 - database – Name of the database.
 - table – Name of the table.
 - partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
-- flush_interval_milliseconds – Interval for flushing data from memory to the disk.
+- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
 
 **Example**
 
@@ -582,7 +583,7 @@ Use the following parameters to configure logging:
 - database – Name of the database.
 - table – Name of the table.
 - partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
-- flush_interval_milliseconds – Interval for flushing data from memory to the disk.
+- flush_interval_milliseconds – Interval for flushing data from the buffer in memory to the table.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
 

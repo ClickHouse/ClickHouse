@@ -48,7 +48,7 @@ struct ArrayCountImpl
                 return out_column;
             }
             else
-                return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
+                return DataTypeUInt32().createColumnConst(array.size(), 0u);
         }
 
         const IColumn::Filter & filter = column_filter->getData();

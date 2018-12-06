@@ -1,5 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <Poco/UTF8Encoding.h>
+#include <Common/UTF8Helpers.h>
 
 #if __SSE2__
 #include <emmintrin.h>
@@ -8,6 +9,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -80,9 +86,9 @@ template <char not_case_lower_bound,
 struct LowerUpperUTF8Impl
 {
     static void vector(
-        const ColumnString::Chars_t & data,
+        const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         res_data.resize(data.size());
@@ -90,18 +96,9 @@ struct LowerUpperUTF8Impl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
-        res_data.resize(data.size());
-        array(data.data(), data.data() + data.size(), res_data.data());
-    }
-
-    static void constant(const std::string & data, std::string & res_data)
-    {
-        res_data.resize(data.size());
-        array(reinterpret_cast<const UInt8 *>(data.data()),
-            reinterpret_cast<const UInt8 *>(data.data() + data.size()),
-            reinterpret_cast<UInt8 *>(res_data.data()));
+        throw Exception("Functions lowerUTF8 and upperUTF8 cannot work with FixedString argument", ErrorCodes::BAD_ARGUMENTS);
     }
 
     /** Converts a single code point starting at `src` to desired case, storing result starting at `dst`.
@@ -137,16 +134,28 @@ struct LowerUpperUTF8Impl
         {
             static const Poco::UTF8Encoding utf8;
 
-            if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
+            int src_sequence_length = UTF8::seqLength(*src);
+
+            int src_code_point = utf8.queryConvert(src, src_end - src);
+            if (src_code_point > 0)
             {
-                src += chars;
-                dst += chars;
+                int dst_code_point = to_case(src_code_point);
+                if (dst_code_point > 0)
+                {
+                    int dst_sequence_length = utf8.convert(dst_code_point, dst, src_end - src);
+
+                    /// We don't support cases when lowercase and uppercase characters occupy different number of bytes in UTF-8.
+                    /// As an example, this happens for ß and ẞ.
+                    if (dst_sequence_length == src_sequence_length)
+                    {
+                        src += dst_sequence_length;
+                        dst += dst_sequence_length;
+                        return;
+                    }
+                }
             }
-            else
-            {
-                ++src;
-                ++dst;
-            }
+
+            *dst++ = *src++;
         }
     }
 
@@ -157,7 +166,7 @@ private:
     static void array(const UInt8 * src, const UInt8 * src_end, UInt8 * dst)
     {
 #if __SSE2__
-        const auto bytes_sse = sizeof(__m128i);
+        static constexpr auto bytes_sse = sizeof(__m128i);
         auto src_end_sse = src + (src_end - src) / bytes_sse * bytes_sse;
 
         /// SSE2 packed comparison operate on signed types, hence compare (c < 0) instead of (c > 0x7f)

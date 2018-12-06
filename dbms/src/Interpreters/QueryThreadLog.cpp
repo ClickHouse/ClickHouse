@@ -75,30 +75,30 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
 
     size_t i = 0;
 
-    columns[i++]->insert(UInt64(DateLUT::instance().toDayNum(event_time)));
-    columns[i++]->insert(UInt64(event_time));
-    columns[i++]->insert(UInt64(query_start_time));
-    columns[i++]->insert(UInt64(query_duration_ms));
+    columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
+    columns[i++]->insert(event_time);
+    columns[i++]->insert(query_start_time);
+    columns[i++]->insert(query_duration_ms);
 
-    columns[i++]->insert(UInt64(read_rows));
-    columns[i++]->insert(UInt64(read_bytes));
-    columns[i++]->insert(UInt64(written_rows));
-    columns[i++]->insert(UInt64(written_bytes));
+    columns[i++]->insert(read_rows);
+    columns[i++]->insert(read_bytes);
+    columns[i++]->insert(written_rows);
+    columns[i++]->insert(written_bytes);
 
-    columns[i++]->insert(Int64(memory_usage));
-    columns[i++]->insert(Int64(peak_memory_usage));
+    columns[i++]->insert(memory_usage);
+    columns[i++]->insert(peak_memory_usage);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
-    columns[i++]->insert(UInt64(thread_number));
-    columns[i++]->insert(Int64(os_thread_id));
-    columns[i++]->insert(UInt64(master_thread_number));
-    columns[i++]->insert(Int64(master_os_thread_id));
+    columns[i++]->insert(thread_number);
+    columns[i++]->insert(os_thread_id);
+    columns[i++]->insert(master_thread_number);
+    columns[i++]->insert(master_os_thread_id);
 
     columns[i++]->insertData(query.data(), query.size());
 
     QueryLogElement::appendClientInfo(client_info, columns, i);
 
-    columns[i++]->insert(UInt64(ClickHouseRevision::get()));
+    columns[i++]->insert(ClickHouseRevision::get());
 
     if (profile_counters)
     {

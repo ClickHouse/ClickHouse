@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryStructure.h"
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <ext/range.h>
 #include <atomic>
 #include <memory>
-#include <tuple>
+#include <variant>
 
 
 namespace DB
@@ -150,14 +150,14 @@ private:
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<
+        std::variant<
             UInt8, UInt16, UInt32, UInt64,
             UInt128,
             Int8, Int16, Int32, Int64,
             Decimal32, Decimal64, Decimal128,
             Float32, Float64,
             String> null_values;
-        std::tuple<
+        std::variant<
             CollectionPtrType<UInt8>, CollectionPtrType<UInt16>, CollectionPtrType<UInt32>, CollectionPtrType<UInt64>,
             CollectionPtrType<UInt128>,
             CollectionPtrType<Int8>, CollectionPtrType<Int16>, CollectionPtrType<Int32>, CollectionPtrType<Int64>,

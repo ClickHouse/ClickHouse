@@ -91,11 +91,15 @@ The conditional operator calculates the values of b and c, then checks whether c
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
-    ELSE c
+    [ELSE c]
 END
 ```
 
-If "x" is specified, then transform(x, \[a, ...\], \[b, ...\], c). Otherwise – multiIf(a, b, ..., c).
+If `x` is specified, then `transform(x, [a, ...], [b, ...], c)` function is used. Otherwise – `multiIf(a, b, ..., c)`.
+
+If there is no `ELSE c` clause in the expression, the default value is `NULL`.
+
+The `transform` function does not work with `NULL`.
 
 ## Concatenation Operator
 

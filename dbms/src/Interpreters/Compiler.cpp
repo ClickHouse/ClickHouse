@@ -222,9 +222,9 @@ void Compiler::compile(
 
     std::stringstream command;
 
-    auto compiler_executable_root =  Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
-    auto compiler_headers =  Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
-    auto compiler_headers_root =  Poco::Util::Application::instance().config().getString("compiler_headers_root", INTERNAL_COMPILER_HEADERS_ROOT);
+    auto compiler_executable_root = Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
+    auto compiler_headers = Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
+    auto compiler_headers_root = Poco::Util::Application::instance().config().getString("compiler_headers_root", INTERNAL_COMPILER_HEADERS_ROOT);
     LOG_DEBUG(log, "Using internal compiler: compiler_executable_root=" << compiler_executable_root << "; compiler_headers_root=" << compiler_headers_root << "; compiler_headers=" << compiler_headers);
 
     /// Slightly unconvenient.

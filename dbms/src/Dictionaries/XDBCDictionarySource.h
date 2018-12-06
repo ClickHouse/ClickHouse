@@ -2,11 +2,9 @@
 
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
-
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/IDictionarySource.h>
-
+#include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
+#include "IDictionarySource.h"
 #include <IO/ConnectionTimeouts.h>
 #include <Common/XDBCBridgeHelper.h>
 
@@ -83,4 +81,5 @@ private:
     ConnectionTimeouts timeouts;
     const Context & global_context;
 };
+
 }

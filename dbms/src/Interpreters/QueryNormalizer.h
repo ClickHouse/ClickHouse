@@ -2,7 +2,7 @@
 
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {

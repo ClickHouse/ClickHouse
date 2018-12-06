@@ -1,7 +1,5 @@
 #pragma once
 
-#if __has_include("StorageSystemContributors.generated.cpp")
-
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <ext/shared_ptr_helper.h>
 
@@ -30,5 +28,3 @@ public:
     static NamesAndTypesList getNamesAndTypes();
 };
 }
-
-#endif

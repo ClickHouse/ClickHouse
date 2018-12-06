@@ -144,14 +144,14 @@ void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeNumberBase<T>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type();
+    return NearestFieldType<FieldType>();
 }
 
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
+    typename ColumnVector<T>::value_type x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -160,7 +160,7 @@ void DataTypeNumberBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) 
 {
     typename ColumnVector<T>::value_type x;
     readBinary(x, istr);
-    field = typename NearestFieldType<FieldType>::Type(x);
+    field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>

@@ -9,7 +9,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/evaluateQualified.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {

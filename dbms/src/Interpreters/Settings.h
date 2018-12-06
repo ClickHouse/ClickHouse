@@ -176,7 +176,7 @@ struct Settings
     \
     M(SettingBool, join_use_nulls, 0, "Use NULLs for non-joined rows of outer JOINs. If false, use default value of corresponding columns data type.") \
     \
-    M(SettingJoinStrictness, join_default_strictness, JoinStrictness::Unspecified, "Set default strictness in JOIN query. Possible values: empty string, 'ANY', 'ALL'. If empty, query without strictness will throw exception.") \
+    M(SettingJoinStrictness, join_default_strictness, JoinStrictness::ALL, "Set default strictness in JOIN query. Possible values: empty string, 'ANY', 'ALL'. If empty, query without strictness will throw exception.") \
     \
     M(SettingUInt64, preferred_block_size_bytes, 1000000, "") \
     \
@@ -272,7 +272,6 @@ struct Settings
     M(SettingBool, format_csv_allow_single_quotes, 1, "If it is set to true, allow strings in single quotes.") \
     M(SettingBool, format_csv_allow_double_quotes, 1, "If it is set to true, allow strings in double quotes.") \
     \
-    M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
     M(SettingBool, log_profile_events, true, "Log query performance statistics into the query_log and query_thread_log.") \
     M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \

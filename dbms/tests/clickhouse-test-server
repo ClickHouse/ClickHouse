@@ -10,10 +10,18 @@ DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
 DATA_DIR_PATTERN=${DATA_DIR_PATTERN:=/tmp/clickhouse} # path from config file, will be replaced to temporary
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
-[ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
-BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
-[ -x "$CUR_DIR/clickhouse-server" ] && [ -x "${CUR_DIR}/${CLICKHOUSE_BINARY}-client" ] && BIN_DIR= # Allow run in /usr/bin
-[ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/programs/}
+( [ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] || [ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY}" ] ) && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
+[ -d "$ROOT_DIR/build${BUILD_TYPE}" ] && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
+BUILD_DIR=${BUILD_DIR:=$ROOT_DIR}
+[ -x ${CLICKHOUSE_BINARY}-server" ] && [ -x ${CLICKHOUSE_BINARY}-client" ] && BIN_DIR= # Allow run in /usr/bin
+( [ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY}" ] || [ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] ) && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/programs/}
+[ -x "$BIN_DIR/${CLICKHOUSE_BINARY}-server" ] && CLICKHOUSE_SERVER=${CLICKHOUSE_SERVER:=$BIN_DIR/${CLICKHOUSE_BINARY}-server}
+[ -x "$BIN_DIR/${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_SERVER=${CLICKHOUSE_SERVER:=$BIN_DIR/${CLICKHOUSE_BINARY} server}
+[ -x "$BIN_DIR/${CLICKHOUSE_BINARY}-client" ] && CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:=$BIN_DIR/${CLICKHOUSE_BINARY}-client}
+[ -x "$BIN_DIR/${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:=$BIN_DIR/${CLICKHOUSE_BINARY} client}
+[ -x "$BIN_DIR/${CLICKHOUSE_BINARY}-extract-from-config" ] && CLICKHOUSE_EXTRACT=${CLICKHOUSE_EXTRACT:=$BIN_DIR/${CLICKHOUSE_BINARY}-extract-from-config}
+[ -x "$BIN_DIR/${CLICKHOUSE_BINARY}" ] && CLICKHOUSE_EXTRACT=${CLICKHOUSE_EXTRACT:=$BIN_DIR/${CLICKHOUSE_BINARY} extract-from-config}
+
 [ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
 CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=$CONFIG_DIR}
 CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
@@ -21,6 +29,8 @@ CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
 [ ! -f "${CONFIG_SERVER_DIR}server-test.xml" ] && CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR:=/etc/clickhouse-server/}
 export CLICKHOUSE_CONFIG_CLIENT=${CLICKHOUSE_CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
+CLICKHOUSE_CONFIG_USERS=${CONFIG_SERVER_DIR}users.xml
+[ ! -f "$CLICKHOUSE_CONFIG_USERS" ] && CLICKHOUSE_CONFIG_USERS=$CUR_DIR/../programs/server/users.xml
 [ -x "$CUR_DIR/clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/}
 [ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/local/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
@@ -43,10 +53,10 @@ mkdir -p $LOG_DIR $DATA_DIR/etc || true
 if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
     cat $CLICKHOUSE_CONFIG | sed -e s!$DATA_DIR_PATTERN!$DATA_DIR! > $DATA_DIR/etc/server-config.xml
     export CLICKHOUSE_CONFIG=$DATA_DIR/etc/server-config.xml
-    cp ${CONFIG_SERVER_DIR}users.xml $DATA_DIR/etc
+    cp $CLICKHOUSE_CONFIG_USERS $DATA_DIR/etc
 fi
 
-CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
+CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${CLICKHOUSE_EXTRACT} --config=$CLICKHOUSE_CONFIG"}
 CLICKHOUSE_LOG=${CLICKHOUSE_LOG:=${LOG_DIR}clickhouse-server.log}
 export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port || echo 9000`}
 export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=http_port || echo 8123`}
@@ -56,8 +66,8 @@ export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=`$CLICKHOUSE_EXTRACT_CONFI
 export CLICKHOUSE_ODBC_BRIDGE=${CLICKHOUSE_ODBC_BRIDGE:=`$CLICKHOUSE_EXTRACT_CONFIG --key=odbc_bridge.port || echo 9018`}
 
 DHPARAM=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile`
-PRIVATEKEY=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile`
-CERT=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG --key=openSSL.server.certificateFile`
+PRIVATEKEY=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.privateKeyFile`
+CERT=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.certificateFile`
 # Do not generate in case broken extract-config
 [ -n "$DHPARAM" ] && openssl dhparam -out $DHPARAM 256
 [ -n "$PRIVATEKEY" ] && [ -n "$CERT" ] && openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout $PRIVATEKEY -out $CERT
@@ -73,11 +83,11 @@ fi
 #    --remote_servers.test_shard_localhost_secure.shard.replica.port=$CLICKHOUSE_PORT_TCP_SECURE \
 #    --remote_servers.test_shard_localhost.shard.replica.port=$CLICKHOUSE_PORT_TCP \
 
-VERSION=`${BIN_DIR}clickhouse-client --version-clean`
+VERSION=`$CLICKHOUSE_CLIENT --version-clean`
 # If run from compile dir - use in-place compile binary and headers
 [ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=${INTERNAL_COMPILER_BIN_ROOT:=$BUILD_DIR/dbms/programs/} --compiler_headers=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/ --compiler_headers_root=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/"
 
-$GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG --log=$CLICKHOUSE_LOG $TEST_SERVER_PARAMS -- \
+$GDB $CLICKHOUSE_SERVER --config-file=$CLICKHOUSE_CONFIG --log=$CLICKHOUSE_LOG $TEST_SERVER_PARAMS -- \
     --http_port=$CLICKHOUSE_PORT_HTTP \
     --tcp_port=$CLICKHOUSE_PORT_TCP \
     --https_port=$CLICKHOUSE_PORT_HTTPS \
@@ -115,9 +125,9 @@ if [ -n "$*" ]; then
 else
     TEST_RUN=${TEST_RUN=1}
     TEST_PERF=${TEST_PERF=1}
-    CLICKHOUSE_CLIENT_QUERY="${BIN_DIR}clickhouse-client --config ${CLICKHOUSE_CONFIG_CLIENT} --port $CLICKHOUSE_PORT_TCP -m -n -q"
+    CLICKHOUSE_CLIENT_QUERY="${CLICKHOUSE_CLIENT} --config ${CLICKHOUSE_CONFIG_CLIENT} --port $CLICKHOUSE_PORT_TCP -m -n -q"
     $CLICKHOUSE_CLIENT_QUERY 'SELECT * from system.build_options; SELECT * FROM system.clusters;'
-    CLICKHOUSE_TEST="env PATH=$PATH:$BIN_DIR ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient $CLICKHOUSE_CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT"
+    CLICKHOUSE_TEST="env PATH=$PATH:$BIN_DIR ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}${CLICKHOUSE_BINARY} --configclient $CLICKHOUSE_CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT"
     CLICKHOUSE_PERFORMANCE_TEST="${BIN_DIR}clickhouse-performance-test --port $CLICKHOUSE_PORT_TCP --recursive $CUR_DIR/performance --skip-tags=long"
     if [ "${TEST_RUN_STRESS}" ]; then
         # Running test in parallel will fail some results (tests can create/fill/drop same tables)

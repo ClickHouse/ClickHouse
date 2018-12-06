@@ -20,8 +20,8 @@ void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, const Con
 {
     for (auto it = auto_config_build; *it; it += 2)
     {
-        res_columns[0]->insert(String(it[0]));
-        res_columns[1]->insert(String(it[1]));
+        res_columns[0]->insert(it[0]);
+        res_columns[1]->insert(it[1]);
     }
 }
 

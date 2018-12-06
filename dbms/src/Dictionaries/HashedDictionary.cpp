@@ -1,6 +1,7 @@
 #include <ext/size.h>
-#include <Dictionaries/HashedDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "HashedDictionary.h"
+#include "DictionaryBlockInputStream.h"
+#include "DictionaryFactory.h"
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 
@@ -430,8 +432,8 @@ void HashedDictionary::calculateBytesAllocated()
 template <typename T>
 void HashedDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
 {
-    std::get<T>(attribute.null_values) = null_value.get<typename NearestFieldType<T>::Type>();
-    std::get<CollectionPtrType<T>>(attribute.maps) = std::make_unique<CollectionType<T>>();
+    attribute.null_values = T(null_value.get<NearestFieldType<T>>());
+    attribute.maps = std::make_unique<CollectionType<T>>();
 }
 
 HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value)
@@ -458,8 +460,8 @@ HashedDictionary::Attribute HashedDictionary::createAttributeWithType(const Attr
 
         case AttributeUnderlyingType::String:
         {
-            std::get<String>(attr.null_values) = null_value.get<String>();
-            std::get<CollectionPtrType<StringRef>>(attr.maps) = std::make_unique<CollectionType<StringRef>>();
+            attr.null_values = null_value.get<String>();
+            attr.maps = std::make_unique<CollectionType<StringRef>>();
             attr.string_arena = std::make_unique<Arena>();
             break;
         }
@@ -621,6 +623,31 @@ BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_n
 {
     using BlockInputStreamType = DictionaryBlockInputStream<HashedDictionary, Key>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, getIds(), column_names);
+}
+
+void registerDictionaryHashed(DictionaryFactory & factory)
+{
+    auto create_layout = [=](
+                                 const std::string & name,
+                                 const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 DictionarySourcePtr source_ptr
+                                 ) -> DictionaryPtr {
+        if (dict_struct.key)
+            throw Exception {"'key' is not supported for dictionary of layout 'hashed'", ErrorCodes::UNSUPPORTED_METHOD};
+
+        if (dict_struct.range_min || dict_struct.range_max)
+            throw Exception {name
+                                 + ": elements .structure.range_min and .structure.range_max should be defined only "
+                                   "for a dictionary of layout 'range_hashed'",
+                             ErrorCodes::BAD_ARGUMENTS};
+        const DictionaryLifetime dict_lifetime {config, config_prefix + ".lifetime"};
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+
+    };
+    factory.registerLayout("hashed", create_layout);
 }
 
 }
