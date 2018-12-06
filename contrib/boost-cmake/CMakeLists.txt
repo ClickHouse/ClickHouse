@@ -26,7 +26,12 @@ macro(add_boost_lib lib_name)
 endmacro()
 
 add_boost_lib(system)
+
 add_boost_lib(program_options)
+
 add_boost_lib(filesystem)
 target_link_libraries(boost_filesystem_internal PRIVATE boost_system_internal)
-add_boost_lib(regex)
+
+if (USE_INTERNAL_PARQUET_LIBRARY)
+    add_boost_lib(regex)
+endif()
