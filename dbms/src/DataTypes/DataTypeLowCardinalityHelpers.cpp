@@ -42,6 +42,32 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
     return type;
 }
 
+DataTypePtr recursiveWrapLowCardinality(const DataTypePtr & type)
+{
+    if (!type)
+        return type;
+
+    if (type->canBeInsideLowCardinality())
+        return std::make_shared<DataTypeLowCardinality>(type);
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(recursiveWrapLowCardinality(array_type->getNestedType()));
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple_type->getElements();
+        for (auto & element : elements)
+            element = recursiveWrapLowCardinality(element);
+
+        if (tuple_type->haveExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+        else
+            return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    return type;
+}
+
 ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 {
     if (!column)

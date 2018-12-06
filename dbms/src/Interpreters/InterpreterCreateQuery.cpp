@@ -43,6 +43,17 @@
 #include <Databases/IDatabase.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
+
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+
+#if USE_RE2_ST
+#include <re2_st/re2.h> // Y_IGNORE
+#else
+#define re2_st re2
+#endif
 
 
 namespace DB
@@ -65,7 +76,7 @@ namespace ErrorCodes
 
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Context & context_)
-    : query_ptr(query_ptr_), context(context_)
+    : query_ptr(query_ptr_), context(context_), log(&Poco::Logger::get("InterpreterCreateQuery"))
 {
 }
 
@@ -173,7 +184,7 @@ using ColumnsAndDefaults = std::pair<NamesAndTypesList, ColumnDefaults>;
 using ParsedColumns = std::tuple<NamesAndTypesList, ColumnDefaults, ColumnComments>;
 
 /// AST to the list of columns with types. Columns of Nested type are expanded into a list of real columns.
-static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, const Context & context)
+static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, const Context & context, bool replace_to_lc)
 {
     /// list of table columns in correct order
     NamesAndTypesList columns{};
@@ -195,6 +206,8 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
         if (col_decl.type)
         {
             columns.emplace_back(col_decl.name, DataTypeFactory::instance().get(col_decl.type));
+            if (replace_to_lc)
+                columns.back().type = recursiveWrapLowCardinality(columns.back().type);
         }
         else
             /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
@@ -365,11 +378,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     return columns_list;
 }
 
-ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context)
+ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool replace_to_lc)
 {
     ColumnsDescription res;
 
-    auto && parsed_columns = parseColumns(columns, context);
+    auto && parsed_columns = parseColumns(columns, context, replace_to_lc);
     auto columns_and_defaults = std::make_pair(std::move(std::get<0>(parsed_columns)), std::move(std::get<1>(parsed_columns)));
     res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
     res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
@@ -412,13 +425,13 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
 
 
 ColumnsDescription InterpreterCreateQuery::setColumns(
-    ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
+    ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage, bool replace_to_lc) const
 {
     ColumnsDescription res;
 
     if (create.columns)
     {
-        res = getColumnsDescription(*create.columns, context);
+        res = getColumnsDescription(*create.columns, context, replace_to_lc);
     }
     else if (!create.as_table.empty())
     {
@@ -550,8 +563,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         as_storage_lock = as_storage->lockStructure(false, __PRETTY_FUNCTION__);
     }
 
+    String table_pattern = context.getSettingsRef().replace_type_to_low_cardinality_table;
+    bool replace_to_lc = !create.attach && re2_st::RE2::FullMatch(create.table == table_pattern);
+
     /// Set and retrieve list of columns.
-    ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
+    ColumnsDescription columns = setColumns(create, as_select_sample, as_storage, replace_to_lc);
+
+    if (replace_to_lc)
+    {
+        LOG_DEBUG(log, "Replace columns for table " << create.table << ":\n" << columns.toString());
+    }
 
     /// Some column types may be not allowed according to settings.
     if (!create.attach)

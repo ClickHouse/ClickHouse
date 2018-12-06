@@ -2,7 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
-
+#include <common/logger_useful.h>
 
 class ThreadPool;
 
@@ -45,7 +45,7 @@ public:
     }
 
     /// Obtain information about columns, their types, default values and column comments, for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, const Context & context, bool replace_to_lc = false);
     /// Check that column types are allowed for usage in table according to settings.
     static void checkSupportedTypes(const ColumnsDescription & columns, const Context & context);
 
@@ -54,7 +54,7 @@ private:
     BlockIO createTable(ASTCreateQuery & create);
 
     /// Calculate list of columns of table and return it.
-    ColumnsDescription setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const;
+    ColumnsDescription setColumns(ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage, bool replace_to_lc) const;
     void setEngine(ASTCreateQuery & create) const;
     void checkAccess(const ASTCreateQuery & create);
 
@@ -68,5 +68,7 @@ private:
     bool has_force_restore_data_flag = false;
     /// Is this an internal query - not from the user.
     bool internal = false;
+
+    Poco::Logger * log;
 };
 }

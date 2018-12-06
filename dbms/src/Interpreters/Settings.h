@@ -292,6 +292,7 @@ struct Settings
     M(SettingBool, allow_ddl, true, "If it is set to true, then a user is allowed to executed DDL queries.") \
     M(SettingBool, parallel_view_processing, false, "Enables pushing to attached views concurrently instead of sequentially.") \
     M(SettingBool, enable_debug_queries, false, "Enables debug queries such as AST.") \
+    M(SettingString, replace_type_to_low_cardinality_table, ".*visits.*", "") \
 
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
