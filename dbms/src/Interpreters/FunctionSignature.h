@@ -167,9 +167,13 @@ inline size_t getCommonIndex(size_t i, size_t j)
 struct Value
 {
     std::variant<DataTypePtr, Field> value;
+    std::optional<size_t> captured_at_arg_num;
 
     Value(const DataTypePtr & type) : value(type) {}
     Value(const Field & field) : value(field) {}
+
+    Value(const DataTypePtr & type, size_t arg_num) : value(type), captured_at_arg_num(arg_num) {}
+    Value(const Field & field, size_t arg_num) : value(field), captured_at_arg_num(arg_num) {}
 
     bool operator==(const Value & rhs) const
     {
@@ -181,6 +185,11 @@ struct Value
     const DataTypePtr & type() const
     {
         return std::get<DataTypePtr>(value);
+    }
+
+    const Field & field() const
+    {
+        return std::get<Field>(value);
     }
 
     /// For implementation of constraints.
@@ -221,7 +230,6 @@ void writeList(Container && container, WriteElem && write_elem, WriteDelim && wr
 
 /** Scratch space for checking function signature.
   * Variables are either assigned or checked for equality, but never reassigned.
-  * Special variable named "..." is used for matched length of ellipsis.
   */
 struct Variables
 {
@@ -233,25 +241,48 @@ struct Variables
         return container.count(key);
     }
 
-    bool assignOrCheck(const Key & key, const Value & var)
+    bool assignOrCheck(const Key & key, const DataTypePtr & var, size_t arg_num, std::string & out_reason)
     {
         if (auto it = container.find(key); it == container.end())
         {
-            container.emplace(key, var);
+            container.emplace(key, Value(var, arg_num));
             return true;
         }
         else
-            return it->second == var;
+        {
+            if (it->second == var)
+                return true;
+
+            out_reason = "argument " + DB::toString(arg_num + 1) + " must be of type " + key.toString()
+                + " that was captured as " + var->getName();
+
+            if (it->second.captured_at_arg_num)
+                out_reason += " at argument " + DB::toString(*it->second.captured_at_arg_num + 1);
+
+            return false;
+        }
     }
 
-    bool assignOrCheck(const Key & key, const DataTypePtr & type)
+    bool assignOrCheck(const Key & key, const Field & var, size_t arg_num, std::string & out_reason)
     {
-        return assignOrCheck(key, Value(type));
-    }
+        if (auto it = container.find(key); it == container.end())
+        {
+            container.emplace(key, Value(var, arg_num));
+            return true;
+        }
+        else
+        {
+            if (it->second == var)
+                return true;
 
-    bool assignOrCheck(const Key & key, const Field & const_value)
-    {
-        return assignOrCheck(key, Value(const_value));
+            out_reason = "argument " + DB::toString(arg_num) + " must equals to " + key.toString()
+                + " that was captured as " + applyVisitor(FieldVisitorToString(), var);
+
+            if (it->second.captured_at_arg_num)
+                out_reason += " at argument " + DB::toString(*it->second.captured_at_arg_num + 1);
+
+            return false;
+        }
     }
 
     Value get(const Key & key) const
@@ -283,7 +314,6 @@ using Values = std::vector<Value>;
 
 /** List of variables to assign or check.
   * Empty string means that argument is unused.
-  * Instead of a variable name, ellipsis ("...") may be given. It will be a subject for expansion.
   */
 using Keys = std::vector<Key>;
 
@@ -300,6 +330,15 @@ public:
     void registerElement(const std::string & name, const Creator & creator)
     {
         if (!dict.emplace(name, creator).second)
+            throw Exception("Element " + name + " is already registered in factory", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    template <typename T>
+    void registerElement()
+    {
+        auto elem = std::make_shared<T>();
+        auto name = elem->name();
+        if (!dict.emplace(name, [elem = std::move(elem)]{ return elem; }).second)
             throw Exception("Element " + name + " is already registered in factory", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -328,7 +367,7 @@ class ITypeMatcher
 public:
     virtual ~ITypeMatcher() {}
     virtual std::string toString() const = 0;
-    virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const = 0;
+    virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration, size_t arg_num, std::string & out_reason) const = 0;
 
     /// Extract common index of variables participating in expression.
     virtual size_t getIndex() const = 0;
@@ -343,7 +382,7 @@ class AnyTypeMatcher : public ITypeMatcher
 {
 public:
     std::string toString() const override { return "Any"; }
-    bool match(const DataTypePtr &, Variables &, size_t) const override { return true; }
+    bool match(const DataTypePtr &, Variables &, size_t, size_t, std::string &) const override { return true; }
     size_t getIndex() const override { return 0; }
 };
 
@@ -362,9 +401,12 @@ public:
         return type->getName();
     }
 
-    bool match(const DataTypePtr & what, Variables &, size_t) const override
+    bool match(const DataTypePtr & what, Variables &, size_t, size_t, std::string & out_reason) const override
     {
-        return type->equals(*what);
+        if (type->equals(*what))
+            return true;
+        out_reason = "type must be " + type->getName() + ", but it is " + what->getName();
+        return false;
     }
 
     size_t getIndex() const override { return 0; }
@@ -386,12 +428,12 @@ public:
         return var_key.toString() + " : " + impl->toString();
     }
 
-    bool match(const DataTypePtr & what, Variables & vars, size_t iteration) const override
+    bool match(const DataTypePtr & what, Variables & vars, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
-        if (!impl->match(what, vars, iteration))
+        if (!impl->match(what, vars, iteration, arg_num, out_reason))
             return false;
 
-        return vars.assignOrCheck(var_key.incrementIndex(iteration), what);
+        return vars.assignOrCheck(var_key.incrementIndex(iteration), what, arg_num, out_reason);
     }
 
     size_t getIndex() const override
@@ -407,16 +449,29 @@ struct ArgumentDescription
     Key argument_name;
     TypeMatcherPtr type_matcher;
 
-    bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars, size_t iteration) const
+    bool match(const DataTypePtr & type, const ColumnPtr & column, Variables & vars, size_t iteration,
+        size_t arg_num, std::string & out_reason) const
     {
         if (is_const && (!column || !column->isColumnConst()))
+        {
+            out_reason = "argument " + DB::toString(arg_num + 1) + " must be " + toString() + ", but it is not constant";
             return false;
+        }
 
-        if (is_const && !vars.assignOrCheck(argument_name.incrementIndex(iteration), typeid_cast<const ColumnConst &>(*column).getField()))
+        auto key = argument_name.incrementIndex(iteration);
+        if (is_const && !vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
+        {
             return false;
+        }
 
-        std::cerr << type_matcher->toString() << "\n";
-        return type_matcher->match(type, vars, iteration);
+        if (!type_matcher->match(type, vars, iteration, arg_num, out_reason))
+        {
+            out_reason = "argument " + DB::toString(arg_num + 1) + " has type " + type->getName() + " that is not " + type_matcher->toString()
+                + (out_reason.empty() ? "" : ": " + out_reason);
+            return false;
+        }
+
+        return true;
     }
 
     /// Extract common index of variables participating in expression.
@@ -450,20 +505,23 @@ struct ArgumentsGroup
         Ellipsis    /// Zero or any number of times
     } type = NoType;
 
-    bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t offset, size_t iteration) const
+    bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t offset, size_t iteration, std::string & out_reason) const
     {
         std::cerr << "^\n";
         size_t size = elems.size();
 
         if (size + offset > args.size())
+        {
+            out_reason = "too few arguments (" + DB::toString(args.size()) + "), must be at least " + DB::toString(size + offset);
             return false;
+        }
 
         std::cerr << "^^\n";
 
         for (size_t i = 0; i < size; ++i)
         {
             const auto & col = args[offset + i];
-            if (!elems[i].match(col.type, col.column, vars, iteration))
+            if (!elems[i].match(col.type, col.column, vars, iteration, offset + i, out_reason))
                 return false;
 
             std::cerr << "^^^\n";
@@ -499,7 +557,25 @@ struct VariadicArguments
 {
     ArgumentsGroups groups;
 
-    bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t group_offset, size_t args_offset, size_t iteration) const
+    bool match(const ColumnsWithTypeAndName & args, Variables & vars,
+        size_t group_offset, size_t args_offset, size_t iteration,
+        std::optional<size_t> & ellipsis_size,
+        std::string & out_reason) const
+    {
+        auto new_vars = vars;
+        if (matchImpl(args, new_vars, group_offset, args_offset, iteration, ellipsis_size, out_reason))
+        {
+            vars = new_vars;
+            out_reason.clear();
+            return true;
+        }
+        return false;
+    }
+
+    bool matchImpl(const ColumnsWithTypeAndName & args, Variables & vars,
+        size_t group_offset, size_t args_offset, size_t iteration,
+        std::optional<size_t> & ellipsis_size,
+        std::string & out_reason) const
     {
         /// All groups have matched all arguments.
         if (group_offset == groups.size() && args_offset == args.size())
@@ -509,25 +585,58 @@ struct VariadicArguments
         if (group_offset >= groups.size() || args_offset > args.size())
             return false;
 
-        std::cerr << "group_offset: " << group_offset << "\n";
-        std::cerr << "groups.size(): " << groups.size() << "\n";
+        std::cerr << "group_offset: " << group_offset << ", groups.size(): " << groups.size() << "\n";
 
         const ArgumentsGroup & group = groups[group_offset];
+        size_t group_size = group.elems.size();
         switch (group.type)
         {
             case ArgumentsGroup::Fixed:
-                return group.match(args, vars, args_offset, 0)
-                    && match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration);
+                return group.match(args, vars, args_offset, 0, out_reason)
+                    && match(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
 
             case ArgumentsGroup::Optional:
-                return match(args, vars, group_offset + 1, args_offset, iteration)                            /// Skip group
-                    || (group.match(args, vars, args_offset, 0)                                               /// Match group
-                        && match(args, vars, group_offset + 1, args_offset + group.elems.size(), iteration)); /// and continue from next group
+                /// Skip group or match group and continue
+                return match(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason)
+                    || (group.match(args, vars, args_offset, 0, out_reason)
+                        && match(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason));
 
             case ArgumentsGroup::Ellipsis:
-                return match(args, vars, group_offset + 1, args_offset, iteration)                            /// Skip group
-                    || (group.match(args, vars, args_offset, iteration + 1)                                   /// Match group
-                        && match(args, vars, group_offset, args_offset + group.elems.size(), iteration + 1)); ///  and try to match again
+            {
+                if (ellipsis_size)
+                {
+                    for (size_t i = 0; i < *ellipsis_size; ++i)
+                        if (!group.match(args, vars, args_offset, iteration + 1 + i, out_reason))
+                            return false;
+                    return match(args, vars, group_offset + 1, args_offset + group_size, iteration, ellipsis_size, out_reason);
+                }
+                else
+                {
+                    size_t repeat_count = 0;
+                    while (true)
+                    {
+                        std::cerr << "repeat_count: " << repeat_count << "\n";
+
+                        /// Ellipsis is ended, match from next group
+                        ellipsis_size = repeat_count;
+                        if (match(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason))
+                            return true;
+                        else
+                        {
+                            std::cerr << out_reason << "\n";
+                            ellipsis_size.reset();
+                        }
+
+                        /// Repeat group for ellipsis
+                        if (!group.match(args, vars, args_offset, iteration + repeat_count + 1, out_reason))
+                            return false;
+
+                        /// And continue.
+                        args_offset += group_size;
+                        ++repeat_count;
+                    }
+                }
+            }
             default:
                 throw Exception("Wrong type of ArgumentsGroup", ErrorCodes::LOGICAL_ERROR);
         }
@@ -563,10 +672,7 @@ class ITypeExpression
 {
 public:
     virtual ~ITypeExpression() {}
-    virtual Value apply(const Variables & context, size_t iteration) const = 0;
-
-    /// All variables from context that the function depends on are available.
-    virtual bool hasEnoughContext(const Variables & context, size_t iteration) const = 0;
+    virtual Value apply(const Variables & context, size_t iteration, std::optional<size_t> ellipsis_size) const = 0;
 
     /// Extract common index of variables participating in expression.
     virtual size_t getIndex() const = 0;
@@ -585,15 +691,9 @@ private:
 public:
     VariableTypeExpression(const Key & key) : key(key) {}
 
-    Value apply(const Variables & context, size_t iteration) const override
+    Value apply(const Variables & context, size_t iteration, std::optional<size_t>) const override
     {
         return context.get(key.incrementIndex(iteration));
-    }
-
-    bool hasEnoughContext(const Variables & context, size_t iteration) const override
-    {
-        std::cerr << key.incrementIndex(iteration).toString() << ", " << (int)context.has(key.incrementIndex(iteration)) << "\n";
-        return context.has(key.incrementIndex(iteration));
     }
 
     size_t getIndex() const override
@@ -615,14 +715,9 @@ private:
 public:
     ConstantTypeExpression(const Value & res) : res(res) {}
 
-    Value apply(const Variables &, size_t) const override
+    Value apply(const Variables &, size_t, std::optional<size_t>) const override
     {
         return res;
-    }
-
-    bool hasEnoughContext(const Variables &, size_t) const override
-    {
-        return true;
     }
 
     size_t getIndex() const override
@@ -645,7 +740,7 @@ private:
 public:
     TypeExpressionTree(const TypeFunctionPtr & func, const TypeExpressions & children) : func(func), children(children) {}
 
-    Value apply(const Variables & context, size_t iteration) const override
+    Value apply(const Variables & context, size_t iteration, std::optional<size_t> ellipsis_size) const override
     {
         Values args;
 
@@ -657,7 +752,7 @@ public:
         {
             if (child)
             {
-                args.emplace_back(child->apply(context, iteration));
+                args.emplace_back(child->apply(context, iteration, ellipsis_size));
 
                 size_t current_index = child->getIndex();
                 if (!current_index || (prev_index && prev_index != current_index))
@@ -665,42 +760,22 @@ public:
                 else if (current_index)
                     group_to_repeat.emplace_back(child);
             }
-            else
+            else    /// Ellipsis
             {
                 if (group_to_repeat.empty())
-                     throw Exception("No group to repeat in type function", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("No group to repeat in type function", ErrorCodes::LOGICAL_ERROR);
 
                 std::cerr << "group size: " << group_to_repeat.size() << "\n";
 
-                /// Repeat accumulated group of children while there are enough variables in context.
-                size_t repeat_iteration = iteration;
-                while (true)
-                {
-                    ++repeat_iteration;
+                if (!ellipsis_size)
+                    throw Exception("There is an ellipsis in type expression, but no ellipsis was matched as arguments", ErrorCodes::LOGICAL_ERROR);
 
-                    std::cerr << "repeat iteration: " << repeat_iteration << "\n";
-
-                    auto it = group_to_repeat.begin();
-                    for (; it != group_to_repeat.end(); ++it)
-                        if (!(*it)->hasEnoughContext(context, repeat_iteration))
-                            break;
-                    if (it != group_to_repeat.end())
-                        break;
-
-                    for (it = group_to_repeat.begin(); it != group_to_repeat.end(); ++it)
-                        args.emplace_back((*it)->apply(context, repeat_iteration));
-                }
+                for (size_t repeat_iteration = 0; repeat_iteration < *ellipsis_size; ++repeat_iteration)
+                    for (const auto & expr : group_to_repeat)
+                        args.emplace_back(expr->apply(context, 1 + repeat_iteration, ellipsis_size));
             }
         }
         return func->apply(args);
-    }
-
-    bool hasEnoughContext(const Variables & context, size_t iteration) const override
-    {
-        for (const auto & child : children)
-            if (!child->hasEnoughContext(context, iteration))
-                return false;
-        return true;
     }
 
     size_t getIndex() const override
@@ -726,7 +801,7 @@ class IFunctionSignature
 {
 public:
     virtual ~IFunctionSignature() {}
-    virtual DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars) const = 0;
+    virtual DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const = 0;
     virtual std::string toString() const = 0 ;
 };
 
@@ -740,13 +815,14 @@ struct VariadicFunctionSignature : public IFunctionSignature
     TypeExpressionPtr return_type;
     TypeExpressions constraints;
 
-    DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars) const override
+    DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const override
     {
         /// Apply type matchers and assign variables.
 
         std::cerr << "%\n";
 
-        if (!arguments_description.match(args, vars, 0, 0, 0))
+        std::optional<size_t> ellipsis_size;
+        if (!arguments_description.match(args, vars, 0, 0, 0, ellipsis_size, out_reason))
             return nullptr;
 
         std::cerr << "%%\n";
@@ -754,12 +830,12 @@ struct VariadicFunctionSignature : public IFunctionSignature
         /// Check constraints against variables.
 
         for (const TypeExpressionPtr & constraint : constraints)
-            if (!constraint->apply(vars, 0).isTrue())
+            if (!constraint->apply(vars, 0, ellipsis_size).isTrue())    /// TODO out_reason
                 return nullptr;
 
         std::cerr << vars.toString() << "\n";
 
-        return std::get<DataTypePtr>(return_type->apply(vars, 0).value);
+        return std::get<DataTypePtr>(return_type->apply(vars, 0, ellipsis_size).value);     /// TODO out_reason
     }
 
     std::string toString() const override
@@ -782,10 +858,10 @@ struct AlternativeFunctionSignature : public IFunctionSignature
 {
     FunctionSignatures alternatives;
 
-    DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars) const override
+    DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const override
     {
         for (const auto & alternative : alternatives)
-            if (vars.reset(); DataTypePtr res = alternative->check(args, vars))
+            if (vars.reset(); DataTypePtr res = alternative->check(args, vars, out_reason)) /// TODO out_reason
                 return res;
         return nullptr;
     }
