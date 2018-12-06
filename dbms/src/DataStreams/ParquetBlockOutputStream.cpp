@@ -1,42 +1,37 @@
 #include <Common/config.h>
 #if USE_PARQUET
-#include <DataStreams/ParquetBlockOutputStream.h>
+#    include <DataStreams/ParquetBlockOutputStream.h>
 
 // TODO: clean includes
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnsNumber.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <IO/WriteHelpers.h>
-#include <Formats/FormatFactory.h>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnVector.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <Core/ColumnWithTypeAndName.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/WriteHelpers.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#include <arrow/api.h>
-#include <arrow/io/api.h>
-#include <parquet/arrow/writer.h>
-#include <parquet/util/memory.h>
-#include <parquet/exception.h>
-#pragma GCC diagnostic pop
-
-
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
+#    pragma GCC diagnostic ignored "-Wignored-qualifiers"
+#    include <arrow/api.h>
+#    include <arrow/io/api.h>
+#    include <parquet/arrow/writer.h>
+#    include <parquet/exception.h>
+#    include <parquet/util/memory.h>
+#    pragma GCC diagnostic pop
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_TYPE;
 }
 
-ParquetBlockOutputStream::ParquetBlockOutputStream(WriteBuffer & ostr_, const Block & header_)
-    : ostr(ostr_)
-    , header(header_)
+ParquetBlockOutputStream::ParquetBlockOutputStream(WriteBuffer & ostr_, const Block & header_) : ostr(ostr_), header(header_)
 {
 }
 
@@ -49,10 +44,8 @@ void checkAppendStatus(arrow::Status & append_status, const std::string & column
 {
     if (!append_status.ok())
     {
-        throw Exception{
-            "Error while building a parquet column \"" + column_name + "\": " + append_status.ToString(),
-            ErrorCodes::UNKNOWN_EXCEPTION
-        };
+        throw Exception{"Error while building a parquet column \"" + column_name + "\": " + append_status.ToString(),
+                        ErrorCodes::UNKNOWN_EXCEPTION};
     }
 }
 
@@ -61,18 +54,14 @@ void checkFinishStatus(arrow::Status & finish_status, const std::string & column
     if (!finish_status.ok())
     {
         throw Exception(
-            "Error while writing a parquet column \"" + column_name + "\": " + finish_status.ToString(),
-            ErrorCodes::UNKNOWN_EXCEPTION
-        );
+            "Error while writing a parquet column \"" + column_name + "\": " + finish_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION);
     }
 }
 
 template <typename NumericType, typename ArrowBuilderType>
 void ParquetBlockOutputStream::fillArrowArrayWithNumericColumnData(
-    ColumnPtr write_column,
-    std::shared_ptr<arrow::Array> & arrow_array,
-    const PaddedPODArray<UInt8> * null_bytemap
-) {
+    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+{
     const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
     ArrowBuilderType numeric_builder;
     arrow::Status append_status;
@@ -97,10 +86,8 @@ void ParquetBlockOutputStream::fillArrowArrayWithNumericColumnData(
 }
 
 void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
-    ColumnPtr write_column,
-    std::shared_ptr<arrow::Array> & arrow_array,
-    const PaddedPODArray<UInt8> * null_bytemap
-) {
+    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+{
     const ColumnString & internal_column = static_cast<const ColumnString &>(*write_column);
     arrow::StringBuilder string_builder;
     arrow::Status append_status;
@@ -125,10 +112,8 @@ void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
 }
 
 void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
-    ColumnPtr write_column,
-    std::shared_ptr<arrow::Array> & arrow_array,
-    const PaddedPODArray<UInt8> * null_bytemap
-) {
+    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+{
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
     arrow::Date32Builder date32_builder;
     arrow::Status append_status;
@@ -148,34 +133,34 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
-#define FOR_INTERNAL_NUMERIC_TYPES(M) \
-        M(UInt8,   arrow::UInt8Builder) \
-        M(Int8,    arrow::Int8Builder) \
-        M(UInt16,  arrow::UInt16Builder) \
-        M(Int16,   arrow::Int16Builder) \
-        M(UInt32,  arrow::UInt32Builder) \
-        M(Int32,   arrow::Int32Builder) \
-        M(UInt64,  arrow::UInt64Builder) \
-        M(Int64,   arrow::Int64Builder) \
-        M(Float32, arrow::FloatBuilder) \
+#    define FOR_INTERNAL_NUMERIC_TYPES(M) \
+        M(UInt8, arrow::UInt8Builder)     \
+        M(Int8, arrow::Int8Builder)       \
+        M(UInt16, arrow::UInt16Builder)   \
+        M(Int16, arrow::Int16Builder)     \
+        M(UInt32, arrow::UInt32Builder)   \
+        M(Int32, arrow::Int32Builder)     \
+        M(UInt64, arrow::UInt64Builder)   \
+        M(Int64, arrow::Int64Builder)     \
+        M(Float32, arrow::FloatBuilder)   \
         M(Float64, arrow::DoubleBuilder)
 
 const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockOutputStream::internal_type_to_arrow_type = {
-    {"UInt8",   arrow::uint8()},
-    {"Int8",    arrow::int8()},
-    {"UInt16",  arrow::uint16()},
-    {"Int16",   arrow::int16()},
-    {"UInt32",  arrow::uint32()},
-    {"Int32",   arrow::int32()},
-    {"UInt64",  arrow::uint64()},
-    {"Int64",   arrow::int64()},
+    {"UInt8", arrow::uint8()},
+    {"Int8", arrow::int8()},
+    {"UInt16", arrow::uint16()},
+    {"Int16", arrow::int16()},
+    {"UInt32", arrow::uint32()},
+    {"Int32", arrow::int32()},
+    {"UInt64", arrow::uint64()},
+    {"Int64", arrow::int64()},
     {"Float32", arrow::float32()},
     {"Float64", arrow::float64()},
 
-    {"Date",  arrow::date32()},
+    {"Date", arrow::date32()},
 
     // TODO: ClickHouse can actually store non-utf8 strings!
-    {"String", arrow::utf8()}//,
+    {"String", arrow::utf8()} //,
     // TODO: add other types:
     // 1. FixedString
     // 2. DateTime
@@ -206,31 +191,26 @@ void ParquetBlockOutputStream::write(const Block & block)
         const ColumnWithTypeAndName & column = block.safeGetByPosition(column_i);
 
         const bool is_column_nullable = column.type->isNullable();
-        const DataTypePtr column_nested_type =
-            is_column_nullable
-                ? static_cast<const DataTypeNullable *>(column.type.get())->getNestedType()
-                : column.type;
+        const DataTypePtr column_nested_type
+            = is_column_nullable ? static_cast<const DataTypeNullable *>(column.type.get())->getNestedType() : column.type;
         const DataTypePtr column_type = column.type;
         // TODO: do not mix std::string and String
         const std::string column_nested_type_name = column_nested_type->getName();
 
         if (internal_type_to_arrow_type.find(column_nested_type_name) == internal_type_to_arrow_type.end())
         {
-            throw Exception{
-                "The type \"" + column_nested_type_name + "\" of a column \"" + column.name + "\""
-                " is not supported for conversion into a Parquet data format"
-                , ErrorCodes::UNKNOWN_TYPE
-            };
+            throw Exception{"The type \"" + column_nested_type_name + "\" of a column \"" + column.name
+                                + "\""
+                                  " is not supported for conversion into a Parquet data format",
+                            ErrorCodes::UNKNOWN_TYPE};
         }
 
-        arrow_fields.emplace_back(new arrow::Field(
-            column.name,
-            internal_type_to_arrow_type.at(column_nested_type_name),
-            is_column_nullable
-        ));
+        arrow_fields.emplace_back(
+            new arrow::Field(column.name, internal_type_to_arrow_type.at(column_nested_type_name), is_column_nullable));
         std::shared_ptr<arrow::Array> arrow_array;
 
-        ColumnPtr nested_column = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
+        ColumnPtr nested_column
+            = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
         // TODO: use typeid_cast
@@ -242,23 +222,23 @@ void ParquetBlockOutputStream::write(const Block & block)
         {
             fillArrowArrayWithDateColumnData(nested_column, arrow_array, null_bytemap);
         }
-#define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
-        else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
-        { \
+#    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE)                                                                       \
+        else if (#CPP_NUMERIC_TYPE == column_nested_type_name)                                                                   \
+        {                                                                                                                        \
             fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(nested_column, arrow_array, null_bytemap); \
         }
 
         FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
+#    undef DISPATCH
         // TODO: there are also internal types that are convertable to parquet/arrow once:
         // 1. FixedString(N)
         // 2. DateTime
         else
         {
-            throw Exception{
-                "Internal type \"" + column_nested_type_name + "\" of a column \"" + column.name + "\""
-                " is not supported for conversion into a Parquet data format", ErrorCodes::UNKNOWN_TYPE
-            };
+            throw Exception{"Internal type \"" + column_nested_type_name + "\" of a column \"" + column.name
+                                + "\""
+                                  " is not supported for conversion into a Parquet data format",
+                            ErrorCodes::UNKNOWN_TYPE};
         }
 
         arrow_arrays.emplace_back(std::move(arrow_array));
@@ -273,10 +253,12 @@ void ParquetBlockOutputStream::write(const Block & block)
     // TODO: calculate row_group_size depending on a number of rows and table size
 
     arrow::Status write_status = parquet::arrow::WriteTable(
-        *arrow_table, arrow::default_memory_pool(), sink,
-        /* row_group_size = */arrow_table->num_rows(), parquet::default_writer_properties(),
-        parquet::arrow::default_arrow_writer_properties()
-    );
+        *arrow_table,
+        arrow::default_memory_pool(),
+        sink,
+        /* row_group_size = */ arrow_table->num_rows(),
+        parquet::default_writer_properties(),
+        parquet::arrow::default_arrow_writer_properties());
     if (!write_status.ok())
         throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 
@@ -286,14 +268,11 @@ void ParquetBlockOutputStream::write(const Block & block)
 
 void registerOutputFormatParquet(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Parquet", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const Context &,
-        const FormatSettings & /* settings */)
-    {
-        return std::make_shared<ParquetBlockOutputStream>(buf, sample /*, format_settings */);
-    });
+    factory.registerOutputFormat(
+        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & /* settings */)
+        {
+            return std::make_shared<ParquetBlockOutputStream>(buf, sample /*, format_settings */);
+        });
 }
 
 };
@@ -303,8 +282,10 @@ void registerOutputFormatParquet(FormatFactory & factory)
 
 namespace DB
 {
-    class FormatFactory;
-    void registerOutputFormatParquet(FormatFactory &) {}
+class FormatFactory;
+void registerOutputFormatParquet(FormatFactory &)
+{
+}
 }
 
 

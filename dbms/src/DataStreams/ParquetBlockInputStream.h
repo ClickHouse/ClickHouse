@@ -3,18 +3,17 @@
 #include <Common/config.h>
 #if USE_PARQUET
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnVector.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeDate.h>
+#    include <Columns/ColumnVector.h>
+#    include <Columns/IColumn.h>
+#    include <DataStreams/IProfilingBlockInputStream.h>
+#    include <DataTypes/DataTypeDate.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypesNumber.h>
 // TODO: refine includes
-#include <arrow/api.h>
+#    include <arrow/api.h>
 
 namespace DB
 {
-
 class ParquetBlockInputStream : public IProfilingBlockInputStream
 {
 public:

@@ -1,43 +1,42 @@
 #include <Common/config.h>
 
 #if USE_PARQUET
-#include <DataStreams/ParquetBlockInputStream.h>
+#    include <DataStreams/ParquetBlockInputStream.h>
 
-#include <algorithm>
-#include <iterator>
-#include <vector>
+#    include <algorithm>
+#    include <iterator>
+#    include <vector>
 // TODO: clear includes
-#include <Core/ColumnWithTypeAndName.h>
-#include <Columns/IColumn.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <common/DateLUTImpl.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <IO/BufferBase.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteHelpers.h>
-#include <Formats/FormatFactory.h>
-#include <ext/range.h>
-#include <IO/copyData.h>
-#include <IO/WriteBufferFromString.h>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#include <arrow/buffer.h>
-#include <arrow/api.h>
-#include <arrow/io/api.h>
-#include <parquet/arrow/reader.h>
-#include <parquet/arrow/writer.h>
-#include <parquet/exception.h>
-#include <parquet/file_reader.h>
-#pragma GCC diagnostic pop
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <Columns/IColumn.h>
+#    include <Core/ColumnWithTypeAndName.h>
+#    include <DataTypes/DataTypeDate.h>
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <Formats/FormatFactory.h>
+#    include <IO/BufferBase.h>
+#    include <IO/ReadBufferFromMemory.h>
+#    include <IO/WriteBufferFromString.h>
+#    include <IO/WriteHelpers.h>
+#    include <IO/copyData.h>
+#    include <common/DateLUTImpl.h>
+#    include <ext/range.h>
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
+#    pragma GCC diagnostic ignored "-Wignored-qualifiers"
+#    include <arrow/api.h>
+#    include <arrow/buffer.h>
+#    include <arrow/io/api.h>
+#    include <parquet/arrow/reader.h>
+#    include <parquet/arrow/writer.h>
+#    include <parquet/exception.h>
+#    include <parquet/file_reader.h>
+#    pragma GCC diagnostic pop
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
@@ -50,9 +49,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
-ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_)
-    : istr(istr_)
-    , header(header_)
+ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_) : istr(istr_), header(header_)
 {
 }
 
@@ -84,7 +81,7 @@ void ParquetBlockInputStream::fillColumnWithNumericData(std::shared_ptr<arrow::C
 /// Also internal strings are null terminated.
 void ParquetBlockInputStream::fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
-    PaddedPODArray<UInt8>  & column_chars_t = static_cast<ColumnString &>(*internal_column).getChars();
+    PaddedPODArray<UInt8> & column_chars_t = static_cast<ColumnString &>(*internal_column).getChars();
     PaddedPODArray<UInt64> & column_offsets = static_cast<ColumnString &>(*internal_column).getOffsets();
 
     size_t chars_t_size = 0;
@@ -149,10 +146,11 @@ void ParquetBlockInputStream::fillColumnWithDate32Data(std::shared_ptr<arrow::Co
             if (days_num > DATE_LUT_MAX_DAY_NUM)
             {
                 // TODO: will it rollback correctly?
-                throw Exception{
-                    "Input value " + std::to_string(days_num) + " of a column \"" + arrow_column->name() + "\" is greater than "
-                    "max allowed Date value, which is " + std::to_string(DATE_LUT_MAX_DAY_NUM), ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE
-                };
+                throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + arrow_column->name()
+                                    + "\" is greater than "
+                                      "max allowed Date value, which is "
+                                    + std::to_string(DATE_LUT_MAX_DAY_NUM),
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
             }
 
             column_data.emplace_back(days_num);
@@ -175,37 +173,37 @@ void ParquetBlockInputStream::fillByteMapFromArrowColumn(std::shared_ptr<arrow::
     }
 }
 
-#define FOR_ARROW_NUMERIC_TYPES(M)      \
-        M(arrow::Type::UINT8,  UInt8)   \
-        M(arrow::Type::INT8,   Int8)    \
-        M(arrow::Type::UINT16, UInt16)  \
-        M(arrow::Type::INT16,  Int16)   \
-        M(arrow::Type::UINT32, UInt32)  \
-        M(arrow::Type::INT32,  Int32)   \
-        M(arrow::Type::UINT64, UInt64)  \
-        M(arrow::Type::INT64,  Int64)   \
-        M(arrow::Type::FLOAT,  Float32) \
+#    define FOR_ARROW_NUMERIC_TYPES(M) \
+        M(arrow::Type::UINT8, UInt8)   \
+        M(arrow::Type::INT8, Int8)     \
+        M(arrow::Type::UINT16, UInt16) \
+        M(arrow::Type::INT16, Int16)   \
+        M(arrow::Type::UINT32, UInt32) \
+        M(arrow::Type::INT32, Int32)   \
+        M(arrow::Type::UINT64, UInt64) \
+        M(arrow::Type::INT64, Int64)   \
+        M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
 
 using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
 
 const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> ParquetBlockInputStream::arrow_type_to_internal_type = {
-    {arrow::Type::UINT8,  std::make_shared<DataTypeUInt8>()},
-    {arrow::Type::INT8,   std::make_shared<DataTypeInt8>()},
+    {arrow::Type::UINT8, std::make_shared<DataTypeUInt8>()},
+    {arrow::Type::INT8, std::make_shared<DataTypeInt8>()},
     {arrow::Type::UINT16, std::make_shared<DataTypeUInt16>()},
-    {arrow::Type::INT16,  std::make_shared<DataTypeInt16>()},
+    {arrow::Type::INT16, std::make_shared<DataTypeInt16>()},
     {arrow::Type::UINT32, std::make_shared<DataTypeUInt32>()},
-    {arrow::Type::INT32,  std::make_shared<DataTypeInt32>()},
+    {arrow::Type::INT32, std::make_shared<DataTypeInt32>()},
     {arrow::Type::UINT64, std::make_shared<DataTypeUInt64>()},
-    {arrow::Type::INT64,  std::make_shared<DataTypeInt64>()},
-    {arrow::Type::FLOAT,  std::make_shared<DataTypeFloat32>()},
+    {arrow::Type::INT64, std::make_shared<DataTypeInt64>()},
+    {arrow::Type::FLOAT, std::make_shared<DataTypeFloat32>()},
     {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
 
-    {arrow::Type::BOOL,   std::make_shared<DataTypeUInt8>()},
+    {arrow::Type::BOOL, std::make_shared<DataTypeUInt8>()},
     {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
 
-    {arrow::Type::STRING, std::make_shared<DataTypeString>()}//,
+    {arrow::Type::STRING, std::make_shared<DataTypeString>()} //,
     // TODO: add other types that are convertable to internal ones:
     // 0. ENUM?
     // 1. UUID -> String
@@ -266,17 +264,17 @@ Block ParquetBlockInputStream::readImpl()
 
         if (arrow_type_to_internal_type.find(arrow_type) == arrow_type_to_internal_type.end())
         {
-            throw Exception{
-                "The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name() + "\""
-                " is not supported for conversion from a Parquet data format"
-                , ErrorCodes::CANNOT_CONVERT_TYPE
-            };
+            throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
+                                + "\""
+                                  " is not supported for conversion from a Parquet data format",
+                            ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
         // TODO: check if a column is const?
         if (!header_column.type->isNullable() && arrow_column->null_count())
         {
-            throw Exception{"Can not insert NULL data into non-nullable column \"" + header_column.name + "\"", ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
+            throw Exception{"Can not insert NULL data into non-nullable column \"" + header_column.name + "\"",
+                            ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN};
         }
 
         const bool target_column_is_nullable = header_column.type->isNullable() || arrow_column->null_count();
@@ -285,10 +283,9 @@ Block ParquetBlockInputStream::readImpl()
         const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type) : internal_nested_type;
         const std::string internal_nested_type_name = internal_nested_type->getName();
 
-        const DataTypePtr column_nested_type =
-            header_column.type->isNullable()
-                ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
-                : header_column.type;
+        const DataTypePtr column_nested_type = header_column.type->isNullable()
+            ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
+            : header_column.type;
 
 
         const DataTypePtr column_type = header_column.type;
@@ -297,10 +294,11 @@ Block ParquetBlockInputStream::readImpl()
         // TODO: can it be done with typeid_cast?
         if (internal_nested_type_name != column_nested_type_name)
         {
-            throw Exception{
-                "Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name + "\""
-                " is not compatible with a column type \"" + column_nested_type_name + "\"", ErrorCodes::CANNOT_CONVERT_TYPE
-            };
+            throw Exception{"Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name
+                                + "\""
+                                  " is not compatible with a column type \""
+                                + column_nested_type_name + "\"",
+                            ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
         ColumnWithTypeAndName column;
@@ -321,13 +319,13 @@ Block ParquetBlockInputStream::readImpl()
             case arrow::Type::DATE32:
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
-#define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
-            case ARROW_NUMERIC_TYPE: \
-                fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
-                break;
+#    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE)                          \
+        case ARROW_NUMERIC_TYPE:                                                    \
+            fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
+            break;
 
-            FOR_ARROW_NUMERIC_TYPES(DISPATCH)
-#undef DISPATCH
+                FOR_ARROW_NUMERIC_TYPES(DISPATCH)
+#    undef DISPATCH
             // TODO: support TIMESTAMP_MICROS and TIMESTAMP_MILLIS with truncated micro- and milliseconds?
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
@@ -353,15 +351,12 @@ Block ParquetBlockInputStream::readImpl()
 
 void registerInputFormatParquet(FormatFactory & factory)
 {
-    factory.registerInputFormat("Parquet", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const Context &,
-        size_t /*max_block_size */,
-        const FormatSettings & /* settings */)
-    {
-        return std::make_shared<ParquetBlockInputStream>(buf, sample);
-    });
+    factory.registerInputFormat(
+        "Parquet",
+        [](ReadBuffer & buf, const Block & sample, const Context &, size_t /*max_block_size */, const FormatSettings & /* settings */)
+        {
+            return std::make_shared<ParquetBlockInputStream>(buf, sample);
+        });
 }
 
 }
@@ -370,8 +365,10 @@ void registerInputFormatParquet(FormatFactory & factory)
 
 namespace DB
 {
-    class FormatFactory;
-    void registerInputFormatParquet(FormatFactory &) {}
+class FormatFactory;
+void registerInputFormatParquet(FormatFactory &)
+{
+}
 }
 
 #endif
