@@ -9,3 +9,4 @@ select Locate('foo', 'o');
 select SUBSTRING('foo', 1, 2);
 select Substr('foo', 2);
 select mid('foo', 3);
+select IF(3>2, 1, 0);
