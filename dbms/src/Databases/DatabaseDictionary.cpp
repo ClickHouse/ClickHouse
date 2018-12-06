@@ -63,6 +63,15 @@ bool DatabaseDictionary::isTableExist(
     return dictionaries.count(table_name) && !deleted_tables.count(table_name);
 }
 
+
+bool DatabaseDictionary::isDictionaryExist(const Context &context, const String &dictionary_name) const
+{
+    (void)context;
+    (void)dictionary_name;
+    return false;
+}
+
+
 StoragePtr DatabaseDictionary::tryGetTable(
     const Context & /*context*/,
     const String & table_name) const
@@ -88,6 +97,15 @@ StoragePtr DatabaseDictionary::tryGetTable(
 
     return {};
 }
+
+
+DictionaryPtr DatabaseDictionary::tryGetDictionary(const Context &context, const String &dictionary_name) const
+{
+    (void)context;
+    (void)dictionary_name;
+    return {};
+}
+
 
 DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & /*context*/)
 {

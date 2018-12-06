@@ -41,9 +41,17 @@ public:
         const Context & context,
         const String & table_name) const override;
 
+    bool isDictionaryExist(
+        const Context & context,
+        const String & dictionary_name) const override;
+
     StoragePtr tryGetTable(
         const Context & context,
         const String & table_name) const override;
+
+    DictionaryPtr tryGetDictionary(
+        const Context & context,
+        const String & dictionary_name) const override;
 
     DatabaseIteratorPtr getIterator(const Context & context) override;
 
