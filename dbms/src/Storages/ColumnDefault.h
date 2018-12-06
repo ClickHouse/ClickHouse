@@ -9,9 +9,6 @@
 namespace DB
 {
 
-class Context;
-class Block;
-
 enum class ColumnDefaultKind
 {
     Default,

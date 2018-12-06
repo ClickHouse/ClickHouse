@@ -86,7 +86,7 @@ namespace Protocol
                 : "Unknown packet";
         }
 
-        inline size_t wordsInMessage(UInt64 msg_type)
+        inline size_t stringsInMessage(UInt64 msg_type)
         {
             switch (msg_type)
             {
