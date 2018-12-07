@@ -30,7 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
 }
 

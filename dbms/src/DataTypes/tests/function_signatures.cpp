@@ -7,7 +7,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Interpreters/FunctionSignature.h>
+#include <DataTypes/FunctionSignature.h>
 
 
 namespace DB
@@ -17,7 +17,7 @@ namespace DB
         extern const int SYNTAX_ERROR;
     }
 
-    namespace FunctionSignature
+    namespace FunctionSignatures
     {
         class TypeMatcherUnsignedInteger : public ITypeMatcher
         {
@@ -185,29 +185,18 @@ Example: ./function_signatures "toFixedString(String, const N UnsignedInteger) -
     }
 
     {
-        FunctionSignature::registerTypeMatchers();
-        FunctionSignature::registerTypeFunctions();
+        FunctionSignatures::registerTypeMatchers();
+        FunctionSignatures::registerTypeFunctions();
 
-        Tokens tokens(signature.data(), signature.data() + signature.size());
-        TokenIterator it(tokens);
+        FunctionSignature checker(signature);
 
-        FunctionSignature::Variables vars;
-        FunctionSignature::FunctionSignaturePtr res;
-        if (FunctionSignature::parseFunctionSignature(it, res))
-        {
-            std::cerr << "Parsed successfully.\n";
-            std::cerr << res->toString() << "\n";
+        std::string reason;
+        auto return_type = checker.check(args, reason);
 
-            std::string reason;
-            auto return_type = res->check(args, vars, reason);
-
-            if (!return_type)
-                std::cerr << "Check fail, reason: " << reason << "\n";
-            else
-                std::cerr << "Return type: " << return_type->getName() << "\n";
-        }
+        if (!return_type)
+            std::cerr << "Check fail, reason: " << reason << "\n";
         else
-            std::cerr << "Parse failed.\n";
+            std::cerr << "Return type: " << return_type->getName() << "\n";
     }
 
     return 0;
