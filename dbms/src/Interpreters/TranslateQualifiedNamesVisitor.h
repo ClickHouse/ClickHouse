@@ -25,14 +25,14 @@ public:
 
     static constexpr const char * label = "TranslateQualifiedNames";
 
-    static std::vector<ASTPtr> visit(ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static std::vector<ASTPtr> visit(const ASTIdentifier & node, ASTPtr & ast, Data &);
-    static std::vector<ASTPtr> visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
-    static std::vector<ASTPtr> visit(const ASTTableJoin & node, const ASTPtr & ast, Data &);
-    static std::vector<ASTPtr> visit(const ASTSelectQuery & node, const ASTPtr & ast, Data &);
+    static std::vector<ASTPtr *> visit(const ASTIdentifier & node, ASTPtr & ast, Data &);
+    static std::vector<ASTPtr *> visit(const ASTQualifiedAsterisk & node, const ASTPtr & ast, Data &);
+    static std::vector<ASTPtr *> visit(ASTTableJoin & node, const ASTPtr & ast, Data &);
+    static std::vector<ASTPtr *> visit(ASTSelectQuery & node, const ASTPtr & ast, Data &);
 };
 
 /// Visits AST for names qualification.

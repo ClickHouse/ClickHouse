@@ -39,7 +39,7 @@ bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
     return true;
 }
 
-std::vector<ASTPtr> QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
         return visit(*t, ast, data);
@@ -52,24 +52,24 @@ std::vector<ASTPtr> QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
 /// (skip the expression list itself and its children).
-std::vector<ASTPtr> QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
 {
     visitOther(ast, data);
 
     /// @warning It breaks botom-to-top order (childs processed after node here), could lead to some effects.
     /// It's possible to add ast back to result vec to save order. It will need two phase ASTArrayJoin visit (setting phase in data).
-    std::vector<ASTPtr> out;
+    std::vector<ASTPtr *> out;
     for (auto & child1 : ast->children)
         for (auto & child2 : child1->children)
             for (auto & child3 : child2->children)
-                out.push_back(child3);
+                out.push_back(&child3);
     return out;
 }
 
 /// set unique aliases for all subqueries. this is needed, because:
 /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
-std::vector<ASTPtr> QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
 {
     Aliases & aliases = data.aliases;
 

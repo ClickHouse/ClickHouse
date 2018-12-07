@@ -24,12 +24,12 @@ public:
 
     static constexpr const char * label = "QueryAliases";
 
-    static std::vector<ASTPtr> visit(ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static std::vector<ASTPtr> visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data);
-    static std::vector<ASTPtr> visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr *> visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr *> visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
     static void visitOther(const ASTPtr & ast, Data & data);
 };
 
