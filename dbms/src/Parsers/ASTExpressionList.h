@@ -11,7 +11,7 @@ namespace DB
 class ASTExpressionList : public IAST
 {
 public:
-    String getID(char ) const override { return "ExpressionList"; }
+    String getID(char) const override { return "ExpressionList"; }
 
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
