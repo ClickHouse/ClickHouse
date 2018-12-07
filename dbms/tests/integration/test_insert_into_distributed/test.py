@@ -21,6 +21,8 @@ instance_test_inserts_local_cluster = cluster.add_instance(
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 
+shard1 = cluster.add_instance('shard1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
+shard2 = cluster.add_instance('shard2', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -56,6 +58,19 @@ CREATE TABLE distributed (date Date, id UInt32) ENGINE = Distributed('shard_with
         node2.query('''
 CREATE TABLE distributed (date Date, id UInt32) ENGINE = Distributed('shard_with_local_replica', 'default', 'replicated')
 ''')
+
+        shard1.query('''
+SET allow_experimental_low_cardinality_type = 1;
+CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree(d, x, 8192)''')
+
+        shard2.query('''
+SET allow_experimental_low_cardinality_type = 1;
+CREATE TABLE low_cardinality (d Date, x UInt32, s LowCardinality(String)) ENGINE = MergeTree(d, x, 8192)''')
+
+        shard1.query('''
+SET allow_experimental_low_cardinality_type = 1;
+CREATE TABLE low_cardinality_all (d Date, x UInt32, s LowCardinality(String)) ENGINE = Distributed('shard_with_low_cardinality', 'default', 'low_cardinality', sipHash64(s))''')
+
         yield cluster
 
     finally:
@@ -170,3 +185,10 @@ def test_prefer_localhost_replica(started_cluster):
 '''
     # Now query is sent to node1, as it higher in order
     assert TSV(node2.query("SET load_balancing='in_order'; SET prefer_localhost_replica=0;" + test_query)) == TSV(expected_from_node1)
+
+def test_inserts_low_cardinality(started_cluster):
+    instance = shard1
+    instance.query("INSERT INTO low_cardinality_all (d,x,s) VALUES ('2018-11-12',1,'123')")
+    time.sleep(0.5)
+    assert instance.query("SELECT count(*) FROM low_cardinality_all").strip() == '1'
+
