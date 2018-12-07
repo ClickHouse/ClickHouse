@@ -170,8 +170,8 @@ void DatabaseOrdinary::loadTables(
     auto task_function = [&](const String & table)
     {
         SCOPE_EXIT(
-                if (++tables_processed == total_tables)
-                    all_tables_processed.set()
+            if (++tables_processed == total_tables)
+                all_tables_processed.set()
         );
 
         /// Messages, so that it's not boring to wait for the server to load for a long time.
