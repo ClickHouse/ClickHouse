@@ -24,12 +24,12 @@ public:
         return std::make_unique<GeoDictionariesLoader>();
     }
 
-    std::unique_ptr<IExternalLoaderConfigRepository> createExternalDictionariesConfigRepository() override
+    std::unique_ptr<IConfigRepository> createExternalDictionariesConfigRepository() override
     {
         return std::make_unique<ExternalLoaderConfigRepository>();
     }
 
-    std::unique_ptr<IExternalLoaderConfigRepository> createExternalModelsConfigRepository() override
+    std::unique_ptr<IConfigRepository> createExternalModelsConfigRepository() override
     {
         return std::make_unique<ExternalLoaderConfigRepository>();
     }

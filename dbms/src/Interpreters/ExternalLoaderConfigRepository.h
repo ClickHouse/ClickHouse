@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <Interpreters/IConfigRepository.h>
 
 namespace DB
 {
@@ -8,7 +8,7 @@ namespace DB
 /** Default implementation of config repository used by native server application.
   * Represents files in local filesystem.
   */
-class ExternalLoaderConfigRepository : public IExternalLoaderConfigRepository
+class ExternalLoaderConfigRepository : public IConfigRepository
 {
 public:
     Files list(

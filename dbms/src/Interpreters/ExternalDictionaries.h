@@ -19,7 +19,7 @@ public:
 
     /// Dictionaries will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
     ExternalDictionaries(
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+        std::unique_ptr<IConfigRepository> config_repository,
         Context & context,
         bool throw_on_error);
 

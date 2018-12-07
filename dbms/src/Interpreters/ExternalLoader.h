@@ -9,7 +9,7 @@
 #include <chrono>
 #include <tuple>
 #include <Interpreters/IExternalLoadable.h>
-#include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <Interpreters/IConfigRepository.h>
 #include <Core/Types.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
@@ -17,8 +17,6 @@
 
 namespace DB
 {
-
-class Context;
 
 struct ExternalLoaderUpdateSettings
 {
@@ -94,7 +92,7 @@ public:
     ExternalLoader(const Configuration & config_main,
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
-                   std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+                   std::unique_ptr<IConfigRepository> config_repository,
                    Logger * log, const std::string & loadable_object_name);
     virtual ~ExternalLoader();
 
@@ -155,7 +153,7 @@ private:
     const ExternalLoaderUpdateSettings & update_settings;
     const ExternalLoaderConfigSettings & config_settings;
 
-    std::unique_ptr<IExternalLoaderConfigRepository> config_repository;
+    std::unique_ptr<IConfigRepository> config_repository;
 
     std::thread reloading_thread;
     Poco::Event destroy;

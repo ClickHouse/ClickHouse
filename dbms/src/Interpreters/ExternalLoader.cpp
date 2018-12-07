@@ -46,7 +46,7 @@ void ExternalLoader::reloadPeriodically()
 ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config_main,
                                const ExternalLoaderUpdateSettings & update_settings,
                                const ExternalLoaderConfigSettings & config_settings,
-                               std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
+                               std::unique_ptr<IConfigRepository> config_repository,
                                Logger * log, const std::string & loadable_object_name)
         : config_main(config_main)
         , update_settings(update_settings)

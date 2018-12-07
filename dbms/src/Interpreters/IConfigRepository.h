@@ -9,12 +9,11 @@
 
 namespace DB
 {
-    // TODO it seems that we should add ability to write own configurations in files
 
 /** Repository with configurations of user-defined objects (dictionaries, models).
   * Used by ExternalLoader.
   */
-class IExternalLoaderConfigRepository
+class IConfigRepository
 {
 public:
     using Files = std::set<std::string>;
@@ -26,7 +25,7 @@ public:
 
     virtual Poco::AutoPtr<Poco::Util::AbstractConfiguration> load(const std::string & config_file, const std::string & preprocessed_dir = "") const = 0;
 
-    virtual ~IExternalLoaderConfigRepository() {}
+    virtual ~IConfigRepository() = default;
 };
 
 }

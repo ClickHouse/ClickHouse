@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Dictionaries/Embedded/IGeoDictionariesLoader.h>
-#include <Interpreters/IExternalLoaderConfigRepository.h>
+#include <Interpreters/IConfigRepository.h>
 #include <Interpreters/ISecurityManager.h>
 
 #include <memory>
@@ -21,9 +21,9 @@ public:
     virtual std::unique_ptr<IGeoDictionariesLoader> createGeoDictionariesLoader() = 0;
 
     // Repositories with configurations of user-defined objects (dictionaries, models)
-    virtual std::unique_ptr<IExternalLoaderConfigRepository> createExternalDictionariesConfigRepository() = 0;
+    virtual std::unique_ptr<IConfigRepository> createExternalDictionariesConfigRepository() = 0;
 
-    virtual std::unique_ptr<IExternalLoaderConfigRepository> createExternalModelsConfigRepository() = 0;
+    virtual std::unique_ptr<IConfigRepository> createExternalModelsConfigRepository() = 0;
 
     virtual ~IRuntimeComponentsFactory() {}
 };
