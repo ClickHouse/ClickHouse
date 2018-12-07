@@ -1,5 +1,3 @@
-#pragma once
-
 #include <DataTypes/FunctionSignature.h>
 
 #include <map>

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 #include <vector>
 #include <string>
@@ -17,7 +18,10 @@
 namespace DB
 {
 
-class IFunctionSignatureImpl;
+namespace FunctionSignatures
+{
+    class IFunctionSignatureImpl;
+}
 
 /** Function signature is responsible for:
   * - checking types (and const-ness) of function arguments;
@@ -105,7 +109,7 @@ public:
     DataTypePtr check(const ColumnsWithTypeAndName & args, std::string & out_reason) const;
 
 private:
-    std::shared_ptr<IFunctionSignatureImpl> impl;
+    std::shared_ptr<FunctionSignatures::IFunctionSignatureImpl> impl;
 };
 
 
