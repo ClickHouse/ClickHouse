@@ -96,7 +96,7 @@ struct AggregationDataWithNullKey : public Base
     bool & hasNullKeyData() { return has_null_key_data; }
     AggregateDataPtr & getNullKeyData() { return null_key_data; }
     bool hasNullKeyData() const { return has_null_key_data; }
-    const AggregateDataPtr & getNullKeyData() const  { return null_key_data; }
+    const AggregateDataPtr & getNullKeyData() const { return null_key_data; }
 
 private:
     bool has_null_key_data = false;
@@ -119,7 +119,7 @@ struct AggregationDataWithNullKeyTwoLevel : public Base
     bool & hasNullKeyData() { return impls[0].hasNullKeyData(); }
     AggregateDataPtr & getNullKeyData() { return impls[0].getNullKeyData(); }
     bool hasNullKeyData() const { return impls[0].hasNullKeyData(); }
-    const AggregateDataPtr & getNullKeyData() const  { return impls[0].getNullKeyData(); }
+    const AggregateDataPtr & getNullKeyData() const { return impls[0].getNullKeyData(); }
 };
 
 template <typename ... Types>
