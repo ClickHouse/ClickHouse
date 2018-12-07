@@ -364,7 +364,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     Block block = state.io.out->getHeader();
 
     /// Support insert from old clients without low cardinality type.
-    if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+    /// if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
     {
         for (auto & col : block)
         {
