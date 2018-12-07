@@ -193,13 +193,13 @@ namespace FunctionSignatures
     struct Variables;
 
     /** Check type to match some criteria, possibly set some variables.
-    *
-    * vars - scratch area used by AssignTypeMatcher internally.
-    * iteration - all variable indices are incremented by this number - used for implementation of ellipsis.
-    * arg_num - used to fill out_reason message.
-    *
-    * Simply forward these parameters to children matchers if any.
-    */
+      *
+      * vars - scratch area used by AssignTypeMatcher internally.
+      * iteration - all variable indices are incremented by this number - used for implementation of ellipsis.
+      * arg_num - used to fill out_reason message.
+      *
+      * Simply forward these parameters to children matchers if any.
+      */
     class ITypeMatcher
     {
     public:
@@ -221,8 +221,8 @@ namespace FunctionSignatures
 
 
     /** A function of variables (types and constants) that returns variable (type or constant).
-    * It also may return nullptr type that means that it is not applicable.
-    */
+      * It also may return nullptr type that means that it is not applicable.
+      */
     class ITypeFunction
     {
     public:
