@@ -56,6 +56,8 @@ For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more informa
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
+<a name="syntax-string_literal"></a>
+
 ### String Literals
 
 Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where "c" is any character, are converted to "c". This means that you can use the sequences `\'`and`\\`. The value will have the String type.
@@ -99,22 +101,31 @@ For more information, see the section "Operators" below.
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 
-## Synonyms
+## Expression aliases
 
-Use `AS` keyword to define a synonym.
+Alias is a developer defined name for expression in a query.
 
 ```
-expr AS synonym
+expr AS alias
 ```
 
-- The `expr` can be any. For example, `SELECT (1 AS n) + 2, n` is valid.
-- The `synonym` should be a string. If a synonym contains spaces enclose it in quotes. For example, `SELECT "table t".col_name FROM t AS "table t"`.
-- You can define synonyms in any part of a query. Synonyms are global for query and not visible in subqueries and outside the query.
-- You can declare synonyms for table or a column names skipping `AS` keyword. For example, `SELECT b.column_name from t b`.
+- `AS` — keyword for defining aliases. You can define alias for table or a column name skipping `AS` keyword.
 
-Avoid the synonyms the same as the column or table names.
+    For example, `SELECT b.column_name from t b`.
 
-Let's consider the following example:
+- `expr` — any expression supported by ClickHouse.
+
+    For example, `SELECT (1 AS n) + 2, n`.
+
+- `alias` — [string literal](#syntax-string_literal). If an alias contains spaces, enclose it in quotes.
+
+    For example, `SELECT "table t".col_name FROM t AS "table t"`.
+
+### Peculiarities of Use
+
+You can define alias in any part of a query. Aliases are global for a query and not visible in subqueries and outside a query. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
+
+Avoid aliases the same as column or table names. Let's consider the following example:
 
 ```
 CREATE TABLE t
@@ -132,10 +143,10 @@ SELECT
 FROM t
 
 Received exception from server (version 18.14.17):
-Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(a) is found inside another aggregate function in query.
+Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In this example, we declared table `t` with column `b`. Then, when selecting data, we defined synonym `sum(b) AS b`. As synonyms are global, ClickHouse substituted `b` literal in `argMax(a, b)` with `sub(b)`. This substitution caused the exception.
+In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sub(b)`. This substitution caused the exception.
 
 ## Asterisk
 
