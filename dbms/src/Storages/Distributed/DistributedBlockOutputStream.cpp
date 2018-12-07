@@ -411,7 +411,7 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & sou
 #define CREATE_FOR_TYPE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
         return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
-    else if(auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
+    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
         if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
             return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
