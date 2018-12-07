@@ -247,9 +247,9 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 
     if (do_global)
     {
-        GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, isRemoteStorage(),
+        GlobalSubqueriesMatcher::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
                                                    external_tables, subqueries_for_sets, has_global_subqueries);
-        subqueries_visitor.visit(query);
+        GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
 
