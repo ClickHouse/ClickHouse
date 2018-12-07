@@ -54,8 +54,6 @@ There are several processing stages:
 Only the first stage takes time. If there is a failure at this stage, the data is not changed.
 If there is a failure during one of the successive stages, data can be restored manually. The exception is if the old files were deleted from the file system but the data for the new files did not get written to the disk and was lost.
 
-There is no support for changing the column type in arrays and nested data structures.
-
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or change a type with `DateTime`  to `UInt32`).
@@ -78,17 +76,19 @@ The following command is supported:
 MODIFY ORDER BY new_expression
 ```
 
-It only works for tables in the `MergeTree` family (including replicated tables). The command changes the
+It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The command changes the
 [sorting key](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) of the table
 to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part
-rows are sorted by the sorting key expression you cannot add expressions containing existing columns
+rows are ordered by the sorting key expression you cannot add expressions containing existing columns
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
 ### Manipulations With Partitions and Parts
 
-It only works for tables in the `MergeTree` family (including replicated tables). The following operations
+It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The following operations
 are available:
 
 - `DETACH PARTITION` – Move a partition to the 'detached' directory and forget it.

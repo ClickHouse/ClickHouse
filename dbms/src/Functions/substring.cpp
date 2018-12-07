@@ -166,7 +166,9 @@ public:
 
 void registerFunctionSubstring(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionSubstring>();
+    factory.registerFunction<FunctionSubstring>(FunctionFactory::CaseInsensitive);
+    factory.registerAlias("substr", FunctionSubstring::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("mid", FunctionSubstring::name, FunctionFactory::CaseInsensitive); /// from MySQL dialect
 }
 
 }
