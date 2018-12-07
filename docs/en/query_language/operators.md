@@ -53,7 +53,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Operators for Working With Data Sets
 
-*See the section "IN operators".*
+*See the section [IN operators](select.md/#query_language-in_operators).*
 
 `a IN ...` – The `in(a, b) function`
 
