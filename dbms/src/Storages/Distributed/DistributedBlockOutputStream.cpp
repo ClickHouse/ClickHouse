@@ -407,7 +407,7 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & sou
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
     const auto & slot_to_shard = cluster->getSlotToShard();
 
-//If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
+// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
         return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
