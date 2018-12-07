@@ -96,6 +96,18 @@ namespace FunctionSignatures
   * If the signature contains multiple ellipsis, all of them match the same number of repetitions.
   *
   * or argument descriptions may be grouped in square brackets as an optional group.
+  *
+  *
+  * Goals of the function signatures DSL:
+  * - signatures should be easily comprehensible by non-programmers;
+  * - be as close to documentation (pseudo-code) as possible;
+  * - be used directly in documentation and in system tables;
+  * - accomodate all existing types of functions;
+  *
+  * Non goals:
+  * - completeness, universality;
+  * - implementation efficiency;
+  * - implementation simplicity;
   */
 class FunctionSignature
 {
