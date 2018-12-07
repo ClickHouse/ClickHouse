@@ -154,7 +154,12 @@ Block NativeBlockInputStream::readImpl()
         column.column = std::move(read_column);
 
         /// if (server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
-            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+        if (header)
+	{
+	    auto type = header.safeGetByPosition(i).type;
+            column.column = recursiveLowCardinalityConversion(column.column, column.type, type);
+            column.type = type;
+	}
 
         res.insert(std::move(column));
 
