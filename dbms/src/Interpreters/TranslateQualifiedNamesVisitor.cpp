@@ -37,7 +37,7 @@ bool TranslateQualifiedNamesMatcher::needChildVisit(ASTPtr & node, const ASTPtr 
     return true;
 }
 
-std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
         return visit(*t, ast, data);
@@ -50,7 +50,7 @@ std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data & d
     return {};
 }
 
-std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier & identifier, ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier & identifier, ASTPtr & ast, Data & data)
 {
     const NameSet & source_columns = data.source_columns;
     const std::vector<DatabaseAndTableWithAlias> & tables = data.tables;
@@ -87,7 +87,7 @@ std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier & 
     return {};
 }
 
-std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const ASTPtr & ast, Data & data)
 {
     const std::vector<DatabaseAndTableWithAlias> & tables = data.tables;
 
@@ -125,26 +125,26 @@ std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAste
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
-std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(const ASTTableJoin & join, const ASTPtr & , Data &)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & , Data &)
 {
     /// Don't translate on_expression here in order to resolve equation parts later.
-    std::vector<ASTPtr> out;
+    std::vector<ASTPtr *> out;
     if (join.using_expression_list)
-        out.push_back(join.using_expression_list);
+        out.push_back(&join.using_expression_list);
     return out;
 }
 
-std::vector<ASTPtr> TranslateQualifiedNamesMatcher::visit(const ASTSelectQuery & select, const ASTPtr & , Data &)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr & , Data &)
 {
     /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children,
     /// but also in where_expression and having_expression.
-    std::vector<ASTPtr> out;
+    std::vector<ASTPtr *> out;
     if (select.prewhere_expression)
-        out.push_back(select.prewhere_expression);
+        out.push_back(&select.prewhere_expression);
     if (select.where_expression)
-        out.push_back(select.where_expression);
+        out.push_back(&select.where_expression);
     if (select.having_expression)
-        out.push_back(select.having_expression);
+        out.push_back(&select.having_expression);
     return out;
 }
 

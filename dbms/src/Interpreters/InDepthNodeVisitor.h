@@ -28,10 +28,12 @@ public:
         if constexpr (!_topToBottom)
             visitChildren(ast);
 
-        auto additional_nodes = Matcher::visit(ast, data);
+        /// It operates with ASTPtr * cause we may want to rewrite ASTPtr in visit().
+        std::vector<ASTPtr *> additional_nodes = Matcher::visit(ast, data);
+
         /// visit additional nodes (ex. only part of children)
-        for (ASTPtr & node : additional_nodes)
-            visit(node);
+        for (ASTPtr * node : additional_nodes)
+            visit(*node);
 
         if constexpr (_topToBottom)
             visitChildren(ast);
