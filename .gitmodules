@@ -60,4 +60,4 @@
 	url = https://github.com/GNOME/libxml2.git
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
-	url = git@github.com:ClickHouse-Extras/libgsasl.git
+	url = https://github.com/ClickHouse-Extras/libgsasl.git
