@@ -57,7 +57,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_CONVERT_TYPE;
@@ -883,7 +883,7 @@ private:
     {
         if (!arguments.size())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
-               ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+               ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -897,7 +897,7 @@ private:
             {
                 if (arguments.size() != 2)
                     throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.",
-                        ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+                        ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
                 const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
                 UInt32 scale = extractToDecimalScale(scale_column);

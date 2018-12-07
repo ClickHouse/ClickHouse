@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LESS_LIVE_REPLICAS;
+    extern const int TOO_FEW_LIVE_REPLICAS;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
@@ -76,7 +76,7 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
     if (leader_election_stat.numChildren < static_cast<int32_t>(quorum))
         throw Exception("Number of alive replicas ("
             + toString(leader_election_stat.numChildren) + ") is less than requested quorum (" + toString(quorum) + ").",
-            ErrorCodes::TOO_LESS_LIVE_REPLICAS);
+            ErrorCodes::TOO_FEW_LIVE_REPLICAS);
 
     /** Is there a quorum for the last part for which a quorum is needed?
         * Write of all the parts with the included quorum is linearly ordered.

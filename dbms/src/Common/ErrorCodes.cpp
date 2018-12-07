@@ -42,7 +42,7 @@ namespace ErrorCodes
     extern const int ATTEMPT_TO_READ_AFTER_EOF = 32;
     extern const int CANNOT_READ_ALL_DATA = 33;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION = 34;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION = 35;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION = 35;
     extern const int BAD_ARGUMENTS = 36;
     extern const int UNKNOWN_ELEMENT_IN_AST = 37;
     extern const int CANNOT_PARSE_DATE = 38;
@@ -285,7 +285,7 @@ namespace ErrorCodes
     extern const int INCORRECT_INDEX = 282;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE = 283;
     extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD = 284;
-    extern const int TOO_LESS_LIVE_REPLICAS = 285;
+    extern const int TOO_FEW_LIVE_REPLICAS = 285;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE = 286;
     extern const int UNKNOWN_FORMAT_VERSION = 287;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED = 288;
