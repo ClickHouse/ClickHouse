@@ -242,8 +242,8 @@ void ExpressionAnalyzer::analyzeAggregation()
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
     /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesVisitor tables_visitor(context, external_tables);
-    tables_visitor.visit(query);
+    ExternalTablesMatcher::Data tables_data{context, external_tables};
+    ExternalTablesVisitor(tables_data).visit(query);
 
     if (do_global)
     {
