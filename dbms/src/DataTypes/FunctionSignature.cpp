@@ -1,31 +1,20 @@
 #pragma once
 
+#include <DataTypes/FunctionSignature.h>
+
 #include <map>
-#include <memory>
-#include <string>
 #include <cstring>
-#include <vector>
-#include <variant>
 
-#include <ext/singleton.h>
-
-#include <Core/Field.h>
-#include <Core/ColumnsWithTypeAndName.h>
 #include <Common/FieldVisitors.h>
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-
-#include <Parsers/IParser.h>
-#include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/TokenIterator.h>
 
 
 namespace DB
@@ -34,76 +23,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_FUNCTION_SIGNATURE;
+    extern const int SYNTAX_ERROR;
 }
 
-namespace FunctionSignature
+namespace FunctionSignatures
 {
-
-/** Function signature is responsible for:
-  * - checking types (and const-ness) of function arguments;
-  * - getting result type by types of arguments and values of constant arguments;
-  * - printing documentation about function signature;
-  * - printing well understandable error messages in case of types/constness mismatch.
-  *
-  * For the purpuse of the latter (introspectiveness), the function signature must be declarative
-  *  and constructed from simple parts.
-  *
-  *
-  * It's not trivial. Let's consider the following examples:
-  *
-  * transform(T, Array(T), Array(U), U) -> U
-  * - here we have dependency between types of arguments;
-  *
-  * array(T1...) -> Array(LeastCommonType(T1...))
-  * - here we have variable number of arguments and there must exist least common type for all arguments.
-  *
-  * toFixedString(String, N) -> FixedString(N)
-  * tupleElement(T : Tuple, N) -> TypeOfTupleElement(T, N)
-  * - here N must be constant expression and the result type is dependent of its value.
-  *
-  * arrayReduce(agg String, ...) -> return type of aggregate function 'agg'
-  *
-  * multiIf(cond1 UInt8, then1 T1, [cond2 UInt8, then2 T2, ...], else U) -> LeastCommonType(T1, T2, ..., U)
-  * - complicated recursive signature.
-  */
-
-/** Function signature consists of:
-  *
-  * func_name(args_description) -> return_desription
-  * where constraints
-  * or alternative_signatures
-  *
-  * func_name - function name for documentation purposes.
-  * args_description - zero or more comma separated descriptions of arguments.
-  *
-  * argument_description:
-  *
-  * const arg_name type_description
-  *
-  * const - optional specification that the argument must be constant
-  * arg_name - optional name of argument
-  *
-  * type_description:
-  *
-  * TypeName
-  * TypeMatcher
-  * TypeName : TypeMatcher
-  *
-  * TypeName - name of a type like String or type variable like T
-  * TypeMatcher - name of type matcher like UnsignedInteger or function-like expression of other type desciptions,
-  *  like Array(T : UsignedInteger) or constant descriptions like FixedString(N)
-  *
-  * or argument_description may be ellipsis:
-  * ...
-  * or an ellipsis with number capture:
-  * ...(N)
-  *
-  * Ellipsis means:
-  * - if it is the only argument description: any number of any arguments;
-  * - repeat previous argument or a group of previous arguments with the same numeric suffix of names, zero or more times;
-  * - the number of reprtitions is captured or compared to variable N.
-  */
-
 
 /** Every variable can act as an array. It is intended for implementation of ellipsis (...) - recursive function signatures.
   * Values of variables are keyed by variable name and index.
@@ -155,63 +80,50 @@ struct Key
 };
 
 
-inline size_t getCommonIndex(size_t i, size_t j)
+static inline size_t getCommonIndex(size_t i, size_t j)
 {
     if (i && j && i != j)
-        throw Exception("Different indices of variables in subexpression", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Different indices of variables in subexpression", ErrorCodes::BAD_FUNCTION_SIGNATURE);
     return i ? i : j;
 }
 
-/** Captured type or a value of a constant.
-  */
-struct Value
+
+bool Value::operator==(const Value & rhs) const
 {
-    std::variant<DataTypePtr, Field> value;
-    std::optional<size_t> captured_at_arg_num;
+    return value.index() == rhs.value.index()
+        && ((value.index() == 0 && std::get<DataTypePtr>(value)->equals(*std::get<DataTypePtr>(rhs.value)))
+            || (value.index() == 1 && std::get<Field>(value) == std::get<Field>(rhs.value)));
+}
 
-    Value(const DataTypePtr & type) : value(type) {}
-    Value(const Field & field) : value(field) {}
+const DataTypePtr & Value::type() const
+{
+    return std::get<DataTypePtr>(value);
+}
 
-    Value(const DataTypePtr & type, size_t arg_num) : value(type), captured_at_arg_num(arg_num) {}
-    Value(const Field & field, size_t arg_num) : value(field), captured_at_arg_num(arg_num) {}
+const Field & Value::field() const
+{
+    return std::get<Field>(value);
+}
 
-    bool operator==(const Value & rhs) const
+/// For implementation of constraints.
+bool Value::isTrue() const
+{
+    return std::get<Field>(value).safeGet<UInt64>() == 1;
+}
+
+std::string Value::toString() const
+{
+    if (value.index() == 0)
     {
-        return value.index() == rhs.value.index()
-            && ((value.index() == 0 && std::get<DataTypePtr>(value)->equals(*std::get<DataTypePtr>(rhs.value)))
-                || (value.index() == 1 && std::get<Field>(value) == std::get<Field>(rhs.value)));
-    }
-
-    const DataTypePtr & type() const
-    {
-        return std::get<DataTypePtr>(value);
-    }
-
-    const Field & field() const
-    {
-        return std::get<Field>(value);
-    }
-
-    /// For implementation of constraints.
-    bool isTrue() const
-    {
-        return std::get<Field>(value).safeGet<UInt64>() == 1;
-    }
-
-    std::string toString() const
-    {
-        if (value.index() == 0)
-        {
-            const auto & t = type();
-            if (!t)
-                return "nullptr";
-            else
-                return t->getName();
-        }
+        const auto & t = type();
+        if (!t)
+            return "nullptr";
         else
-            return applyVisitor(FieldVisitorToString(), std::get<Field>(value));
+            return t->getName();
     }
-};
+    else
+        return applyVisitor(FieldVisitorToString(), std::get<Field>(value));
+}
 
 
 template <typename Container, typename WriteElem, typename WriteDelim>
@@ -290,7 +202,7 @@ struct Variables
         if (auto it = container.find(key); it != container.end())
             return it->second;
         else
-            throw Exception("Variable " + key.toString() + " was not captured", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Variable " + key.toString() + " was not captured", ErrorCodes::BAD_FUNCTION_SIGNATURE);
     }
 
     void reset()
@@ -307,75 +219,11 @@ struct Variables
 };
 
 
-/** A list of arguments for type function or constraint.
-  */
-using Values = std::vector<Value>;
-
-
 /** List of variables to assign or check.
   * Empty string means that argument is unused.
   */
 using Keys = std::vector<Key>;
 
-
-template <typename What, typename... Args>
-class Factory : public ext::singleton<Factory<What, Args...>>
-{
-private:
-    using Creator = std::function<What(Args...)>;
-    using Dict = std::map<std::string, Creator>;
-
-    Dict dict;
-public:
-    void registerElement(const std::string & name, const Creator & creator)
-    {
-        if (!dict.emplace(name, creator).second)
-            throw Exception("Element " + name + " is already registered in factory", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    template <typename T>
-    void registerElement()
-    {
-        auto elem = std::make_shared<T>();
-        auto name = elem->name();
-        if (!dict.emplace(name, [elem = std::move(elem)]{ return elem; }).second)
-            throw Exception("Element " + name + " is already registered in factory", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    What tryGet(const std::string & name, Args &&... args) const
-    {
-        if (auto it = dict.find(name); it != dict.end())
-            return it->second(std::forward<Args>(args)...);
-        return {};
-    }
-
-    What get(const std::string & name, Args &&... args) const
-    {
-        if (auto res = tryGet(name, std::forward<Args>(args)...))
-            return res;
-        else
-            throw Exception("Unknown element: " + name, ErrorCodes::LOGICAL_ERROR);
-    }
-};
-
-
-/** Check type to match some criteria, possibly set some variables.
-  * iteration - all variable indices are incremented by this number - used for implementation of ellipsis.
-  */
-class ITypeMatcher
-{
-public:
-    virtual ~ITypeMatcher() {}
-    virtual std::string toString() const = 0;
-    virtual bool match(const DataTypePtr & what, Variables & vars, size_t iteration, size_t arg_num, std::string & out_reason) const = 0;
-
-    /// Extract common index of variables participating in expression.
-    virtual size_t getIndex() const = 0;
-};
-
-using TypeMatcherPtr = std::shared_ptr<ITypeMatcher>;
-using TypeMatchers = std::vector<TypeMatcherPtr>;
-using TypeMatcherFactory = Factory<TypeMatcherPtr, const TypeMatchers &>;
 
 /// Matches any type.
 class AnyTypeMatcher : public ITypeMatcher
@@ -425,12 +273,14 @@ public:
 
     std::string toString() const override
     {
-        return var_key.toString() + " : " + impl->toString();
+        return impl
+            ? var_key.toString() + " : " + impl->toString()
+            : var_key.toString();
     }
 
     bool match(const DataTypePtr & what, Variables & vars, size_t iteration, size_t arg_num, std::string & out_reason) const override
     {
-        if (!impl->match(what, vars, iteration, arg_num, out_reason))
+        if (impl && !impl->match(what, vars, iteration, arg_num, out_reason))
             return false;
 
         return vars.assignOrCheck(var_key.incrementIndex(iteration), what, arg_num, out_reason);
@@ -438,7 +288,7 @@ public:
 
     size_t getIndex() const override
     {
-        return getCommonIndex(var_key.index, impl->getIndex());
+        return impl ? getCommonIndex(var_key.index, impl->getIndex()) : 0;
     }
 };
 
@@ -507,7 +357,6 @@ struct ArgumentsGroup
 
     bool match(const ColumnsWithTypeAndName & args, Variables & vars, size_t offset, size_t iteration, std::string & out_reason) const
     {
-        std::cerr << "^\n";
         size_t size = elems.size();
 
         if (size + offset > args.size())
@@ -516,15 +365,11 @@ struct ArgumentsGroup
             return false;
         }
 
-        std::cerr << "^^\n";
-
         for (size_t i = 0; i < size; ++i)
         {
             const auto & col = args[offset + i];
             if (!elems[i].match(col.type, col.column, vars, iteration, offset + i, out_reason))
                 return false;
-
-            std::cerr << "^^^\n";
         }
         return true;
     }
@@ -616,7 +461,6 @@ private:
                 }
 
                 ellipsis_size = expected_num_args_in_ellipsis / num_args_in_ellipsis_group;
-                std::cerr << "ellipsis_size: " << *ellipsis_size << "\n";
             }
         }
 
@@ -681,17 +525,12 @@ private:
                     size_t repeat_count = 0;
                     while (true)
                     {
-                        std::cerr << "repeat_count: " << repeat_count << "\n";
-
                         /// Ellipsis is ended, match from next group
                         ellipsis_size = repeat_count;
                         if (matchAt(args, vars, group_offset + 1, args_offset, iteration, ellipsis_size, out_reason))
                             return true;
                         else
-                        {
-                            std::cerr << out_reason << "\n";
                             ellipsis_size.reset();
-                        }
 
                         /// Repeat group for ellipsis
                         if (!group.match(args, vars, args_offset, iteration + repeat_count + 1, out_reason))
@@ -708,21 +547,6 @@ private:
         }
     }
 };
-
-
-/** A function of variables (types and constants) that returns variable (type or constant).
-  * It also may return nullptr type that means that it is not applicable.
-  */
-class ITypeFunction
-{
-public:
-    virtual ~ITypeFunction() {}
-    virtual Value apply(const Values & args) const = 0;
-    virtual std::string name() const = 0;
-};
-
-using TypeFunctionPtr = std::shared_ptr<ITypeFunction>;
-using TypeFunctionFactory = Factory<TypeFunctionPtr>;
 
 
 /** Part of expression tree that contains type functions, variables and constants.
@@ -822,12 +646,10 @@ public:
             else    /// Ellipsis
             {
                 if (group_to_repeat.empty())
-                    throw Exception("No group to repeat in type function", ErrorCodes::LOGICAL_ERROR);
-
-                std::cerr << "group size: " << group_to_repeat.size() << "\n";
+                    throw Exception("No group to repeat in type function", ErrorCodes::BAD_FUNCTION_SIGNATURE);
 
                 if (!ellipsis_size)
-                    throw Exception("There is an ellipsis in type expression, but no ellipsis was matched as arguments", ErrorCodes::LOGICAL_ERROR);
+                    throw Exception("There is an ellipsis in type expression, but no ellipsis was matched as arguments", ErrorCodes::BAD_FUNCTION_SIGNATURE);
 
                 for (size_t repeat_iteration = 0; repeat_iteration < *ellipsis_size; ++repeat_iteration)
                     for (const auto & expr : group_to_repeat)
@@ -856,19 +678,19 @@ public:
 };
 
 
-class IFunctionSignature
+class IFunctionSignatureImpl
 {
 public:
-    virtual ~IFunctionSignature() {}
+    virtual ~IFunctionSignatureImpl() {}
     virtual DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const = 0;
     virtual std::string toString() const = 0 ;
 };
 
-using FunctionSignaturePtr = std::shared_ptr<IFunctionSignature>;
-using FunctionSignatures = std::vector<FunctionSignaturePtr>;
+using FunctionSignatureImplPtr = std::shared_ptr<IFunctionSignatureImpl>;
+using FunctionSignatureImpls = std::vector<FunctionSignatureImplPtr>;
 
 
-struct VariadicFunctionSignature : public IFunctionSignature
+struct VariadicFunctionSignatureImpl : public IFunctionSignatureImpl
 {
     VariadicArguments arguments_description;
     TypeExpressionPtr return_type;
@@ -878,21 +700,15 @@ struct VariadicFunctionSignature : public IFunctionSignature
     {
         /// Apply type matchers and assign variables.
 
-        std::cerr << "%\n";
-
         std::optional<size_t> ellipsis_size;
         if (!arguments_description.match(args, vars, ellipsis_size, out_reason))
             return nullptr;
-
-        std::cerr << "%%\n";
 
         /// Check constraints against variables.
 
         for (const TypeExpressionPtr & constraint : constraints)
             if (!constraint->apply(vars, 0, ellipsis_size).isTrue())    /// TODO out_reason
                 return nullptr;
-
-        std::cerr << vars.toString() << "\n";
 
         return std::get<DataTypePtr>(return_type->apply(vars, 0, ellipsis_size).value);     /// TODO out_reason
     }
@@ -913,9 +729,9 @@ struct VariadicFunctionSignature : public IFunctionSignature
 };
 
 
-struct AlternativeFunctionSignature : public IFunctionSignature
+struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
 {
-    FunctionSignatures alternatives;
+    FunctionSignatureImpls alternatives;
 
     DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const override
     {
@@ -956,7 +772,6 @@ bool parseIdentifier(TokenIterator & pos, std::string & res)
     if (pos->type == TokenType::BareWord)
     {
         res.assign(pos->begin, pos->end);
-        std::cerr << "Parsed identifier " << res << "\n";
         ++pos;
         return true;
     }
@@ -967,7 +782,6 @@ bool consumeToken(TokenIterator & pos, TokenType type)
 {
     if (pos->type == type)
     {
-        std::cerr << "Consuming " << std::string(pos->begin, pos->end) << "\n";
         ++pos;
         return true;
     }
@@ -1049,7 +863,6 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
         TypeFunctionPtr func = TypeFunctionFactory::instance().tryGet(name);
         if (func)
         {
-            std::cerr << "Type func\n";
             res = std::make_shared<TypeExpressionTree>(func, children);
             return true;
         }
@@ -1059,7 +872,6 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
         const auto & factory = DataTypeFactory::instance();
         if (factory.existsCanonicalFamilyName(name))
         {
-            std::cerr << "Exact type\n";
             auto prev_pos = pos;
             --prev_pos;
             const std::string full_name(begin->begin, prev_pos->end);
@@ -1071,12 +883,11 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
 
         if (children.empty())
         {
-            std::cerr << "Type variable\n";
             res = std::make_shared<VariableTypeExpression>(name);
             return true;
         }
 
-        throw Exception("Unknown type function: " + name, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unknown type function: " + name, ErrorCodes::UNKNOWN_NAME_IN_FACTORY);
     }
     return false;
 }
@@ -1122,11 +933,11 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 
         if (args.empty())
         {
-            res = std::make_shared<AssignTypeMatcher>(std::make_shared<AnyTypeMatcher>(), name);
+            res = std::make_shared<AssignTypeMatcher>(nullptr, name);
             return true;
         }
 
-        throw Exception("Unknown type matcher: " + name, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Unknown type matcher: " + name, ErrorCodes::UNKNOWN_NAME_IN_FACTORY);
     }
     return false;
 }
@@ -1143,18 +954,12 @@ bool parseTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 
     if (consumeToken(next_pos, TokenType::Colon))
     {
-        std::cerr << "$\n";
-
         std::string var_name;
         if (!parseIdentifier(pos, var_name))
             return false;
 
-        std::cerr << "$$\n";
-
         if (!parseSimpleTypeMatcher(next_pos, res))
             return false;
-
-        std::cerr << "$$$\n";
 
         pos = next_pos;
         res = std::make_shared<AssignTypeMatcher>(res, var_name);
@@ -1200,7 +1005,6 @@ bool parseSimpleArgumentsDescription(TokenIterator & pos, ArgumentsDescription &
             if (!parseSimpleArgumentDescription(pos, arg))
                 return false;
             res.emplace_back(arg);
-            std::cerr << "%\n";
             return true;
         },
         [](TokenIterator & pos)
@@ -1264,29 +1068,24 @@ bool parseArgumentsGroup(TokenIterator & pos, ArgumentsGroup & res, const Argume
             return true;
         }
         else
-            throw Exception("Bad arguments group before ellipsis", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Bad arguments group before ellipsis", ErrorCodes::BAD_FUNCTION_SIGNATURE);
     }
 
     return false;
 }
 
-bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignature & res)
+bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatureImpl & res)
 {
-    std::cerr << "@\n";
-
     std::string name;
     if (parseFunctionLikeExpression(pos, name, true,
         [&](TokenIterator & pos)
         {
-            std::cerr << "@@\n";
             return parseList(pos, true,
                 [&](TokenIterator & pos)
                 {
-                    std::cerr << "@@@\n";
                     ArgumentsGroup group;
                     if (parseArgumentsGroup(pos, group, res.arguments_description.groups.empty() ? ArgumentsGroup() : res.arguments_description.groups.back()))
                     {
-                        std::cerr << "@@@@\n";
                         res.arguments_description.groups.emplace_back(group);
                         return true;
                     }
@@ -1300,7 +1099,6 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
         && consumeToken(pos, TokenType::Arrow)
         && parseTypeExpression(pos, res.return_type))
     {
-        std::cerr << "#\n";
         if (consumeKeyword(pos, "WHERE"))
         {
             if (!parseList(pos, false,
@@ -1329,15 +1127,13 @@ bool parseVariadicFunctionSignature(TokenIterator & pos, VariadicFunctionSignatu
     return false;
 }
 
-bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignaturePtr & res)
+bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignatureImplPtr & res)
 {
-    auto signature = std::make_shared<AlternativeFunctionSignature>();
-    std::cerr << "!\n";
+    auto signature = std::make_shared<AlternativeFunctionSignatureImpl>();
     if (parseList(pos, false,
         [&](TokenIterator & pos)
         {
-            std::cerr << "?\n";
-            auto alternative = std::make_shared<VariadicFunctionSignature>();
+            auto alternative = std::make_shared<VariadicFunctionSignatureImpl>();
             if (parseVariadicFunctionSignature(pos, *alternative))
             {
                 signature->alternatives.emplace_back(alternative);
@@ -1347,11 +1143,9 @@ bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignaturePtr
         },
         [](TokenIterator & pos)
         {
-            std::cerr << "??\n";
             return consumeKeyword(pos, "OR");
         }))
     {
-        std::cerr << "!!\n";
         res = std::move(signature);
         return true;
     }
@@ -1359,11 +1153,28 @@ bool parseAlternativeFunctionSignature(TokenIterator & pos, FunctionSignaturePtr
     return false;
 }
 
-bool parseFunctionSignature(TokenIterator & pos, FunctionSignaturePtr & res)
+bool parseFunctionSignature(TokenIterator & pos, FunctionSignatureImplPtr & res)
 {
     return parseAlternativeFunctionSignature(pos, res);
 }
 
 }
 
+
+FunctionSignature::FunctionSignature(const std::string & str)
+{
+    Tokens tokens(str.data(), str.data() + str.size());
+    TokenIterator it(tokens);
+
+    if (!FunctionSignatures::parseFunctionSignature(it, impl) || it->type != TokenType::EndOfStream)
+        throw Exception("Cannot parse function signature: " + str, ErrorCodes::SYNTAX_ERROR);
 }
+
+DataTypePtr FunctionSignature::check(const ColumnsWithTypeAndName & args, std::string & out_reason) const
+{
+    FunctionSignatures::Variables vars;
+    return impl->check(args, vars, out_reason);
+}
+
+}
+
