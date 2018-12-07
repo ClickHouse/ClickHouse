@@ -17,3 +17,4 @@
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
 #cmakedefine01 USE_BASE64
 #cmakedefine01 USE_PARQUET
+#cmakedefine01 USE_HDFS
