@@ -31,8 +31,6 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -62,11 +60,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
 
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
-#include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB

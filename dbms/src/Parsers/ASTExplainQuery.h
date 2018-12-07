@@ -20,7 +20,7 @@ public:
         : kind(kind_)
     {}
 
-    String getID() const override { return "Explain_" + toString(kind); }
+    String getID(char delim) const override { return "Explain" + (delim + toString(kind)); }
     ASTPtr clone() const override { return std::make_shared<ASTExplainQuery>(*this); }
 
 protected:

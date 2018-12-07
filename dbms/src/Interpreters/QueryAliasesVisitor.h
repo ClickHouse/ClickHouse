@@ -22,7 +22,7 @@ public:
         Aliases & aliases;
     };
 
-    static constexpr const char * label = __FILE__;
+    static constexpr const char * label = "QueryAliases";
 
     static std::vector<ASTPtr> visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
