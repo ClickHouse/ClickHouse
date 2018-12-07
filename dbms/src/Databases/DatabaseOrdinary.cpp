@@ -221,8 +221,8 @@ void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
     auto task_function = [&](const StoragePtr & table)
     {
         SCOPE_EXIT(
-                if (++tables_processed == total_tables)
-                    all_tables_processed.set()
+            if (++tables_processed == total_tables)
+                all_tables_processed.set()
         );
 
         if ((tables_processed + 1) % PRINT_MESSAGE_EACH_N_TABLES == 0
