@@ -1027,8 +1027,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
-                RequiredSourceColumnsVisitor visitor(available_columns, required, empty, empty, empty);
-                visitor.visit(expressions[i]);
+                RequiredSourceColumnsMatcher::Data visitor_data{available_columns, required, empty, empty, empty};
+                RequiredSourceColumnsVisitor(visitor_data).visit(expressions[i]);
             }
 
             ignored.insert(expressions[i]->getAliasOrColumnName());
@@ -1044,15 +1044,17 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     NameSet required_joined_columns;
 
-    for (const auto & left_key_ast : analyzedJoin().key_asts_left)
+    for (const auto & left_key_ast : syntax->analyzed_join.key_asts_left)
     {
         NameSet empty;
-        RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, empty, required_joined_columns);
-        columns_visitor.visit(left_key_ast);
+        RequiredSourceColumnsMatcher::Data columns_data{available_columns, required, ignored, empty, required_joined_columns};
+        ASTPtr tmp = left_key_ast;
+        RequiredSourceColumnsVisitor(columns_data).visit(tmp);
     }
 
-    RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, available_joined_columns, required_joined_columns);
-    columns_visitor.visit(query);
+    RequiredSourceColumnsMatcher::Data columns_visitor_data{available_columns, required, ignored,
+                                                            available_joined_columns, required_joined_columns};
+    RequiredSourceColumnsVisitor(columns_visitor_data).visit(query);
 
     columns_added_by_join = analyzedJoin().available_joined_columns;
     for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
