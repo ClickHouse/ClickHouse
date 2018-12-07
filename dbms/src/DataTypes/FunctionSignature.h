@@ -37,7 +37,7 @@ namespace FunctionSignatures
   *
   * It's not trivial. Let's consider the following examples:
   *
-  * transform(T, Array(T), Array(U), U) -> U
+  * transform(T, const Array(T), const Array(U), U) -> U
   * - here we have dependency between types of arguments;
   *
   * array(T1, ...) -> Array(leastSupertype(T1, ...))
@@ -45,7 +45,7 @@ namespace FunctionSignatures
   *
   * toFixedString(String, const N UnsignedInteger) -> FixedString(N)
   * tupleElement(T : Tuple, const N UnsignedInteger) -> TypeOfTupleElement(T, N)
-  * - here N must be constant expression and the result type is dependent of its value.
+  * - here N must be a constant expression and the result type is dependent on its value.
   *
   * arrayReduce(const agg String, Array(T1), ...) -> returnTypeOfAggregateFunction(agg, T1, ...)
   *
@@ -115,7 +115,7 @@ public:
     FunctionSignature(const std::string & str);
 
     /** Check if the arguments match function signature.
-      * If match, calculate and return function return type according the signature.
+      * If match, calculate and return function return type according to the signature.
       * Otherwise, return nullptr and set description, why they doen't match in 'out_reason'.
       */
     DataTypePtr check(const ColumnsWithTypeAndName & args, std::string & out_reason) const;
