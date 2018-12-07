@@ -22,7 +22,7 @@ FunctionPtr FunctionModelEvaluate::create(const Context & context)
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -30,7 +30,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments
 {
     if (arguments.size() < 2)
         throw Exception("Function " + getName() + " expects at least 2 arguments",
-                        ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
+                        ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
 
     if (!isString(arguments[0]))
         throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()

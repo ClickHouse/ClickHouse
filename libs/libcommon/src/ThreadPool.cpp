@@ -112,3 +112,34 @@ void ThreadPool::worker()
     }
 }
 
+
+void ExceptionHandler::setException(std::exception_ptr && exception)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (!first_exception)
+        first_exception = std::move(exception);
+}
+
+void ExceptionHandler::throwIfException()
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler)
+{
+    return [job{std::move(job)}, &handler] ()
+    {
+        try
+        {
+            job();
+        }
+        catch (...)
+        {
+            handler.setException(std::current_exception());
+        }
+    };
+}
+
