@@ -15,6 +15,7 @@
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
+#    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #    include <arrow/api.h>
 #    include <arrow/io/api.h>
 #    include <parquet/arrow/writer.h>

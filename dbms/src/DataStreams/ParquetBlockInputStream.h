@@ -3,14 +3,11 @@
 #include <Common/config.h>
 #if USE_PARQUET
 
-#    include <Columns/ColumnVector.h>
-#    include <Columns/IColumn.h>
 #    include <DataStreams/IProfilingBlockInputStream.h>
-#    include <DataTypes/DataTypeDate.h>
-#    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
-// TODO: refine includes
+#    pragma GCC diagnostic push
+#    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #    include <arrow/api.h>
+#    pragma GCC diagnostic pop
 
 namespace DB
 {

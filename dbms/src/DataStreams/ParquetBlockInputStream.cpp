@@ -15,6 +15,9 @@
 #    include <DataTypes/DataTypeDate.h>
 #    include <DataTypes/DataTypeFactory.h>
 #    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypesNumber.h>
+
 #    include <Formats/FormatFactory.h>
 #    include <IO/BufferBase.h>
 #    include <IO/ReadBufferFromMemory.h>
@@ -26,6 +29,7 @@
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
+#    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #    include <arrow/api.h>
 #    include <arrow/buffer.h>
 #    include <arrow/io/api.h>

@@ -4,7 +4,6 @@
 #if USE_PARQUET
 
 #    include <DataStreams/IBlockOutputStream.h>
-#    include <DataTypes/DataTypesNumber.h>
 
 namespace arrow
 {
