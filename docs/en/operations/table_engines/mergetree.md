@@ -51,18 +51,23 @@ For a description of request parameters, see [request description](../../query_l
 
 - `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
-- `ORDER BY` — Primary key (or sorting key if the separate `PRIMARY KEY` clause is present).
-
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounterID, EventDate, intHash32(UserID))`.
-
-- `PRIMARY KEY` - Primary key if it differs from the [sorting key](mergetree.md#table_engines-mergetree-sorting_key) (the sorting key in this case is specified by the `ORDER BY` clause).
-
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md#table_engines-custom_partitioning_key).
 
     For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md#data_type-date). The partition names here have the `"YYYYMM"` format.
 
-- `SAMPLE BY` — An  expression for sampling. Example: `intHash32(UserID))`.
+- `ORDER BY` — The sorting key.
+
+    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+
+- `PRIMARY KEY` - The primary key if it [differs from the sorting key](mergetree.md#table_engines-mergetree-sorting_key).
+
+    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause).
+    Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
+
+- `SAMPLE BY` — An  expression for sampling.
+
+    If a sampling expression is used, the primary key must contain it. Example:  
+    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
@@ -164,17 +169,17 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 - Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md#table_engine-summingmergetree) engines.
 
-    If you need this, it makes sense to specify the *sorting key* that is distinct from the primary key.
+    In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
 <a name="table_engines-mergetree-sorting_key"></a>
 
-### Choosing the Sorting Key that is distinct from the Primary Key
+### Choosing the Primary Key that differs from the Sorting Key
 
-It is possible to specify the sorting key (the expression for sorting the rows in data parts) that is distinct
-from the primary key (the expression, values of which are written into the index file for each mark). In this
-case primary key expression tuple must be a prefix of the sorting key expression tuple.
+It is possible to specify the primary key (the expression, values of which are written into the index file
+for each mark) that is different from the sorting key (the expression for sorting the rows in data parts).
+In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
 
 This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
 [AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines the

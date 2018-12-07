@@ -2,11 +2,14 @@
 
 # interface های visual توسعه دهندگان third-party
 
-## Tabix
+## متن باز
+
+### Tabix
 
 interface تحت وب برای ClickHouse در پروژه [Tabix](https://github.com/tabixio/tabix).
 
-### ویژگی ها:
+ویژگی ها:
+
 - کار با ClickHouse به صورت مستقیم و از طریق مرورگر، بدون نیاز به نرم افزار اضافی.
 - ادیتور query به همراه syntax highlighting.
 - ویژگی Auto-completion برای دستورات.
@@ -16,11 +19,12 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 [مستندات Tabix](https://tabix.io/doc/).
 
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) نرم افزار Desktop برای سیستم عامل های Linux و OSX و Windows می باشد..
 
-### ویژگی ها:
+ویژگی ها:
+
 - ابزار Query builder به همراه syntax highlighting. نمایش نتایج به صورت جدول و JSON Object.
 - خروجی نتایج به صورت csv و JSON Object.
 - Pنمایش Processes List ها به همراه توضیحات، ویژگی حالت record و kill کردن process ها.
@@ -34,6 +38,31 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - مدیریت کلاستر (بزودی);
 - مانیتورینگ کافکا و جداول replicate (بزودی);
 - و بسیاری از ویژگی های دیگر برای شما.
+
+## تجاری
+
+### DBeaver
+
+[DBeaver](https://dbeaver.io/) - مشتری دسکتاپ دسکتاپ دسکتاپ با پشتیبانی ClickHouse.
+
+امکانات:
+
+- توسعه پرس و جو با برجسته نحو
+- پیش نمایش جدول
+- تکمیل خودکار
+
+### DataGrip
+
+[DataGrip](https://www.jetbrains.com/datagrip/) IDE پایگاه داده از JetBrains با پشتیبانی اختصاصی برای ClickHouse است. این ابزار همچنین به سایر ابزارهای مبتنی بر IntelliJ تعبیه شده است: PyCharm، IntelliJ IDEA، GoLand، PhpStorm و دیگران.
+
+امکانات:
+
+- تکمیل کد بسیار سریع
+- نحو برجسته ClickHouse.
+- پشتیبانی از ویژگی های خاص برای ClickHouse، برای مثال ستون های توپی، موتورهای جدول.
+- ویرایشگر داده.
+- Refactorings.
+- جستجو و ناوبری
 
 </div>
 [مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party_gui/) <!--hide-->
