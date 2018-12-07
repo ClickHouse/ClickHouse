@@ -35,7 +35,7 @@ if [ -n "$(ls /docker-entrypoint-initdb.d/)" ]; then
     pid="$!"
     sleep 1
 
-    clickhouseclient=( clickhouse client )
+    clickhouseclient=( clickhouse client --multiquery )
     echo
     for f in /docker-entrypoint-initdb.d/*; do
         case "$f" in
