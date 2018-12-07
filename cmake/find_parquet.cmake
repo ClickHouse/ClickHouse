@@ -17,6 +17,29 @@ endif ()
 
 if (ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
 elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
+    include (CheckCXXSourceCompiles)
+    # thrift uses deprecated feature. Remove this check if it fixed. https://github.com/apache/thrift/pull/1641
+    cmake_push_check_state()
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
+    check_cxx_source_compiles("
+        #include <algorithm>
+        #include <vector>
+        using std::vector;
+        int main() {
+            vector<int> v;
+            random_shuffle(v.begin(), v.end());
+            return 0;
+        }
+        " HAVE_STD_RANDOM_SHUFFLE)
+    cmake_pop_check_state()
+    if(HAVE_STD_RANDOM_SHUFFLE)
+        set(CAN_USE_INTERNAL_PARQUET_LIBRARY 1)
+    endif()
+
+   if(NOT CAN_USE_INTERNAL_PARQUET_LIBRARY)
+        message(STATUS "Disabling internal parquet library because thrift is broken (can't use random_shuffle)")
+        set(USE_INTERNAL_PARQUET_LIBRARY 0)
+   else()
     set (USE_INTERNAL_PARQUET_LIBRARY 1)
 
     if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
@@ -37,8 +60,8 @@ elseif (NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
         set (THRIFT_LIBRARY thrift)
     endif ()
 
-
     set (USE_PARQUET 1)
+   endif ()
 endif ()
 
 if (USE_PARQUET)
