@@ -1,4 +1,6 @@
-option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${NOT_UNBUNDLED})
+if (NOT APPLE)
+    option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${NOT_UNBUNDLED})
+endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src/gsasl.h")
    message (WARNING "submodule contrib/libgsasl is missing. to fix try run: \n git submodule update --init --recursive")
