@@ -206,7 +206,7 @@ static ParsedColumns parseColumns(const ASTExpressionList & column_list_ast, con
         if (col_decl.type)
         {
             columns.emplace_back(col_decl.name, DataTypeFactory::instance().get(col_decl.type));
-            if (replace_to_lc)
+            if (replace_to_lc && col_decl.name != "Sign" && col_decl.name != "Version" && col_decl.name != "VisitVersion")
                 columns.back().type = recursiveWrapLowCardinality(columns.back().type);
         }
         else
