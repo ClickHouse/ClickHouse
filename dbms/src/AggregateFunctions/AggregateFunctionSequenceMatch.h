@@ -18,7 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_SLOW;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -146,7 +146,7 @@ public:
 
         if (!sufficientArgs(arg_count))
             throw Exception{"Aggregate function " + derived().getName() + " requires at least 3 arguments.",
-                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         if (arg_count - 1 > AggregateFunctionSequenceMatchData::max_events)
             throw Exception{"Aggregate function " + derived().getName() + " supports up to " +
