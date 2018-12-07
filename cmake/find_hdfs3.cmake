@@ -1,4 +1,4 @@
-if (NOT ARCH_ARM)
+if (NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT APPLE)
     option (ENABLE_HDFS "Enable HDFS" ${NOT_UNBUNDLED})
 endif ()
 
