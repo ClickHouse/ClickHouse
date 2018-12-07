@@ -46,7 +46,7 @@ namespace
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
-using Aliases = std::unordered_map<String, ASTPtr>;
+using Aliases = SyntaxAnalyzerResult::Aliases;
 
 /// Add columns from storage to source_columns list.
 void collectSourceColumns(ASTSelectQuery * select_query, const Context & context,

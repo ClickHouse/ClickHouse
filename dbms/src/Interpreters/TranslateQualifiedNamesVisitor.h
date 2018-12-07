@@ -23,7 +23,7 @@ public:
         const std::vector<DatabaseAndTableWithAlias> & tables;
     };
 
-    static constexpr const char * label = __FILE__;
+    static constexpr const char * label = "TranslateQualifiedNames";
 
     static std::vector<ASTPtr> visit(ASTPtr & ast, Data & data);
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);

@@ -64,8 +64,7 @@ private:
 
     String nodeId() const
     {
-        String id = ast.getID();
-        std::replace(id.begin(), id.end(), '_', ' ');
+        String id = ast.getID(' ');
         return id;
     }
 
