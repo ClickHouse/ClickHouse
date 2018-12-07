@@ -14,11 +14,13 @@ import xml.dom.minidom
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 import psycopg2
+import requests
 
 import docker
 from docker.errors import ContainerError
 
 from .client import Client, CommandRequest
+from .hdfs_api import HDFSApi
 
 
 HELPERS_DIR = p.dirname(__file__)
@@ -83,6 +85,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_kafka = False
         self.with_odbc_drivers = False
+        self.with_hdfs = False
 
         self.docker_client = None
         self.is_up = False
@@ -94,7 +97,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -148,12 +151,18 @@ class ClickHouseCluster:
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
 
-
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+
+        if with_hdfs and not self.with_hdfs:
+            self.with_hdfs = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
+            self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+
 
         return instance
 
@@ -212,6 +221,20 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
+    def wait_hdfs_to_start(self, timeout=60):
+        hdfs_api = HDFSApi("root")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                hdfs_api.write_data("/somefilewithrandomname222", "1")
+                print "Connected to HDFS and SafeMode disabled! "
+                return
+            except Exception as ex:
+                print "Can't connect to HDFS " + str(ex)
+                time.sleep(1)
+
+        raise Exception("Can't wait HDFS to start")
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -250,7 +273,11 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
-        subprocess_check_call(self.base_cmd + ['up', '-d', '--force-recreate'])
+        if self.with_hdfs and self.base_hdfs_cmd:
+            subprocess_check_call(self.base_hdfs_cmd + ['up', '-d', '--force-recreate'])
+            self.wait_hdfs_to_start(120)
+
+        subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -310,7 +337,6 @@ services:
     {name}:
         image: {image}
         hostname: {hostname}
-        user: '{uid}'
         volumes:
             - {binary_path}:/usr/bin/clickhouse:ro
             - {configs_dir}:/etc/clickhouse-server/
@@ -588,7 +614,6 @@ class ClickHouseInstance:
                 image=self.image,
                 name=self.name,
                 hostname=self.hostname,
-                uid=os.getuid(),
                 binary_path=self.server_bin_path,
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,

@@ -264,6 +264,11 @@ target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
+if (USE_HDFS)
+    target_link_libraries (dbms PRIVATE ${HDFS3_LIBRARY})
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+endif()
+
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()

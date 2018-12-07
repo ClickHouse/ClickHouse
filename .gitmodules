@@ -31,9 +31,6 @@
 [submodule "contrib/ssl"]
 	path = contrib/ssl
 	url = https://github.com/ClickHouse-Extras/ssl.git
-[submodule "contrib/boost"]
-	path = contrib/boost
-	url = https://github.com/ClickHouse-Extras/boost.git
 [submodule "contrib/llvm"]
 	path = contrib/llvm
 	url = https://github.com/ClickHouse-Extras/llvm
@@ -46,6 +43,21 @@
 [submodule "contrib/unixodbc"]
 	path = contrib/unixodbc
 	url = https://github.com/ClickHouse-Extras/UnixODBC.git
+[submodule "contrib/protobuf"]
+	path = contrib/protobuf
+	url = https://github.com/ClickHouse-Extras/protobuf.git
+[submodule "contrib/boost"]
+	path = contrib/boost
+	url = https://github.com/ClickHouse-Extras/boost-extra.git
 [submodule "contrib/base64"]
 	path = contrib/base64
 	url = https://github.com/aklomp/base64.git
+[submodule "contrib/libhdfs3"]
+	path = contrib/libhdfs3
+	url = https://github.com/ClickHouse-Extras/libhdfs3.git
+[submodule "contrib/libxml2"]
+	path = contrib/libxml2
+	url = https://github.com/GNOME/libxml2.git
+[submodule "contrib/libgsasl"]
+	path = contrib/libgsasl
+	url = git@github.com:ClickHouse-Extras/libgsasl.git
