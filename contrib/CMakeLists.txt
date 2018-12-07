@@ -110,6 +110,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
+    set (POCO_SKIP_OPENSSL_FIND 1)
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
