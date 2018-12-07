@@ -58,6 +58,8 @@ private:
     void worker();
 };
 
+
+/// Allows to save first catched exception in jobs and postpone its rethrow.
 class ExceptionHandler
 {
 public:
