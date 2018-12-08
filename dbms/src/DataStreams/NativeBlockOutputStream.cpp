@@ -8,6 +8,8 @@
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+
 #include <Common/typeid_cast.h>
 
 namespace DB
