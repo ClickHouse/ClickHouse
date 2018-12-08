@@ -64,7 +64,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd uuid xml2 krb5 gsasl"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
         shift
     else
         echo "Unknown option $1"

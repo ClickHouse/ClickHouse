@@ -1,5 +1,10 @@
-if (NOT ARCH_ARM)
+if (NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT APPLE)
     option (ENABLE_HDFS "Enable HDFS" ${NOT_UNBUNDLED})
+endif ()
+
+if (ENABLE_HDFS AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/hdfs.h")
+   message (WARNING "submodule contrib/libhdfs3 is missing. to fix try run: \n git submodule update --init --recursive")
+   set (ENABLE_HDFS  0)
 endif ()
 
 if (ENABLE_HDFS)
