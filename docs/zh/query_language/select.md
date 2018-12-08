@@ -983,4 +983,4 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 在所有的其他情况下，我们不建议使用星号，因为它是列式数据库的缺点而不是优点。
 
-[来源文章](https://clickhouse.yandex/docs/en/query_language/select/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/zh/query_language/select/) <!--hide-->
