@@ -100,7 +100,10 @@ void NativeBlockOutputStream::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+        ColumnWithTypeAndName column = block.safeGetByPosition(i);
+
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
 
         /// Name
         writeStringBinary(column.name, ostr);

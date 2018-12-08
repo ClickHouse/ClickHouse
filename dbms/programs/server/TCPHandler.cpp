@@ -389,6 +389,13 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
+
+            for (auto & column : header)
+            {
+                column.column = recursiveRemoveLowCardinality(column.column);
+                column.type = recursiveRemoveLowCardinality(column.type);
+            }
+
             if (header)
                 sendData(header);
         }
