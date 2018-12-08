@@ -48,7 +48,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
-`SAMPLE` has the `format SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
+`SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
 
 In the first case, the query will be executed on 'k' percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data.
 In the second case, the query will be executed on a sample of no more than 'n' rows. For example, `SAMPLE 10000000` runs the query on a maximum of 10,000,000 rows.
@@ -437,17 +437,19 @@ Only one `JOIN` can be specified in a query (on a single level). To run multiple
 Each time a query is run with the same `JOIN`, the subquery is run again – the result is not cached. To avoid this, use the special 'Join' table engine, which is a prepared array for joining that is always in RAM. For more information, see the section "Table engines, Join".
 
 In some cases, it is more efficient to use `IN` instead of `JOIN`.
-Among the various types of `JOIN`, the most efficient is ANY `LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
+Among the various types of `JOIN`, the most efficient is `ANY LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
 
 If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md#dicts-external_dicts).
+
+#### NULL processing
+
+The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1`, `JOIN` works like in standard SQL.
+
+If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
 <a name="query_language-queries-where"></a>
 
 ### WHERE Clause
-
-The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1,`  `JOIN` works like in standard SQL.
-
-If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
@@ -696,6 +698,8 @@ The result will be the same as if GROUP BY were specified across all the fields 
 
 DISTINCT is not supported if SELECT has at least one array column.
 
+`DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
+
 ### LIMIT Clause
 
 LIMIT m allows you to select the first 'm' rows from the result.
@@ -704,8 +708,6 @@ LIMIT n, m allows you to select the first 'm' rows from the result after skippin
 'n' and 'm' must be non-negative integers.
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
-
-`DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ### UNION ALL Clause
 
@@ -852,7 +854,7 @@ FROM t_null
 
 #### Distributed Subqueries
 
-There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / ` OIN`  and `IN GLOBAL`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
+There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / `JOIN`  and `GLOBAL IN`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
 !!! attention
     Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode` setting.
