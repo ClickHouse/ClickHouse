@@ -165,10 +165,7 @@ find_package (Threads)
 include (cmake/test_compiler.cmake)
 
 if (OS_LINUX AND COMPILER_CLANG)
-    set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS}")
-
     option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
-    set (LIBCXX_PATH "" CACHE STRING "Use custom path for libc++. It should be used for MSan.")
 
     if (USE_LIBCXX)
         set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++") # Ok for clang6, for older can cause 'not used option' warning
@@ -178,11 +175,6 @@ if (OS_LINUX AND COMPILER_CLANG)
             link_libraries (-nodefaultlibs -Wl,-Bstatic -stdlib=libc++ c++ c++abi gcc_eh ${BUILTINS_LIB_PATH} rt -Wl,-Bdynamic dl pthread m c)
         else ()
             link_libraries (-stdlib=libc++ c++ c++abi)
-        endif ()
-
-        if (LIBCXX_PATH)
-#            include_directories (SYSTEM BEFORE "${LIBCXX_PATH}/include" "${LIBCXX_PATH}/include/c++/v1")
-            link_directories ("${LIBCXX_PATH}/lib")
         endif ()
     endif ()
 endif ()
@@ -279,6 +271,8 @@ include (cmake/find_libxml2.cmake)
 include (cmake/find_hdfs3.cmake)
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
+include (cmake/find_cxxabi.cmake)
+include (cmake/find_cxx.cmake)
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
 endif ()
@@ -289,6 +283,10 @@ find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
+
+if (USE_INTERNAL_LIBCXX_LIBRARY)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdinc++ -isystem ${LIBCXX_INCLUDE_DIR} -isystem ${LIBCXXABI_INCLUDE_DIR}")
+endif ()
 
 # Need to process before "contrib" dir:
 include (libs/libcommon/cmake/find_gperftools.cmake)
