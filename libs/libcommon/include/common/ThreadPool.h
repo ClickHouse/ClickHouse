@@ -58,3 +58,17 @@ private:
     void worker();
 };
 
+
+/// Allows to save first catched exception in jobs and postpone its rethrow.
+class ExceptionHandler
+{
+public:
+    void setException(std::exception_ptr && exception);
+    void throwIfException();
+
+private:
+    std::exception_ptr first_exception;
+    std::mutex mutex;
+};
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler);
