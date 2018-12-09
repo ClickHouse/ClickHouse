@@ -20,10 +20,10 @@ ASTPtr ASTSource::clone() const
         res->set(res->source, source->clone());
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());
-    if (lifetime)
-        res->set(res->lifetime, lifetime->clone());
-    if (layout)
-        res->set(res->layout, layout->clone());
+
+    res->min_lifetime = min_lifetime;
+    res->max_lifetime = max_lifetime;
+    res->layout = layout;
 
     return res;
 }
@@ -45,17 +45,17 @@ void ASTSource::formatImpl(const FormatSettings & settings,
         primary_key->formatImpl(settings, state, frame);
     }
 
-    if (lifetime)
-    {
-        settings.ostr << (settings.hilite ? hilite_none : "");
-        lifetime->formatImpl(settings, state, frame);
-    }
+    settings.ostr << (settings.hilite ? hilite_function : "") << "LIFETIME(";
+    settings.ostr << min_lifetime << " " << max_lifetime << ")";
+    settings.ostr << (settings.hilite ? hilite_none : "");
 
+    /*
     if (layout)
     {
         settings.ostr << (settings.hilite ? hilite_none : "");
         layout->formatImpl(settings, state, frame);
     }
+     */
 }
 
 }

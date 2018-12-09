@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/IDictionary.h>
 #include <Interpreters/ExternalLoader.h>
 #include <common/logger_useful.h>
@@ -8,8 +9,71 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern int BAD_ARGUMENTS;
+    extern int DICTIONARY_ALREADY_EXIST;
+};
 
 class Context;
+
+class Dictionaries : public ExternalLoader
+{
+public:
+    using DictPtr = std::shared_ptr<IDictionaryBase>;
+
+    Dictionaries(
+        std::unique_ptr<IConfigRepository> config_repository,
+        Context & context,
+        bool throw_on_error);
+
+    void addDictionary(const String & name, Poco::Util::AbstractConfiguration & configuration)
+    {
+        std::lock_guard lock{internal_dictionaries_mutex};
+        auto it = internal_dictionaries.find(name);
+        if (it != internal_dictionaries.end())
+            throw Exception("Dictionary " + name + " already exist.", ErrorCodes::DICTIONARY_ALREADY_EXIST);
+
+        internal_dictionaries[name] = DictionaryFactory::instance().create(name, configuration, "", context);
+    }
+
+    DictPtr getDictionary(const String & name) const
+    {
+        auto ptr = std::static_pointer_cast<IDictionaryBase>(getLoadable(name));
+        if (ptr)
+            return ptr;
+
+        std::lock_guard lock{internal_dictionaries_mutex};
+        auto it = internal_dictionaries.find(name);
+        if (it == internal_dictionaries.end())
+            throw Exception(name + " dictionary not found", ErrorCodes::BAD_ARGUMENTS);
+
+        return std::static_pointer_cast<IDictionaryBase>(it->second);
+    }
+
+    DictPtr tryGetDictionary(const String & name) const
+    {
+        auto ptr = std::static_pointer_cast<IDictionaryBase>(tryGetLoadable(name));
+        if (ptr)
+            return ptr;
+
+
+        std::lock_guard lock{internal_dictionaries_mutex};
+        auto it = internal_dictionaries.find(name);
+        if (it == internal_dictionaries.end())
+            return {};
+
+        return std::static_pointer_cast<IDictionaryBase>(it->second);
+    }
+
+protected:
+
+    std::mutex internal_dictionaries_mutex;
+    std::unordered_map<String, DictPtr> internal_dictionaries;
+
+private:
+    Context & context;
+};
 
 /// Manages user-defined dictionaries.
 class ExternalDictionaries : public ExternalLoader

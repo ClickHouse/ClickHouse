@@ -69,4 +69,10 @@ Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderConfigRepository:
     return preprocessed.configuration;
 }
 
+
+String ExternalLoaderConfigRepository::getSource() const
+{
+    return "Filesystem";
+}
+
 }

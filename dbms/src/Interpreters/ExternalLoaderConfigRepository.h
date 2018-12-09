@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Interpreters/IConfigRepository.h>
 
 namespace DB
@@ -20,6 +21,8 @@ public:
     Poco::Timestamp getLastModificationTime(const std::string & config_file) const override;
 
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> load(const std::string & config_file, const std::string & preprocessed_dir = "") const override;
+
+    String getSource() const override;
 };
 
 }
