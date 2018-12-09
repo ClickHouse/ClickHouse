@@ -1081,60 +1081,17 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
-
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        WhichDataType left(arguments[0].get());
-        WhichDataType right(arguments[1].get());
-
-        const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
-        const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
-
-        bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
-        bool has_date = left.isDate() || right.isDate();
-
-        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
-            || (left.isStringOrFixedString() && right.isStringOrFixedString())
-            || (left.isDate() && right.isDate())
-            || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.
-            || (left.isString() && right.isDate())
-            || (left.isDateTime() && right.isDateTime())
-            || (left.isDateTime() && right.isString())
-            || (left.isString() && right.isDateTime())
-            || (left.isUUID() && right.isUUID())
-            || (left.isUUID() && right.isString())
-            || (left.isString() && right.isUUID())
-            || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            || (left.isEnum() && right.isString())
-            || (left.isString() && right.isEnum())
-            || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
-            || (arguments[0]->equals(*arguments[1]))))
-        {
-            try
-            {
-                getLeastSupertype(arguments);
-            }
-            catch (const Exception &)
-            {
-                throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
-                    " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-        }
-
-        if (left_tuple && right_tuple)
-        {
-            size_t size = left_tuple->getElements().size();
-            for (size_t i = 0; i < size; ++i)
-            {
-                ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
-                                               {nullptr, right_tuple->getElements()[i], ""}};
-                getReturnType(args);
-            }
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "f(T, T) -> UInt8"
+            " OR f(DateOrDateTime, const String) -> UInt8"
+            " OR f(const String, DateOrDateTime) -> UInt8"
+            " OR f(UUID, const String) -> UInt8"
+            " OR f(const String, UUID) -> UInt8"
+            " OR f(Enum, const String) -> UInt8"
+            " OR f(String, Enum) -> UInt8"
+            " OR f(T1 : Tuple, T2 : Tuple) -> UInt8 WHERE tuplesHaveSameSize(T1, T2)"
+        ;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override

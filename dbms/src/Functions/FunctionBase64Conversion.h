@@ -67,25 +67,12 @@ public:
         return Func::name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
     bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (!WhichDataType(arguments[0].type).isString())
-            throw Exception(
-                "Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(String) -> String"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

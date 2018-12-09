@@ -31,15 +31,7 @@ public:
         return false;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
+    String getSignature() const override { return "f() -> UInt64"; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {

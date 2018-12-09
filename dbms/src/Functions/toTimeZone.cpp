@@ -23,27 +23,8 @@ public:
     static constexpr auto name = "toTimeZone";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); }
 
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!WhichDataType(arguments[0].type).isDateTime())
-            throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        String time_zone_name = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-        return std::make_shared<DataTypeDateTime>(time_zone_name);
-    }
+    String getName() const override { return name; }
+    String getSignature() const override { return "f(DateTime, const timezone String) -> DateTime(timezone)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

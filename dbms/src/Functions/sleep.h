@@ -48,22 +48,7 @@ public:
         return false;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        WhichDataType which(arguments[0]);
-
-        if (!which.isFloat()
-            && !which.isNativeUInt())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(Float) -> UInt8 OR f(NativeUInt) -> UInt8"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

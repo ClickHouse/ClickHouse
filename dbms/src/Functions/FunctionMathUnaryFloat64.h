@@ -50,18 +50,7 @@ public:
 
 private:
     String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto & arg = arguments.front();
-        if (!isNumber(arg) && !isDecimal(arg))
-            throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeFloat64>();
-    }
+    String getSignature() const override { return "f(Number) -> Float64"; }
 
     template <typename T>
     static void executeInIterations(const T * src_data, Float64 * dst_data, size_t size)

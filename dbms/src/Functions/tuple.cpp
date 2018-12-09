@@ -33,16 +33,6 @@ public:
         return name;
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
     bool isInjective(const Block &) override
     {
         return true;
@@ -51,13 +41,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 1)
-            throw Exception("Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return std::make_shared<DataTypeTuple>(arguments);
-    }
+    String getSignature() const override { return "f(T1, ...) -> Tuple(T1, ...)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

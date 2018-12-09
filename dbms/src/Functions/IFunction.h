@@ -230,14 +230,7 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    /// Override and return true if function could take different number of arguments.
-    virtual bool isVariadic() const { return false; }
-
-    /// For non-variadic functions, return number of arguments; otherwise return zero (that should be ignored).
-    virtual size_t getNumberOfArguments() const = 0;
-
-    /// Throw if number of arguments is incorrect. Default implementation will check only in non-variadic case.
-    virtual void checkNumberOfArguments(size_t number_of_arguments) const = 0;
+    virtual String getSignature() const = 0;
 
     /// Check arguments and return IFunctionBase.
     virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const = 0;
@@ -253,37 +246,21 @@ using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
 class FunctionBuilderImpl : public IFunctionBuilder
 {
 public:
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const final
+    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const override final
     {
         return buildImpl(arguments, getReturnType(arguments));
     }
-
-    /// Default implementation. Will check only in non-variadic case.
-    void checkNumberOfArguments(size_t number_of_arguments) const override;
 
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     void getLambdaArgumentTypes(DataTypes & arguments) const override
     {
-        checkNumberOfArguments(arguments.size());
         getLambdaArgumentTypesImpl(arguments);
     }
 
 protected:
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return getReturnTypeImpl(data_types);
-    }
-
-    virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
-    {
-        throw Exception("getReturnType is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
 
     /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl():
       *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call buildImpl() with return_type = Nullable(Nothing),
@@ -335,9 +312,9 @@ public:
 
     using PreparedFunctionImpl::execute;
     using PreparedFunctionImpl::executeImplDryRun;
-    using FunctionBuilderImpl::getReturnTypeImpl;
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
+    using FunctionBuilderImpl::getSignature;
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const final
     {
@@ -472,17 +449,10 @@ class DefaultFunctionBuilder : public FunctionBuilderImpl
 public:
     explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
 
-    void checkNumberOfArguments(size_t number_of_arguments) const override
-    {
-        return function->checkNumberOfArguments(number_of_arguments);
-    }
-
     String getName() const override { return function->getName(); }
-    bool isVariadic() const override { return function->isVariadic(); }
-    size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
+    String getSignature() const override { return function->getName(); }
 
 protected:
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override { return function->getReturnTypeImpl(arguments); }
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }

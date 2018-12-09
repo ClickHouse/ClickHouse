@@ -25,14 +25,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return makeNullable(arguments[0]);
-    }
+    String getSignature() const override { return "f(T) -> Nullable(T)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {

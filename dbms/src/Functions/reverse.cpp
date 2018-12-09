@@ -66,25 +66,12 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
     bool isInjective(const Block &) override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0])
-            && !isArray(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return arguments[0];
-    }
+    String getSignature() const override { return "f(T : Array) -> T OR f(T : StringOrFixedString) -> T"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -121,7 +108,6 @@ public:
     FunctionBuilderReverse(const Context & context) : context(context) {}
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
@@ -135,10 +121,7 @@ protected:
                 return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return arguments.at(0);
-    }
+    String getSignature() const override { return "f(T : Array) -> T OR f(T : StringOrFixedString) -> T"; }
 
 private:
     const Context & context;

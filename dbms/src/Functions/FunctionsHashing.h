@@ -368,15 +368,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeFixedString>(Impl::length);
+        return "f(String) -> FixedString(" + toString(Impl::length) + ")";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -453,7 +447,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    String getSignature() const override
+    {
+        return "f(T : RepresentedByNumber) -> " + String(TypeName<typename Impl::ReturnType>::get());
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -732,13 +729,11 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
+    String getSignature() const override
     {
-        return std::make_shared<DataTypeNumber<ToType>>();
+        return "f(...) -> " + String(TypeName<typename Impl::ReturnType>::get());
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
@@ -849,28 +844,9 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        const auto arg_count = arguments.size();
-        if (arg_count != 1 && arg_count != 2)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " +
-                toString(arg_count) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        const auto first_arg = arguments.front().get();
-        if (!WhichDataType(first_arg).isString())
-            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (arg_count == 2)
-        {
-            const auto & second_arg = arguments.back();
-            if (!isInteger(second_arg))
-                throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<DataTypeUInt64>();
+        return "f(String, [const Integer]) -> UInt64";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

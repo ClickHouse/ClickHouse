@@ -41,74 +41,9 @@ public:
 
 public:
     String getName() const override { return name; }
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
-    {
-        /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
-
-        auto for_conditions = [&args](auto && f)
-        {
-            size_t conditions_end = args.size() - 1;
-            for (size_t i = 0; i < conditions_end; i += 2)
-                f(args[i]);
-        };
-
-        auto for_branches = [&args](auto && f)
-        {
-            size_t branches_end = args.size();
-            for (size_t i = 1; i < branches_end; i += 2)
-                f(args[i]);
-            f(args.back());
-        };
-
-        if (!(args.size() >= 3 && args.size() % 2 == 1))
-            throw Exception{"Invalid number of arguments for function " + getName(),
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        /// Conditions must be UInt8, Nullable(UInt8) or Null. If one of conditions is Nullable, the result is also Nullable.
-        bool have_nullable_condition = false;
-
-        for_conditions([&](const DataTypePtr & arg)
-        {
-            const IDataType * nested_type;
-            if (arg->isNullable())
-            {
-                have_nullable_condition = true;
-
-                if (arg->onlyNull())
-                    return;
-
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
-                nested_type = nullable_type.getNestedType().get();
-            }
-            else
-            {
-                nested_type = arg.get();
-            }
-
-            if (!WhichDataType(nested_type).isUInt8())
-                throw Exception{"Illegal type " + arg->getName() + " of argument (condition) "
-                    "of function " + getName() + ". Must be UInt8.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        });
-
-        DataTypes types_of_branches;
-        types_of_branches.reserve(args.size() / 2 + 1);
-
-        for_branches([&](const DataTypePtr & arg)
-        {
-            types_of_branches.emplace_back(arg);
-        });
-
-        DataTypePtr common_type_of_branches = getLeastSupertype(types_of_branches);
-
-        return have_nullable_condition
-            ? makeNullable(common_type_of_branches)
-            : common_type_of_branches;
-    }
+    String getSignature() const override { return "f(cond1 MaybeNullable(UInt8), then1 T1, ..., else U) -> leastSuperType(T1, ..., U)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {

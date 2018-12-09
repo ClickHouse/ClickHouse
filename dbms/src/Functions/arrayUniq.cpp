@@ -34,27 +34,9 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() == 0)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 1.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (!array_type)
-                throw Exception("All arguments for function " + getName() + " must be arrays but argument " +
-                    toString(i + 1) + " has type " + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return std::make_shared<DataTypeUInt32>();
-    }
+    String getSignature() const override { return "f(Array, ...) -> UInt32"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 

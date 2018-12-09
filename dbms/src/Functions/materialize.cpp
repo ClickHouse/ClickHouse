@@ -22,15 +22,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return arguments[0];
-    }
+    String getSignature() const override { return "f(T) -> T"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

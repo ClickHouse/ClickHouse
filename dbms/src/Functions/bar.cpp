@@ -37,30 +37,7 @@ public:
         return name;
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception("Function " + getName()
-                    + " requires from 3 or 4 parameters: value, min_value, max_value, [max_width_of_bar = 80]. Passed "
-                    + toString(arguments.size())
-                    + ".",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!isNumber(arguments[0]) || !isNumber(arguments[1]) || !isNumber(arguments[2])
-            || (arguments.size() == 4 && !isNumber(arguments[3])))
-            throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(Number, const min Number, const max Number, [const width Number]) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }

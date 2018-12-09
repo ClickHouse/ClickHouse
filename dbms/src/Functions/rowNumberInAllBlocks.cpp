@@ -27,11 +27,6 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
     bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
@@ -39,10 +34,7 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
+    String getSignature() const override { return "f() -> UInt64"; }
 
     void executeImplDryRun(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {

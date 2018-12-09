@@ -31,15 +31,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeUInt64>();
-    }
+    String getSignature() const override { return "f(T) -> UInt64"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

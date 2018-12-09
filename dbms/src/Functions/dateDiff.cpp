@@ -47,34 +47,7 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!isString(arguments[0]))
-            throw Exception("First argument for function " + getName() + " (unit) must be String",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isDateOrDateTime(arguments[1]))
-            throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isDateOrDateTime(arguments[2]))
-            throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 4 && !isString(arguments[3]))
-            throw Exception("Fourth argument for function " + getName() + " (timezone) must be String",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeInt64>();
-    }
+    String getSignature() const override { return "f(const String, DateOrDateTime, DateOrDateTime, [const timezone String]) -> UInt64"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0, 3}; }

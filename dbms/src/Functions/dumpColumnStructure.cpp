@@ -23,15 +23,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(T) -> String"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

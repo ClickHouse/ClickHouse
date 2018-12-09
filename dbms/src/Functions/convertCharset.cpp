@@ -166,17 +166,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 3; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        for (size_t i : ext::range(0, 3))
-            if (!isString(arguments[i]))
-                throw Exception("Illegal type " + arguments[i]->getName() + " of argument of function " + getName()
-                    + ", must be String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(String, const charset_from String, const charset_to String) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }

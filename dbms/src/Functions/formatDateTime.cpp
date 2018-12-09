@@ -252,33 +252,7 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(arguments.size()) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!WhichDataType(arguments[0].type).isDateOrDateTime())
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
-                            ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!WhichDataType(arguments[1].type).isString())
-            throw Exception("Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 3)
-        {
-            if (!WhichDataType(arguments[2].type).isString())
-                throw Exception("Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(DateOrDateTime, const format String, [const timezone String]) -> String"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

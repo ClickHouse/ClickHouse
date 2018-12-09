@@ -10,6 +10,7 @@
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/FunctionSignature.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -471,23 +472,20 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         executeWithoutLowCardinalityColumns(block, args, result, input_rows_count, dry_run);
 }
 
-void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
+
+DataTypePtr FunctionBuilderImpl::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (isVariadic())
-        return;
-
-    size_t expected_number_of_arguments = getNumberOfArguments();
-
-    if (number_of_arguments != expected_number_of_arguments)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    static FunctionSignature signature = getSignature();
+    std::string reason;
+    auto res = signature.check(arguments, reason);
+    if (!res)
+        throw Exception("Function " + getName() + " is not applicable: " + reason, ErrorCodes::BAD_ARGUMENTS);
+    return res;
 }
+
 
 DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
 {
-    checkNumberOfArguments(arguments.size());
-
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
         NullPresence null_presence = getNullPresense(arguments);

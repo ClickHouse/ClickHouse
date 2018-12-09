@@ -22,27 +22,8 @@ public:
 
 public:
     FunctionCaseWithExpression(const Context & context_) : context(context_) {}
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
-    {
-        if (!args.size())
-            throw Exception{"Function " + getName() + " expects at least 1 arguments",
-                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
-
-        /// See the comments in executeImpl() to understand why we actually have to
-        /// get the return type of a transform function.
-
-        /// Get the types of the arrays that we pass to the transform function.
-        DataTypes dst_array_types;
-
-        for (size_t i = 2; i < args.size() - 1; i += 2)
-            dst_array_types.push_back(args[i]);
-
-        return getLeastSupertype(dst_array_types);
-    }
+    String getSignature() const override { return "f(T, const A1, const B1, ...) -> leastSupertype(B1, ...)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {

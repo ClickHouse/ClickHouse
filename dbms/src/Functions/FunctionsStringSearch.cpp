@@ -945,30 +945,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 3;
-    }
+    String getSignature() const override { return "f(StringOrFixedString, const StringOrFixedString, const StringOrFixedString) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isStringOrFixedString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isStringOrFixedString(arguments[2]))
-            throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

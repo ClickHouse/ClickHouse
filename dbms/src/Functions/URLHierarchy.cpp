@@ -16,15 +16,7 @@ private:
 public:
     static constexpr auto name = "URLPathHierarchy";
     static String getName() { return name; }
-
-    static size_t getNumberOfArguments() { return 1; }
-
-    static void checkArguments(const DataTypes & arguments)
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    static String getSignature() { return "f(String) -> Array(String)"; }
 
     void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
 

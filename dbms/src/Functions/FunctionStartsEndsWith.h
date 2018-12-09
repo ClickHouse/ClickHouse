@@ -42,26 +42,12 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
     bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isStringOrFixedString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(StringOrFixedString, StringOrFixedString) -> UInt8"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

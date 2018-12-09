@@ -27,13 +27,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return std::make_shared<DataTypeArray>(getLeastSupertype(arguments));
-    }
+    String getSignature() const override { return "f(T1, ...) -> Array(leastSuperType(T1, ...))"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

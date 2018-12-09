@@ -478,24 +478,7 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if ((arguments.size() < 1) || (arguments.size() > 2))
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (const auto & type : arguments)
-            if (!isNumber(type) && !isDecimal(type))
-                throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return arguments[0];
-    }
+    String getSignature() const override { return "f(T : NumberOrDecimal, [NumberOrDecimal]) -> T"; }
 
     static Int64 getScaleArg(Block & block, const ColumnNumbers & arguments)
     {

@@ -31,20 +31,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments[0]->onlyNull())
-            return arguments[1];
-
-        if (!arguments[0]->isNullable())
-            return arguments[0];
-
-        return getLeastSupertype({removeNullable(arguments[0]), arguments[1]});
-    }
+    String getSignature() const override { return "f(MaybeNullable(T), U) -> leastSupertype(T, U)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

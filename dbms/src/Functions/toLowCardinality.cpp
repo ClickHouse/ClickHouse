@@ -18,19 +18,11 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments[0]->lowCardinality())
-            return arguments[0];
-
-        return std::make_shared<DataTypeLowCardinality>(arguments[0]);
-    }
+    String getSignature() const override { return "f(T) -> LowCardinality(T)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

@@ -30,23 +30,11 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
+    String getSignature() const override { return "f(T : StringOrFixedString) -> T"; }
 
     bool isInjective(const Block &) override
     {
         return is_injective;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return arguments[0];
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

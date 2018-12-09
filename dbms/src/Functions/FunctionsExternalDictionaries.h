@@ -221,9 +221,6 @@ public:
     String getName() const override { return name; }
 
 private:
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
@@ -232,40 +229,11 @@ private:
         return isDictGetFunctionInjective(dictionaries, sample_block);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 3 or 4.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        if (!isString(arguments[0]))
-        {
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        if (!isString(arguments[1]))
-        {
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        if (!WhichDataType(arguments[2]).isUInt64() &&
-            !isTuple(arguments[2]))
-        {
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        /// This is for the case of range dictionaries.
-        if (arguments.size() == 4 && !arguments[3]->isValueRepresentedByInteger())
-        {
-            throw Exception{"Illegal type " + arguments[3]->getName() +
-                            " of fourth argument of function " + getName() +
-                            " must be convertible to Int64.", ErrorCodes::ILLEGAL_COLUMN};
-        }
-
-        return std::make_shared<DataTypeString>();
+        return "f(const dict String, const attr String, UInt64) -> String"
+            " OR f(const dict String, const attr String, Tuple) -> String"
+            " OR f(const dict String, const attr String, UInt64, T : RepresentedByInteger) -> String";
     }
 
     bool isDeterministic() const override { return false; }
@@ -684,9 +652,6 @@ public:
     String getName() const override { return name; }
 
 private:
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
@@ -695,35 +660,12 @@ private:
         return isDictGetFunctionInjective(dictionaries, sample_block);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 3 && arguments.size() != 4)
-            throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!isString(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[2]).isUInt64() &&
-            !isTuple(arguments[2]))
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (arguments.size() == 4)
-        {
-            const auto range_argument = arguments[3].get();
-            if (!(range_argument->isValueRepresentedByInteger() &&
-                   range_argument->getSizeOfValueInMemory() <= sizeof(Int64)))
-                throw Exception{"Illegal type " + range_argument->getName() + " of fourth argument of function " + getName()
-                    + ", must be convertible to " + TypeName<Int64>::get() + ".",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<DataType>();
+        String type_name = DataType().getName();
+        return "f(const dict String, const attr String, UInt64) -> " + type_name
+            " OR f(const dict String, const attr String, Tuple) -> " + type_name
+            " OR f(const dict String, const attr String, UInt64, T : RepresentedByInteger) -> " + type_name;
     }
 
     bool isDeterministic() const override { return false; }
@@ -1186,6 +1128,8 @@ private:
     {
         return isDictGetFunctionInjective(dictionaries, sample_block);
     }
+
+
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

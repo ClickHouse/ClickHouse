@@ -25,20 +25,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
+    String getSignature() const override { return "f(T, Array) -> Array(T)"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        if (!array_type)
-            throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        return std::make_shared<DataTypeArray>(arguments[0]);
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {

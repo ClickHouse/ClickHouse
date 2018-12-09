@@ -38,12 +38,11 @@ public:
     static constexpr auto name = "arrayElement";
     static FunctionPtr create(const Context & context);
 
-    String getName() const override;
+    String getName() const override { return name; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-    size_t getNumberOfArguments() const override { return 2; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    String getSignature() const override { return "f(Array(T), Integer) -> T"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
@@ -720,23 +719,6 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
     block.getByPosition(result).column = ColumnTuple::create(result_tuple_columns);
 
     return true;
-}
-
-String FunctionArrayElement::getName() const
-{
-    return name;
-}
-
-DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-    if (!array_type)
-        throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    if (!isInteger(arguments[1]))
-        throw Exception("Second argument for function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return array_type->getNestedType();
 }
 
 void FunctionArrayElement::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)

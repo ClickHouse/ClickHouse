@@ -16,12 +16,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUUID>();
-    }
+    String getSignature() const override { return "f() -> UUID"; }
 
     bool isDeterministic() const override { return false; }
 

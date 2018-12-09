@@ -42,37 +42,9 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(number_of_arguments) + ", should be 2 or 3",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isNumber(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName()
-                    + " of second argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (number_of_arguments == 3 && !isNumber(arguments[2]))
-            throw Exception("Illegal type " + arguments[2]->getName()
-                    + " of second argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(StringOrFixedString, const Number, [const Number]) -> String"; }
 
     template <typename Source>
     void executeForSource(const ColumnPtr & column_start, const ColumnPtr & column_length,

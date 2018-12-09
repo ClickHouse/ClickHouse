@@ -60,16 +60,7 @@ public:
     /// Get the name of the function.
     static constexpr auto name = "alphaTokens";
     static String getName() { return name; }
-
-    static size_t getNumberOfArguments() { return 1; }
-
-    /// Check the type of the function's arguments.
-    static void checkArguments(const DataTypes & arguments)
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    static String getSignature() { return "f(String) -> Array(String)"; }
 
     /// Initialize by the function arguments.
     void init(Block & /*block*/, const ColumnNumbers & /*arguments*/) {}
@@ -120,18 +111,8 @@ private:
 public:
     static constexpr auto name = "splitByChar";
     static String getName() { return name; }
-    static size_t getNumberOfArguments() { return 2; }
 
-    static void checkArguments(const DataTypes & arguments)
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    static String getSignature() { return "f(const separator StringOrFixedString, String) -> Array(String) WHERE length(separator, 1)"; }
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
@@ -194,12 +175,8 @@ private:
 public:
     static constexpr auto name = "splitByString";
     static String getName() { return name; }
-    static size_t getNumberOfArguments() { return 2; }
 
-    static void checkArguments(const DataTypes & arguments)
-    {
-        SplitByCharImpl::checkArguments(arguments);
-    }
+    static String getSignature() { return "f(const separator StringOrFixedString, String) -> Array(String)"; }
 
     void init(Block & block, const ColumnNumbers & arguments)
     {
@@ -262,13 +239,8 @@ private:
 public:
     static constexpr auto name = "extractAll";
     static String getName() { return name; }
-    static size_t getNumberOfArguments() { return 2; }
 
-    /// Check the type of function arguments.
-    static void checkArguments(const DataTypes & arguments)
-    {
-        SplitByStringImpl::checkArguments(arguments);
-    }
+    static String getSignature() { return "f(String, const regexp String) -> Array(String)"; }
 
     /// Initialize by the function arguments.
     void init(Block & block, const ColumnNumbers & arguments)
@@ -330,14 +302,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        Generator::checkArguments(arguments);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-    }
+    String getSignature() const override { return Generator::getSignature(); }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -493,26 +458,7 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type || !isString(array_type->getNestedType()))
-            throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 2
-            && !isString(arguments[1]))
-            throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(Array(String), [String]) -> String"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

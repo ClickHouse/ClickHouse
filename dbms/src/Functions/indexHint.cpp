@@ -28,25 +28,14 @@ public:
         return std::make_shared<FunctionIndexHint>();
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
     bool useDefaultImplementationForNulls() const override { return false; }
 
     String getName() const override
     {
         return name;
     }
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
+
+    String getSignature() const override { return "f(...) -> UInt8"; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {

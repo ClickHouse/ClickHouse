@@ -39,10 +39,7 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    String getSignature() const override { return "f(Array(T1), ...) -> Array(mostSubtype(T1, ...))"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
@@ -88,42 +85,6 @@ private:
     };
 };
 
-
-DataTypePtr FunctionArrayIntersect::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    DataTypes nested_types;
-    nested_types.reserve(arguments.size());
-
-    bool has_nothing = false;
-
-    if (arguments.empty())
-        throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-    for (auto i : ext::range(0, arguments.size()))
-    {
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
-        if (!array_type)
-            throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                            + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        const auto & nested_type = array_type->getNestedType();
-
-        if (typeid_cast<const DataTypeNothing *>(nested_type.get()))
-            has_nothing = true;
-        else
-            nested_types.push_back(nested_type);
-    }
-
-    DataTypePtr result_type;
-
-    if (!nested_types.empty())
-        result_type = getMostSubtype(nested_types, true);
-
-    if (has_nothing)
-        result_type = std::make_shared<DataTypeNothing>();
-
-    return std::make_shared<DataTypeArray>(result_type);
-}
 
 ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, const DataTypePtr & data_type) const
 {

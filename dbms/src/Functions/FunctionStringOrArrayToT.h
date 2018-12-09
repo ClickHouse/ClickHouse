@@ -33,18 +33,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
+    String getSignature() const override
     {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0])
-            && !isArray(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
+        return String("f(StringOrFixedString) -> ") + TypeName<ResultType>::get()
+            + String("OR f(Array) -> ") + TypeName<ResultType>::get();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -295,28 +295,13 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     bool useDefaultImplementationForNulls() const override { return !Impl::specialImplementationForNulls(); }
 
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() < 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-            if (!(isNumber(arguments[i])
-                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || isNumber(removeNullable(arguments[i]))))))
-                throw Exception("Illegal type ("
-                    + arguments[i]->getName()
-                    + ") of " + toString(i + 1) + " argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
+        return useDefaultImplementationForNulls()
+            ? "f(Number, ...) -> UInt8"
+            : "f(MaybeNullable(Number), ...) -> UInt8";
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -484,7 +469,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    String getSignature() const override
+    {
+        return "f(Number, Number) -> UInt8";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

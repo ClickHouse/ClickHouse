@@ -31,9 +31,6 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();

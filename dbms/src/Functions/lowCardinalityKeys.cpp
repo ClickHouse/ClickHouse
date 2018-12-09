@@ -22,21 +22,11 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
-        if (!type)
-            throw Exception("First first argument of function lowCardinalityKeys must be ColumnLowCardinality, but got"
-                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return type->getDictionaryType();
-    }
+    String getSignature() const override { return "f(LowCardinality(T)) -> T"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

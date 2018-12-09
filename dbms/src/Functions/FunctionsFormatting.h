@@ -39,17 +39,11 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        const DataTypePtr & type = arguments[0];
-
-        if (!isInteger(type))
-            throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
+        return "f(Integer) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -133,16 +127,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type))
-            throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
+        return "f(Number) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

@@ -20,12 +20,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeDate>();
-    }
+    String getSignature() const override { return "f() -> Date"; }
 
     bool isDeterministic() const override { return false; }
 

@@ -31,22 +31,7 @@ public:
         : context(context), all(all), name(name) {}
 
     String getName() const override { return name; }
-
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        for (auto i : ext::range(0, arguments.size()))
-        {
-            auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
-            if (!array_type)
-                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                                + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(Array, Array) -> UInt8"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

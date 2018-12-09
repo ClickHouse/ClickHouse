@@ -31,22 +31,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        WhichDataType which(arguments[0]);
-
-        if (which.isEnum8())
-            return std::make_shared<DataTypeUInt8>();
-        else if (which.isEnum16())
-            return std::make_shared<DataTypeUInt16>();
-
-        throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    String getSignature() const override { return "f(Enum8) -> UInt8 OR f(Enum16) -> UInt16"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

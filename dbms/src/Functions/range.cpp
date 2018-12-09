@@ -27,19 +27,9 @@ public:
 private:
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypePtr & arg = arguments.front();
-
-        if (!isUnsignedInteger(arg))
-            throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeArray>(arg);
-    }
+    String getSignature() const override { return "f(T : UnsignedInteger) -> Array(T)"; }
 
     template <typename T>
     bool executeInternal(Block & block, const IColumn * arg, const size_t result)

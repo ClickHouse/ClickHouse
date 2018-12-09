@@ -62,86 +62,10 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto args_size = arguments.size();
-        if (args_size != 3 && args_size != 4)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " + toString(args_size) + ", should be 3 or 4",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        const DataTypePtr & type_x = arguments[0];
-
-        if (!type_x->isValueRepresentedByNumber() && !isString(type_x))
-            throw Exception{"Unsupported type " + type_x->getName()
-                + " of first argument of function " + getName()
-                + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-
-        if (!type_arr_from)
-            throw Exception{"Second argument of function " + getName()
-                + ", must be array of source values to transform from.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        const auto type_arr_from_nested = type_arr_from->getNestedType();
-
-        if ((type_x->isValueRepresentedByNumber() != type_arr_from_nested->isValueRepresentedByNumber())
-            || (isString(type_x) != isString(type_arr_from_nested)))
-        {
-            throw Exception{"First argument and elements of array of second argument of function " + getName()
-                + " must have compatible types: both numeric or both strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        const DataTypeArray * type_arr_to = checkAndGetDataType<DataTypeArray>(arguments[2].get());
-
-        if (!type_arr_to)
-            throw Exception{"Third argument of function " + getName()
-                + ", must be array of destination values to transform to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        const DataTypePtr & type_arr_to_nested = type_arr_to->getNestedType();
-
-        if (args_size == 3)
-        {
-            if ((type_x->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                || (isString(type_x) != isString(type_arr_to_nested)))
-                throw Exception{"Function " + getName()
-                    + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-            return type_x;
-        }
-        else
-        {
-            const DataTypePtr & type_default = arguments[3];
-
-            if (!type_default->isValueRepresentedByNumber() && !isString(type_default))
-                throw Exception{"Unsupported type " + type_default->getName()
-                    + " of fourth argument (default value) of function " + getName()
-                    + ", must be numeric type or Date/DateTime or String", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-            bool default_is_string = WhichDataType(type_default).isString();
-            bool nested_is_string = WhichDataType(type_arr_to_nested).isString();
-
-            if ((type_default->isValueRepresentedByNumber() != type_arr_to_nested->isValueRepresentedByNumber())
-                || (default_is_string != nested_is_string))
-                throw Exception{"Function " + getName()
-                    + " have signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-            if (type_arr_to_nested->isValueRepresentedByNumber() && type_default->isValueRepresentedByNumber())
-            {
-                /// We take the smallest common type for the elements of the array of values `to` and for `default`.
-                return getLeastSupertype({type_arr_to_nested, type_default});
-            }
-
-            /// TODO More checks.
-            return type_arr_to_nested;
-        }
-    }
+    String getSignature() const override { return "f(T, const from Array(T), const to Array(T)) -> T OR f(T, const from Array(T), const to Array(U), U) -> U"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

@@ -31,24 +31,7 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.empty())
-            throw Exception{"Function " + getName() + " requires at least one argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        for (auto i : ext::range(0, arguments.size()))
-        {
-            auto array_type = typeid_cast<const DataTypeArray *>(arguments[i].get());
-            if (!array_type)
-                throw Exception("Argument " + std::to_string(i) + " for function " + getName() + " must be an array but it has type "
-                                + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return getLeastSupertype(arguments);
-    }
+    String getSignature() const override { return "f(Array(T1), ...) -> Array(leastSuperType(T1, ...))"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

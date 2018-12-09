@@ -26,14 +26,10 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(T) -> UInt8"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {

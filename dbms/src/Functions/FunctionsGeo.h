@@ -56,20 +56,9 @@ private:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 4; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        for (const auto arg_idx : ext::range(0, arguments.size()))
-        {
-            const auto arg = arguments[arg_idx].get();
-            if (!WhichDataType(arg).isFloat64())
-                throw Exception(
-                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return std::make_shared<DataTypeFloat64>();
+        return "f(Float64, Float64, Float64, Float64) -> Float64";
     }
 
     instrs_t getInstructions(const Block & block, const ColumnNumbers & arguments, bool & out_const)
@@ -193,43 +182,20 @@ private:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() < 6 || arguments.size() % 4 != 2)
-        {
-            throw Exception(
-                "Incorrect number of arguments of function " + getName() + ". Must be 2 for your point plus 4 * N for ellipses (x_i, y_i, a_i, b_i).",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-
-        /// For array on stack, see below.
-        if (arguments.size() > 10000)
-        {
-            throw Exception(
-                "Number of arguments of function " + getName() + " is too large.", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
-        }
-
-        for (const auto arg_idx : ext::range(0, arguments.size()))
-        {
-            const auto arg = arguments[arg_idx].get();
-            if (!WhichDataType(arg).isFloat64())
-            {
-                throw Exception(
-                    "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "f(x Float64, y Float64, const x1 Float64, const y1 Float64, const a1 Float64, const b1 Float64, ...) -> UInt8";
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto size = input_rows_count;
+
+        if (arguments.size() > 10000)
+        {
+            throw Exception(
+                "Number of arguments of function " + getName() + " is too large.", ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION);
+        }
 
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;

@@ -32,18 +32,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
+    String getSignature() const override { return "f(Array) -> Array(UInt32)"; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {

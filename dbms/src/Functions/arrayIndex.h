@@ -863,25 +863,12 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!arguments[1]->onlyNull())
-        {
-            if (!allowArrayIndex(array_type->getNestedType(), arguments[1]))
-                throw Exception("Types of array and 2nd argument of function "
-                    + getName() + " must be identical up to nullability or numeric types or Enum and numeric type. Passed: "
-                    + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
+        String return_type = String(TypeName<typename IndexConv::ResultType>::get());
+        return "f(Array(T), T) -> " + return_type
+            " OR f(Array(Enum), Number) -> " + return_type
+            " OR f(Array(T), NULL) -> " + return_type;
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override

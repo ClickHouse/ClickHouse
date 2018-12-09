@@ -32,18 +32,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isNumber(arguments.front()))
-            throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(Number) -> UInt8"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

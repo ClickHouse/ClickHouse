@@ -194,27 +194,10 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments[0]->getName() != TypeName<T>::get())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
-            throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return arguments[0];
+        String type_name = TypeName<T>::get();
+        return "f(" + type_name + ", [const point_of_view String]) -> " + type_name;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -288,32 +271,10 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2 or 3.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments[0]->getName() != TypeName<T>::get())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments[1]->getName() != TypeName<T>::get())
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + " (must be " + String(TypeName<T>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 3 && arguments[2]->getName() != TypeName<String>::get())
-            throw Exception("Illegal type " + arguments[2]->getName() + " of the third ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<String>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
+        String type_name = TypeName<T>::get();
+        return "f(" + type_name + ", " + type_name + ", [const point_of_view String]) -> UInt8";
     }
 
     bool isDeterministic() const override { return false; }
@@ -426,27 +387,10 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments[0]->getName() != TypeName<T>::get())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName()
-            + " (must be " + String(TypeName<T>::get()) + ")",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
-            throw Exception("Illegal type " + arguments[1]->getName() + " of the second ('point of view') argument of function " + getName()
-                + " (must be " + String(TypeName<String>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeArray>(arguments[0]);
+        String type_name = TypeName<T>::get();
+        return "f(" + type_name + ", [const point_of_view String]) -> Array(" + type_name + ")";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -698,31 +642,13 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     /// For the purpose of query optimization, we assume this function to be injective
     ///  even in face of fact that there are many different cities named Moscow.
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments[0]->getName() != TypeName<UInt32>::get())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName()
-                + " (must be " + String(TypeName<UInt32>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 2 && arguments[1]->getName() != TypeName<String>::get())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of the second argument of function " + getName()
-                + " (must be " + String(TypeName<String>::get()) + ")",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
+        return "f(UInt32, [const point_of_view String]) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

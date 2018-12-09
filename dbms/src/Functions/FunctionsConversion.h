@@ -760,6 +760,16 @@ public:
         return name;
     }
 
+    String getSignature() const override
+    {
+        auto return_type = ToDataType().getName();
+
+        if constexpr (to_decimal)
+            return "f(T, const scale UnsignedInteger) -> " + return_type;
+        else
+            return "f(T) -> " + return_type;
+    }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }

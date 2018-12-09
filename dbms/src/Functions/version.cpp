@@ -23,15 +23,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f() -> String"; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {

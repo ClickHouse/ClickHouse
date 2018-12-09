@@ -68,20 +68,9 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ptr || ptr->getN() != ipv6_bytes_length)
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName() +
-                            ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(FixedString(16)) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -137,30 +126,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionCutIPv6>(); }
 
     String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 3; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ptr || ptr->getN() != ipv6_bytes_length)
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument 1 of function " + getName() +
-                            ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!WhichDataType(arguments[1]).isUInt8())
-            throw Exception("Illegal type " + arguments[1]->getName() +
-                            " of argument 2 of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!WhichDataType(arguments[2]).isUInt8())
-            throw Exception("Illegal type " + arguments[2]->getName() +
-                            " of argument 3 of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(FixedString(16), UInt8, UInt8) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
@@ -260,18 +226,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionIPv6StringToNum>(); }
 
     String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeFixedString>(ipv6_bytes_length);
-    }
-
+    String getSignature() const override { return "f(String) -> FixedString(16)"; }
 
     static bool ipv4_scan(const char * src, unsigned char * dst)
     {
@@ -513,17 +468,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return mask_tail_octets == 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!WhichDataType(arguments[0]).isUInt32())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(UInt32) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -574,16 +521,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt32>();
-    }
+    String getSignature() const override { return "f(String) -> UInt32"; }
 
     static UInt32 parseIPv4(const char * pos)
     {
@@ -649,17 +587,9 @@ public:
 
     String getName() const override { return name; }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!checkAndGetDataType<DataTypeUInt32>(arguments[0].get()))
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeFixedString>(16);
-    }
+    String getSignature() const override { return "f(UInt32) -> FixedString(16)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -708,17 +638,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!WhichDataType(arguments[0]).isUInt64())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(UInt64) -> String"; }
 
     static void formatMAC(UInt64 mac, unsigned char * out)
     {
@@ -838,16 +760,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt64>();
-    }
+    String getSignature() const override { return "f(String) -> UInt64"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -901,20 +814,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-        if (!ptr || ptr->getN() != uuid_bytes_length)
-            throw Exception("Illegal type " + arguments[0]->getName() +
-                            " of argument of function " + getName() +
-                            ", expected FixedString(" + toString(uuid_bytes_length) + ")",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(FixedString(16)) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -999,24 +901,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        /// String or FixedString(36)
-        if (!isString(arguments[0]))
-        {
-            const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
-            if (!ptr || ptr->getN() != uuid_text_length)
-                throw Exception("Illegal type " + arguments[0]->getName() +
-                                " of argument of function " + getName() +
-                                ", expected FixedString(" + toString(uuid_text_length) + ")",
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return std::make_shared<DataTypeFixedString>(uuid_bytes_length);
-    }
+    String getSignature() const override { return "f(String) -> FixedString(16) OR f(FixedString(36)) -> FixedString(16)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -1104,21 +991,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        WhichDataType which(arguments[0]);
-
-        if (!which.isStringOrFixedString()
-            && !which.isDateOrDateTime()
-            && !which.isUInt())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(StringOrFixedString) -> String OR f(DateOrDateTime) -> String OR f(UnsignedInteger) -> String"; }
 
     template <typename T>
     void executeOneUInt(T x, char *& out)
@@ -1321,17 +1196,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(String) -> String"; }
 
     void unhexOne(const char * pos, const char * end, char *& out)
     {
@@ -1411,17 +1278,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isInteger(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeArray>(arguments[0]);
-    }
+    String getSignature() const override { return "f(T : Integer) -> Array(T)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -1495,16 +1354,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f(StringOrFixedString) -> String"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

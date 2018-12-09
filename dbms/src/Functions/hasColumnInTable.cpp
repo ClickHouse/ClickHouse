@@ -36,21 +36,15 @@ public:
     {
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
     String getName() const override
     {
         return name;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
+    String getSignature() const override
+    {
+        return "f([const hostname String, [const username String, [const password String]]], const database String, const table String, const column String) -> UInt8";
+    }
 
     bool isDeterministic() const override { return false; }
 
@@ -59,28 +53,6 @@ public:
 private:
     const Context & global_context;
 };
-
-
-DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    if (arguments.size() < 3 || arguments.size() > 6)
-        throw Exception{"Invalid number of arguments for function " + getName(),
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-    static const std::string arg_pos_description[] = {"First", "Second", "Third", "Fourth", "Fifth", "Sixth"};
-    for (size_t i = 0; i < arguments.size(); ++i)
-    {
-        const ColumnWithTypeAndName & argument = arguments[i];
-
-        if (!checkColumnConst<ColumnString>(argument.column.get()))
-        {
-            throw Exception(arg_pos_description[i] + " argument for function " + getName() + " must be const String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-    }
-
-    return std::make_shared<DataTypeUInt8>();
-}
 
 
 void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)

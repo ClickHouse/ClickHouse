@@ -63,15 +63,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(T, Set) -> UInt8"; }
 
     bool useDefaultImplementationForNulls() const override
     {

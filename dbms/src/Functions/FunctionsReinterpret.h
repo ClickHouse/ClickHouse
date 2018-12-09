@@ -40,16 +40,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const IDataType & type = *arguments[0];
-
-        if (type.isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-            return std::make_shared<DataTypeString>();
-        throw Exception("Cannot reinterpret " + type.getName() + " as String because it is not contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    String getSignature() const override { return "f(T : UnambiguouslyRepresentedInContiguousMemoryRegion) -> String"; }
 
     void executeToString(const IColumn & src, ColumnString & dst)
     {
@@ -105,16 +96,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const IDataType & type = *arguments[0];
-
-        if (type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-            return std::make_shared<DataTypeFixedString>(type.getSizeOfValueInMemory());
-        throw Exception("Cannot reinterpret " + type.getName() + " as FixedString because it is not fixed size and contiguous in memory", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    String getSignature() const override { return "f(T : UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion) -> FixedString(sizeOfValueInMemory(T))"; }
 
     void executeToFixedString(const IColumn & src, ColumnFixedString & dst, size_t n)
     {
@@ -162,16 +144,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const IDataType & type = *arguments[0];
-        if (!isStringOrFixedString(type))
-            throw Exception("Cannot reinterpret " + type.getName() + " as " + ToDataType().getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<ToDataType>();
-    }
+    String getSignature() const override { return "f(StringOrFixedString) -> " + ToDataType().getName(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

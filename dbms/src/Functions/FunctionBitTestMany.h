@@ -28,32 +28,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionBitTestMany>(); }
 
     String getName() const override { return name; }
-
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 2)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 2.", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
-
-        const auto & first_arg = arguments.front();
-
-        if (!isInteger(first_arg))
-            throw Exception{"Illegal type " + first_arg->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-
-        for (const auto i : ext::range(1, arguments.size()))
-        {
-            const auto & pos_arg = arguments[i];
-
-            if (!isUnsignedInteger(pos_arg))
-                throw Exception{"Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<DataTypeUInt8>();
-    }
+    String getSignature() const override { return "f(Integer, UnsignedInteger, ...) -> UInt8"; }
 
     void executeImpl(Block & block , const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {

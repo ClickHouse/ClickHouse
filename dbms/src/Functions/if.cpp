@@ -843,26 +843,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 3; }
+    String getSignature() const override { return "f(MaybeNullable(UInt8), T, U) -> leastSupertype(T, U)"; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments[0]->onlyNull())
-            return arguments[0];
-
-        if (arguments[0]->isNullable())
-            return makeNullable(getReturnTypeImpl({
-                removeNullable(arguments[0]), arguments[1], arguments[2]}));
-
-        if (!WhichDataType(arguments[0]).isUInt8())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return getLeastSupertype({arguments[1], arguments[2]});
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

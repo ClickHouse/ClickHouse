@@ -97,51 +97,9 @@ public:
         return name;
     }
 
-    bool isVariadic() const override
+    String getSignature() const override
     {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 2)
-        {
-            throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
-        }
-
-        auto getMsgPrefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-            if (array == nullptr && i != 1)
-                throw Exception(getMsgPrefix(i) + " must be array of tuples.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            auto * tuple = checkAndGetDataType<DataTypeTuple>(array ? array->getNestedType().get() : arguments[i].get());
-            if (tuple == nullptr)
-                throw Exception(getMsgPrefix(i) + " must contains tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            const DataTypes & elements = tuple->getElements();
-
-            if (elements.size() != 2)
-                throw Exception(getMsgPrefix(i) + " must have exactly two elements.", ErrorCodes::BAD_ARGUMENTS);
-
-            for (auto j : ext::range(0, elements.size()))
-            {
-                if (!isNumber(elements[j]))
-                {
-                    throw Exception(getMsgPrefix(i) + " must contains numeric tuple at position " + toString(j + 1),
-                                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                }
-            }
-        }
-
-        return std::make_shared<DataTypeUInt8>();
+        return "f(Tuple(Number, Number), const Array(Tuple(Number, Number)), ...) -> UInt8";
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override

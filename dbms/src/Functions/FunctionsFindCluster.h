@@ -94,38 +94,12 @@ public:
         return FunctionFindClusterIndex::name;
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        const auto args_size = arguments.size();
-        if (args_size != 2)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " + toString(args_size) + ", should be 2",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        const auto type_x = arguments[0];
-
-        if (!isNumber(type_x))
-            throw Exception{"Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-
-        if (!type_arr_from)
-            throw Exception{"Second argument of function " + getName() + " must be literal array", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeUInt64>();
+        return "f(Number, const Array(Number)) -> UInt64";
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -267,11 +241,9 @@ public:
         return std::make_shared<FunctionFindClusterValue>();
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        FunctionFindClusterIndex::getReturnTypeImpl(arguments);
-        const DataTypeArray * type_arr_from = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-        return type_arr_from->getNestedType();
+        return "f(Number, const Array(T : Number)) -> T";
     }
 
     String getName() const override

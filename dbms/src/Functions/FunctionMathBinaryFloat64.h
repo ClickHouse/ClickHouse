@@ -52,23 +52,7 @@ public:
 
 private:
     String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const auto check_argument_type = [this] (const IDataType * arg)
-        {
-            if (!isNumber(arg))
-                throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        };
-
-        check_argument_type(arguments.front().get());
-        check_argument_type(arguments.back().get());
-
-        return std::make_shared<DataTypeFloat64>();
-    }
+    String getSignature() const override { return "f(Number, Number) -> Float64"; }
 
     template <typename LeftType, typename RightType>
     bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg)

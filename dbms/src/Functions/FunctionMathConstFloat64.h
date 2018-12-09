@@ -17,13 +17,7 @@ public:
 
 private:
     String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
+    String getSignature() const override { return "f() -> Float64"; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {

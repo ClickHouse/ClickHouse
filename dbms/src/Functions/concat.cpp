@@ -42,40 +42,14 @@ public:
         return name;
     }
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
     bool isInjective(const Block &) override
     {
         return is_injective;
     }
 
+    String getSignature() const override { return "f(StringOrFixedString, StringOrFixedString, ...) -> String"; }
+
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (const auto arg_idx : ext::range(0, arguments.size()))
-        {
-            const auto arg = arguments[arg_idx].get();
-            if (!isStringOrFixedString(arg))
-                throw Exception{"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        return std::make_shared<DataTypeString>();
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
@@ -154,8 +128,11 @@ public:
     FunctionBuilderConcat(const Context & context) : context(context) {}
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
+
+    String getSignature() const override
+    {
+        return "f(StringOrFixedString, StringOrFixedString, ...) -> String OR f(Array(T1), ...) -> Array(leastSuperType(T1, ...))";
+    }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override

@@ -22,21 +22,7 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
-    size_t getNumberOfArguments() const override { return 1; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments[0]->onlyNull())
-            return arguments[0];
-
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return arguments[0];
-    }
+    String getSignature() const override { return "f(Array(T)) -> Array(T)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

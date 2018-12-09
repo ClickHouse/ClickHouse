@@ -29,38 +29,19 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() == 1)
-        {
-            if (!isDateOrDateTime(arguments[0].type))
-                throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
-                    ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-        else if (arguments.size() == 2)
-        {
-            if (!WhichDataType(arguments[0].type).isDateTime()
-                || !WhichDataType(arguments[1].type).isString())
-                throw Exception(
-                    "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
-                    "must be of type Date or DateTime. The 2nd argument (optional) must be "
-                    "a constant string with timezone name. The timezone argument is allowed "
-                    "only when the 1st argument has the type DateTime",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-        else
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        /// For DateTime, if time zone is specified, attach it to type.
         if (std::is_same_v<ToDataType, DataTypeDateTime>)
-            return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
+        {
+            return "f(T : DateOrDateTime) -> T"
+                " OR f(DateTime, const timezone String) -> DateTime(timezone)";
+        }
         else
-            return std::make_shared<ToDataType>();
+        {
+            return "f(Date) -> Date"
+                " OR f(T : DateTime) -> T"
+                " OR f(DateTime, const timezone String) -> DateTime(timezone)";
+        }
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

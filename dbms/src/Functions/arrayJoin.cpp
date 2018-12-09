@@ -32,11 +32,6 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
     /** It could return many different values for single argument. */
     bool isDeterministic() const override { return false; }
 
@@ -45,14 +40,7 @@ public:
         return false;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!arr)
-            throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return arr->getNestedType();
-    }
+    String getSignature() const override { return "f(Array(T)) -> T"; }
 
     void executeImpl(Block &, const ColumnNumbers &, size_t, size_t /*input_rows_count*/) override
     {

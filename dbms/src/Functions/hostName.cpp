@@ -29,15 +29,7 @@ public:
         return false;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 0;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
-    {
-        return std::make_shared<DataTypeString>();
-    }
+    String getSignature() const override { return "f() -> String"; }
 
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.

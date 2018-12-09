@@ -35,24 +35,9 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return false; }
-
-    size_t getNumberOfArguments() const override { return 1; }
+    String getSignature() const override { return "f(T : Array) -> T"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type)
-            throw Exception("Argument for function " + getName() + " must be array but it "
-                " has type " + arguments[0]->getName() + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        auto nested_type = removeNullable(array_type->getNestedType());
-
-        return std::make_shared<DataTypeArray>(nested_type);
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
