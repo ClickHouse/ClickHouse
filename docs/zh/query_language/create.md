@@ -160,6 +160,5 @@ SELECT a, b, c FROM (SELECT ...)
 视图看起来和普通的表相同。例如，你可以通过`SHOW TABLES`查看到它们。
 
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
-There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
 
 [来源文章](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->
