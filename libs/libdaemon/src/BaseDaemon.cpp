@@ -14,7 +14,6 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
-#include <pwd.h>
 #include <unistd.h>
 
 #if USE_UNWIND
@@ -578,17 +577,6 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 }
 
 
-static std::string getUserName(uid_t userId) {
-    /// Try to convert user id into user name.
-    const struct passwd * result = getpwuid(userId);
-    if (errno)
-        throw Poco::SystemException("Failed to get user name for " + DB::toString(userId));
-    else if (result)
-        return result->pw_name;
-    return DB::toString(userId);
-}
-
-
 void BaseDaemon::reloadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
@@ -908,28 +896,6 @@ void BaseDaemon::initialize(Application & self)
         stream >> std::oct >> umask_num;
 
         umask(umask_num);
-    }
-
-    std::string path = config().getString("path", DBMS_DEFAULT_PATH);
-
-    /// Check that the process' user id matches the owner of the data.
-    const auto effectiveUserId = geteuid();
-    struct stat statbuf;
-    if (stat(path.c_str(), &statbuf)) {
-        const auto parent = Poco::Path(path).parent().toString();
-        if (stat(parent.c_str(), &statbuf)) {
-            throw Poco::SystemException("Failed to stat data path " + parent);
-        }
-    }
-    if (effectiveUserId != statbuf.st_uid)
-    {
-        const auto effectiveUser = getUserName(effectiveUserId);
-        const auto dataOwner = getUserName(statbuf.st_uid);
-        std::string message = "Effective user of the process (" + effectiveUser +
-            ") does not match the owner of the data (" + dataOwner + ").";
-        if (effectiveUserId == 0)
-            message += " Run under 'sudo -u " + dataOwner + "'.";
-        throw Poco::SystemException(message);
     }
 
     DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
