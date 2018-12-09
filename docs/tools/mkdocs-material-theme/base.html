@@ -136,10 +136,10 @@
             <article class="md-content__inner md-typeset">
               {% block content %}
                 {% if config.extra.single_page %}
-                    <a href="{{ config.repo_url }}tree/master/docs" title="{{ lang.t('edit.link.title') }}" class="md-icon md-content__icon">&#xE3C9;</a>
+                    <a href="{{ config.repo_url }}tree/master/docs" title="{{ lang.t('edit.link.title') }}" class="md-icon md-content__icon" rel="external nofollow">&#xE3C9;</a>
                 {% else %}
                   {% if page.edit_url %}
-                    <a href="{{ page.edit_url }}" title="{{ lang.t('edit.link.title') }}" class="md-icon md-content__icon">&#xE3C9;</a>
+                    <a href="{{ page.edit_url }}" title="{{ lang.t('edit.link.title') }}" class="md-icon md-content__icon" rel="external nofollow">&#xE3C9;</a>
                   {% endif %}
                 {% endif %}
                 {% if not "\x3ch1" in page.content %}
@@ -155,7 +155,7 @@
                     <h2 id="__source">{{ lang.t("meta.source") }}</h2>
                     {% set path = page.meta.path | default([""]) %}
                     {% set file = page.meta.source %}
-                    <a href="{{ [config.repo_url, path, file] | join('/') }}" title="{{ file }}" class="md-source-file">
+                    <a href="{{ [config.repo_url, path, file] | join('/') }}" title="{{ file }}" class="md-source-file" rel="external nofollow">
                       {{ file }}
                     </a>
                   {% endif %}
