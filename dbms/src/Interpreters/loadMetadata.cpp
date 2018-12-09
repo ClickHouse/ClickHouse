@@ -118,7 +118,14 @@ void loadMetadata(Context & context)
     thread_pool.wait();
 
     if (has_force_restore_data_flag)
-        force_restore_data_flag_file.remove();
+        try
+        {
+            force_restore_data_flag_file.remove();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("Load metadata", "Can't remove force restore file to enable data santity checks");
+        }
 }
 
 
