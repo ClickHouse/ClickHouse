@@ -146,8 +146,6 @@ public:
         block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function), columns);
     }
 
-    size_t getNumberOfArguments() const override { return captured_types.size(); }
-
 protected:
     String getSignature() const override { return "f(...) -> " + return_type->getName(); }
     bool useDefaultImplementationForNulls() const override { return false; }

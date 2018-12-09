@@ -21,22 +21,7 @@ FunctionPtr FunctionModelEvaluate::create(const Context & context)
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
-}
-
-DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments) const
-{
-    if (arguments.size() < 2)
-        throw Exception("Function " + getName() + " expects at least 2 arguments",
-                        ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
-
-    if (!isString(arguments[0]))
-        throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                        + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return std::make_shared<DataTypeFloat64>();
 }
 
 void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)

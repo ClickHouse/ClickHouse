@@ -21,13 +21,9 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-
     bool isDeterministic() const override { return false; }
 
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    String getSignature() const override { return "f(const model String, T1, ...) -> Float64"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 

@@ -127,11 +127,6 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
-
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;
@@ -141,6 +136,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments.size() != 1)
+            throw Exception{"Function " + getName() + " takes 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
         DataTypePtr res;
         dispatchForSourceType(*removeNullable(arguments[0]), [&](auto field_type_tag)
         {

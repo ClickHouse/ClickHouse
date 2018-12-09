@@ -767,78 +767,10 @@ public:
         if constexpr (to_decimal)
             return "f(T, const scale UnsignedInteger) -> " + return_type;
         else
-            return "f(T) -> " + return_type;
+            return "f(T) -> " + return_type + " OR f(DateTime, const timezone String) -> DateTime(timezone)";
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (to_decimal && arguments.size() != 2)
-        {
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-        }
-        else if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
-        {
-            return std::make_shared<DataTypeInterval>(DataTypeInterval::Kind(Name::kind));
-        }
-        else if constexpr (to_decimal)
-        {
-            if (!arguments[1].column)
-                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-
-            UInt64 scale = extractToDecimalScale(arguments[1]);
-
-            if constexpr (std::is_same_v<Name, NameToDecimal32>)
-                return createDecimal(9, scale);
-            else if constexpr (std::is_same_v<Name, NameToDecimal64>)
-                return createDecimal(18, scale);
-            else if constexpr (std::is_same_v<Name, NameToDecimal128>)
-                return createDecimal(38, scale);
-
-            throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
-        }
-        else
-        {
-            /** Optional second argument with time zone is supported:
-              * - for functions toDateTime, toUnixTimestamp, toDate;
-              * - for function toString of DateTime argument.
-              */
-
-            if (arguments.size() == 2)
-            {
-                if (!checkAndGetDataType<DataTypeString>(arguments[1].type.get()))
-                    throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-                static constexpr bool to_date_or_time = std::is_same_v<Name, NameToDateTime>
-                    || std::is_same_v<Name, NameToDate>
-                    || std::is_same_v<Name, NameToUnixTimestamp>;
-
-                if (!(to_date_or_time
-                    || (std::is_same_v<Name, NameToString> && WhichDataType(arguments[0].type).isDateTime())))
-                {
-                    throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                        + toString(arguments.size()) + ", should be 1.",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-                }
-            }
-
-            if (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-            else
-                return std::make_shared<ToDataType>();
-        }
-    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -960,51 +892,18 @@ public:
         return name;
     }
 
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    String getSignature() const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+            return "f(StringOrFixedString, [const timezone String]) -> DateTime(timezone)";
+        else if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+            return "f(StringOrFixedString) -> Nullable(" + ToDataType().getName() + ")";
+        else
+            return "f(StringOrFixedString) -> " + ToDataType().getName();
+    }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        /// Optional second argument with time zone is supported.
-
-        if (arguments.size() == 2)
-        {
-            if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime>)
-                throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                    + toString(arguments.size()) + ", should be 1. Second argument makes sense only when converting to DateTime.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-            if (!isString(arguments[1].type))
-                throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        DataTypePtr res;
-
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-            res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0));
-        else if constexpr (to_decimal)
-            throw Exception(getName() + " is only implemented for types String and Decimal", ErrorCodes::NOT_IMPLEMENTED);
-        else
-            res = std::make_shared<ToDataType>();
-
-        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-            res = std::make_shared<DataTypeNullable>(res);
-
-        return res;
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
@@ -1038,21 +937,9 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block &) override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        if (!isUnsignedInteger(arguments[1].type))
-            throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
-        if (!arguments[1].column)
-            throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!isStringOrFixedString(arguments[0].type))
-            throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
-
-        const size_t n = arguments[1].column->getUInt(0);
-        return std::make_shared<DataTypeFixedString>(n);
-    }
+    String getSignature() const override { return "f(StringOrFixedString, const N UnsignedInteger) -> FixedString(N)"; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -2010,12 +1897,10 @@ public:
     FunctionBuilderCast(const Context & context) : context(context) {}
 
     String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 2; }
+    String getSignature() const override { return "f(T, const type String) -> TypeFromString(type)"; }
 
 
 protected:
-
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         DataTypes data_types(arguments.size());
@@ -2025,16 +1910,6 @@ protected:
 
         auto monotonicity = getMonotonicityInformation(arguments.front().type, return_type.get());
         return std::make_shared<FunctionCast>(context, name, std::move(monotonicity), data_types, return_type);
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        const auto type_col = checkAndGetColumnConst<ColumnString>(arguments.back().column.get());
-        if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return DataTypeFactory::instance().get(type_col->getValue<String>());
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }

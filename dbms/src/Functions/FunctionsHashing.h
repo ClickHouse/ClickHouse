@@ -452,15 +452,6 @@ public:
         return "f(T : RepresentedByNumber) -> " + String(TypeName<typename Impl::ReturnType>::get());
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!arguments[0]->isValueRepresentedByNumber())
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override

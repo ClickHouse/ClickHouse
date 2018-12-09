@@ -76,7 +76,11 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 2; }
+    String getSignature() const override
+    {
+        return "f(const dict String, UInt64) -> String"
+            " OR f(const dict String, Tuple) -> String";
+    }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
@@ -387,7 +391,11 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 4; }
+    String getSignature() const override
+    {
+        return "f(const dict String, const attr String, UInt64, String) -> String"
+            " OR f(const dict String, const attr String, Tuple, String) -> String";
+    }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
@@ -861,32 +869,15 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 4; }
+    String getSignature() const override
+    {
+        String type_name = DataType().getName();
+        return "f(const dict String, const attr String, UInt64, " + type_name + ") -> " + type_name
+            " OR f(const dict String, const attr String, Tuple, " + type_name + ") -> " + type_name;
+    }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!isString(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[2]).isUInt64() &&
-            !isTuple(arguments[2]))
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!checkAndGetDataType<DataType>(arguments[3].get()))
-            throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
-                + ", must be " + String(DataType{}.getFamilyName()) + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataType>();
-    }
 
     bool isDeterministic() const override { return false; }
 
@@ -1118,9 +1109,6 @@ public:
     String getName() const override { return name; }
 
 private:
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
-
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
@@ -1129,7 +1117,10 @@ private:
         return isDictGetFunctionInjective(dictionaries, sample_block);
     }
 
-
+    String getSignature() const override
+    {
+        return "";
+    }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -1221,8 +1212,6 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 4; }
-
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
@@ -1231,8 +1220,16 @@ private:
         return isDictGetFunctionInjective(dictionaries, sample_block);
     }
 
+    String getSignature() const override
+    {
+        return "";
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.size() != 4)
+            throw Exception{"Function " + getName() + " takes 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
         String dict_name;
         if (auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
         {
@@ -1320,24 +1317,12 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 2; }
     bool isInjective(const Block & /*sample_block*/) override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[1]).isUInt64())
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    }
+    String getSignature() const override { return "f(const dict String, UInt64) -> Array(UInt64)"; }
 
     bool isDeterministic() const override { return false; }
 
@@ -1477,27 +1462,10 @@ public:
     String getName() const override { return name; }
 
 private:
-    size_t getNumberOfArguments() const override { return 3; }
+    String getSignature() const override { return "f(const dict String, UInt64, UInt64) -> UInt8"; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[1]).isUInt64())
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[2]).isUInt64())
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeUInt8>();
-    }
 
     bool isDeterministic() const override { return false; }
 

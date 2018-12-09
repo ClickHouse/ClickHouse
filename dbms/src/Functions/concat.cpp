@@ -146,16 +146,6 @@ protected:
                 return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() < 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                + ", should be at least 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        return getLeastSupertype(arguments);
-    }
-
 private:
     const Context & context;
 };

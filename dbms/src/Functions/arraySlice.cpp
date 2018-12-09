@@ -37,36 +37,7 @@ public:
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionArraySlice>(); }
 
     String getName() const override { return name; }
-
     String getSignature() const override { return "f(T : Array, offset Integer, [length Integer]) -> T"; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments[0]->onlyNull())
-            return arguments[0];
-
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        for (size_t i = 1; i < number_of_arguments; ++i)
-        {
-            if (!isInteger(removeNullable(arguments[i])) && !arguments[i]->onlyNull())
-                throw Exception(
-                        "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
-                        + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        }
-
-        return arguments[0];
-    }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

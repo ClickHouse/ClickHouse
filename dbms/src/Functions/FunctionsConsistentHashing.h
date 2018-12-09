@@ -99,33 +99,13 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isInteger(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments[0]->getSizeOfValueInMemory() > sizeof(HashType))
-            throw Exception("Function " + getName() + " accepts " + std::to_string(sizeof(HashType) * 8) + "-bit integers at most"
-                    + ", got " + arguments[0]->getName(),
-                ErrorCodes::BAD_ARGUMENTS);
-
-        if (!isInteger(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of the second argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeNumber<ResultType>>();
-    }
+    String getSignature() const override { return "f(Integer, const num_buckets UnsignedInteger) -> " + String(TypeName<ResultType>::get()); }
 
     bool useDefaultImplementationForConstants() const override
     {
         return true;
     }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         return {1};

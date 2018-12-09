@@ -474,17 +474,6 @@ public:
         return "f(Number, Number) -> UInt8";
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isNumber(arguments[0]))
-            throw Exception("Illegal type ("
-                + arguments[0]->getName()
-                + ") of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
-
     bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override

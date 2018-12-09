@@ -41,26 +41,13 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override
-    {
-        return 1;
-    }
+    String getSignature() const override { return "f(T : AggregateFunction) -> AggregateFunction"; }
 
     bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {
         return false;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
-        if (!type)
-            throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return type->getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
