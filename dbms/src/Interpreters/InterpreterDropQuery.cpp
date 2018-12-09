@@ -93,6 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             /// Delete table data
             database_and_table.second->drop();
+            context.dropDependency({database_name, table_name});
             database_and_table.second->is_dropped = true;
 
             String database_data_path = database_and_table.first->getDataPath();
@@ -136,6 +137,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
                 auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
                 /// Delete table data
                 table->drop();
+                context.dropDependency({context.getCurrentDatabase(), table_name});
                 table->is_dropped = true;
             }
         }

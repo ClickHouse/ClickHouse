@@ -194,6 +194,7 @@ public:
 
     void addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
     void removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where);
+    void dropDependency(const DatabaseAndTableName & table);
     Dependencies getDependencies(const String & database_name, const String & table_name) const;
 
     /// Checking the existence of the table/database. Database can be empty - in this case the current database is used.

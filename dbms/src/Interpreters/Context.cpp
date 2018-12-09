@@ -673,6 +673,12 @@ void Context::removeDependency(const DatabaseAndTableName & from, const Database
         table->updateDependencies();
 }
 
+void Context::dropDependency(const DatabaseAndTableName & table)
+{
+    auto lock = getLock();
+    shared->view_dependencies.erase(table);
+}
+
 Dependencies Context::getDependencies(const String & database_name, const String & table_name) const
 {
     auto lock = getLock();
