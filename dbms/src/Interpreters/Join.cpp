@@ -260,7 +260,7 @@ void Join::setSampleBlock(const Block & block)
 
     size_t keys_size = key_names_right.size();
     ColumnRawPtrs key_columns(keys_size);
-    Colums materialized_columns(keys_size);
+    Columns materialized_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
