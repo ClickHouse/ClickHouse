@@ -9,6 +9,7 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -100,7 +101,14 @@ void NativeBlockOutputStream::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+        ColumnWithTypeAndName column = block.safeGetByPosition(i);
+
+        /// Send data to old clients without low cardinality type.
+        if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+        {
+            column.column = recursiveRemoveLowCardinality(column.column);
+            column.type = recursiveRemoveLowCardinality(column.type);
+        }
 
         /// Name
         writeStringBinary(column.name, ostr);
