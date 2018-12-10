@@ -101,9 +101,9 @@ For more information, see the section "Operators" below.
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 
-## Expression aliases
+## Expression Aliases
 
-Alias is a developer defined name for expression in a query.
+Alias is a user defined name for an expression in a query.
 
 ```
 expr AS alias
@@ -113,19 +113,25 @@ expr AS alias
 
     For example, `SELECT b.column_name from t b`.
 
+    In the [CAST function](functions/type_conversion_functions.md#type_conversion_function-cast), the `AS` keyword has another meaning. See the description of the function.
+
 - `expr` — any expression supported by ClickHouse.
 
-    For example, `SELECT (1 AS n) + 2, n`.
+    For example `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — [string literal](#syntax-string_literal). If an alias contains spaces, enclose it in quotes.
+- `alias` — [string literal](#syntax-string_literal). If an alias contains spaces, enclose it in double quotes or backticks.
 
     For example, `SELECT "table t".col_name FROM t AS "table t"`.
 
 ### Peculiarities of Use
 
-You can define alias in any part of a query. Aliases are global for a query and not visible in subqueries and outside a query. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
+Aliases are global for a query and you can define alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
 
-Avoid aliases the same as column or table names. Let's consider the following example:
+Aliases are not visible in subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
+
+If alias is defined inside the subquery it is visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+
+Be careful with aliases the same as column or table names. Let's consider the following example:
 
 ```
 CREATE TABLE t
@@ -146,7 +152,7 @@ Received exception from server (version 18.14.17):
 Code: 184. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: Aggregate function sum(b) is found inside another aggregate function in query.
 ```
 
-In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sub(b)`. This substitution caused the exception.
+In this example, we declared table `t` with column `b`. Then, when selecting data, we defined the `sum(b) AS b` alias. As aliases are global, ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the expression `sum(b)`. This substitution caused the exception.
 
 ## Asterisk
 
@@ -154,7 +160,7 @@ In a `SELECT` query, an asterisk can replace the expression. For more informatio
 
 ## Expressions
 
-An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain a synonym.
+An expression is a function, identifier, literal, application of an operator, expression in brackets, subquery, or asterisk. It can also contain an alias.
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
