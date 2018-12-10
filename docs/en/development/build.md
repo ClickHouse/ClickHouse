@@ -22,9 +22,8 @@ cd ClickHouse
 
 # How to Build ClickHouse for Development
 
-Build should work on Ubuntu Linux.
+The following tutorial is based on the Ubuntu Linux system.
 With appropriate changes, it should also work on any other Linux distribution.
-The build process is not intended to work on Mac OS X.
 Only x86_64 with SSE 4.2 is supported. Support for AArch64 is experimental.
 
 To test for SSE 4.2, do

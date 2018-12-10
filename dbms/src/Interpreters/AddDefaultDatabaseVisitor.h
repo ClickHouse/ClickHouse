@@ -8,6 +8,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/DumpASTNode.h>
 
 namespace DB
@@ -38,8 +39,9 @@ public:
     void visit(ASTPtr & ast) const
     {
         if (!tryVisit<ASTSelectQuery>(ast) &&
-            !tryVisit<ASTSelectWithUnionQuery>(ast))
-            visitChildren(ast);
+            !tryVisit<ASTSelectWithUnionQuery>(ast) &&
+            !tryVisit<ASTFunction>(ast))
+            visitChildren(*ast);
     }
 
     void visit(ASTSelectQuery & select) const
@@ -70,10 +72,7 @@ private:
         if (select.tables)
             tryVisit<ASTTablesInSelectQuery>(select.tables);
 
-        if (select.prewhere_expression)
-            visitChildren(select.prewhere_expression);
-        if (select.where_expression)
-            visitChildren(select.where_expression);
+        visitChildren(select);
     }
 
     void visit(ASTTablesInSelectQuery & tables, ASTPtr &) const
@@ -112,9 +111,43 @@ private:
         tryVisit<ASTSelectWithUnionQuery>(subquery.children[0]);
     }
 
-    void visitChildren(ASTPtr & ast) const
+    void visit(ASTFunction & function, ASTPtr &) const
     {
-        for (auto & child : ast->children)
+        bool is_operator_in = false;
+        for (auto name : {"in", "notIn", "globalIn", "globalNotIn"})
+        {
+            if (function.name == name)
+            {
+                is_operator_in = true;
+                break;
+            }
+        }
+
+        for (auto & child : function.children)
+        {
+            if (child.get() == function.arguments.get())
+            {
+                for (size_t i = 0; i < child->children.size(); ++i)
+                {
+                    if (is_operator_in && i == 1)
+                    {
+                        /// Second argument of the "in" function (or similar) may be a table name or a subselect.
+                        /// Rewrite the table name or descend into subselect.
+                        if (!tryVisit<ASTIdentifier>(child->children[i]))
+                            visit(child->children[i]);
+                    }
+                    else
+                        visit(child->children[i]);
+                }
+            }
+            else
+                visit(child);
+        }
+    }
+
+    void visitChildren(IAST & ast) const
+    {
+        for (auto & child : ast.children)
             visit(child);
     }
 

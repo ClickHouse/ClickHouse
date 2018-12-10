@@ -14,7 +14,7 @@ Some column-oriented DBMSs (InfiniDB CE and MonetDB) do not use data compression
 
 ## Disk Storage of Data
 
-Mving a data physically sorted by primary key makes it possible to extract data for it's specific values or value ranges with low latency, less than few dozen milliseconds.any column-oriented DBMSs (such as SAP HANA and Google PowerDrill) can only work in RAM. This approach encourages the allocation of a larger hardware budget than is actually necessary for real-time analysis. ClickHouse is designed to work on regular hard drives, which means the cost per GB of data storage is low, but SSD and additional RAM are also fully used if available.
+Keeping data physically sorted by primary key makes it possible to extract data for it's specific values or value ranges with low latency, less than few dozen milliseconds. Some column-oriented DBMSs (such as SAP HANA and Google PowerDrill) can only work in RAM. This approach encourages the allocation of a larger hardware budget than is actually necessary for real-time analysis. ClickHouse is designed to work on regular hard drives, which means the cost per GB of data storage is low, but SSD and additional RAM are also fully used if available.
 
 ## Parallel Processing on Multiple Cores
 
@@ -50,7 +50,7 @@ Low latency means that queries can be processed without delay and without trying
 ## Support for Approximated Calculations
 
 ClickHouse provides various ways to trade accuracy for performance:
-        
+
 1. Aggregate functions for approximated calculation of the number of distinct values, medians, and quantiles.        
 2. Running a query based on a part (sample) of data and getting an approximated result. In this case, proportionally less data is retrieved from the disk.        
 3. Running an aggregation for a limited number of random keys, instead of for all keys. Under certain conditions for key distribution in the data, this provides a reasonably accurate result while using fewer resources.

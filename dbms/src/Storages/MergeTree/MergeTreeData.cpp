@@ -353,8 +353,8 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 
     if (expr_func && expr_func->name == "tuple")
     {
-        /// Primary key is specified in tuple.
-        return expr_func->children.at(0);
+        /// Primary key is specified in tuple, extract its arguments.
+        return expr_func->arguments->clone();
     }
     else
     {
@@ -2274,7 +2274,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
         MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
-        if (!input_stream.read(columns))
+        RowReadExtension unused;
+        if (!input_stream.read(columns, unused))
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);
