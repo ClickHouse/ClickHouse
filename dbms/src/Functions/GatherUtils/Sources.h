@@ -191,7 +191,7 @@ struct StringSource
     using Slice = NumericArraySlice<UInt8>;
     using Column = ColumnString;
 
-    const typename ColumnString::Chars_t & elements;
+    const typename ColumnString::Chars & elements;
     const typename ColumnString::Offsets & offsets;
 
     size_t row_num = 0;

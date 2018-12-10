@@ -323,7 +323,7 @@ struct TaskTable
 struct TaskCluster
 {
     TaskCluster(const String & task_zookeeper_path_, const String & default_local_database_)
-        : task_zookeeper_path(task_zookeeper_path_),  default_local_database(default_local_database_) {}
+        : task_zookeeper_path(task_zookeeper_path_), default_local_database(default_local_database_) {}
 
     void loadTasks(const Poco::Util::AbstractConfiguration & config, const String & base_key = "");
 
@@ -410,8 +410,7 @@ BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
     return std::make_shared<SquashingBlockInputStream>(
         stream,
         std::numeric_limits<size_t>::max(),
-        std::numeric_limits<size_t>::max()
-    );
+        std::numeric_limits<size_t>::max());
 }
 
 Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)

@@ -63,9 +63,6 @@ add_headers_and_sources(dbms src/Core)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
-add_headers_and_sources(dbms src/Dictionaries)
-add_headers_and_sources(dbms src/Dictionaries/Embedded)
-add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
@@ -184,8 +181,11 @@ target_link_libraries (dbms
     clickhouse_common_config
         PUBLIC
     clickhouse_common_io
-    pocoext
+        PRIVATE
+    clickhouse_dictionaries
+    clickhouse_dictionaries_embedded
         PUBLIC
+    pocoext
     ${MYSQLXX_LIBRARY}
         PRIVATE
     ${BTRIE_LIBRARIES}
@@ -242,8 +242,7 @@ endif()
 target_link_libraries (dbms PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
-    target_link_libraries (dbms PRIVATE ${ICU_LIBS})
-    target_include_directories (dbms SYSTEM PRIVATE ${ICU_INCLUDE_DIR})
+    target_link_libraries (dbms PRIVATE ${ICU_LIBRARIES})
 endif ()
 
 if (USE_CAPNP)
@@ -264,6 +263,11 @@ target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+
+if (USE_HDFS)
+    target_link_libraries (dbms PRIVATE ${HDFS3_LIBRARY})
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+endif()
 
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})

@@ -188,7 +188,7 @@ void SelectStreamFactory::createForShard(
             try
             {
                 if (table_func_ptr)
-                    try_results  = pool->getManyForTableFunction(&context.getSettingsRef(), PoolMode::GET_MANY);
+                    try_results = pool->getManyForTableFunction(&context.getSettingsRef(), PoolMode::GET_MANY);
                 else
                     try_results = pool->getManyChecked(&context.getSettingsRef(), PoolMode::GET_MANY, main_table);
             }

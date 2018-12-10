@@ -1,3 +1,23 @@
+## ClickHouse release 18.14.18, 2018-12-04
+
+### Исправления ошибок:
+* Исправлена ошибка в функции `dictGet...` для словарей типа `range`, если один из аргументов константный, а другой - нет. [#3751](https://github.com/yandex/ClickHouse/pull/3751)
+* Исправлена ошибка, приводящая к выводу сообщений `netlink: '...': attribute type 1 has an invalid length` в логе ядра Linux, проявляющаяся на достаточно новых ядрах Linux. [#3749](https://github.com/yandex/ClickHouse/pull/3749)
+* Исправлен segfault при выполнении функции `empty` от аргумента типа `FixedString`. [#3703](https://github.com/yandex/ClickHouse/pull/3703)
+* Исправлена избыточная аллокация памяти при большом значении настройки `max_query_size` (кусок памяти размера `max_query_size` выделялся сразу). [#3720](https://github.com/yandex/ClickHouse/pull/3720)
+
+### Улучшения процесса сборки ClickHouse:
+* Исправлена сборка с использованием библиотек LLVM/Clang версии 7 из пакетов ОС (эти библиотеки используются для динамической компиляции запросов). [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+
+## ClickHouse release 18.14.17, 2018-11-30
+
+### Исправления ошибок:
+* Исправлена ситуация, при которой ODBC Bridge продолжал работу после завершения работы сервера ClickHouse. Теперь ODBC Bridge всегда завершает работу вместе с сервером. [#3642](https://github.com/yandex/ClickHouse/pull/3642)
+* Исправлена синхронная вставка в `Distributed` таблицу в случае явного указания неполного списка столбцов или списка столбцов в измененном порядке. [#3673](https://github.com/yandex/ClickHouse/pull/3673)
+* Исправлен редкий race condition, который мог привести к падению сервера при удалении MergeTree-таблиц. [#3680](https://github.com/yandex/ClickHouse/pull/3680)
+* Исправлен deadlock при выполнении запроса, возникающий если создание новых потоков выполнения невозможно из-за ошибки `Resource temporarily unavailable`. [#3643](https://github.com/yandex/ClickHouse/pull/3643)
+* Исправлена ошибка парсинга `ENGINE` при создании таблицы с синтаксисом `AS table` в случае, когда `AS table` указывался после `ENGINE`, что приводило к игнорированию указанного движка. [#3692](https://github.com/yandex/ClickHouse/pull/3692)
+
 ## ClickHouse release 18.14.15, 2018-11-21
 
 ### Исправления ошибок:
@@ -9,7 +29,7 @@
 * Исправлена работа запросов `ON CLUSTER` в случае, когда в конфигурации кластера включено шифрование (флаг `<secure>`). [#3599](https://github.com/yandex/ClickHouse/pull/3599)
 
 ### Улучшения процесса сборки ClickHouse:
-* Испрпавлены проблемы сборки (llvm-7 из системы, macos) [#3582](https://github.com/yandex/ClickHouse/pull/3582)
+* Исправлены проблемы сборки (llvm-7 из системы, macos) [#3582](https://github.com/yandex/ClickHouse/pull/3582)
 
 ## ClickHouse release 18.14.13, 2018-11-08
 

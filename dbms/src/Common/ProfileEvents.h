@@ -37,7 +37,7 @@ namespace ProfileEvents
 
         /// Global level static initializer
         Counters(Counter * allocated_counters)
-            :  counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
+            : counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
         Counter & operator[] (Event event)
         {

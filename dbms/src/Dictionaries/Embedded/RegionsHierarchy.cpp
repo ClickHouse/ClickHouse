@@ -1,12 +1,10 @@
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
+#include "RegionsHierarchy.h"
 
+#include "GeodataProviders/IHierarchiesProvider.h"
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
-
 #include <common/logger_useful.h>
 #include <ext/singleton.h>
-
 #include <IO/WriteHelpers.h>
 
 
@@ -45,7 +43,7 @@ void RegionsHierarchy::reload()
     RegionParents new_continent(initial_size);
     RegionParents new_top_continent(initial_size);
     RegionPopulations new_populations(initial_size);
-    RegionDepths  new_depths(initial_size);
+    RegionDepths new_depths(initial_size);
     RegionTypes types(initial_size);
 
     RegionID max_region_id = 0;

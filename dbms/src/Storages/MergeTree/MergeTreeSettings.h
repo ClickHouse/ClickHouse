@@ -156,7 +156,7 @@ struct MergeTreeSettings
     M(SettingUInt64, min_merge_bytes_to_use_direct_io, 10ULL * 1024 * 1024 * 1024)
 
     /// Settings that should not change after the creation of a table.
-#define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \
+#define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M) \
     M(index_granularity)
 
 #define DECLARE(TYPE, NAME, DEFAULT) \

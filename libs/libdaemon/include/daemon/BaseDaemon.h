@@ -224,7 +224,7 @@ protected:
     std::atomic_size_t sigint_signals_counter{0};
 
     std::string config_path;
-    ConfigProcessor::LoadedConfig loaded_config;
+    DB::ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
 
 private:

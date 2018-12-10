@@ -112,7 +112,7 @@ public:
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
         sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
-        sqlbuf << " ( " << dumpNamesWithBackQuote(block) << " ) VALUES ";
+        sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
         auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
         writer->write(block);
