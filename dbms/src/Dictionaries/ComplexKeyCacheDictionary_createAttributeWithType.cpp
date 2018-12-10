@@ -9,11 +9,11 @@ ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType
 
     switch (type)
     {
-#define DISPATCH(TYPE)                                                     \
-    case AttributeUnderlyingType::TYPE:                                    \
+#define DISPATCH(TYPE) \
+    case AttributeUnderlyingType::TYPE: \
         attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size);         \
-        bytes_allocated += size * sizeof(TYPE);                            \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
+        bytes_allocated += size * sizeof(TYPE); \
         break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)

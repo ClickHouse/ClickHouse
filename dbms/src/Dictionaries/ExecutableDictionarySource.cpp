@@ -193,7 +193,8 @@ BlockInputStreamPtr ExecutableDictionarySource::loadKeys(const Columns & key_col
     auto input_stream = context.getInputFormat(format, process->out, sample_block, max_block_size);
 
     return std::make_shared<BlockInputStreamWithBackgroundThread>(
-        input_stream, std::move(process), std::packaged_task<void()>([output_stream, key_columns, &requested_rows, this]() mutable {
+        input_stream, std::move(process), std::packaged_task<void()>([output_stream, key_columns, &requested_rows, this]() mutable
+        {
             formatKeys(dict_struct, output_stream, key_columns, requested_rows);
         }));
 }

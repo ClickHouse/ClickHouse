@@ -70,7 +70,7 @@ public:
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
 #define DECLARE(TYPE) \
-    void get##TYPE(   \
+    void get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -90,12 +90,12 @@ public:
 
     void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
 
-#define DECLARE(TYPE)                       \
-    void get##TYPE(                         \
+#define DECLARE(TYPE) \
+    void get##TYPE( \
         const std::string & attribute_name, \
-        const Columns & key_columns,        \
-        const DataTypes & key_types,        \
-        const PaddedPODArray<TYPE> & def,   \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -120,12 +120,12 @@ public:
         const ColumnString * const def,
         ColumnString * const out) const;
 
-#define DECLARE(TYPE)                       \
-    void get##TYPE(                         \
+#define DECLARE(TYPE) \
+    void get##TYPE( \
         const std::string & attribute_name, \
-        const Columns & key_columns,        \
-        const DataTypes & key_types,        \
-        const TYPE def,                     \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)

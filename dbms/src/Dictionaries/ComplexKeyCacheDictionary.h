@@ -97,7 +97,7 @@ public:
 /// In all functions below, key_columns must be full (non-constant) columns.
 /// See the requirement in IDataType.h for text-serialization functions.
 #define DECLARE(TYPE) \
-    void get##TYPE(   \
+    void get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -117,12 +117,12 @@ public:
 
     void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
 
-#define DECLARE(TYPE)                       \
-    void get##TYPE(                         \
+#define DECLARE(TYPE) \
+    void get##TYPE( \
         const std::string & attribute_name, \
-        const Columns & key_columns,        \
-        const DataTypes & key_types,        \
-        const PaddedPODArray<TYPE> & def,   \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -147,12 +147,12 @@ public:
         const ColumnString * const def,
         ColumnString * const out) const;
 
-#define DECLARE(TYPE)                       \
-    void get##TYPE(                         \
+#define DECLARE(TYPE) \
+    void get##TYPE( \
         const std::string & attribute_name, \
-        const Columns & key_columns,        \
-        const DataTypes & key_types,        \
-        const TYPE def,                     \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -261,7 +261,7 @@ private:
         if (false)
         {
         }
-#define DISPATCH(TYPE)                                        \
+#define DISPATCH(TYPE) \
     else if (attribute.type == AttributeUnderlyingType::TYPE) \
         getItemsNumberImpl<TYPE, OutputType>(attribute, key_columns, out, std::forward<DefaultGetter>(get_default));
         DISPATCH(UInt8)
