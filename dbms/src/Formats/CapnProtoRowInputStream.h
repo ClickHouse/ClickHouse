@@ -34,7 +34,7 @@ public:
       */
     CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension &) override;
 
 private:
     // Build a traversal plan from a sorted list of fields
