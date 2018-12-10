@@ -35,6 +35,29 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
+bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+{
+    /// Processed
+    if (typeid_cast<ASTSubquery *>(node.get()) ||
+        typeid_cast<ASTFunction *>(node.get()))
+        return false;
+
+    /// Don't descend into subqueries in FROM section
+    if (typeid_cast<ASTTableExpression *>(node.get()))
+        return false;
+
+    return true;
+}
+
+std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
+        visit(*t, ast, data);
+    if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
+        return visit(*t, ast, data);
+    return {};
+}
+
 void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
 {
     Context subquery_context = data.context;
