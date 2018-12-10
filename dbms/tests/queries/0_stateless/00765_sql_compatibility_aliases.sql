@@ -10,3 +10,5 @@ select SUBSTRING('foo', 1, 2);
 select Substr('foo', 2);
 select mid('foo', 3);
 select IF(3>2, 1, 0);
+select substring('foo' from 1 + 1);
+select SUBSTRING('foo' FROM 2 FOR 1);
