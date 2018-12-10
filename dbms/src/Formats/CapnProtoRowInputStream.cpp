@@ -200,7 +200,7 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
 }
 
 
-bool CapnProtoRowInputStream::read(MutableColumns & columns)
+bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;
