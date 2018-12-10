@@ -1,6 +1,5 @@
-#include <DataStreams/OneBlockInputStream.h>
 #include "LibraryDictionarySource.h"
-#include "LibraryDictionarySourceExternal.h"
+#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
@@ -9,6 +8,7 @@
 #include <ext/scope_guard.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
+#include "LibraryDictionarySourceExternal.h"
 
 
 namespace DB
@@ -78,7 +78,8 @@ namespace
 
         auto columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
         if (columns_received->error_code)
-            throw Exception("LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " "
+            throw Exception(
+                "LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " "
                     + (columns_received->error_string ? columns_received->error_string : ""),
                 ErrorCodes::EXTERNAL_LIBRARY_ERROR);
 
@@ -89,8 +90,9 @@ namespace
         for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
         {
             if (columns.size() != columns_received->data[col_n].size)
-                throw Exception("LibraryDictionarySource: Returned unexpected number of columns: "
-                        + std::to_string(columns_received->data[col_n].size) + ", must be " + std::to_string(columns.size()),
+                throw Exception(
+                    "LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
+                        + ", must be " + std::to_string(columns.size()),
                     ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
             for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
@@ -115,7 +117,8 @@ namespace
 }
 
 
-LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dict_struct_,
+LibraryDictionarySource::LibraryDictionarySource(
+    const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block,
@@ -128,7 +131,8 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
     , context(context)
 {
     if (!Poco::File(path).exists())
-        throw Exception("LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+        throw Exception(
+            "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path);
@@ -151,8 +155,9 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
 {
     if (auto libClone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
         lib_data = libClone(other.lib_data);
-    else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
-                 "ClickHouseDictionary_v3_libNew"))
+    else if (
+        auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+            "ClickHouseDictionary_v3_libNew"))
         lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
 }
 
@@ -167,8 +172,8 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     LOG_TRACE(log, "loadAll " + toString());
 
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
-    ClickHouseLibrary::CStrings columns{
-        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
+    ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
+                                        dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
@@ -193,8 +198,8 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
 
     const ClickHouseLibrary::VectorUInt64 ids_data{ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(dict_struct.attributes.size());
-    ClickHouseLibrary::CStrings columns_pass{
-        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), dict_struct.attributes.size()};
+    ClickHouseLibrary::CStrings columns_pass{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()),
+                                             dict_struct.attributes.size()};
     size_t i = 0;
     for (auto & a : dict_struct.attributes)
     {
