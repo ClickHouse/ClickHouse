@@ -64,10 +64,10 @@ public:
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)                   \
-    void get##TYPE(                                     \
-        const std::string & attribute_name,             \
-        const PaddedPODArray<Key> & ids,                \
+#define DECLARE_MULTIPLE_GETTER(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
         const PaddedPODArray<RangeStorageType> & dates, \
         ResultArrayType<TYPE> & out) const;
     DECLARE_MULTIPLE_GETTER(UInt8)

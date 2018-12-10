@@ -66,24 +66,24 @@ TrieDictionary::~TrieDictionary()
     btrie_destroy(trie);
 }
 
-#define DECLARE(TYPE)                                                                                                                    \
-    void TrieDictionary::get##TYPE(                                                                                                      \
+#define DECLARE(TYPE) \
+    void TrieDictionary::get##TYPE( \
         const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const \
-    {                                                                                                                                    \
-        validateKeyTypes(key_types);                                                                                                     \
-                                                                                                                                         \
-        const auto & attribute = getAttribute(attribute_name);                                                                           \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))                                                \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),             \
-                            ErrorCodes::TYPE_MISMATCH};                                                                                  \
-                                                                                                                                         \
-        const auto null_value = std::get<TYPE>(attribute.null_values);                                                                   \
-                                                                                                                                         \
-        getItemsNumber<TYPE>(                                                                                                            \
-            attribute,                                                                                                                   \
-            key_columns,                                                                                                                 \
-            [&](const size_t row, const auto value) { out[row] = value; },                                                               \
-            [&](const size_t) { return null_value; });                                                                                   \
+    { \
+        validateKeyTypes(key_types); \
+\
+        const auto & attribute = getAttribute(attribute_name); \
+        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
+            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
+                            ErrorCodes::TYPE_MISMATCH}; \
+\
+        const auto null_value = std::get<TYPE>(attribute.null_values); \
+\
+        getItemsNumber<TYPE>( \
+            attribute, \
+            key_columns, \
+            [&](const size_t row, const auto value) { out[row] = value; }, \
+            [&](const size_t) { return null_value; }); \
     }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -120,26 +120,26 @@ void TrieDictionary::getString(
         [&](const size_t) { return null_value; });
 }
 
-#define DECLARE(TYPE)                                                                                                        \
-    void TrieDictionary::get##TYPE(                                                                                          \
-        const std::string & attribute_name,                                                                                  \
-        const Columns & key_columns,                                                                                         \
-        const DataTypes & key_types,                                                                                         \
-        const PaddedPODArray<TYPE> & def,                                                                                    \
-        ResultArrayType<TYPE> & out) const                                                                                   \
-    {                                                                                                                        \
-        validateKeyTypes(key_types);                                                                                         \
-                                                                                                                             \
-        const auto & attribute = getAttribute(attribute_name);                                                               \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))                                    \
+#define DECLARE(TYPE) \
+    void TrieDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const \
+    { \
+        validateKeyTypes(key_types); \
+\
+        const auto & attribute = getAttribute(attribute_name); \
+        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
             throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
-                            ErrorCodes::TYPE_MISMATCH};                                                                      \
-                                                                                                                             \
-        getItemsNumber<TYPE>(                                                                                                \
-            attribute,                                                                                                       \
-            key_columns,                                                                                                     \
-            [&](const size_t row, const auto value) { out[row] = value; },                                                   \
-            [&](const size_t row) { return def[row]; });                                                                     \
+                            ErrorCodes::TYPE_MISMATCH}; \
+\
+        getItemsNumber<TYPE>( \
+            attribute, \
+            key_columns, \
+            [&](const size_t row, const auto value) { out[row] = value; }, \
+            [&](const size_t row) { return def[row]; }); \
     }
 DECLARE(UInt8)
 DECLARE(UInt16)
@@ -178,22 +178,22 @@ void TrieDictionary::getString(
         [&](const size_t row) { return def->getDataAt(row); });
 }
 
-#define DECLARE(TYPE)                                                                                                                  \
-    void TrieDictionary::get##TYPE(                                                                                                    \
-        const std::string & attribute_name,                                                                                            \
-        const Columns & key_columns,                                                                                                   \
-        const DataTypes & key_types,                                                                                                   \
-        const TYPE def,                                                                                                                \
-        ResultArrayType<TYPE> & out) const                                                                                             \
-    {                                                                                                                                  \
-        validateKeyTypes(key_types);                                                                                                   \
-                                                                                                                                       \
-        const auto & attribute = getAttribute(attribute_name);                                                                         \
-        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))                                              \
-            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),           \
-                            ErrorCodes::TYPE_MISMATCH};                                                                                \
-                                                                                                                                       \
-        getItemsNumber<TYPE>(                                                                                                          \
+#define DECLARE(TYPE) \
+    void TrieDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
+        ResultArrayType<TYPE> & out) const \
+    { \
+        validateKeyTypes(key_types); \
+\
+        const auto & attribute = getAttribute(attribute_name); \
+        if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE)) \
+            throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), \
+                            ErrorCodes::TYPE_MISMATCH}; \
+\
+        getItemsNumber<TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
     }
 DECLARE(UInt8)
@@ -512,7 +512,7 @@ void TrieDictionary::getItemsNumber(
     if (false)
     {
     }
-#define DISPATCH(TYPE)                                                                        \
+#define DISPATCH(TYPE) \
     else if (attribute.type == AttributeUnderlyingType::TYPE) getItemsImpl<TYPE, OutputType>( \
         attribute, key_columns, std::forward<ValueSetter>(set_value), std::forward<DefaultGetter>(get_default));
     DISPATCH(UInt8)
@@ -795,7 +795,8 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr {
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
         if (!dict_struct.key)
             throw Exception{"'key' is required for dictionary of layout 'ip_trie'", ErrorCodes::BAD_ARGUMENTS};
 

@@ -89,11 +89,11 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
 
-#define DECLARE(TYPE)                       \
-    void get##TYPE(                         \
+#define DECLARE(TYPE) \
+    void get##TYPE( \
         const std::string & attribute_name, \
-        const PaddedPODArray<Key> & ids,    \
-        const PaddedPODArray<TYPE> & def,   \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -115,7 +115,7 @@ public:
     getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
         const;
 
-#define DECLARE(TYPE)                                                                                                                  \
+#define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) \
         const;
     DECLARE(UInt8)

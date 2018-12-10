@@ -101,15 +101,15 @@ RangeHashedDictionary::RangeHashedDictionary(const RangeHashedDictionary & other
 }
 
 
-#define DECLARE_MULTIPLE_GETTER(TYPE)                                                                 \
-    void RangeHashedDictionary::get##TYPE(                                                            \
-        const std::string & attribute_name,                                                           \
-        const PaddedPODArray<Key> & ids,                                                              \
-        const PaddedPODArray<RangeStorageType> & dates,                                               \
-        ResultArrayType<TYPE> & out) const                                                            \
-    {                                                                                                 \
+#define DECLARE_MULTIPLE_GETTER(TYPE) \
+    void RangeHashedDictionary::get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<RangeStorageType> & dates, \
+        ResultArrayType<TYPE> & out) const \
+    { \
         const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE); \
-        getItems<TYPE>(attribute, ids, dates, out);                                                   \
+        getItems<TYPE>(attribute, ids, dates, out); \
     }
 DECLARE_MULTIPLE_GETTER(UInt8)
 DECLARE_MULTIPLE_GETTER(UInt16)
@@ -694,7 +694,8 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr {
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
         if (dict_struct.key)
             throw Exception{"'key' is not supported for dictionary of layout 'range_hashed'", ErrorCodes::UNSUPPORTED_METHOD};
 

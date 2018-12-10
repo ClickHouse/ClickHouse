@@ -377,11 +377,11 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
 
     switch (type)
     {
-#define DISPATCH(TYPE)                                                     \
-    case AttributeUnderlyingType::TYPE:                                    \
+#define DISPATCH(TYPE) \
+    case AttributeUnderlyingType::TYPE: \
         attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size);         \
-        bytes_allocated += size * sizeof(TYPE);                            \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
+        bytes_allocated += size * sizeof(TYPE); \
         break;
         DISPATCH(UInt8)
         DISPATCH(UInt16)
@@ -592,7 +592,8 @@ void registerDictionaryCache(DictionaryFactory & factory)
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr {
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
         if (dict_struct.key)
             throw Exception{"'key' is not supported for dictionary of layout 'cache'", ErrorCodes::UNSUPPORTED_METHOD};
 

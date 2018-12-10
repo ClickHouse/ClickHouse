@@ -40,7 +40,7 @@ void CacheDictionary::getItemsNumber(
     if (false)
     {
     }
-#define DISPATCH(TYPE)                                        \
+#define DISPATCH(TYPE) \
     else if (attribute.type == AttributeUnderlyingType::TYPE) \
         getItemsNumberImpl<TYPE, OutputType>(attribute, ids, out, std::forward<DefaultGetter>(get_default));
     DISPATCH(UInt8)
