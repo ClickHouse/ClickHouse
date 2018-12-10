@@ -242,12 +242,12 @@ void ExpressionAnalyzer::analyzeAggregation()
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
     /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesMatcher::Data tables_data{context, external_tables};
+    ExternalTablesVisitor::Data tables_data{context, external_tables};
     ExternalTablesVisitor(tables_data).visit(query);
 
     if (do_global)
     {
-        GlobalSubqueriesMatcher::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
+        GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
                                                    external_tables, subqueries_for_sets, has_global_subqueries);
         GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
@@ -1027,7 +1027,7 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
-                RequiredSourceColumnsMatcher::Data visitor_data{available_columns, required, empty, empty, empty};
+                RequiredSourceColumnsVisitor::Data visitor_data{available_columns, required, empty, empty, empty};
                 RequiredSourceColumnsVisitor(visitor_data).visit(expressions[i]);
             }
 
@@ -1047,12 +1047,12 @@ void ExpressionAnalyzer::collectUsedColumns()
     for (const auto & left_key_ast : syntax->analyzed_join.key_asts_left)
     {
         NameSet empty;
-        RequiredSourceColumnsMatcher::Data columns_data{available_columns, required, ignored, empty, required_joined_columns};
+        RequiredSourceColumnsVisitor::Data columns_data{available_columns, required, ignored, empty, required_joined_columns};
         ASTPtr tmp = left_key_ast;
         RequiredSourceColumnsVisitor(columns_data).visit(tmp);
     }
 
-    RequiredSourceColumnsMatcher::Data columns_visitor_data{available_columns, required, ignored,
+    RequiredSourceColumnsVisitor::Data columns_visitor_data{available_columns, required, ignored,
                                                             available_joined_columns, required_joined_columns};
     RequiredSourceColumnsVisitor(columns_visitor_data).visit(query);
 

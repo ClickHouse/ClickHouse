@@ -35,17 +35,17 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
-void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery & subquery, ASTPtr & ast) const
+void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
 {
-    Context subquery_context = context;
-    Settings subquery_settings = context.getSettings();
+    Context subquery_context = data.context;
+    Settings subquery_settings = data.context.getSettings();
     subquery_settings.max_result_rows = 1;
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
     ASTPtr subquery_select = subquery.children.at(0);
     BlockIO res = InterpreterSelectWithUnionQuery(
-        subquery_select, subquery_context, {}, QueryProcessingStage::Complete, subquery_depth + 1).execute();
+        subquery_select, subquery_context, {}, QueryProcessingStage::Complete, data.subquery_depth + 1).execute();
 
     Block block;
     try
@@ -100,31 +100,29 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery & subquery, ASTPtr 
     }
 }
 
-
-void ExecuteScalarSubqueriesVisitor::visit(const ASTTableExpression &, ASTPtr &) const
-{
-    /// Don't descend into subqueries in FROM section.
-}
-
-void ExecuteScalarSubqueriesVisitor::visit(const ASTFunction & func, ASTPtr & ast) const
+std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
 
+    std::vector<ASTPtr *> out;
     if (functionIsInOrGlobalInOperator(func.name))
     {
         for (auto & child : ast->children)
         {
             if (child != func.arguments)
-                visit(child);
+                out.push_back(&child);
             else
                 for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
                     if (i != 1 || !typeid_cast<ASTSubquery *>(func.arguments->children[i].get()))
-                        visit(func.arguments->children[i]);
+                        out.push_back(&func.arguments->children[i]);
         }
     }
     else
-        visitChildren(ast);
+        for (auto & child : ast->children)
+            out.push_back(&child);
+
+    return out;
 }
 
 }
