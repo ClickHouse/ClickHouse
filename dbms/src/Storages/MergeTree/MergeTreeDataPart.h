@@ -75,6 +75,10 @@ struct MergeTreeDataPart
     DayNum getMinDate() const;
     DayNum getMaxDate() const;
 
+    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
+    time_t getMinTime() const;
+    time_t getMaxTime() const;
+
     bool isEmpty() const { return rows_count == 0; }
 
     const MergeTreeData & storage;
