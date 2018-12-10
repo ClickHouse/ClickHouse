@@ -31,8 +31,6 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -62,11 +60,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
 
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
-#include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
@@ -246,14 +242,14 @@ void ExpressionAnalyzer::analyzeAggregation()
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
     /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesVisitor tables_visitor(context, external_tables);
-    tables_visitor.visit(query);
+    ExternalTablesVisitor::Data tables_data{context, external_tables};
+    ExternalTablesVisitor(tables_data).visit(query);
 
     if (do_global)
     {
-        GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, isRemoteStorage(),
+        GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
                                                    external_tables, subqueries_for_sets, has_global_subqueries);
-        subqueries_visitor.visit(query);
+        GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
 
@@ -1031,8 +1027,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
-                RequiredSourceColumnsVisitor visitor(available_columns, required, empty, empty, empty);
-                visitor.visit(expressions[i]);
+                RequiredSourceColumnsVisitor::Data visitor_data{available_columns, required, empty, empty, empty};
+                RequiredSourceColumnsVisitor(visitor_data).visit(expressions[i]);
             }
 
             ignored.insert(expressions[i]->getAliasOrColumnName());
@@ -1048,15 +1044,17 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     NameSet required_joined_columns;
 
-    for (const auto & left_key_ast : analyzedJoin().key_asts_left)
+    for (const auto & left_key_ast : syntax->analyzed_join.key_asts_left)
     {
         NameSet empty;
-        RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, empty, required_joined_columns);
-        columns_visitor.visit(left_key_ast);
+        RequiredSourceColumnsVisitor::Data columns_data{available_columns, required, ignored, empty, required_joined_columns};
+        ASTPtr tmp = left_key_ast;
+        RequiredSourceColumnsVisitor(columns_data).visit(tmp);
     }
 
-    RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, available_joined_columns, required_joined_columns);
-    columns_visitor.visit(query);
+    RequiredSourceColumnsVisitor::Data columns_visitor_data{available_columns, required, ignored,
+                                                            available_joined_columns, required_joined_columns};
+    RequiredSourceColumnsVisitor(columns_visitor_data).visit(query);
 
     columns_added_by_join = analyzedJoin().available_joined_columns;
     for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
