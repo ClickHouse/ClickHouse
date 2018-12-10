@@ -109,7 +109,7 @@ Alias is a user defined name for an expression in a query.
 expr AS alias
 ```
 
-- `AS` — keyword for defining aliases. You can define alias for table or a column name skipping `AS` keyword.
+- `AS` — keyword for defining aliases. You can define alias for a table name or a column name skipping `AS` keyword.
 
     For example, `SELECT b.column_name from t b`.
 
