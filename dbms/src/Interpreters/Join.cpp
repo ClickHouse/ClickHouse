@@ -15,6 +15,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -259,10 +260,12 @@ void Join::setSampleBlock(const Block & block)
 
     size_t keys_size = key_names_right.size();
     ColumnRawPtrs key_columns(keys_size);
+    Columns materialized_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_right[i]).column.get();
+        materialized_columns[i] = recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column);
+        key_columns[i] = materialized_columns[i].get();
 
         /// We will join only keys, where all components are not NULL.
         if (key_columns[i]->isColumnNullable())
@@ -281,7 +284,10 @@ void Join::setSampleBlock(const Block & block)
         const auto & name = sample_block_with_columns_to_add.getByPosition(pos).name;
         if (key_names_right.end() != std::find(key_names_right.begin(), key_names_right.end(), name))
         {
-            sample_block_with_keys.insert(sample_block_with_columns_to_add.getByPosition(pos));
+            auto & col = sample_block_with_columns_to_add.getByPosition(pos);
+            col.column = recursiveRemoveLowCardinality(col.column);
+            col.type = recursiveRemoveLowCardinality(col.type);
+            sample_block_with_keys.insert(col);
             sample_block_with_columns_to_add.erase(pos);
         }
         else
@@ -428,11 +434,13 @@ bool Join::insertFromBlock(const Block & block)
 
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
+    materialized_columns.reserve(keys_size);
 
     /// Memoize key columns to work.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_right[i]).column.get();
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column));
+        key_columns[i] = materialized_columns.back().get();
 
         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
@@ -669,11 +677,13 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
 
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
+    materialized_columns.reserve(keys_size);
 
     /// Memoize key columns to work with.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_left[i]).column.get();
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column));
+        key_columns[i] = materialized_columns.back().get();
 
         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
@@ -883,8 +893,8 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
     {
         /// Compare up to Nullability.
 
-        DataTypePtr left_type = removeNullable(block_left.getByName(key_names_left[i]).type);
-        DataTypePtr right_type = removeNullable(block_right.getByName(key_names_right[i]).type);
+        DataTypePtr left_type = removeNullable(recursiveRemoveLowCardinality(block_left.getByName(key_names_left[i]).type));
+        DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
