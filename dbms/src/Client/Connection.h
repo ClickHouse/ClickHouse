@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
@@ -96,6 +98,7 @@ public:
 
         Block block;
         std::unique_ptr<Exception> exception;
+        std::vector<String> multistring_message;
         Progress progress;
         BlockStreamProfileInfo profile_info;
 
@@ -254,6 +257,7 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
     BlockStreamProfileInfo receiveProfileInfo();

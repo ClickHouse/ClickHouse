@@ -12,6 +12,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
 
@@ -164,7 +165,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
-    return {std::make_shared<StorageURLBlockInputStream>(request_uri,
+    BlockInputStreamPtr block_input = std::make_shared<StorageURLBlockInputStream>(request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
@@ -172,7 +173,13 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getHeaderBlock(column_names),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};
+        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
+
+
+    const ColumnsDescription & columns = getColumns();
+    if (columns.defaults.empty())
+        return {block_input};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
 }
 
 void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
