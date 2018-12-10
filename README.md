@@ -1,4 +1,4 @@
-# ClickHouse
+[![ClickHouse — open source distributed column-oriented DBMS](https://github.com/yandex/ClickHouse/raw/master/website/images/logo-400x240.png)](https://clickhouse.yandex)
 
 ClickHouse is an open-source column-oriented database management system that allows generating analytical data reports in real time.
 
