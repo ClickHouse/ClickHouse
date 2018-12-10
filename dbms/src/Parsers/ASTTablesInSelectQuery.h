@@ -53,7 +53,7 @@ struct ASTTableExpression : public IAST
     ASTPtr sample_offset;
 
     using IAST::IAST;
-    String getID() const override { return "TableExpression"; }
+    String getID(char) const override { return "TableExpression"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -98,7 +98,7 @@ struct ASTTableJoin : public IAST
     ASTPtr on_expression;
 
     using IAST::IAST;
-    String getID() const override { return "TableJoin"; }
+    String getID(char) const override { return "TableJoin"; }
     ASTPtr clone() const override;
 
     void formatImplBeforeTable(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
@@ -122,7 +122,7 @@ struct ASTArrayJoin : public IAST
     ASTPtr expression_list;
 
     using IAST::IAST;
-    String getID() const override { return "ArrayJoin"; }
+    String getID(char) const override { return "ArrayJoin"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -139,7 +139,7 @@ struct ASTTablesInSelectQueryElement : public IAST
     ASTPtr array_join;       /// Arrays to JOIN.
 
     using IAST::IAST;
-    String getID() const override { return "TablesInSelectQueryElement"; }
+    String getID(char) const override { return "TablesInSelectQueryElement"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
@@ -149,7 +149,7 @@ struct ASTTablesInSelectQueryElement : public IAST
 struct ASTTablesInSelectQuery : public IAST
 {
     using IAST::IAST;
-    String getID() const override { return "TablesInSelectQuery"; }
+    String getID(char) const override { return "TablesInSelectQuery"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
