@@ -58,7 +58,7 @@ UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 ```
 
-**8.** If a line feed is entered, put the operator on a new line and increase the indent before it.
+**8.** 若有换行，新行应该以运算符开头，并且增加对应的缩进。
 
 ```cpp
 if (elapsed_ns)
@@ -67,7 +67,7 @@ if (elapsed_ns)
         << bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 ```
 
-**9.** You can use spaces for alignment within a line, if desired.
+**9.** 如果需要，可以在一行内使用空格来对齐。
 
 ```cpp
 dst.ClickLogID         = click.LogID;
@@ -75,17 +75,17 @@ dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
 ```
 
-**10.** Don't use spaces around the operators `.`, `->`.
+**10.** 不要在 `.`，`->` 周围加入空格
 
-If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
+如有必要，运算符可以包裹到下一行。 在这种情况下，它前面的偏移量增加。
 
-**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, ...) from the argument.
+**11.** 不要使用空格来分开一元运算符 (`--`, `++`, `*`, `&`, ...) 和参数。
 
-**12.** Put a space after a comma, but not before it. The same rule goes for a semicolon inside a `for` expression.
+**12.** 在逗号后面加一个空格，而不是在之前。同样的规则也适合 `for` 循环中的分号。
 
-**13.** Do not use spaces to separate the `[]` operator.
+**13.** 不要用空格分开 `[]` 运算符。
 
-**14.** In a `template <...>` expression, use a space between `template` and `<`; no spaces after `<` or before `>`.
+**14.** 在 `template <...>` 表达式中，在 `template` 和 `<` 中加入一个空格，在 `<` 后面或在 `>` 前面都不要有空格。
 
 ```cpp
 template <typename TKey, typename TValue>
@@ -93,7 +93,7 @@ struct AggregatedStatElement
 {}
 ```
 
-**15.** In classes and structures, write `public`, `private`, and `protected` on the same level as `class/struct`, and indent  the rest of the code.
+**15.** 在类和结构体中， `public`， `private` 以及 `protected` 同 `class/struct` 无需缩进，其他代码须缩进。
 
 ```cpp
 template <typename T>
@@ -106,11 +106,11 @@ public:
 }
 ```
 
-**16.** If the same `namespace` is used for the entire file, and there isn't anything else significant, an offset is not necessary inside `namespace`.
+**16.** 如果对整个文件使用相同的 `namespace`，并且没有其他重要的东西，则 `namespace` 中不需要偏移量。
 
-**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, ...
+**17.** 在 `if`, `for`, `while` 中包裹的代码块中，若代码是一个单行的 `statement`，那么大括号是可选的。 可以将 `statement` 放到一行中。这个规则同样适用于嵌套的 `if`， `for`， `while`， ...
 
-But if the inner `statement` contains curly brackets or `else`, the external block should be written in curly brackets.
+但是如果内部 `statement` 包含大括号或 `else`，则外部块应该用大括号括起来。
 
 ```cpp
 /// Finish write.
@@ -118,23 +118,23 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** There shouldn't be any spaces at the ends of lines.
+**18.** 行的某尾不应该包含空格。
 
-**19.** Source files are UTF-8 encoded.
+**19.** 源文件应该用 UTF-8 编码。
 
-**20.** Non-ASCII characters can be used in string literals.
+**20.** 非ASCII字符可用于字符串文字。
 
 ```cpp
 << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 ```
 
-**21** Do not write multiple expressions in a single line.
+**21** 不要在一行中写入多个表达式。
 
-**22.** Group sections of code inside functions and separate them with no more than one empty line.
+**22.** 将函数内部的代码段分组，并将它们与不超过一行的空行分开。
 
-**23.** Separate functions, classes, and so on with one or two empty lines.
+**23.** 将 函数，类用一个或两个空行分开。
 
-**24.** `A const` (related to a value) must be written before the type name.
+**24.** `const` 必须写在类型名称之前。
 
 ```cpp
 //correct
@@ -144,7 +144,7 @@ const std::string & s
 char const * pos
 ```
 
-**25.** When declaring a pointer or reference, the `*` and `&` symbols should be separated by spaces on both sides.
+**25.** 声明指针或引用时，`*` 和 `＆` 符号两边应该都用空格分隔。
 
 ```cpp
 //correct
@@ -154,11 +154,11 @@ const char* pos
 const char *pos
 ```
 
-**26.** When using template types, alias them with the `using` keyword (except in the simplest cases).
+**26.** 使用模板类型时，使用 `using` 关键字对它们进行别名（最简单的情况除外）。
 
-In other words, the template parameters are specified only in `using` and aren't repeated in the code.
+换句话说，模板参数仅在 `using` 中指定，并且不在代码中重复。
 
-`using` can be declared locally, such as inside a function.
+`using`可以在本地声明，例如在函数内部。
 
 ```cpp
 //correct
@@ -168,14 +168,14 @@ FileStreams streams;
 std::map<std::string, std::shared_ptr<Stream>> streams;
 ```
 
-**27.** Do not declare several variables of different types in one statement.
+**27.** 不要在一个语句中声明不同类型的多个变量。
 
 ```cpp
 //incorrect
 int x, *y;
 ```
 
-**28.** Do not use C-style casts.
+**28.** 不要使用C风格的类型转换。
 
 ```cpp
 //incorrect
@@ -184,17 +184,17 @@ std::cerr << (int)c <<; std::endl;
 std::cerr << static_cast<int>(c) << std::endl;
 ```
 
-**29.** In classes and structs, group members and functions separately inside each visibility scope.
+**29.** 在类和结构中，组成员和函数分别在每个可见范围内。
 
-**30.** For small classes and structs, it is not necessary to separate the method declaration from the implementation.
+**30.** 对于小类和结构，没有必要将方法声明与实现分开。
 
-The same is true for small methods in any classes or structs.
+对于任何类或结构中的小方法也是如此。
 
-For templated classes and structs, don't separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+对于模板化类和结构，不要将方法声明与实现分开（因为否则它们必须在同一个转换单元中定义）
 
-**31.** You can wrap lines at 140 characters, instead of 80.
+**31.** 您可以将换行规则定在140个字符，而不是80个字符。
 
-**32.** Always use the prefix increment/decrement operators if postfix is not required.
+**32.** 如果不需要 postfix，请始终使用前缀增量/减量运算符。
 
 ```cpp
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
@@ -202,9 +202,9 @@ for (Names::const_iterator it = column_names.begin(); it != column_names.end(); 
 
 ## Comments
 
-**1.** Be sure to add comments for all non-trivial parts of code.
+**1.** 请务必为所有非常重要的代码部分添加注释。
 
-This is very important. Writing the comment might help you realize that the code isn't necessary, or that it is designed wrong.
+这是非常重要的。 编写注释可能会帮助您意识到代码不是必需的，或者设计错误。
 
 ```cpp
 /** Part of piece of memory, that can be used.
@@ -214,9 +214,9 @@ This is very important. Writing the comment might help you realize that the code
   */
 ```
 
-**2.** Comments can be as detailed as necessary.
+**2.** 注释可以尽可能详细。
 
-**3.** Place comments before the code they describe. In rare cases, comments can come after the code, on the same line.
+**3.** 在他们描述的代码之前放置注释。 在极少数情况下，注释可以在代码之后，在同一行上。
 
 ```cpp
 /** Parses and executes the query.
@@ -230,11 +230,11 @@ void executeQuery(
     )
 ```
 
-**4.** Comments should be written in English only.
+**4.** 注释应该只用英文撰写。
 
-**5.** If you are writing a library, include detailed comments explaining it in the main header file.
+**5.** 如果您正在编写库，请在主头文件中包含解释它的详细注释。
 
-**6.** Do not add comments that do not provide additional information. In particular, do not leave empty comments like this:
+**6.** 请勿添加无效的注释。 特别是，不要留下像这样的空注释：
 
 ```cpp
 /*
@@ -257,41 +257,41 @@ void executeQuery(
 */
 ```
 
-The example is borrowed from the resource [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/).
+这个示例来源于 [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/)。
 
-**7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
+**7.** 不要在每个文件的开头写入垃圾注释（作者，创建日期...）。
 
-**8.** Single-line comments begin with three slashes: `///`  and multi-line comments begin with `/**`. These comments are considered "documentation".
+**8.** 单行注释用三个斜杆： `///`  ，多行注释以 `/**`开始。 这些注释会当做文档。
 
-Note: You can use Doxygen to generate documentation from these comments. But Doxygen is not generally used because it is more convenient to navigate the code in the IDE.
+注意：您可以使用 Doxygen 从这些注释中生成文档。 但是通常不使用 Doxygen，因为在 IDE 中导航代码更方便。
 
-**9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
+**9.** 多行注释的开头和结尾不得有空行（关闭多行注释的行除外）。
 
-**10.** For commenting out code, use basic comments, not “documenting” comments.
+**10.** 要注释掉代码，请使用基本注释，而不是“记录”注释。
 
-**11.** Delete the commented out parts of the code before committing.
+**11.** 在提交之前删除代码的无效注释部分。
 
-**12.** Do not use profanity in comments or code.
+**12.** 不要在注释或代码中使用亵渎语言。
 
-**13.** Do not use uppercase letters. Do not use excessive punctuation.
+**13.** 不要使用大写字母。 不要使用过多的标点符号。
 
 ```cpp
 /// WHAT THE FAIL???
 ```
 
-**14.** Do not use comments to make delimeters.
+**14.** 不要使用注释来制作分隔符。
 
 ```cpp
 ///******************************************************
 ```
 
-**15.** Do not start discussions in comments.
+**15.** 不要在注释中开始讨论。
 
 ```cpp
 /// Why did you do this stuff?
 ```
 
-**16.** There's no need to write a comment at the end of a block describing what it was about.
+**16.** 没有必要在块的末尾写一条注释来描述它的含义。
 
 ```cpp
 /// for
@@ -299,74 +299,74 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 
 ## Names
 
-**1.** Use  lowercase letters with underscores in the names of variables and class members.
+**1.** 在变量和类成员的名称中使用带下划线的小写字母。
 
 ```cpp
 size_t max_block_size;
 ```
 
-**2.** For the names of functions (methods), use camelCase beginning with a lowercase letter.
+**2.** 对于函数（方法）的名称，请使用以小写字母开头的驼峰标识。
 
     ```cpp
     std::string getName() const override { return "Memory"; }
     ```
 
-**3.** For the names of classes (structs), use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
+**3.** 对于类（结构）的名称，使用以大写字母开头的驼峰标识。接口名称用I前缀。
 
     ```cpp
     class StorageMemory : public IStorage
     ```
 
-**4.** `using` are named the same way as classes, or with `_t` on the end.
+**4.** `using` 的命名方式与类相同，或者以__t`命名。
 
-**5.** Names of template type arguments: in simple cases, use `T`; `T`, `U`; `T1`, `T2`.
+**5.** 模板类型参数的名称：在简单的情况下，使用`T`; `T`，`U`; `T1`，`T2`。
 
-For more complex cases, either follow the rules for class names, or add the prefix `T`.
+对于更复杂的情况，要么遵循类名规则，要么添加前缀`T`。
 
 ```cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 ```
 
-**6.** Names of template constant arguments: either follow the rules for variable names, or use `N` in simple cases.
+**6.** 模板常量参数的名称：遵循变量名称的规则，或者在简单的情况下使用 `N`。
 
 ```cpp
 template <bool without_www>
 struct ExtractDomain
 ```
 
-**7.** For abstract classes (interfaces) you can add the `I` prefix.
+**7.** 对于抽象类型（接口），用 `I` 前缀。
 
 ```cpp
 class IBlockInputStream
 ```
 
-**8.** If you use a variable locally, you can use the short name.
+**8.** 如果在本地使用变量，则可以使用短名称。
 
-In all other cases, use a name that describes the meaning.
+在所有其他情况下，请使用能描述含义的名称。
 
 ```cpp
 bool info_successfully_loaded = false;
 ```
 
-**9.**  Names of `define`s and global constants use ALL_CAPS with underscores.
+**9.**  `define` 和全局常量的名称使用带下划线的 `ALL_CAPS`。
 
 ```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
 ```
 
-**10.** File names should use the same style as their contents.
+**10.** 文件名应使用与其内容相同的样式。
 
-If a file contains a single class, name the file the same way as the class (CamelCase).
+如果文件包含单个类，则以与该类名称相同的方式命名该文件。
 
-If the file contains a single function, name the file the same way as the function (camelCase).
+如果文件包含单个函数，则以与函数名称相同的方式命名文件。
 
-**11.** If the name contains an abbreviation, then:
+**11.** 如果名称包含缩写，则：
 
-- For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
-- For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
+- 对于变量名，缩写应使用小写字母 `mysql_connection`（不是 `mySQL_connection` ）。
+- 对于类和函数的名称，请将大写字母保留在缩写 `MySQLConnection`（不是 `MySqlConnection` 。
 
-**12.** Constructor arguments that are used just to initialize the class members should be named the same way as the class members, but with an underscore at the end.
+**12.** 仅用于初始化类成员的构造方法参数的命名方式应与类成员相同，但最后使用下划线。
 
 ```cpp
 FileQueueProcessor(
@@ -381,15 +381,15 @@ FileQueueProcessor(
 }
 ```
 
-The underscore suffix can be omitted if the argument is not used in the constructor body.
+如果构造函数体中未使用该参数，则可以省略下划线后缀。
 
-**13.** There is no difference in the names of local variables and class members (no prefixes required).
+**13.** 局部变量和类成员的名称没有区别（不需要前缀）。
 
 ```cpp
 timer (not m_timer)
 ```
 
-**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
+**14.** 对于 `enum` 中的常量，请使用带大写字母的驼峰标识。ALL_CAPS 也可以接受。如果 `enum` 是非本地的，请使用 `enum class`。
 
 ```cpp
 enum class CompressionMethod
@@ -399,13 +399,13 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** 所有名字必须是英文。不允许音译俄语单词。
 
 ```
 not Stroka
 ```
 
-**16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
+**16.** 缩写须是众所周知的（当您可以在维基百科或搜索引擎中轻松找到缩写的含义时）。
 
 ```
 `AST`, `SQL`.
@@ -413,41 +413,41 @@ not Stroka
 Not `NVDH` (some random letters)
 ```
 
-Incomplete words are acceptable if the shortened version is common use.
+如果缩短版本是常用的，则可以接受不完整的单词。
 
-You can also use an abbreviation if the full name is included next to it in the comments.
+如果注释中旁边包含全名，您也可以使用缩写。
 
-**17.** File names with C++ source code must have the `.cpp` extension. Header files must have the `.h` extension.
+**17.** C++ 源码文件名称必须为 `.cpp` 拓展名。 头文件必须为 `.h` 拓展名。
 
-## How to Write Code
+## 如何编写代码
 
-**1.** Memory management.
+**1.** 内存管理。
 
-Manual memory deallocation (`delete`) can only be used in library code.
+手动内存释放 (`delete`) 只能在库代码中使用。
 
-In library code, the `delete` operator can only be used in destructors.
+在库代码中， `delete` 运算符只能在析构函数中使用。
 
-In application code, memory must be freed by the object that owns it.
+在应用程序代码中，内存必须由拥有它的对象释放。
 
-Examples:
+示例：
 
-- The easiest way is to place an object on the stack, or make it a member of another class.
-- For a large number of small objects, use containers.
-- For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
+- 最简单的方法是将对象放在堆栈上，或使其成为另一个类的成员。
+- 对于大量小对象，请使用容器。
+- 对于自动释放少量在堆中的对象，可以用 `shared_ptr/unique_ptr`。
 
-**2.** Resource management.
+**2.** 资源管理。
 
-Use `RAII` and see above.
+使用 `RAII` 以及查看以上说明。
 
-**3.** Error handling.
+**3.** 错误处理。
 
-Use exceptions. In most cases, you only need to throw an exception, and don't need to catch it (because of `RAII`).
+在大多数情况下，您只需要抛出一个异常，而不需要捕获它（因为`RAII`）。
 
-In offline data processing applications, it's often acceptable to not catch exceptions.
+在离线数据处理应用程序中，通常可以接受不捕获异常。
 
-In servers that handle user requests, it's usually enough to catch exceptions at the top level of the connection handler.
+在处理用户请求的服务器中，通常足以捕获连接处理程序顶层的异常。
 
-In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after `join`.
+在线程函数中，你应该在 `join` 之后捕获并保留所有异常以在主线程中重新抛出它们。
 
 ```cpp
 /// If there weren't any calculations yet, calculate the first block synchronously
@@ -463,14 +463,14 @@ if (exception)
     exception->rethrow();
 ```
 
-Never hide exceptions without handling. Never just blindly put all exceptions to log.
+不处理就不要隐藏异常。 永远不要盲目地把所有异常都记录到日志中。
 
 ```cpp
 //Not correct
 catch (...) {}
 ```
 
-If you need to ignore some exceptions, do so only for specific ones and rethrow the rest.
+如果您需要忽略某些异常，请仅针对特定异常执行此操作并重新抛出其余异常。
 
 ```cpp
 catch (const DB::Exception & e)
@@ -482,33 +482,33 @@ catch (const DB::Exception & e)
 }
 ```
 
-When using functions with response codes or `errno`, always check the result and throw an exception in case of error.
+当使用具有返回码或 `errno` 的函数时，请始终检查结果并在出现错误时抛出异常。
 
 ```cpp
 if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-`Do not use assert`.
+`不要使用断言`。
 
-**4.** Exception types.
+**4.** 异常类型。
 
-There is no need to use complex exception hierarchy in application code. The exception text should be understandable to a system administrator.
+不需要在应用程序代码中使用复杂的异常层次结构。 系统管理员应该可以理解异常文本。
 
-**5.** Throwing exceptions from destructors.
+**5.** 从析构函数中抛出异常。
 
-This is not recommended, but it is allowed.
+不建议这样做，但允许这样做。
 
-Use the following options:
+按照以下选项：
 
-- Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
-- Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
-- If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
-- In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
+- 创建一个函数（ `done（）` 或 `finalize（）` ），它将提前完成所有可能导致异常的工作。 如果调用了该函数，则稍后在析构函数中应该没有异常。
+- 过于复杂的任务（例如通过网络发送消息）可以放在单独的方法中，类用户必须在销毁之前调用它们。
+- 如果析构函数中存在异常，则最好记录它而不是隐藏它（如果 logger 可用）。
+- 在简单的应用程序中，依赖于`std :: terminate`（对于C++ 11中默认情况下为 `noexcept` 的情况）来处理异常是可以接受的。
 
-**6.** Anonymous code blocks.
+**6.** 匿名代码块。
 
-You can create a separate code block inside a single function in order to make certain variables local, so that the destructors are called when exiting the block.
+您可以在单个函数内创建单独的代码块，以使某些变量成为局部变量，以便在退出块时调用析构函数。
 
 ```cpp
 Block block = data.in->read();
@@ -522,65 +522,65 @@ Block block = data.in->read();
 ready_any.set();
 ```
 
-**7.** Multithreading.
+**7.** 多线程。
 
-In offline data processing programs:
+在离线数据处理程序中：
 
-- Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
+- 尝试在单个CPU核心上获得最佳性能。 然后，您可以根据需要并行化代码。
 
-In server applications:
+在服务端应用中：
 
-- Use the thread pool to process requests. At this point, we haven't had any tasks that required userspace context switching.
+- 使用线程池来处理请求。 此时，我们还没有任何需要用户空间上下文切换的任务。
 
-Fork is not used for parallelization.
+Fork不用于并行化。
 
-**8.** Syncing threads.
+**8.** 同步线程。
 
-Often it is possible to make different threads use different memory cells (even better: different cache lines,) and to not use any thread synchronization (except `joinAll`).
+通常可以使不同的线程使用不同的存储单元（甚至更好：不同的缓存线），并且不使用任何线程同步（除了`joinAll`）。
 
-If synchronization is required, in most cases, it is sufficient to use mutex under `lock_guard`.
+如果需要同步，在大多数情况下，在 `lock_guard` 下使用互斥量就足够了。
 
-In other cases use system synchronization primitives. Do not use busy wait.
+在其他情况下，使用系统同步原语。不要使用忙等待。
 
-Atomic operations should be used only in the simplest cases.
+仅在最简单的情况下才应使用原子操作。
 
-Do not try to implement lock-free data structures unless it is your primary area of expertise.
+除非是您的主要专业领域，否则不要尝试实施无锁数据结构。
 
-**9.** Pointers vs references.
+**9.** 指针和引用。
 
-In most cases, prefer references.
+大部分情况下，请用引用。
 
-**10.** const.
+**10.** 常量。
 
-Use constant references, pointers to constants, `const_iterator`, and const methods.
+使用 const 引用，指向常量的指针，`const_iterator`和 const 指针。
 
-Consider `const` to be default and use non-`const` only when necessary.
+将 `const` 视为默认值，仅在必要时使用非 `const`。
 
-When passing variables by value, using `const` usually does not make sense.
+当按值传递变量时，使用 `const` 通常没有意义。
 
-**11.** unsigned.
+**11.** 无符号。
 
-Use `unsigned` if necessary.
+必要时使用`unsigned`。
 
-**12.** Numeric types.
+**12.** 数值类型。
 
-Use the types `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, and `Int64`, as well as `size_t`, `ssize_t`, and `ptrdiff_t`.
+使用 `UInt8`， `UInt16`， `UInt32`， `UInt64`， `Int8`， `Int16`， `Int32`， 以及 `Int64`，  `size_t`， `ssize_t` 还有 `ptrdiff_t`。
 
-Don't use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
+不要使用这些类型：`signed / unsigned long`，`long long`，`short`，`signed / unsigned char`，`char`。
 
-**13.** Passing arguments.
+**13.** 参数传递。
 
-Pass complex values by reference (including `std::string`).
+通过引用传递复杂类型 （包括 `std::string`）。
 
-If a function captures ownership of an object created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
+如果函数中传递堆中创建的对象，则使参数类型为 `shared_ptr` 或者 `unique_ptr`.
 
-**14.** Return values.
+**14.** 返回值
 
-In most cases, just use `return`. Do not write `[return std::move(res)]{.strike}`.
+大部分情况下使用 `return`。不要使用 `[return std::move(res)]{.strike}`。
 
-If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
+如果函数在堆上分配对象并返回它，请使用 `shared_ptr` 或 `unique_ptr`。
 
-In rare cases you might need to return the value via an argument. In this case, the argument should be a reference.
+在极少数情况下，您可能需要通过参数返回值。 在这种情况下，参数应该是引用传递的。
 
 ```cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
@@ -594,25 +594,25 @@ public:
     AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 ```
 
-**15.** namespace.
+**15.** 命名空间。
 
-There is no need to use a separate `namespace` for application code.
+没有必要为应用程序代码使用单独的 `namespace` 。
 
-Small libraries don't need this, either.
+小型库也不需要这个。
 
-For medium to large libraries, put everything in a `namespace`.
+对于中大型库，须将所有代码放在 `namespace` 中。
 
-In the library's `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
+在库的 `.h` 文件中，您可以使用 `namespace detail` 来隐藏应用程序代码不需要的实现细节。
 
-In a `.cpp` file, you can use a `static` or anonymous namespace to hide symbols.
+在 `.cpp` 文件中，您可以使用 `static` 或匿名命名空间来隐藏符号。
 
-Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it's better to use an `enum class`).
+同样 `namespace` 可用于 `enum` 以防止相应的名称落入外部 `namespace`（但最好使用`enum class`）。
 
-**16.** Deferred initialization.
+**16.** 延迟初始化。
 
-If arguments are required for initialization, then you normally shouldn't write a default constructor.
+如果初始化需要参数，那么通常不应该编写默认构造函数。
 
-If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
+如果稍后您需要延迟初始化，则可以添加将创建无效对象的默认构造函数。 或者，对于少量对象，您可以使用 `shared_ptr / unique_ptr`。
 
 ```cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
@@ -621,59 +621,59 @@ Loader(DB::Connection * connection_, const std::string & query, size_t max_block
 Loader() {}
 ```
 
-**17.** Virtual functions.
+**17.** 虚函数。
 
-If the class is not intended for polymorphic use, you do not need to make functions virtual. This also applies to the destructor.
+如果该类不是用于多态使用，则不需要将函数设置为虚拟。这也适用于析构函数。
 
-**18.** Encodings.
+**18.** 编码。
 
-Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
+在所有情况下使用 UTF-8 编码。使用 `std::string` and `char *`。不要使用 `std::wstring` 和 `wchar_t`。
 
-**19.** Logging.
+**19.** 日志。
 
-See the examples everywhere in the code.
+请参阅代码中的示例。
 
-Before committing, delete all meaningless and debug logging, and any other types of debug output.
+在提交之前，删除所有无意义和调试日志记录，以及任何其他类型的调试输出。
 
-Logging in cycles should be avoided, even on the Trace level.
+应该避免循环记录日志，即使在 Trace 级别也是如此。
 
-Logs must be readable at any logging level.
+日志必须在任何日志记录级别都可读。
 
-Logging should only be used in application code, for the most part.
+在大多数情况下，只应在应用程序代码中使用日志记录。
 
-Log messages must be written in English.
+日志消息必须用英文写成。
 
-The log should preferably be understandable for the system administrator.
+对于系统管理员来说，日志最好是可以理解的。
 
-Do not use profanity in the log.
+不要在日志中使用亵渎语言。
 
-Use UTF-8 encoding in the log. In rare cases you can use non-ASCII characters in the log.
+在日志中使用UTF-8编码。 在极少数情况下，您可以在日志中使用非ASCII字符。
 
-**20.** Input-output.
+**20.** 输入-输出。
 
-Don't use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
+不要使用 `iostreams` 在对应用程序性能至关重要的内部循环中（并且永远不要使用 `stringstream` ）。
 
-Use the `DB/IO` library instead.
+使用 `DB/IO` 库替代。
 
-**21.** Date and time.
+**21.** 日期和时间。
 
-See the `DateLUT` library.
+参考 `DateLUT` 库。
 
-**22.** include.
+**22.** 引入头文件。
 
-Always use `#pragma once` instead of include guards.
+一直用 `#pragma once` 而不是其他宏。
 
-**23.** using.
+**23.** using 语法
 
-`using namespace` is not used. You can use `using` with something specific. But make it local inside a class or function.
+`using namespace` 不会被使用。 您可以使用特定的 `using`。 但是在类或函数中使它成为局部的。
 
-**24.** Do not use `trailing return type` for functions unless necessary.
+**24.** 不要使用 `trailing return type` 为必要的功能。
 
 ```cpp
 [auto f() -&gt; void;]{.strike}
 ```
 
-**25.** Declaration and initialization of variables.
+**25.** 声明和初始化变量。
 
 ```cpp
 //right way
@@ -684,123 +684,123 @@ std::string s{"Hello"};
 auto s = std::string{"Hello"};
 ```
 
-**26.** For virtual functions, write `virtual` in the base class, but write `override` instead of `virtual` in descendent classes.
+**26.** 对于虚函数，在基类中编写 `virtual`，但在后代类中写 `override` 而不是`virtual`。
 
-## Unused Features of C++
+## 没有用到的 C++ 特性。
 
-**1.** Virtual inheritance is not used.
+**1.** 不使用虚拟继承。
 
-**2.** Exception specifiers from C++03 are not used.
+**2.** 不使用 C++03 中的异常标准。
 
-## Platform
+## 平台
 
-**1.** We write code for a specific platform.
+**1.** 我们为特定平台编写代码。
 
-But other things being equal, cross-platform or portable code is preferred.
+但在其他条件相同的情况下，首选跨平台或可移植代码。
 
-**2.** Language: C++17.
+**2.** 语言： C++17.
 
-**3.** Compiler: `gcc`. At this time (December 2017), the code is compiled using version 7.2. (It can also be compiled using `clang 4`.)
+**3.** 编译器： `gcc`。 此时（2017年12月），代码使用7.2版编译。（它也可以使用`clang 4` 编译）
 
-The standard library is used (`libstdc++` or `libc++`).
+使用标准库 (`libstdc++` 或 `libc++`)。
 
-**4.**OS: Linux Ubuntu, not older than Precise.
+**4.** 操作系统：Linux Ubuntu，不比 Precise 早。
 
-**5.**Code is written for x86_64 CPU architecture.
+**5.** 代码是为x86_64 CPU架构编写的。
 
-The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
+CPU指令集是我们服务器中支持的最小集合。 目前，它是SSE 4.2。
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags.
+**6.** 使用 `-Wall -Wextra -Werror` 编译参数。
 
-**7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
+**7.** 对所有库使用静态链接，除了那些难以静态连接的库（参见 `ldd` 命令的输出）.
 
-**8.** Code is developed and debugged with release settings.
+**8.** 使用发布的设置来开发和调试代码。
 
-## Tools
+## 工具
 
-**1.** KDevelop is a good IDE.
+**1.** KDevelop 是一个好的 IDE.
 
-**2.** For debugging, use `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=...`, or `tcmalloc_minimal_debug`.
+**2.** 调试可以使用 `gdb`， `valgrind` (`memcheck`)， `strace`， `-fsanitize=...`， 或 `tcmalloc_minimal_debug`.
 
-**3.** For profiling, use `Linux Perf`, `valgrind` (`callgrind`), or `strace -cf`.
+**3.** 对于性能分析，使用 `Linux Perf`， `valgrind` (`callgrind`)，或者 `strace -cf`。
 
-**4.** Sources are in Git.
+**4.** 源代码用 Git 作版本控制。
 
-**5.** Assembly uses `CMake`.
+**5.** 使用 `CMake` 构建。
 
-**6.** Programs are released using `deb` packages.
+**6.** 程序的发布使用 `deb` 安装包。
 
-**7.** Commits to master must not break the build.
+**7.** 提交到 master 分支的代码不能破坏编译。
 
-Though only selected revisions are considered workable.
+虽然只有选定的修订被认为是可行的。
 
-**8.** Make commits as often as possible, even if the code is only partially ready.
+**8.** 尽可能经常地进行提交，即使代码只是部分准备好了。
 
-Use branches for this purpose.
+目的明确的功能，使用分支。
 
-If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You'll need to finish it or remove it within a few days.
+如果 `master` 分支中的代码尚不可构建，请在 `push` 之前将其从构建中排除。您需要在几天内完成或删除它。
 
-**9.** For non-trivial changes, use branches and publish them on the server.
+**9.** 对于不重要的更改，请使用分支并在服务器上发布它们。
 
-**10.** Unused code is removed from the repository.
+**10.** 未使用的代码将从 repo 中删除。
 
-## Libraries
+## 库
 
-**1.** The C++14 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
+**1.** 使用C ++ 14标准库（允许实验性功能），以及 `boost` 和 `Poco` 框架。
 
-**2.** If necessary, you can use any well-known libraries available in the OS package.
+**2.** 如有必要，您可以使用 OS 包中提供的任何已知库。
 
-If there is a good solution already available, then use it, even if it means you have to install another library.
+如果有一个好的解决方案已经可用，那就使用它，即使这意味着你必须安装另一个库。
 
-(But be prepared to remove bad libraries from code.)
+（但要准备从代码中删除不好的库）
 
-**3.** You can install a library that isn't in the packages, if the packages don't have what you need or have an outdated version or the wrong type of compilation.
+**3.** 如果软件包没有您需要的软件包或者有过时的版本或错误的编译类型，则可以安装不在软件包中的库。
 
-**4.** If the library is small and doesn't have its own complex build system, put the source files in the `contrib` folder.
+**4.** 如果库很小并且没有自己的复杂构建系统，请将源文件放在 `contrib` 文件夹中。
 
-**5.** Preference is always given to libraries that are already in use.
+**5.** 始终优先考虑已经使用的库。
 
-## General Recommendations
+## 一般建议
 
-**1.** Write as little code as possible.
+**1.** 尽可能精简代码。
 
-**2.** Try the simplest solution.
+**2.** 尝试用最简单的方式实现。
 
-**3.** Don't write code until you know how it's going to work and how the inner loop will function.
+**3.** 在你知道代码是如何工作以及内部循环如何运作之前，不要编写代码。
 
-**4.** In the simplest cases, use `using` instead of classes or structs.
+**4.** 在最简单的情况下，使用 `using` 而不是类或结构。
 
-**5.** If possible, do not write copy constructors, assignment operators, destructors (other than a virtual one, if the class contains at least one virtual function), move constructors or move assignment operators. In other words, the compiler-generated functions must work correctly. You can use `default`.
+**5.** 如果可能，不要编写复制构造函数，赋值运算符，析构函数（虚拟函数除外，如果类包含至少一个虚函数），移动构造函数或移动赋值运算符。 换句话说，编译器生成的函数必须正常工作。 您可以使用 `default`。
 
-**6.** Code simplification is encouraged. Reduce the size of your code where possible.
+**6.** 鼓励简化代码。 尽可能减小代码的大小。
 
-## Additional Recommendations
+## 其他建议
 
-**1.** Explicitly specifying `std::` for types from `stddef.h`
+**1.** 从 `stddef.h` 明确指定 `std ::` 的类型。
 
-is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it's shorter.
+不推荐。 换句话说，我们建议写 `size_t` 而不是 `std::size_t`，因为它更短。
 
-It is acceptable to add `std::`.
+也接受添加 `std::`。
 
-**2.** Explicitly specifying `std::` for functions from the standard C library
+**2.** 为标准C库中的函数明确指定 `std::`
 
-is not recommended. In other words, write `memcpy` instead of `std::memcpy`.
+不推荐。换句话说，写 `memcpy` 而不是`std::memcpy`。
 
-The reason is that there are similar non-standard functions, such as `memmem`. We do use these functions on occasion. These functions do not exist in `namespace std`.
+原因是有类似的非标准功能，例如 `memmem`。我们偶尔会使用这些功能。`namespace std`中不存在这些函数。
 
-If you write `std::memcpy` instead of `memcpy` everywhere, then `memmem` without `std::` will look strange.
+如果你到处都写 `std::memcpy` 而不是 `memcpy`，那么没有 `std::` 的 `memmem` 会显得很奇怪。
 
-Nevertheless, you can still use `std::` if you prefer it.
+不过，如果您愿意，仍然可以使用 `std::`。
 
-**3.** Using functions from C when the same ones are available in the standard C++ library.
+**3.** 当标准C++库中提供相同的函数时，使用C中的函数。
 
-This is acceptable if it is more efficient.
+如果它更高效，这是可以接受的。
 
-For example, use `memcpy` instead of `std::copy` for copying large chunks of memory.
+例如，使用`memcpy`而不是`std :: copy`来复制大块内存。
 
-**4.** Multiline function arguments.
+**4.** 函数的多行参数。
 
-Any of the following wrapping styles are allowed:
+允许以下任何包装样式：
 
 ```cpp
 function(
@@ -835,4 +835,4 @@ function(
       size_t limit)
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/development/style/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/en/development/style/) <!--hide-->
