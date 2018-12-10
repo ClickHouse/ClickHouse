@@ -389,6 +389,17 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
+
+            /// Send data to old clients without low cardinality type.
+            if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+            {
+                for (auto & column : header)
+                {
+                    column.column = recursiveRemoveLowCardinality(column.column);
+                    column.type = recursiveRemoveLowCardinality(column.type);
+                }
+            }
+
             if (header)
                 sendData(header);
         }
