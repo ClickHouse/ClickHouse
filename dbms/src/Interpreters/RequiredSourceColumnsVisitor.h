@@ -18,7 +18,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-
+/** Get a set of necessary columns to read from the table.
+  * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.
+  * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
+  * Put in required_joined_columns the set of columns available from JOIN and needed.
+  */
 class RequiredSourceColumnsMatcher
 {
 public:
@@ -49,9 +53,9 @@ public:
 
         if (auto * f = typeid_cast<ASTFunction *>(node.get()))
         {
-            /// A special function `indexHint`. Everything that is inside it is not calculated
-            /// (and is used only for index analysis, see KeyCondition).
-            if (f->name == "indexHint")
+            /// "indexHint" is a special function for index analysis. Everything that is inside it is not calculated. @sa KeyCondition
+            /// "lambda" visit children itself.
+            if (f->name == "indexHint" || f->name == "lambda")
                 return false;
         }
 
@@ -120,6 +124,7 @@ private:
                 }
             }
 
+            /// @note It's a special case where we visit children inside the matcher, not in visitor.
             visit(node.arguments->children[1], data);
 
             for (size_t i = 0; i < added_ignored.size(); ++i)
@@ -128,11 +133,7 @@ private:
     }
 };
 
-/** Get a set of necessary columns to read from the table.
-  * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.
-  * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
-  * Put in required_joined_columns the set of columns available from JOIN and needed.
-  */
+/// Get a set of necessary columns to read from the table.
 using RequiredSourceColumnsVisitor = InDepthNodeVisitor<RequiredSourceColumnsMatcher, true>;
 
 }
