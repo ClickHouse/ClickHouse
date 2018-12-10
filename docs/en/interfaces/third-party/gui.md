@@ -1,10 +1,12 @@
 # Visual Interfaces from Third-party Developers
 
-## Tabix
+## Open-Source
+
+### Tabix
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
-Main features:
+Features:
 
 - Works with ClickHouse directly from the browser, without the need to install additional software.
 - Query editor with syntax highlighting.
@@ -14,11 +16,11 @@ Main features:
 
 [Tabix documentation](https://tabix.io/doc/).
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) is a UI/IDE for OSX, Linux and Windows.
 
-Main features:
+Features:
 
 - Query builder with syntax highlighting. View the response in a table or JSON view.
 - Export query results as CSV or JSON.
@@ -36,25 +38,27 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
-## DBeaver
+## Commercial
+
+### DBeaver
 
 [DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
 
-Key features:
+Features:
 
 - Query development with syntax highlight.
 - Table preview.
 - Autocompletion.
 
-## DataGrip
+### DataGrip
 
-[DataGrip](https://www.jetbrains.com/datagrip/) - Database IDE from JetBrains with dedicated support for ClickHouse. The same is embedded into other IntelliJ-based tools: PyCharm, IntelliJIDEA, GoLand, PhpStorm etc.
+[DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded into other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
 
 Features:
 
 - Very fast code completion.
-- Clickhouse synthax highlighting.
-- Specific Clickhouse features support in SQL, i.e. nested columns, table engines.
+- ClickHouse syntax highlighting.
+- Support for features specific to ClickHouse, for example nested columns, table engines.
 - Data Editor.
 - Refactorings.
 - Search and Navigation.

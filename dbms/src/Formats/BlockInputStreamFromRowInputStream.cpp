@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
 }
 
 
@@ -52,6 +53,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
 {
     size_t num_columns = sample.columns();
     MutableColumns columns = sample.cloneEmptyColumns();
+    block_missing_values.clear();
 
     try
     {
@@ -60,8 +62,20 @@ Block BlockInputStreamFromRowInputStream::readImpl()
             try
             {
                 ++total_rows;
-                if (!row_input->read(columns))
+                RowReadExtension info;
+                if (!row_input->read(columns, info))
                     break;
+
+                for (size_t column_idx = 0; column_idx < info.read_columns.size(); ++column_idx)
+                {
+                    if (!info.read_columns[column_idx])
+                    {
+                        size_t column_size = columns[column_idx]->size();
+                        if (column_size == 0)
+                            throw Exception("Unexpected empty column", ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+                        block_missing_values.setBit(column_idx, column_size - 1);
+                    }
+                }
             }
             catch (Exception & e)
             {

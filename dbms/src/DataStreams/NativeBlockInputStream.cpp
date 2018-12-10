@@ -9,6 +9,7 @@
 #include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -151,6 +152,12 @@ Block NativeBlockInputStream::readImpl()
             readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
+
+        if (server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+        {
+            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+            column.type = header.getByPosition(i).type;
+        }
 
         res.insert(std::move(column));
 
