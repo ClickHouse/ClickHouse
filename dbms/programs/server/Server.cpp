@@ -90,7 +90,8 @@ static std::string getCanonicalPath(std::string && path)
     return std::move(path);
 }
 
-static std::string getUserName(uid_t user_id) {
+static std::string getUserName(uid_t user_id)
+{
     /// Try to convert user id into user name.
     auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
     if (buffer_size <= 0)
