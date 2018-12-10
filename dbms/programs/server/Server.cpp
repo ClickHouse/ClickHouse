@@ -204,8 +204,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string message = "Effective user of the process (" + effective_user +
             ") does not match the owner of the data (" + data_owner + ").";
         if (effective_user_id == 0)
+        {
             message += " Run under 'sudo -u " + data_owner + "'.";
-        throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+        }
+        else
+        {
+            LOG_WARNING(log, message);
+        }
     }
 
     global_context->setPath(path);
