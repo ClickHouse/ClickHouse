@@ -94,7 +94,7 @@ static std::string getUserName(uid_t user_id)
     /// Try to convert user id into user name.
     auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
     if (buffer_size <= 0)
-        buffer_size = 32;
+        buffer_size = 1024;
     std::string buffer;
     buffer.reserve(buffer_size);
 
