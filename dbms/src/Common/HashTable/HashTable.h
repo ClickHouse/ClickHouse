@@ -142,7 +142,7 @@ struct HashTableCell
 
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinary(key, rb); }
-    void readText(DB::ReadBuffer & rb)    { DB::writeDoubleQuoted(key, rb); }
+    void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
 };
 
 
