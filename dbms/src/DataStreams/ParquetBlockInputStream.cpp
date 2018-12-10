@@ -30,6 +30,7 @@
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    pragma GCC diagnostic ignored "-Wc++98-compat-extra-sem"
 #    include <arrow/api.h>
 #    include <arrow/buffer.h>
 #    include <arrow/io/api.h>
