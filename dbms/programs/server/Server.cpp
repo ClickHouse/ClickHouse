@@ -418,13 +418,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");
-    loadMetadataSystem(*global_context);
-    /// After attaching system databases we can initialize system log.
-    global_context->initializeSystemLogs();
-    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
-    /// Then, load remaining databases
-    loadMetadata(*global_context);
+    try
+    {
+        loadMetadataSystem(*global_context);
+        /// After attaching system databases we can initialize system log.
+        global_context->initializeSystemLogs();
+        /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+        attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+        /// Then, load remaining databases
+        loadMetadata(*global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading metadata");
+        throw;
+    }
     LOG_DEBUG(log, "Loaded metadata.");
 
     global_context->setCurrentDatabase(default_database);
