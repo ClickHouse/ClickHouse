@@ -109,7 +109,7 @@ Alias is a user defined name for an expression in a query.
 expr AS alias
 ```
 
-- `AS` — keyword for defining aliases. You can define alias for a table name or a column name skipping `AS` keyword.
+- `AS` — keyword for defining aliases. You can define alias for a table name or a column name in SELECT clause skipping `AS` keyword.
 
     For example, `SELECT b.column_name from t b`.
 
@@ -125,11 +125,11 @@ expr AS alias
 
 ### Peculiarities of Use
 
-Aliases are global for a query and you can define alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
+Aliases are global for a query or subquery and you can define alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
 
-Aliases are not visible in subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
+Aliases are not visible in between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
 
-If alias is defined inside the subquery it is visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+If alias is defined for result columns in SELECT clause in a subquery, these columns are visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 Be careful with aliases the same as column or table names. Let's consider the following example:
 
