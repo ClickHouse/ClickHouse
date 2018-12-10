@@ -9,7 +9,10 @@
 
 namespace DB
 {
+/// The table has all the properties of another storage,
+///  but will read single prepared block instead.
 /// Used in PushingToViewsBlockOutputStream for generating alias columns
+/// NOTE: Some of the properties seems redundant.
 class StorageBlock : public ext::shared_ptr_helper<StorageBlock>, public IStorage
 {
 public:
