@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// Visits AST tree in depth, call fucntions for nodes according to Matcher type data.
+/// Visits AST tree in depth, call functions for nodes according to Matcher type data.
 /// You need to define Data, label, visit() and needChildVisit() in Matcher class.
 template <typename Matcher, bool _topToBottom>
 class InDepthNodeVisitor

@@ -697,10 +697,10 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
         }
 
         {
-            ArrayJoinedColumnsVisitor visitor(result.array_join_name_to_alias,
-                                              result.array_join_alias_to_name,
-                                              result.array_join_result_to_source);
-            visitor.visit(query);
+            ArrayJoinedColumnsVisitor::Data visitor_data{result.array_join_name_to_alias,
+                                                         result.array_join_alias_to_name,
+                                                         result.array_join_result_to_source};
+            ArrayJoinedColumnsVisitor(visitor_data).visit(query);
         }
 
         /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
