@@ -207,6 +207,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         res = interpreter->execute();
+        if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+            context.setInsertionTable(insert_interpreter->getDatabaseTable());
 
         if (process_list_entry)
         {
