@@ -202,7 +202,7 @@ if (USE_INTERNAL_LIBXML2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
-    include(${CMAKE_SOURCE_DIR}/cmake/find_protobuf.cmake)
+    include(${ClickHouse_SOURCE_DIR}/cmake/find_protobuf.cmake)
     if (USE_INTERNAL_PROTOBUF_LIBRARY)
         set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
         set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)

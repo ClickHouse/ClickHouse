@@ -58,6 +58,8 @@ set(SRCS
 )
 add_library(libxml2 STATIC ${SRCS})
 
-target_include_directories(libxml2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
+target_link_libraries(libxml2 ${ZLIB_LIBRARIES})
 
+target_include_directories(libxml2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
 target_include_directories(libxml2 PUBLIC ${LIBXML2_SOURCE_DIR}/include)
+target_include_directories(libxml2 PRIVATE ${ZLIB_INCLUDE_DIR}/include)
