@@ -125,10 +125,6 @@ CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
 
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
-
-A materialized view works as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
-
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 
 As an example, assume you've created a view:
