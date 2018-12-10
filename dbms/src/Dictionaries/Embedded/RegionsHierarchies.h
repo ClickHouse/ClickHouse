@@ -1,9 +1,9 @@
 #pragma once
 
-#include "RegionsHierarchy.h"
-#include "GeodataProviders/IHierarchiesProvider.h"
-#include <Poco/Exception.h>
 #include <unordered_map>
+#include <Poco/Exception.h>
+#include "GeodataProviders/IHierarchiesProvider.h"
+#include "RegionsHierarchy.h"
 
 
 /** Contains several hierarchies of regions.
