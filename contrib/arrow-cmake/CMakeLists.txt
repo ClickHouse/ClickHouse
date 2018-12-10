@@ -1,6 +1,6 @@
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp)
 # contrib/thrift/lib/cpp/CMakeLists.txt
-set( thriftcpp_SOURCES
+set(thriftcpp_SOURCES
    ${LIBRARY_DIR}/src/thrift/TApplicationException.cpp
    ${LIBRARY_DIR}/src/thrift/TOutput.cpp
    ${LIBRARY_DIR}/src/thrift/async/TAsyncChannel.cpp
@@ -33,19 +33,17 @@ set( thriftcpp_SOURCES
    ${LIBRARY_DIR}/src/thrift/server/TThreadPoolServer.cpp
    ${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp
 )
-
 set( thriftcpp_threads_SOURCES
     ${LIBRARY_DIR}/src/thrift/concurrency/PosixThreadFactory.cpp
     ${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp
     ${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp
 )
-
 add_library(${THRIFT_LIBRARY} ${LINK_MODE} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-
+set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
 target_include_directories(${THRIFT_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
   ${LIBRARY_DIR}/arrow/reader.cc
@@ -68,12 +66,10 @@ set(PARQUET_SRCS
   ${LIBRARY_DIR}/util/memory.cc
 )
 #list(TRANSFORM PARQUET_SRCS PREPEND ${LIBRARY_DIR}/) # cmake 3.12
-
 list(APPEND PARQUET_SRCS
   ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_constants.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src/parquet/parquet_types.cpp
 )
-
 add_library(${PARQUET_LIBRARY} ${LINK_MODE} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
@@ -124,14 +120,13 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/util/utf8.cc
 )
 
-  set(ARROW_SRCS ${ARROW_SRCS}
+set(ARROW_SRCS ${ARROW_SRCS}
     ${LIBRARY_DIR}/compute/context.cc
     ${LIBRARY_DIR}/compute/kernels/boolean.cc
     ${LIBRARY_DIR}/compute/kernels/cast.cc
     ${LIBRARY_DIR}/compute/kernels/hash.cc
     ${LIBRARY_DIR}/compute/kernels/util-internal.cc
-  )
-
+)
 add_library(${ARROW_LIBRARY} ${LINK_MODE} ${ARROW_SRCS})
 target_include_directories(${ARROW_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
-target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} )
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES})
