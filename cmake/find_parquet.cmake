@@ -19,16 +19,6 @@ if(ARROW_INCLUDE_DIR AND PARQUET_INCLUDE_DIR)
 elseif(NOT MISSING_INTERNAL_PARQUET_LIBRARY AND NOT OS_FREEBSD)
     set(CAN_USE_INTERNAL_PARQUET_LIBRARY 1)
     include(CheckCXXSourceCompiles)
-    # thrift uses deprecated feature. Remove this check if it fixed. https://github.com/apache/thrift/pull/1641
-    #cmake_push_check_state()
-    #set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
-    #check_cxx_source_compiles("
-    #    #include <algorithm>
-    #    #include <vector>
-    #    using std::vector;
-    #    int main() {vector<int> v; random_shuffle(v.begin(), v.end()); return 0; }" HAVE_STD_RANDOM_SHUFFLE)
-    #cmake_pop_check_state()
-
     if(NOT USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
         set(CMAKE_REQUIRED_LIBRARIES ${DOUBLE_CONVERSION_LIBRARIES})
         set(CMAKE_REQUIRED_INCLUDES ${DOUBLE_CONVERSION_INCLUDE_DIR})

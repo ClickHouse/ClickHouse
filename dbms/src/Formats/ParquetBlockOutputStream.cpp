@@ -16,7 +16,7 @@
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
-#    if defined(__clang__) // && __clang_major__ >= 7
+#    if defined(__clang__) && __clang_major__ >= 7
 #        pragma GCC diagnostic ignored "-Wc++98-compat-extra-semi"
 #    endif
 #    include <arrow/api.h>
