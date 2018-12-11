@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
 
@@ -204,21 +205,33 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
         auto zookeeper = storage.getZooKeeper();
         auto table_lock = storage.lockStructure(false);
 
+        auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
+            part->columns, part->checksums);
+
+        String part_path = storage.replica_path + "/parts/" + part_name;
+        String part_znode;
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
-        if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))
+        if (zookeeper->tryGet(part_path, part_znode))
         {
             LOG_WARNING(log, "Checking data of part " << part_name << ".");
 
             try
             {
-                auto zk_checksums = MinimalisticDataPartChecksums::deserializeFrom(
-                    zookeeper->get(storage.replica_path + "/parts/" + part_name + "/checksums"));
-                zk_checksums.checkEqual(part->checksums, true);
+                ReplicatedMergeTreePartHeader zk_part_header;
+                if (!part_znode.empty())
+                    zk_part_header = ReplicatedMergeTreePartHeader::fromString(part_znode);
+                else
+                {
+                    String columns_znode = zookeeper->get(part_path + "/columns");
+                    String checksums_znode = zookeeper->get(part_path + "/checksums");
+                    zk_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksumsZNodes(
+                        columns_znode, checksums_znode);
+                }
 
-                auto zk_columns = NamesAndTypesList::parse(
-                    zookeeper->get(storage.replica_path + "/parts/" + part_name + "/columns"));
-                if (part->columns != zk_columns)
+                if (local_part_header.getColumnsHash() != zk_part_header.getColumnsHash())
                     throw Exception("Columns of local part " + part_name + " are different from ZooKeeper", ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
+
+                zk_part_header.getChecksums().checkEqual(local_part_header.getChecksums(), true);
 
                 checkDataPart(
                     storage.data.getFullPath() + part_name,
