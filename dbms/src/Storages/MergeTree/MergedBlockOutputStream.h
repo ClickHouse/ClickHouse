@@ -17,7 +17,7 @@ class IMergedBlockOutputStream : public IBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
         CompressionSettings compression_settings_,
@@ -74,7 +74,7 @@ protected:
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenOffsetColumns & offset_columns,
                    bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
 
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
 
     ColumnStreams column_streams;
 
@@ -97,13 +97,13 @@ class MergedBlockOutputStream final : public IMergedBlockOutputStream
 {
 public:
     MergedBlockOutputStream(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionSettings compression_settings);
 
     MergedBlockOutputStream(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
         CompressionSettings compression_settings,
@@ -159,7 +159,7 @@ public:
     /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
+        const MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
         CompressionSettings compression_settings, bool skip_offsets_,
         WrittenOffsetColumns & already_written_offset_columns);
 

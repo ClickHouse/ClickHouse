@@ -1211,7 +1211,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
     const ASTPtr & new_primary_key_expr_list,
-    bool skip_sanity_checks)
+    bool skip_sanity_checks) const
 {
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.

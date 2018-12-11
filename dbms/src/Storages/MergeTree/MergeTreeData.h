@@ -486,7 +486,7 @@ public:
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
         const ASTPtr & new_primary_key_expr_list,
-        bool skip_sanity_checks);
+        bool skip_sanity_checks) const;
 
     /// Freezes all parts.
     void freezeAll(const String & with_name, const Context & context);
