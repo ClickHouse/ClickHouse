@@ -94,8 +94,8 @@ public:
     /// Approximate number of allocated bytes in memory - for profiling and limits.
     size_t allocatedBytes() const;
 
-    operator bool() const { return !data.empty(); }
-    bool operator!() const { return data.empty(); }
+    operator bool() const { return !!columns(); }
+    bool operator!() const { return !this->operator bool(); }
 
     /** Get a list of column names separated by commas. */
     std::string dumpNames() const;
