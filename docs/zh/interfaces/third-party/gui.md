@@ -73,4 +73,4 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 重构。
  - 搜索和导航。
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/gui/) <!--hide-->

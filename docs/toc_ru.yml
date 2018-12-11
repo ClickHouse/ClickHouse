@@ -29,6 +29,7 @@ nav:
     - 'Клиентские библиотеки': 'interfaces/third-party/client_libraries.md'
     - 'Интеграции': 'interfaces/third-party/integrations.md'
     - 'Визуальные интерфейсы': 'interfaces/third-party/gui.md'
+    - 'Прокси': 'interfaces/third-party/proxy.md'
 
 - 'Типы данных':
   - 'Введение': 'data_types/index.md'

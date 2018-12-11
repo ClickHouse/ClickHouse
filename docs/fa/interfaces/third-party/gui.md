@@ -75,4 +75,4 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - جستجو و ناوبری
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party_gui/) <!--hide-->
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party/gui/) <!--hide-->
