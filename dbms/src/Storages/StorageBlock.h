@@ -16,6 +16,7 @@ namespace DB
 class StorageBlock : public ext::shared_ptr_helper<StorageBlock>, public IStorage
 {
 public:
+    std::string getDatabaseName() const { return database_name; }
     std::string getName() const override { return storage->getName(); }
     std::string getTableName() const override { return storage->getTableName(); }
     bool isRemote() const override { return storage->isRemote(); }
@@ -47,9 +48,13 @@ public:
 private:
     Block block;
     StoragePtr storage;
+    String database_name;
 
 protected:
-    StorageBlock(Block block_, StoragePtr storage_) : IStorage{storage_->getColumns()}, block(std::move(block_)), storage(storage_) {}
+    StorageBlock(Block block_, StoragePtr storage_, const String & database_name_)
+        : IStorage{storage_->getColumns()}, block(std::move(block_)), storage(storage_), database_name(database_name_)
+    {
+    }
 };
 
 }

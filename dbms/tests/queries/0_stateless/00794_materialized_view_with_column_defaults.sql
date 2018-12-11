@@ -15,10 +15,11 @@ AS SELECT
   date,
   zoneId,
   test
-FROM test1;
+FROM test.test1;
 
-INSERT INTO test1 VALUES (today(), now(), 1);
+INSERT INTO test1 VALUES ('2018-12-10', '2018-12-10 23:59:59', 1);
 
 SELECT * from test1_view;
 
+DROP TABLE test1_view;
 DROP TABLE test1;

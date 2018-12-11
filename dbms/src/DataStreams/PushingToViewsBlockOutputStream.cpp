@@ -171,9 +171,9 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
         ///  but it will contain single block (that is INSERT-ed into main table).
         /// InterpreterSelectQuery will do processing of alias columns.
         Context local_context = *views_context;
-        local_context.addExternalTable(storage->getTableName(), StorageBlock::create(block, storage), nullptr);
+        local_context.addViewSource(StorageBlock::create(block, storage, view.database));
         InterpreterSelectQuery select(view.query, local_context);
-        
+
         BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
