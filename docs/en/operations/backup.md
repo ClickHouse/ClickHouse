@@ -31,5 +31,8 @@ More details on queries related to partition manipulations can be found in [resp
 
 There's a third-party tool to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
 
+## Data Dump
+
+[Console client](../interfaces/cli.md) can be used to run queries like `SELECT * FROM my_table;` to dump the tables into files using any of the [supported serialization formats](../interfaces/formats.md#formats). Though if you are using ClickHouse as intended and have large enough volumes of data, this will hardly be practical.
 
 [Original article](https://clickhouse.yandex/docs/en/operations/access_rights/) <!--hide-->
