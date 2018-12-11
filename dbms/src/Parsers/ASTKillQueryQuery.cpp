@@ -3,9 +3,9 @@
 namespace DB
 {
 
-String ASTKillQueryQuery::getID() const
+String ASTKillQueryQuery::getID(char delim) const
 {
-    return "KillQueryQuery_" + (where_expression ? where_expression->getID() : "") + "_" + String(sync ? "SYNC" : "ASYNC");
+    return String("KillQueryQuery") + delim + (where_expression ? where_expression->getID() : "") + delim + String(sync ? "SYNC" : "ASYNC");
 }
 
 void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -67,7 +67,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID() const = 0;
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 

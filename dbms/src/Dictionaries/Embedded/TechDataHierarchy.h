@@ -5,12 +5,12 @@
 
 namespace Poco
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+namespace Util
+{
+    class AbstractConfiguration;
+}
 
-    class Logger;
+class Logger;
 }
 
 
@@ -21,8 +21,8 @@ namespace Poco
 class TechDataHierarchy
 {
 private:
-    UInt8 os_parent[256] {};
-    UInt8 se_parent[256] {};
+    UInt8 os_parent[256]{};
+    UInt8 se_parent[256]{};
 
 public:
     void reload();
@@ -49,15 +49,9 @@ public:
     }
 
 
-    UInt8 OSToParent(UInt8 x) const
-    {
-        return os_parent[x];
-    }
+    UInt8 OSToParent(UInt8 x) const { return os_parent[x]; }
 
-    UInt8 SEToParent(UInt8 x) const
-    {
-        return se_parent[x];
-    }
+    UInt8 SEToParent(UInt8 x) const { return se_parent[x]; }
 
 
     /// To the topmost ancestor.
@@ -77,4 +71,6 @@ public:
 };
 
 
-class TechDataHierarchySingleton : public ext::singleton<TechDataHierarchySingleton>, public TechDataHierarchy {};
+class TechDataHierarchySingleton : public ext::singleton<TechDataHierarchySingleton>, public TechDataHierarchy
+{
+};
