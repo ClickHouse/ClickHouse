@@ -24,4 +24,16 @@
 
 Реализован на Go.
 
+## ClickHouse-Bulk
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) - простой сборщик вставок ClickHouse.
+
+Особенности:
+
+* Группировка запросов и отправка по порогу или интервалу.
+* Несколько удаленных серверов.
+* Базовая аутентификация.
+
+Реализован на Go.
+
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/proxy/) <!--hide-->

@@ -22,4 +22,16 @@
 
 在Go中实现。
 
+## ClickHouse-Bulk
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk)是一个简单的ClickHouse插入收集器。
+
+特征：
+
+*分组请求并按阈值或间隔发送。
+*多个远程服务器。
+*基本身份验证。
+
+在Go中实现。
+
 [来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/proxy/) <!--hide-->

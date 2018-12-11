@@ -23,4 +23,17 @@ Features:
 * Load-balancing and health checking.
 
 Implemented in Go.
+
+## ClickHouse-Bulk
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) is a simple ClickHouse insert collector.
+
+Features:
+
+* Group requests and send by threshold or interval.
+* Multiple remote servers.
+* Basic authentication.
+
+Implemented in Go.
+
 [Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/proxy/) <!--hide-->
