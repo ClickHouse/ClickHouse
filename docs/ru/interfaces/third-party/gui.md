@@ -76,4 +76,4 @@
 - Рефакторинги.
 - Поиск и навигация.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party_gui/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/gui/) <!--hide-->

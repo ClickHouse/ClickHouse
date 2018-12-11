@@ -29,6 +29,7 @@ nav:
     - '客户端库': 'interfaces/third-party/client_libraries.md'
     - '集成': 'interfaces/third-party/integrations.md'
     - '可视界面': 'interfaces/third-party/gui.md'
+    - '代理': 'interfaces/third-party/proxy.md'
 
 - '数据类型':
   - '介绍': 'data_types/index.md'

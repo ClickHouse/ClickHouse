@@ -73,4 +73,4 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_gui/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/gui/) <!--hide-->
