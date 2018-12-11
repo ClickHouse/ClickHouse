@@ -29,5 +29,7 @@ ClickHouse allows to create a local copy of table partitions using `ALTER TABLE 
 
 More details on queries related to partition manipulations can be found in [respective section of ALTER documentation](../query_language/alter.md#query_language-manipulation-with-partitions-and-parts).
 
+There's a third-party tool to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
+
 
 [Original article](https://clickhouse.yandex/docs/en/operations/access_rights/) <!--hide-->
