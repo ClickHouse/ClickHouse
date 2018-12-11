@@ -2,7 +2,6 @@
 
 #include <Common/config.h>
 #if USE_PARQUET
-
 #    include <DataStreams/IBlockOutputStream.h>
 
 namespace arrow

@@ -1,7 +1,7 @@
 #include <Common/config.h>
 
 #if USE_PARQUET
-#    include <DataStreams/ParquetBlockInputStream.h>
+#    include "ParquetBlockInputStream.h"
 
 #    include <algorithm>
 #    include <iterator>
@@ -30,8 +30,8 @@
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
 #    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
-#    ifdef __clang__ && __clang_major__ >= 7
-#        pragma GCC diagnostic ignored "-Wc++98-compat-extra-sem"
+#    if defined(__clang__) // && __clang_major__ >= 7
+#        pragma GCC diagnostic ignored "-Wc++98-compat-extra-semi"
 #    endif
 #    include <arrow/api.h>
 #    include <arrow/buffer.h>
