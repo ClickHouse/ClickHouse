@@ -956,6 +956,134 @@ private:
     }
 };
 
+struct JavaHashImpl
+{
+    static Int32 apply(const char * data, const size_t size)
+    {
+        Int32 h = 0;
+        for (int i = 0; i < (int)size; ++i) {
+            h = 31 * h + data[i];
+        }
+        return h;
+    }
+};
+
+/*
+ * the java string hash implement,
+ * many system from java world use this string hash function or based it
+ */
+class FunctionJavaHash : public IFunction
+{
+public:
+    static constexpr auto name = "JavaHash";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionJavaHash>(); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const auto arg_count = arguments.size();
+        if (arg_count != 1)
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " +
+                            toString(arg_count) + ", should be 1.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+
+        const auto first_arg = arguments.front().get();
+        if (!WhichDataType(first_arg).isString())
+            throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeInt32>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        const auto arg_count = arguments.size();
+
+        if (arg_count == 1)
+        {
+            const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+
+            if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
+            {
+                const auto size = col_from->size();
+                auto col_to = ColumnInt32::create(size);
+
+                const auto & chars = col_from->getChars();
+                const auto & offsets = col_from->getOffsets();
+                auto & out = col_to->getData();
+
+                ColumnString::Offset current_offset = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    out[i] = JavaHashImpl::apply(
+                            reinterpret_cast<const char *>(&chars[current_offset]),
+                            offsets[i] - current_offset - 1);
+
+                    current_offset = offsets[i];
+                }
+
+                block.getByPosition(result).column = std::move(col_to);
+            }
+            else
+                throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+                                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        }
+        else
+            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
+    }
+};
+
+/*
+ * this hive function works for hive-version < 3.0,
+ * after 3.0, hive use murmur-hash3
+ */
+class FunctionHiveHash : public FunctionJavaHash{
+public:
+    static constexpr auto name = "HiveHash";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionHiveHash>(); }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        const auto arg_count = arguments.size();
+
+        if (arg_count == 1)
+        {
+            const auto col_untyped = block.getByPosition(arguments.front()).column.get();
+
+            if (const auto col_from = checkAndGetColumn<ColumnString>(col_untyped))
+            {
+                const auto size = col_from->size();
+                auto col_to = ColumnInt32::create(size);
+
+                const auto & chars = col_from->getChars();
+                const auto & offsets = col_from->getOffsets();
+                auto & out = col_to->getData();
+
+                ColumnString::Offset current_offset = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    out[i] = JavaHashImpl::apply(
+                            reinterpret_cast<const char *>(&chars[current_offset]),
+                            offsets[i] - current_offset - 1) & 0x7fffffff;
+
+                    current_offset = offsets[i];
+                }
+
+                block.getByPosition(result).column = std::move(col_to);
+            }
+            else
+                throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() +
+                                " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        }
+        else
+            throw Exception{"got into IFunction::execute with unexpected number of arguments", ErrorCodes::LOGICAL_ERROR};
+    }
+};
 
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
