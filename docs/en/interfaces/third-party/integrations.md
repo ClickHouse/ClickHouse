@@ -8,6 +8,9 @@
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
     - [PostgreSQL](https://www.postgresql.org)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+- Object store
+    - S3
+        - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
         - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
