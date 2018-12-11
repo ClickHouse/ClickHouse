@@ -568,7 +568,10 @@ private:
         for (size_t i = 0; i < tuple_size; ++i)
         {
             temporary_block.insert({nullptr,
-                getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), type1.getElements()[i], type2.getElements()[i]}),
+                getReturnTypeImpl({
+                    { nullptr, std::make_shared<DataTypeUInt8>(), "" },
+                    { nullptr, type1.getElements()[i], "" },
+                    { nullptr, type2.getElements()[i], "" }}),
                 {}});
 
             temporary_block.insert({col1_contents[i], type1.getElements()[i], {}});

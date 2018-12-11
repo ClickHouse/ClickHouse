@@ -708,7 +708,10 @@ bool FunctionArrayElement::executeTuple(Block & block, const ColumnNumbers & arg
 
         ColumnWithTypeAndName array_elements_of_tuple_section;
         array_elements_of_tuple_section.type = getReturnTypeImpl(
-            {block_of_temporary_results.getByPosition(i * 2 + 1).type, block_of_temporary_results.getByPosition(0).type});
+            {
+                { nullptr, block_of_temporary_results.getByPosition(i * 2 + 1).type, "" },
+                { nullptr, block_of_temporary_results.getByPosition(0).type, "" }
+            });
         block_of_temporary_results.insert(array_elements_of_tuple_section);
 
         executeImpl(block_of_temporary_results, ColumnNumbers{i * 2 + 1, 0}, i * 2 + 2, input_rows_count);

@@ -370,7 +370,7 @@ public:
 
     String getSignature() const override
     {
-        return "f(String) -> FixedString(" + toString(Impl::length) + ")";
+        return "f(String) -> FixedString(" + toString(int(Impl::length)) + ")";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

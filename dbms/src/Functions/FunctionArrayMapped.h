@@ -42,11 +42,9 @@ class FunctionArrayMapped : public IFunction
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); }
+    String getName() const override { return name; }
 
-    String getName() const override
-    {
-        return name;
-    }
+    String getSignature() const override { return {}; }     /// It's complicated. Will use getReturnTypeImpl method to determine result type.
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.

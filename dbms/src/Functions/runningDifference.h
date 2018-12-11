@@ -134,22 +134,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 1)
-            throw Exception{"Function " + getName() + " takes 1 argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
-
-        DataTypePtr res;
-        dispatchForSourceType(*removeNullable(arguments[0]), [&](auto field_type_tag)
-        {
-            res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
-        });
-
-        if (arguments[0]->isNullable())
-            res = makeNullable(res);
-
-        return res;
-    }
+    String getSignature() const override { return "f(T) -> difference(T)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

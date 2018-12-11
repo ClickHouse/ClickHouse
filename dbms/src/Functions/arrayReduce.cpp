@@ -50,11 +50,11 @@ public:
 
 void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
-    String aggregate_function_name_with_params = typeid_cast<const ColumnConst &>(*block.getByPosition(arguments[0]).column)->getValue<String>();
+    String aggregate_function_name_with_params = typeid_cast<const ColumnConst &>(*block.getByPosition(arguments[0]).column).getValue<String>();
     DataTypes argument_types;
     const size_t num_arguments_columns = arguments.size() - 1;
     for (size_t i = 0; i < num_arguments_columns; ++i)
-        argument_types.emplace_back(typeid_cast<const ColumnArray &>(*block.getByPosition(arguments[i + 1]).column).getNestedType());
+        argument_types.emplace_back(typeid_cast<const DataTypeArray &>(*block.getByPosition(arguments[i + 1]).type).getNestedType());
 
     if (aggregate_function_name_with_params.empty())
         throw Exception("First argument for function " + getName() + " (name of aggregate function) cannot be empty.",

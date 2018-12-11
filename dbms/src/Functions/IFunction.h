@@ -314,6 +314,7 @@ public:
     using PreparedFunctionImpl::executeImplDryRun;
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
+    using FunctionBuilderImpl::getReturnTypeImpl;
     using FunctionBuilderImpl::getSignature;
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const final

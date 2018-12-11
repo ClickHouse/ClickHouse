@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -95,15 +96,19 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const Block &) override { return is_injective; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override { return {}; }     /// It's complicated. Will use getReturnTypeImpl method to determine result type.
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.size() != 1)
+            throw Exception("Function " + getName() + " requires single argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         DataTypePtr result;
-        bool valid = castType(arguments[0].get(), [&](const auto & type)
+        bool valid = castType(arguments[0].type.get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
             using T0 = typename DataType::FieldType;
@@ -119,7 +124,7 @@ public:
             return true;
         });
         if (!valid)
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return result;
     }

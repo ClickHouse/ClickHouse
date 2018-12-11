@@ -78,26 +78,12 @@ public:
 private:
     String getSignature() const override
     {
-        return "f(const dict String, UInt64) -> String"
-            " OR f(const dict String, Tuple) -> String";
+        return "f(const dict String, UInt64) -> UInt8"
+            " OR f(const dict String, Tuple) -> UInt8";
     }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
-                + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[1]).isUInt64() &&
-            !isTuple(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
-                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeUInt8>();
-    }
 
     bool isDeterministic() const override { return false; }
 
@@ -400,30 +386,6 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isString(arguments[0]))
-            throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
-                ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!isString(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() +
-                ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        if (!WhichDataType(arguments[2]).isUInt64() &&
-            !isTuple(arguments[2]))
-        {
-            throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
-                + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-        }
-
-        if (!isString(arguments[3]))
-            throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName() +
-                ", must be String.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-        return std::make_shared<DataTypeString>();
-    }
-
     bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
@@ -672,8 +634,8 @@ private:
     {
         String type_name = DataType().getName();
         return "f(const dict String, const attr String, UInt64) -> " + type_name
-            " OR f(const dict String, const attr String, Tuple) -> " + type_name
-            " OR f(const dict String, const attr String, UInt64, T : RepresentedByInteger) -> " + type_name;
+            + " OR f(const dict String, const attr String, Tuple) -> " + type_name
+            + " OR f(const dict String, const attr String, UInt64, T : RepresentedByInteger) -> " + type_name;
     }
 
     bool isDeterministic() const override { return false; }
@@ -873,7 +835,7 @@ private:
     {
         String type_name = DataType().getName();
         return "f(const dict String, const attr String, UInt64, " + type_name + ") -> " + type_name
-            " OR f(const dict String, const attr String, Tuple, " + type_name + ") -> " + type_name;
+            + " OR f(const dict String, const attr String, Tuple, " + type_name + ") -> " + type_name;
     }
 
     bool useDefaultImplementationForConstants() const final { return true; }

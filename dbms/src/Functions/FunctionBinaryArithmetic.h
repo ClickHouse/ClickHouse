@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int DECIMAL_OVERFLOW;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
     extern const int ILLEGAL_DIVISION;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -643,38 +644,41 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    String getSignature() const override { return {}; }     /// It's complicated. Will use getReturnTypeImpl method to determine result type.
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.size() != 2)
+            throw Exception("Function " + getName() + " requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypePtr & left_type = arguments[0].type;
+        const DataTypePtr & right_type = arguments[1].type;
+
         /// Special case when multiply aggregate function state
-        if (isAggregateMultiply(arguments[0], arguments[1]))
+        if (isAggregateMultiply(left_type, right_type))
         {
-            if (WhichDataType(arguments[0]).isAggregateFunction())
-                return arguments[0];
-            return arguments[1];
+            if (WhichDataType(left_type).isAggregateFunction())
+                return left_type;
+            return right_type;
         }
 
         /// Special case - addition of two aggregate functions states
-        if (isAggregateAddition(arguments[0], arguments[1]))
+        if (isAggregateAddition(left_type, right_type))
         {
-            if (!arguments[0]->equals(*arguments[1]))
+            if (!left_type->equals(*right_type))
                 throw Exception("Cannot add aggregate states of different functions: "
-                    + arguments[0]->getName() + " and " + arguments[1]->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
+                    + left_type->getName() + " and " + right_type->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
 
-            return arguments[0];
+            return left_type;
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
+        if (auto function_builder = getFunctionForIntervalArithmetic(left_type, right_type))
         {
-            ColumnsWithTypeAndName new_arguments(2);
-
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i].type = arguments[i];
+            ColumnsWithTypeAndName new_arguments(arguments);
 
             /// Interval argument must be second.
-            if (WhichDataType(new_arguments[0].type).isInterval())
+            if (WhichDataType(left_type).isInterval())
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -685,7 +689,7 @@ public:
         }
 
         DataTypePtr type_res;
-        bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        bool valid = castBothTypes(left_type.get(), right_type.get(), [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
@@ -713,7 +717,7 @@ public:
             return false;
         });
         if (!valid)
-            throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
+            throw Exception("Illegal types " + left_type->getName() + " and " + right_type->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return type_res;
     }

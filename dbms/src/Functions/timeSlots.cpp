@@ -115,28 +115,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    String getSignature() const override
     {
-        if (arguments.size() != 2 && arguments.size() != 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(arguments.size()) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (!WhichDataType(arguments[0].type).isDateTime())
-            throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!WhichDataType(arguments[1].type).isUInt32())
-            throw Exception("Illegal type " + arguments[1].type->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 3 && !WhichDataType(arguments[2].type).isNativeUInt())
-            throw Exception("Illegal type " + arguments[2].type->getName() + " of third argument of function " + getName() + ". Must be UInt32.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        /// If time zone is specified for source data type, attach it to the resulting type.
-        /// Note that there is no explicit time zone argument for this function (we specify 2 as an argument number with explicit time zone).
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0)));
+        return "f(T : DateTime, const duration UInt32, [const slot_size NativeUInt]) -> Array(T)";
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override

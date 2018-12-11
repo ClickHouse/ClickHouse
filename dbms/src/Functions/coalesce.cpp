@@ -34,19 +34,21 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override { return {}; }     /// It's complicated. Will use getReturnTypeImpl method to determine result type.
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         /// Skip all NULL arguments. If any argument is non-Nullable, skip all next arguments.
         DataTypes filtered_args;
         filtered_args.reserve(arguments.size());
         for (const auto & arg : arguments)
         {
-            if (arg->onlyNull())
+            if (arg.type->onlyNull())
                 continue;
 
-            filtered_args.push_back(arg);
+            filtered_args.push_back(arg.type);
 
-            if (!arg->isNullable())
+            if (!arg.type->isNullable())
                 break;
         }
 

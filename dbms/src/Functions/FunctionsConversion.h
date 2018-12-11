@@ -762,12 +762,21 @@ public:
 
     String getSignature() const override
     {
-        auto return_type = ToDataType().getName();
-
         if constexpr (to_decimal)
-            return "f(T, const scale UnsignedInteger) -> " + return_type;
+        {
+            if constexpr (std::is_same_v<Name, NameToDecimal32>)
+                return "f(T, const scale UnsignedInteger) -> Decimal32(scale)";
+            else if constexpr (std::is_same_v<Name, NameToDecimal64>)
+                return "f(T, const scale UnsignedInteger) -> Decimal64(scale)";
+            else if constexpr (std::is_same_v<Name, NameToDecimal128>)
+                return "f(T, const scale UnsignedInteger) -> Decimal128(scale)";
+        }
+        else if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
+            return "f(T) -> " + DataTypeInterval(DataTypeInterval::Kind(Name::kind)).getName();
+        else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+            return "f(T) -> DateTime OR f(T, const timezone String) -> DateTime(timezone)";
         else
-            return "f(T) -> " + return_type + " OR f(DateTime, const timezone String) -> DateTime(timezone)";
+            return "f(T) -> " + ToDataType().getName();
     }
 
     bool isInjective(const Block &) override { return std::is_same_v<Name, NameToString>; }

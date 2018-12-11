@@ -31,35 +31,10 @@ public:
 
     String getName() const override { return name; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    String getSignature() const override
     {
-        const size_t number_of_arguments = arguments.size();
-
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 2 or 3",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments[0]->onlyNull())
-            return arguments[0];
-
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
-        if (!array_type)
-            throw Exception("First argument for function " + getName() + " must be an array but it has type "
-                            + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (WhichDataType(array_type->getNestedType()).isNothing())
-            throw Exception("Function " + getName() + " cannot resize " + array_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isInteger(removeNullable(arguments[1])) && !arguments[1]->onlyNull())
-            throw Exception(
-                    "Argument " + toString(1) + " for function " + getName() + " must be integer but it has type "
-                    + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (number_of_arguments == 2)
-            return arguments[0];
-        else /* if (number_of_arguments == 3) */
-            return std::make_shared<DataTypeArray>(getLeastSupertype({array_type->getNestedType(), arguments[2]}));
+        return "f(what Array(T), size Integer) -> Array(T)"
+            " OR f(what Array(T), size Integer, fill Array(U)) -> Array(leastSupertype(T, U))";
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
