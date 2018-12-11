@@ -123,6 +123,7 @@ private:
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    std::pair<String, String> insertion_table;  /// Saved insertion table in query context
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -232,6 +233,9 @@ public:
     String getCurrentQueryId() const;
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
+
+    void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
+    const std::pair<String, String> & getInsertionTable() const { return insertion_table; }
 
     String getDefaultFormat() const;    /// If default_format is not specified, some global default format is returned.
     void setDefaultFormat(const String & name);

@@ -603,6 +603,10 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveLogData();
                 return res;
 
+            case Protocol::Server::TableColumns:
+                res.multistring_message = receiveMultistringMessage(res.type);
+                return res;
+
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -709,6 +713,16 @@ std::unique_ptr<Exception> Connection::receiveException()
     Exception e;
     readException(e, *in, "Received from " + getDescription());
     return std::unique_ptr<Exception>{ e.clone() };
+}
+
+
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+{
+    size_t num = Protocol::Server::stringsInMessage(msg_type);
+    std::vector<String> out(num);
+    for (size_t i = 0; i < num; ++i)
+        readStringBinary(out[i], *in);
+    return out;
 }
 
 

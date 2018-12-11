@@ -1,10 +1,10 @@
 #pragma once
 
+#include <Common/SharedLibrary.h>
+#include <common/LocalDateTime.h>
 #include "DictionaryStructure.h"
 #include "ExternalResultDescription.h"
 #include "IDictionarySource.h"
-#include <Common/SharedLibrary.h>
-#include <common/LocalDateTime.h>
 
 
 namespace Poco
@@ -28,7 +28,8 @@ class CStringsHolder;
 class LibraryDictionarySource final : public IDictionarySource
 {
 public:
-    LibraryDictionarySource(const DictionaryStructure & dict_struct_,
+    LibraryDictionarySource(
+        const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         Block & sample_block,
@@ -54,10 +55,7 @@ public:
     bool supportsSelectiveLoad() const override;
 
     ///Not yet supported
-    bool hasUpdateField() const override
-    {
-        return false;
-    }
+    bool hasUpdateField() const override { return false; }
 
     DictionarySourcePtr clone() const override;
 
