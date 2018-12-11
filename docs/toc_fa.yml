@@ -150,6 +150,7 @@ nav:
       - 'Kafka': 'operations/table_engines/kafka.md'
       - 'MySQL': 'operations/table_engines/mysql.md'
   - 'Access rights': 'operations/access_rights.md'
+  - 'Data Backup': 'operations/backup.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System tables': 'operations/system_tables.md'
