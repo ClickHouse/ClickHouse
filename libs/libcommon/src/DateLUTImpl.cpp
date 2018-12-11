@@ -101,7 +101,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
                 ///  when UTC offset was changed. Search is performed with 15-minute granularity, assuming it is enough.
 
                 time_t time_at_offset_change = 900;
-                while (time_at_offset_change < 65536)
+                while (time_at_offset_change < 86400)
                 {
                     auto utc_offset_at_current_time = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(
                         lut[i - 1].date + time_at_offset_change)).offset;
@@ -112,7 +112,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
                     time_at_offset_change += 900;
                 }
 
-                lut[i - 1].time_at_offset_change = time_at_offset_change >= 65536 ? 0 : time_at_offset_change;
+                lut[i - 1].time_at_offset_change = time_at_offset_change;
 
 /*                std::cerr << lut[i - 1].year << "-" << int(lut[i - 1].month) << "-" << int(lut[i - 1].day_of_month)
                     << " offset was changed at " << lut[i - 1].time_at_offset_change << " for " << lut[i - 1].amount_of_offset_change << " seconds.\n";*/
