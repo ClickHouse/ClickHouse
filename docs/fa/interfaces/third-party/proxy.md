@@ -23,6 +23,18 @@
 
 اجرا شده در برو
 
+## ClickHouse-Bulk
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) یک ClickHouse جمع کننده ساده است.
+
+امکانات:
+
+* درخواست گروهی و ارسال توسط آستانه یا فاصله.
+* چند سرور از راه دور
+* احراز هویت پایه
+
+اجرا شده در برو
+
 </div>
 
 [مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party/proxy/) <!--hide-->
