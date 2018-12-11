@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+For a description of query parameters, see [query description](../../query_language/create.md#query_language-queries-create_table).
 
 **CollapsingMergeTree Parameters**
 

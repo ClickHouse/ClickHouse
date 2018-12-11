@@ -130,6 +130,7 @@ nav:
       - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
       - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
       - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
+      - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
       - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
     - 'Для небольших объемов данных':
       - 'TinyLog': 'operations/table_engines/tinylog.md'
