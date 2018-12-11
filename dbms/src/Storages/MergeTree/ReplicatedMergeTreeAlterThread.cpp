@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Databases/IDatabase.h>
 
+#include <common/ThreadPool.h>
 
 namespace DB
 {
@@ -118,34 +119,44 @@ void ReplicatedMergeTreeAlterThread::run()
                 if (changed_version)
                     LOG_INFO(log, "ALTER-ing parts");
 
-                int changed_parts = 0;
+            std::atomic<int> changed_parts(0);
 
                 if (!changed_version)
                     parts = storage.data.getDataParts();
 
                 const auto columns_for_parts = storage.getColumns().getAllPhysical();
 
+            size_t max_threads_for_alter = storage.data.settings.max_threads_for_replicated_alter;
+            max_threads_for_alter = std::max<size_t>(1, max_threads_for_alter);
+            if (max_threads_for_alter > 1)
+                LOG_INFO(log, "Will use " << max_threads_for_alter << " threads for alter.");
+
+            ThreadPool pool(max_threads_for_alter);
+
                 for (const MergeTreeData::DataPartPtr & part : parts)
+                {
+                ThreadPool::Job job = [
+                        &changed_parts, &columns_for_parts, &zookeeper, &part = std::as_const(part), &storage = storage]()
                 {
                     /// Update the part and write result to temporary files.
                     /// TODO: You can skip checking for too large changes if ZooKeeper has, for example,
                     /// node /flags/force_alter.
-                    auto transaction = storage.data.alterDataPart(
-                        part, columns_for_parts, storage.data.primary_expr_ast, false);
+                    auto transaction = storage.data.alterDataPart(part, columns_for_parts, storage.data.primary_expr_ast, false);
 
                     if (!transaction)
-                        continue;
+                        return;
 
                     ++changed_parts;
 
                     /// Update part metadata in ZooKeeper.
                     Coordination::Requests ops;
                     ops.emplace_back(zkutil::makeSetRequest(
-                        storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
+                            storage.replica_path + "/parts/" + part->name + "/columns",
+                            transaction->getNewColumns().toString(), -1));
                     ops.emplace_back(zkutil::makeSetRequest(
-                        storage.replica_path + "/parts/" + part->name + "/checksums",
-                        storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
-                        -1));
+                            storage.replica_path + "/parts/" + part->name + "/checksums",
+                            storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
+                            -1));
 
                     try
                     {
@@ -162,7 +173,12 @@ void ReplicatedMergeTreeAlterThread::run()
 
                     /// Apply file changes.
                     transaction->commit();
+                };
+
+                pool.schedule(std::move(job));
                 }
+
+            pool.wait();
 
                 /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN
                 storage.data.recalculateColumnSizes();

@@ -23,7 +23,7 @@ constexpr auto MARKS_FILE_EXTENSION = ".mrk";
 /// Implementation of IMergedBlockOutputStream.
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    MergeTreeData & storage_,
+    const MergeTreeData & storage_,
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
     CompressionSettings compression_settings_,
@@ -227,7 +227,7 @@ void IMergedBlockOutputStream::ColumnStream::addToChecksums(MergeTreeData::DataP
 /// Implementation of MergedBlockOutputStream.
 
 MergedBlockOutputStream::MergedBlockOutputStream(
-    MergeTreeData & storage_,
+    const MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
     CompressionSettings compression_settings)
@@ -243,7 +243,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
-    MergeTreeData & storage_,
+    const MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
     CompressionSettings compression_settings,
@@ -502,7 +502,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 /// Implementation of MergedColumnOnlyOutputStream.
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
+    const MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
     CompressionSettings compression_settings, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns)
     : IMergedBlockOutputStream(
