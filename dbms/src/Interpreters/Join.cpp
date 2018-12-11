@@ -911,8 +911,8 @@ static void checkTypeOfKey(const Block & block_left, const Block & block_right)
 {
     auto & [c1, left_type_origin, left_name] = block_left.safeGetByPosition(0);
     auto & [c2, right_type_origin, right_name] = block_right.safeGetByPosition(0);
-    auto left_type = removeNullable(left_type_origin);
-    auto right_type = removeNullable(right_type_origin);
+    auto left_type = removeNullable(recursiveRemoveLowCardinality(left_type_origin));
+    auto right_type = removeNullable(recursiveRemoveLowCardinality(right_type_origin));
 
     if (!left_type->equals(*right_type))
         throw Exception("Type mismatch of columns to joinGet by: "
