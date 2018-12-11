@@ -20,7 +20,7 @@ public:
         return clone;
     }
 
-    String getID() const override;
+    String getID(char) const override;
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 

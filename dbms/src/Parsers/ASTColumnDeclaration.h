@@ -17,7 +17,7 @@ public:
     ASTPtr default_expression;
     ASTPtr comment;
 
-    String getID() const override { return "ColumnDeclaration_" + name; }
+    String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 
     ASTPtr clone() const override
     {

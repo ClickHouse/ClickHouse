@@ -21,7 +21,7 @@ public:
     IAST * sample_by = nullptr;
     ASTSetQuery * settings = nullptr;
 
-    String getID() const override { return "Storage definition"; }
+    String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override
     {
@@ -99,7 +99,7 @@ public:
     ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; }
+    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
