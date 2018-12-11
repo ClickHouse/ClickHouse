@@ -8,6 +8,9 @@
         - [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
     - [PostgreSQL](https://www.postgresql.org)
         - [infi.clickhouse_fdw](https://github.com/Infinidat/infi.clickhouse_fdw) (使用 [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
+- 对象存储
+    - S3
+        - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
 - Python
     - [SQLAlchemy](https://www.sqlalchemy.org)
         - [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (使用 [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm))
