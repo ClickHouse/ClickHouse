@@ -96,6 +96,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserSubstringExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "SUBSTRING expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserExtractExpression : public IParserBase
 {
 protected:

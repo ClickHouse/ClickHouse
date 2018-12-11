@@ -88,7 +88,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 }
 
 
-bool TSKVRowInputStream::read(MutableColumns & columns)
+bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;

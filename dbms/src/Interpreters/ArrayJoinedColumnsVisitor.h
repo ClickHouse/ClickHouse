@@ -9,42 +9,55 @@
 #include <Parsers/ASTIdentifier.h>
 
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+
 
 namespace DB
 {
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
-/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
-
 /// Fills the array_join_result_to_source: on which columns-arrays to replicate, and how to call them after that.
-class ArrayJoinedColumnsVisitor
+class ArrayJoinedColumnsMatcher
 {
 public:
-    ArrayJoinedColumnsVisitor(NameToNameMap & array_join_name_to_alias_,
-                              NameToNameMap & array_join_alias_to_name_,
-                              NameToNameMap & array_join_result_to_source_)
-    :   array_join_name_to_alias(array_join_name_to_alias_),
-        array_join_alias_to_name(array_join_alias_to_name_),
-        array_join_result_to_source(array_join_result_to_source_)
-    {}
-
-    void visit(ASTPtr & ast) const
+    struct Data
     {
-        if (!tryVisit<ASTTablesInSelectQuery>(ast) &&
-            !tryVisit<ASTIdentifier>(ast))
-            visitChildren(ast);
+        NameToNameMap & array_join_name_to_alias;
+        NameToNameMap & array_join_alias_to_name;
+        NameToNameMap & array_join_result_to_source;
+    };
+
+    static constexpr const char * label = "ArrayJoinedColumns";
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
+    {
+        /// Processed
+        if (typeid_cast<ASTIdentifier *>(node.get()))
+            return false;
+
+        if (typeid_cast<ASTTablesInSelectQuery *>(node.get()))
+            return false;
+
+        if (typeid_cast<ASTSubquery *>(child.get()) ||
+            typeid_cast<ASTSelectQuery *>(child.get()))
+            return false;
+
+        return true;
+    }
+
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+            visit(*t, ast, data);
+        return {};
     }
 
 private:
-    NameToNameMap & array_join_name_to_alias;
-    NameToNameMap & array_join_alias_to_name;
-    NameToNameMap & array_join_result_to_source;
-
-    void visit(const ASTTablesInSelectQuery &, ASTPtr &) const
-    {}
-
-    void visit(const ASTIdentifier & node, ASTPtr &) const
+    static void visit(const ASTIdentifier & node, ASTPtr &, Data & data)
     {
+        NameToNameMap & array_join_name_to_alias = data.array_join_name_to_alias;
+        NameToNameMap & array_join_alias_to_name = data.array_join_alias_to_name;
+        NameToNameMap & array_join_result_to_source = data.array_join_result_to_source;
+
         if (!node.general())
             return;
 
@@ -74,34 +87,11 @@ private:
             /** Example: SELECT ParsedParams.Key1 FROM ... ARRAY JOIN ParsedParams AS PP.
             */
             array_join_result_to_source[    /// PP.Key1 -> ParsedParams.Key1
-            Nested::concatenateName(array_join_name_to_alias[splitted.first], splitted.second)] = node.name;
+                Nested::concatenateName(array_join_name_to_alias[splitted.first], splitted.second)] = node.name;
         }
-    }
-
-    void visit(const ASTSubquery &, ASTPtr &) const
-    {}
-
-    void visit(const ASTSelectQuery &, ASTPtr &) const
-    {}
-
-    void visitChildren(ASTPtr & ast) const
-    {
-        for (auto & child : ast->children)
-            if (!tryVisit<ASTSubquery>(child) &&
-                !tryVisit<ASTSelectQuery>(child))
-                visit(child);
-    }
-
-    template <typename T>
-    bool tryVisit(ASTPtr & ast) const
-    {
-        if (const T * t = typeid_cast<const T *>(ast.get()))
-        {
-            visit(*t, ast);
-            return true;
-        }
-        return false;
     }
 };
+
+using ArrayJoinedColumnsVisitor = InDepthNodeVisitor<ArrayJoinedColumnsMatcher, true>;
 
 }

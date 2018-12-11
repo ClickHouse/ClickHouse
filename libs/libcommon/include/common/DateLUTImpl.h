@@ -247,6 +247,8 @@ public:
 
         time_t res = t - lut[index].date;
 
+        /// NOTE We doesn't support cases when time change result in switching to previous day.
+        /// Data is cleaned to avoid these cases, so no underflow occurs here.
         if (res >= lut[index].time_at_offset_change)
             res += lut[index].amount_of_offset_change;
 
