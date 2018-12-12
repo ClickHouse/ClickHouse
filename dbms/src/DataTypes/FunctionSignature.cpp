@@ -78,14 +78,6 @@ struct Key
 };
 
 
-static inline size_t getCommonIndex(size_t i, size_t j)
-{
-    if (i && j && i != j)
-        throw Exception("Different indices of variables in subexpression", ErrorCodes::BAD_FUNCTION_SIGNATURE);
-    return i ? i : j;
-}
-
-
 bool Value::operator==(const Value & rhs) const
 {
     return value.index() == rhs.value.index()
@@ -121,20 +113,6 @@ std::string Value::toString() const
     }
     else
         return applyVisitor(FieldVisitorToString(), std::get<Field>(value));
-}
-
-
-template <typename Container, typename WriteElem, typename WriteDelim>
-void writeList(Container && container, WriteElem && write_elem, WriteDelim && write_delim)
-{
-    bool is_first = true;
-    for (const auto & elem : container)
-    {
-        if (!is_first)
-            write_delim();
-        is_first = false;
-        write_elem(elem);
-    }
 }
 
 

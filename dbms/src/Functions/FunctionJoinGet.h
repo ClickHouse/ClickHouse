@@ -14,14 +14,11 @@ public:
     FunctionJoinGet(JoinPtr join, const String & attr_name) : join(std::move(join)), attr_name(attr_name) {}
 
     String getName() const override { return name; }
+    String getSignature() const override { return {}; }
 
 protected:
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return nullptr; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override { return nullptr; }
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
-
-private:
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
 
 private:
     JoinPtr join;
@@ -37,14 +34,11 @@ public:
     FunctionBuilderJoinGet(const Context & context) : context(context) {}
 
     String getName() const override { return name; }
+    String getSignature() const override { return {}; }
 
 protected:
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return nullptr; }
-
-private:
-    bool isVariadic() const override { return true; }
-    size_t getNumberOfArguments() const override { return 0; }
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & /*arguments*/) const override { return nullptr; }
 
 private:
     const Context & context;

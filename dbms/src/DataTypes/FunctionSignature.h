@@ -18,6 +18,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_FUNCTION_SIGNATURE;
+}
+
 namespace FunctionSignatures
 {
     class IFunctionSignatureImpl;
@@ -246,6 +251,26 @@ namespace FunctionSignatures
     using TypeFunctionPtr = std::shared_ptr<ITypeFunction>;
     using TypeFunctionFactory = Factory<TypeFunctionPtr>;
 
+
+    static inline size_t getCommonIndex(size_t i, size_t j)
+    {
+        if (i && j && i != j)
+            throw Exception("Different indices of variables in subexpression", ErrorCodes::BAD_FUNCTION_SIGNATURE);
+        return i ? i : j;
+    }
+
+    template <typename Container, typename WriteElem, typename WriteDelim>
+    void writeList(Container && container, WriteElem && write_elem, WriteDelim && write_delim)
+    {
+        bool is_first = true;
+        for (const auto & elem : container)
+        {
+            if (!is_first)
+                write_delim();
+            is_first = false;
+            write_elem(elem);
+        }
+    }
 }
 
 }
