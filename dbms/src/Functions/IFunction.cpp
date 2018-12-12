@@ -475,11 +475,12 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
 DataTypePtr FunctionBuilderImpl::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    static FunctionSignature signature = getSignature();
+    FunctionSignature signature = getSignature();   /// TODO: This is heavy.
     std::string reason;
     auto res = signature.check(arguments, reason);
     if (!res)
-        throw Exception("Function " + getName() + " is not applicable: " + reason, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Function " + getName() + " is not applicable: " + reason
+            + "\nThe function signature is " + getSignature(), ErrorCodes::BAD_ARGUMENTS);
     return res;
 }
 

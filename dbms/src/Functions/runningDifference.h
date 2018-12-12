@@ -18,7 +18,7 @@ namespace ErrorCodes
 }
 
 
-template <bool is_first_line_zero>
+template <bool first_value_is_zero>
 struct FunctionRunningDifferenceName;
 
 template <>
@@ -36,7 +36,7 @@ struct FunctionRunningDifferenceName<false>
 /** Calculate difference of consecutive values in block.
   * So, result of function depends on partition of data to blocks and on order of data in block.
   */
-template <bool is_first_line_zero>
+template <bool first_value_is_zero>
 class FunctionRunningDifferenceImpl : public IFunction
 {
 private:
@@ -63,7 +63,7 @@ private:
 
             if (!has_prev_value)
             {
-                dst[i] = is_first_line_zero ? 0 : src[i];
+                dst[i] = first_value_is_zero ? 0 : src[i];
                 prev = src[i];
                 has_prev_value = true;
             }
@@ -115,11 +115,11 @@ private:
     }
 
 public:
-    static constexpr auto name = FunctionRunningDifferenceName<is_first_line_zero>::name;
+    static constexpr auto name = FunctionRunningDifferenceName<first_value_is_zero>::name;
 
     static FunctionPtr create(const Context &)
     {
-        return std::make_shared<FunctionRunningDifferenceImpl<is_first_line_zero>>();
+        return std::make_shared<FunctionRunningDifferenceImpl<first_value_is_zero>>();
     }
 
     String getName() const override

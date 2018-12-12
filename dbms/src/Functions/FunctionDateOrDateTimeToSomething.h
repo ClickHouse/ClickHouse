@@ -31,17 +31,11 @@ public:
 
     String getSignature() const override
     {
-        if (std::is_same_v<ToDataType, DataTypeDateTime>)
-        {
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
             return "f(T : DateOrDateTime) -> T"
-                " OR f(DateTime, const timezone String) -> DateTime(timezone)";
-        }
+                " OR f(T : DateOrDateTime, const timezone String) -> DateTime(timezone)";
         else
-        {
-            return "f(Date) -> Date"
-                " OR f(T : DateTime) -> T"
-                " OR f(DateTime, const timezone String) -> DateTime(timezone)";
-        }
+            return "f(DateOrDateTime) -> " + ToDataType().getName();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

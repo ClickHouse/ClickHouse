@@ -161,7 +161,7 @@ void registerTypeMatcherWithNoArguments(TypeMatcherFactory & factory)
     auto elem = std::make_shared<TypeMatcher>();
     auto name = elem->toString();
     factory.registerElement(name,
-        [elem = std::move(elem), name = std::move(name)](const TypeMatchers & children)
+        [elem = std::move(elem), name](const TypeMatchers & children)
         {
             if (!children.empty())
                 throw Exception(name + " type matcher cannot have arguments", ErrorCodes::LOGICAL_ERROR);
