@@ -87,6 +87,12 @@ public:
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
     /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
+
+    /// For unaligned [LEFT] ARRAY JOIN
+    FunctionBuilderPtr function_length;
+    FunctionBuilderPtr function_greatest;
+    FunctionBuilderPtr function_arrayResize;
+
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
@@ -97,6 +103,7 @@ public:
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
     bool array_join_is_left = false;
+    bool unaligned_array_join = false;
 
     /// For JOIN
     std::shared_ptr<const Join> join;
