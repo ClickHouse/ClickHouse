@@ -9,6 +9,7 @@ Replication is only supported for tables in the MergeTree family:
 - ReplicatedReplacingMergeTree
 - ReplicatedAggregatingMergeTree
 - ReplicatedCollapsingMergeTree
+- ReplicatedVersionedCollapsingMergeTree
 - ReplicatedGraphiteMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
@@ -93,7 +94,7 @@ ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
 ```
 
-Example in deprecated syntax:
+<details><summary>Example in deprecated syntax</summary>
 
 ```sql
 CREATE TABLE table_name
@@ -103,6 +104,8 @@ CREATE TABLE table_name
     UserID UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
 ```
+
+</details>
 
 As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the 'macros' section of the configuration file. Example:
 
@@ -180,7 +183,7 @@ There is no restriction on network bandwidth during recovery. Keep this in mind 
 
 We use the term `MergeTree` to refer to all table engines in the ` MergeTree family`, the same as for `ReplicatedMergeTree`.
 
-If you had a `MergeTree` table that was manually replicated, you can convert it to a replicatable table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
+If you had a `MergeTree` table that was manually replicated, you can convert it to a replicated table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
 If the data differs on various replicas, first sync it, or delete this data on all the replicas except one.
 

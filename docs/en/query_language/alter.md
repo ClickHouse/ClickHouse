@@ -85,6 +85,8 @@ The command is lightweight in a sense that it only changes metadata. To keep the
 rows are ordered by the sorting key expression you cannot add expressions containing existing columns
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
+<a name="query_language-manipulation-with-partitions-and-parts"></a>
+
 ### Manipulations With Partitions and Parts
 
 It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
@@ -205,15 +207,6 @@ To restore from a backup:
 
 In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
-
-### Backups and Replication
-
-Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
-
-For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
-
-Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data).
-For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in `/var/lib/clickhouse/shadow/`).
 
 ``` sql
 ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'

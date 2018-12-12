@@ -128,6 +128,7 @@ nav:
       - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
       - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
       - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
+      - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
       - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
     - 'For small data':
       - 'TinyLog': 'operations/table_engines/tinylog.md'
@@ -150,6 +151,7 @@ nav:
       - 'Kafka': 'operations/table_engines/kafka.md'
       - 'MySQL': 'operations/table_engines/mysql.md'
   - 'Access rights': 'operations/access_rights.md'
+  - 'Data Backup': 'operations/backup.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System tables': 'operations/system_tables.md'

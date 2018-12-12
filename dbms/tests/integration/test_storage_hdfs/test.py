@@ -12,7 +12,7 @@ import subprocess
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_hdfs=True, image='withlibsimage', config_dir="configs", main_configs=['configs/log_conf.xml'])
+node1 = cluster.add_instance('node1', with_hdfs=True, config_dir="configs", main_configs=['configs/log_conf.xml'])
 
 @pytest.fixture(scope="module")
 def started_cluster():

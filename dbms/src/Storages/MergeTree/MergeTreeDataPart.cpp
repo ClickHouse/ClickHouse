@@ -564,7 +564,7 @@ void MergeTreeDataPart::loadRowsCount()
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
-            if (!column_col->isFixedAndContiguous())
+            if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
             size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
