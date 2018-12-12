@@ -61,7 +61,7 @@ ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the 
 
 The default database.
 
-To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
 
 **Example**
 
@@ -74,7 +74,7 @@ To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config]().
+Settings profiles are located in the file specified in the parameter [user_config](#user-config).
 
 **Example**
 

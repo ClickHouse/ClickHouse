@@ -339,7 +339,7 @@ The corresponding conversion can be performed before the WHERE/PREWHERE clause (
 Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
 !!! info "Note"
-    Not related to [ARRAY JOIN]().
+    Not related to [ARRAY JOIN](#array-join).
 
 
 ``` sql
@@ -374,7 +374,7 @@ When using a normal `JOIN`, the query is sent to remote servers. Subqueries are 
 
 When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries]().
+Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#distributed-subqueries).
 
 **Usage Recommendations**
 

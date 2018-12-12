@@ -6,7 +6,7 @@ This engine:
 - Allows quick writing of continually changing states of objects.
 - Deletes old states of objects in the background. It causes to significant reduction of the volume of storage.
 
-See the section [Collapsing]() for details.
+See the section [Collapsing](#collapsing) for details.
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm. `VersionedCollapsingMergeTree` solves the same problem as the [CollapsingMergeTree](collapsingmergetree.md) but uses another algorithm of collapsing. It allows inserting the data in any order with multiple threads. The particular `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. `CollapsingMergeTree` allows only strictly consecutive insertion.
 

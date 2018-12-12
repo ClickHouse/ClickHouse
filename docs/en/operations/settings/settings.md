@@ -14,7 +14,7 @@ Restrictions:
 - If the subquery concerns a distributed table containing more than one shard,
 - Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
-The possible values ​​are:
+The possible values are:
 
 - `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
 - `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
@@ -273,7 +273,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 ## stream_flush_interval_ms
 
-Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size]() rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#max-insert-block-size) rows.
 
 The default value is 7500.
 
@@ -381,7 +381,7 @@ The default value is 0.
 
 All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
 
-When reading the data written from the `insert_quorum`, you can use the[select_sequential_consistency]() option.
+When reading the data written from the `insert_quorum`, you can use the[select_sequential_consistency](#select-sequential-consistency) option.
 
 **ClickHouse generates an exception**
 
@@ -390,8 +390,8 @@ When reading the data written from the `insert_quorum`, you can use the[select_s
 
 **See also the following parameters:**
 
-- [insert_quorum_timeout]()
-- [select_sequential_consistency]()
+- [insert_quorum_timeout](#insert-quorum-timeout)
+- [select_sequential_consistency](#select-sequential-consistency)
 
 
 ## insert_quorum_timeout
@@ -402,8 +402,8 @@ By default, 60 seconds.
 
 **See also the following parameters:**
 
-- [insert_quorum]()
-- [select_sequential_consistency]()
+- [insert_quorum](#insert-quorum)
+- [select_sequential_consistency](#select-sequential-consistency)
 
 
 ## select_sequential_consistency
@@ -417,8 +417,8 @@ When sequential consistency is enabled, ClickHouse allows the client to execute 
 
 See also the following parameters:
 
-- [insert_quorum]()
-- [insert_quorum_timeout]()
+- [insert_quorum](#insert-quorum)
+- [insert_quorum_timeout](#insert-quorum-timeout)
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

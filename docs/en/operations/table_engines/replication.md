@@ -172,7 +172,7 @@ If all data and metadata disappeared from one of the servers, follow these steps
 
 Then start the server (restart, if it is already running). Data will be downloaded from replicas.
 
-An alternative recovery option is to delete information about the lost replica from ZooKeeper (`/path_to_table/replica_name`), then create the replica again as described in "[Creating replicatable tables]()".
+An alternative recovery option is to delete information about the lost replica from ZooKeeper (`/path_to_table/replica_name`), then create the replica again as described in "[Creating replicated tables](#creating-replicated-tables)".
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 

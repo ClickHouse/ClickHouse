@@ -118,7 +118,7 @@ expr AS alias
 
     For example `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — [string literal](). If an alias contains spaces, enclose it in double quotes or backticks.
+- `alias` — [string literal](#string-literals). If an alias contains spaces, enclose it in double quotes or backticks.
 
     For example, `SELECT "table t".col_name FROM t AS "table t"`.
 

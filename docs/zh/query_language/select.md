@@ -339,7 +339,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 JOIN子句用于连接数据，作用与[SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL))的定义相同。
 
 !!! info "注意"
-    与[ARRAY JOIN]()没有关系.
+    与[ARRAY JOIN](#array-join)没有关系.
 
 
 ``` sql
@@ -373,7 +373,7 @@ FROM <left_subquery>
 
 当使用`GLOBAL ... JOIN`，首先会在请求服务器上计算右表并以临时表的方式将其发送到所有服务器。这时每台服务器将直接使用它进行计算。
 
-使用`GLOBAL`时需要小心。更多信息，参阅[Distributed subqueries]()部分。
+使用`GLOBAL`时需要小心。更多信息，参阅[Distributed subqueries](#distributed-subqueries)部分。
 
 **使用建议**
 

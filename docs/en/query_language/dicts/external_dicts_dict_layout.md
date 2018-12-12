@@ -2,11 +2,11 @@
 
 # Storing Dictionaries in Memory
 
-There are a [variety of ways]() to store dictionaries in memory.
+There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed)and[complex_key_hashed](). which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache]()".
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache](#cache)".
 
 There are several ways to improve dictionary performance:
 
@@ -39,15 +39,13 @@ The configuration looks like this:
 
 ## Ways to Store Dictionaries in Memory
 
-- [flat]()
-- [hashed]()
-- [cache]()
-- [range_hashed]()
-- [complex_key_hashed]()
-- [complex_key_cache]()
-- [ip_trie]()
-
-<a name="dicts-external_dicts_dict_layout-flat"></a>
+- [flat](#flat)
+- [hashed](#hashed)
+- [cache](#cache)
+- [range_hashed](#range-hashed)
+- [complex_key_hashed](#complex-key-hashed)
+- [complex_key_cache](#complex-key-cache)
+- [ip_trie](#ip-trie)
 
 ### flat
 

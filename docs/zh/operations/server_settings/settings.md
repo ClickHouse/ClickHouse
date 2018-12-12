@@ -61,7 +61,7 @@ ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the 
 
 The default database.
 
-To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
 
 **Example**
 
@@ -74,7 +74,7 @@ To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config]().
+Settings profiles are located in the file specified in the parameter [user_config](#user-config).
 
 **Example**
 
@@ -196,7 +196,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL]() must be configured.
+If `https_port` is specified, [openSSL](#openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
