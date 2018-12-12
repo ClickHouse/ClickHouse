@@ -107,7 +107,12 @@ def build_for_lang(lang, args):
                 'admonition',
                 'attr_list',
                 'codehilite',
-                'extra'
+                'extra',
+                {
+                    'toc': {
+                        'permalink': True
+                    }
+                }
             ],
             plugins=[{
                 'search': {
