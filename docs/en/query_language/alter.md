@@ -78,7 +78,7 @@ MODIFY ORDER BY new_expression
 
 It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
 [replicated](../operations/table_engines/replication.md) tables). The command changes the
-[sorting key](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) of the table
+[sorting key](../operations/table_engines/mergetree.md) of the table
 to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part

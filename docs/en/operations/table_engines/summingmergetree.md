@@ -2,7 +2,7 @@
 
 # SummingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for  `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md#table_engines-mergetree-sorting_key)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for  `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend to use the engine together with `MergeTree`. Store complete data in `MergeTree`  table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+For a description of request parameters, see [request description](../../query_language/create.md).
 
 **Parameters of SummingMergeTree**
 
@@ -32,7 +32,7 @@ The columns must be of a numeric type and must not be in the primary key.
 
 **Query clauses**
 
-When creating a `SummingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
+When creating a `SummingMergeTree` table the same [clauses](mergetree.md)  are required, as when creating a `MergeTree`  table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -73,7 +73,7 @@ Insert data to it:
 :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
-ClickHouse may sum all the rows not completely ([see below](#summary-data-processing)), so we use an aggregate function `sum`  and `GROUP BY` clause  in the query.
+ClickHouse may sum all the rows not completely ([see below]()), so we use an aggregate function `sum`  and `GROUP BY` clause  in the query.
 
 ```sql
 SELECT key, sum(value) FROM summtt GROUP BY key
@@ -92,7 +92,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 When data are inserted into a table, they are saved as-is. Clickhouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
-ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
+ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../query_language/agg_functions/reference.md) and `GROUP BY` clause should be used in a query as described in the example above.
 
 ### Common rules for summation
 
@@ -106,7 +106,7 @@ The values are not summarized for columns in the primary key.
 
 ### The Summation in the AggregateFunction Columns
 
-For columns of [AggregateFunction type](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md#table_engine-aggregatingmergetree) engine aggregating according to the function.
+For columns of [AggregateFunction type](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md) engine aggregating according to the function.
 
 ### Nested Structures
 
@@ -128,7 +128,7 @@ Examples:
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-When requesting data, use the [sumMap(key, value)](../../query_language/agg_functions/reference.md#agg_function-summary) function for aggregation of `Map`.
+When requesting data, use the [sumMap(key, value)](../../query_language/agg_functions/reference.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 

@@ -53,7 +53,7 @@
 
 ## Операторы для работы с множествами
 
-*Смотрите раздел [Операторы IN](select.md/#query_language-in_operators).*
+*Смотрите раздел [Операторы IN](select.md/).*
 
 `a IN ...` - функция `in(a, b)`
 
@@ -132,7 +132,7 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
 
 ### IS NULL
 
-- Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NULL` возвращает:
+- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
     - `1`, если значение — `NULL`.
     - `0` в обратном случае.
 - Для прочих значений оператор `IS NULL` всегда возвращает `0`.
@@ -155,7 +155,7 @@ WHERE isNull(y)
 
 ### IS NOT NULL
 
-- Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NOT NULL` возвращает:
+- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
     - `0`, если значение — `NULL`.
     - `1`, в обратном случае.
 - Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.

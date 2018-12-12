@@ -15,7 +15,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 -   Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 -   Нули и пустые строки, если `DEFAULT` не определены.
 
-Если [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
+Если [strict_insert_defaults=1](../operations/settings/settings.md), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
 
 В INSERT можно передавать данные любого [формата](../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 

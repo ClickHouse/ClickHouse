@@ -122,7 +122,7 @@ default_expression String - выражение для значения по ум
 
 ## system.parts
 
-Содержит информацию о кусках таблиц семейства [MergeTree](table_engines/mergetree.md#table_engines-mergetree).
+Содержит информацию о кусках таблиц семейства [MergeTree](table_engines/mergetree.md).
 
 Каждая строка описывает один кусок данных.
 

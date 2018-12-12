@@ -15,7 +15,7 @@ The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case
 - The values calculated from the `DEFAULT` expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-If [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), columns that do not have `DEFAULT` defined must be listed in the query.
+If [strict_insert_defaults=1](../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
 
 Data can be passed to the INSERT in any [format](../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 

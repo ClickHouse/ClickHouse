@@ -28,7 +28,7 @@ At this time, simple `WHERE` clauses such as ` =, !=, >, >=, <, <=` are executed
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
-The `MySQL` engine does not support the [Nullable](../../data_types/nullable.md#data_type-nullable) data type, so when reading data from MySQL tables, `NULL` is converted to default values for the specified column type (usually 0 or an empty string).
+The `MySQL` engine does not support the [Nullable](../../data_types/nullable.md) data type, so when reading data from MySQL tables, `NULL` is converted to default values for the specified column type (usually 0 or an empty string).
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mysql/) <!--hide-->

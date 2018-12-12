@@ -78,13 +78,13 @@ Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples
 
 Indicates that the value is missing.
 
-In order to store `NULL` in a table field, it must be of the [Nullable](../data_types/nullable.md#data_type-nullable) type.
+In order to store `NULL` in a table field, it must be of the [Nullable](../data_types/nullable.md) type.
 
 Depending on the data format (input or output), `NULL` may have a different representation. For more information, see the documentation for [data formats](../interfaces/formats.md#formats).
 
 There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation will also be `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
-In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md#operator-is-not-null) operators and the related functions `isNull` and `isNotNull`.
+In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md) operators and the related functions `isNull` and `isNotNull`.
 
 ## Functions
 
@@ -113,13 +113,13 @@ expr AS alias
 
     For example, `SELECT b.column_name from t b`.
 
-    In the [CAST function](functions/type_conversion_functions.md#type_conversion_function-cast), the `AS` keyword has another meaning. See the description of the function.
+    In the [CAST function](functions/type_conversion_functions.md), the `AS` keyword has another meaning. See the description of the function.
 
 - `expr` — any expression supported by ClickHouse.
 
     For example `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — [string literal](#syntax-string_literal). If an alias contains spaces, enclose it in double quotes or backticks.
+- `alias` — [string literal](). If an alias contains spaces, enclose it in double quotes or backticks.
 
     For example, `SELECT "table t".col_name FROM t AS "table t"`.
 

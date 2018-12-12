@@ -6,7 +6,7 @@ This engine is designed for rollup (thinning and aggregating/averaging) [Graphit
 
 You can use any ClickHouse table engine to store the Graphite data if you don't need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
 
-The engine inherits properties from [MergeTree](mergetree.md#table_engines-mergetree).
+The engine inherits properties from [MergeTree](mergetree.md).
 
 ## Creating a Table
 
@@ -25,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+For a description of request parameters, see [request description](../../query_language/create.md).
 
 A table for the Graphite date should have the following columns:
 
@@ -44,7 +44,7 @@ The names of these columns should be set in the rollup configuration.
 
 **Query clauses**
 
-When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
+When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -70,7 +70,7 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 
 ## Rollup configuration
 
-The settings for rollup are defined by the [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
+The settings for rollup are defined by the [graphite_rollup](../server_settings/settings.md) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
 Rollup configuration structure:
 
