@@ -22,7 +22,7 @@ FROM system.parts
 WHERE database = 'test' and table = 'datetime_table' AND active = 1 
 GROUP BY partition
 ORDER BY partition ASC
-FORMAT PrettyCompactNoEscapes;
+FORMAT CSV;
 
 DROP TABLE IF EXISTS test.datetime_table;
 
@@ -49,7 +49,7 @@ FROM system.parts
 WHERE database = 'test' and table = 'datetime_table' AND active = 1 
 GROUP BY partition
 ORDER BY partition ASC
-FORMAT PrettyCompactNoEscapes;
+FORMAT CSV;
 
 DROP TABLE IF EXISTS test.datetime_table;
 
@@ -78,6 +78,6 @@ FROM system.parts
 WHERE database = 'test' and table = 'datetime_table' AND active = 1
 GROUP BY partition
 ORDER BY partition ASC
-FORMAT PrettyCompactNoEscapes;
+FORMAT CSV;
 
 DROP TABLE IF EXISTS test.datetime_table;
