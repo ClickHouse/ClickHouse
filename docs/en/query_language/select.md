@@ -80,7 +80,6 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
-<a name="select-array-join"></a>
 
 ### ARRAY JOIN Clause
 
@@ -334,7 +333,6 @@ The query can only specify a single ARRAY JOIN clause.
 
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
-<a name="query-language-join"></a>
 
 ### JOIN Clause
 
@@ -447,7 +445,6 @@ The JOIN behavior is affected by the [join_use_nulls](../operations/settings/set
 
 If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md) are not joined.
 
-<a name="query_language-queries-where"></a>
 
 ### WHERE Clause
 
@@ -456,7 +453,6 @@ This expression will be used for filtering data before all other transformations
 
 If indexes are supported by the database table engine, the expression is evaluated on the ability to use indexes.
 
-<a name="query_language-queries-prewhere"></a>
 
 ### PREWHERE Clause
 
@@ -615,7 +611,6 @@ Allows filtering the result received after GROUP BY, similar to the WHERE clause
 WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY), while HAVING is performed after it.
 If aggregation is not performed, HAVING can't be used.
 
-<a name="query_language-queries-order_by"></a>
 
 ### ORDER BY Clause
 
@@ -751,7 +746,6 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
-<a name="query_language-in_operators"></a>
 
 ### IN Operators
 
@@ -850,7 +844,6 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<a name="queries-distributed-subqueries"></a>
 
 #### Distributed Subqueries
 

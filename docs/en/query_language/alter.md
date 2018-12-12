@@ -66,7 +66,6 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-<a name="query_language-queries-alter-key_alters"></a>
 
 ### Manipulations With Key Expressions
 
@@ -85,7 +84,6 @@ The command is lightweight in a sense that it only changes metadata. To keep the
 rows are ordered by the sorting key expression you cannot add expressions containing existing columns
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
-<a name="query_language-manipulation-with-partitions-and-parts"></a>
 
 ### Manipulations With Partitions and Parts
 

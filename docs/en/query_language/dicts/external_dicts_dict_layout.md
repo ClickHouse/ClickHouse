@@ -36,7 +36,6 @@ The configuration looks like this:
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-manner"></a>
 
 ## Ways to Store Dictionaries in Memory
 
@@ -84,7 +83,6 @@ Configuration example:
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-complex_key_hashed"></a>
 
 ### complex_key_hashed
 
@@ -98,7 +96,6 @@ Configuration example:
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-range_hashed"></a>
 
 ### range_hashed
 
@@ -185,7 +182,6 @@ Configuration example:
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-cache"></a>
 
 ### cache
 
@@ -221,13 +217,11 @@ Set a large enough cache size. You need to experiment to select the number of ce
 !!! warning
     Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
-<a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 
 ### complex_key_cache
 
 This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `cache`.
 
-<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
 
 ### ip_trie
 

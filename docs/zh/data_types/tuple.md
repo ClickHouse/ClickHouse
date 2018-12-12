@@ -1,4 +1,3 @@
-<a name="data_type-tuple"></a>
 
 # Tuple(T1, T2, ...)
 

@@ -1,4 +1,3 @@
-<a name="table_functions-remote"></a>
 
 # remote
 

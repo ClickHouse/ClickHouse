@@ -80,7 +80,6 @@ ORDER BY PageViews DESC LIMIT 1000
 
 例如，我们可以使用采样的方式获取到与不进行采样相同的用户ID的列表。这将表明，你可以在IN子查询中使用采样，或者使用采样的结果与其他查询进行关联。
 
-<a name="select-array-join"></a>
 
 ### ARRAY JOIN 子句
 
@@ -334,7 +333,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 
 如果在WHERE/PREWHERE子句中使用了ARRAY JOIN子句的结果，它将优先于WHERE/PREWHERE子句执行，否则它将在WHERE/PRWHERE子句之后执行，以便减少计算。
 
-<a name="query-language-join"></a>
 
 ### JOIN 子句
 
@@ -445,7 +443,6 @@ JOIN的行为受[join_use_nulls](../operations/settings/settings.md)的影响。
 
 如果JOIN的key是[Nullable](../data_types/nullable.md#data_types-nullable)类型的字段，则其中至少一个存在[NULL](syntax.md)值的key不会被关联。
 
-<a name="query_language-queries-where"></a>
 
 ### WHERE 子句
 
@@ -454,7 +451,6 @@ JOIN的行为受[join_use_nulls](../operations/settings/settings.md)的影响。
 
 如果在支持索引的数据库表引擎中，这个表达式将被评估是否使用索引。
 
-<a name="query_language-queries-prewhere"></a>
 
 ### PREWHERE 子句
 
@@ -615,7 +611,6 @@ HAVING子句可以用来过滤GROUP BY之后的数据，类似于WHERE子句。
 WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚合后执行。
 如果不存在聚合，则不能使用HAVING。
 
-<a name="query_language-queries-order_by"></a>
 
 ### ORDER BY 子句
 
@@ -751,7 +746,6 @@ UNION ALL中的查询可以同时运行，它们的结果将被混合到一起�
 
 当使用命令行客户端时，数据以内部高效的格式在服务器和客户端之间进行传递。客户端将单独的解析FORMAT子句，以帮助数据格式的转换（这将减轻网络和服务器的负载）。
 
-<a name="query_language-in_operators"></a>
 
 ### IN 运算符
 
@@ -851,7 +845,6 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<a name="queries-distributed-subqueries"></a>
 
 #### 分布式子查询
 

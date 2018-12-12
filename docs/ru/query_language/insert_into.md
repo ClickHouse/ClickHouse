@@ -1,4 +1,3 @@
-<a name="queries-insert"></a>
 
 ## INSERT
 

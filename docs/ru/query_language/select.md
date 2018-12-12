@@ -26,7 +26,6 @@ SELECT [DISTINCT] expr_list
 Если в запросе отсутствуют секции `DISTINCT`, `GROUP BY`, `ORDER BY`, подзапросы в `IN` и `JOIN`, то запрос будет обработан полностью потоково, с использованием O(1) количества оперативки.
 Иначе запрос может съесть много оперативки, если не указаны подходящие ограничения `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. Подробнее смотрите в разделе "Настройки". Присутствует возможность использовать внешнюю сортировку (с сохранением временных данных на диск) и внешнюю агрегацию. `Merge join` в системе нет.
 
-<a name="query_language-section-from"></a>
 
 ### Секция FROM
 
@@ -46,7 +45,6 @@ SELECT [DISTINCT] expr_list
 
 Модификатор FINAL может быть использован только при SELECT-е из таблицы типа CollapsingMergeTree. При указании FINAL, данные будут выбираться полностью "сколлапсированными". Стоит учитывать, что использование FINAL приводит к выбору кроме указанных в SELECT-е столбцов также столбцов, относящихся к первичному ключу. Также, запрос будет выполняться в один поток, и при выполнении запроса будет выполняться слияние данных. Это приводит к тому, что при использовании FINAL, запрос выполняется медленнее. В большинстве случаев, следует избегать использования FINAL. Подробнее смотрите раздел "Движок CollapsingMergeTree".
 
-<a name="select-section-sample"></a>
 
 ### Секция SAMPLE
 
@@ -337,7 +335,6 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 Соответствующее преобразование может выполняться как до секции WHERE/PREWHERE (если его результат нужен в этой секции), так и после выполнения WHERE/PREWHERE (чтобы уменьшить объём вычислений).
 
 
-<a name="query_language-join"></a>
 
 ### Секция JOIN
 
@@ -442,7 +439,6 @@ LIMIT 10
 Если ключами JOIN выступают поля типа [Nullable](../data_types/nullable.md#data_types-nullable), то строки, где хотя бы один из ключей имеет значение [NULL](syntax.md), не соединяются.
 
 
-<a name="query_language-queries-where"></a>
 
 ### Секция WHERE
 
@@ -470,7 +466,6 @@ WHERE isNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-<a name="query_language-queries-prewhere"></a>
 
 ### Секция PREWHERE
 
@@ -631,7 +626,6 @@ LIMIT 100
 WHERE и HAVING отличаются тем, что WHERE выполняется до агрегации (GROUP BY), а HAVING - после.
 Если агрегации не производится, то HAVING использовать нельзя.
 
-<a name="query_language-queries-order_by"></a>
 
 ### Секция ORDER BY
 
@@ -767,7 +761,6 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 При использовании клиента командной строки данные на клиент передаются во внутреннем эффективном формате. При этом клиент самостоятельно интерпретирует секцию FORMAT запроса и форматирует данные на своей стороне (снимая нагрузку на сеть и сервер).
 
-<a name="query_language-in_operators"></a>
 
 ### Операторы IN
 
@@ -868,7 +861,6 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<a name="queries-distributed-subrequests"></a>
 
 #### Распределённые подзапросы
 

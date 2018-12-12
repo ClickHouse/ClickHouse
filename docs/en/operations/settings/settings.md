@@ -1,6 +1,5 @@
 # Settings
 
-<a name="settings-distributed_product_mode"></a>
 
 ## distributed_product_mode
 
@@ -22,7 +21,6 @@ The possible values ​​are:
 - `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
 - `allow`  — Allows the use of these types of subqueries.
 
-<a name="settings-settings-fallback_to_stale_replicas_for_distributed_queries"></a>
 
 ## fallback_to_stale_replicas_for_distributed_queries
 
@@ -44,7 +42,6 @@ Works with tables in the MergeTree family.
 
 If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
 
-<a name="settings-settings-force_primary_key"></a>
 
 ## force_primary_key
 
@@ -54,7 +51,6 @@ Works with tables in the MergeTree family.
 
 If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
 
-<a name="settings_settings_fsync_metadata"></a>
 
 ## fsync_metadata
 
@@ -87,7 +83,6 @@ If an error occurred while reading rows but the error counter is still less than
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
 
-<a name="session-setting-join_default_strictness"></a>
 
 ## join_default_strictness
 
@@ -117,7 +112,6 @@ Used for the same purpose as `max_block_size`, but it sets the recommended block
 However, the block size cannot be more than `max_block_size` rows.
 Disabled by default (set to 0). It only works when reading from MergeTree engines.
 
-<a name="settings_settings-log_queries"></a>
 
 ## log_queries
 
@@ -253,7 +247,6 @@ By default, 3.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 
-<a name="settings-use_uncompressed_cache"></a>
 
 ## use_uncompressed_cache
 
@@ -277,7 +270,6 @@ Yandex.Metrica uses this parameter set to 1 for implementing suggestions for seg
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/). The value depends on the format.
 
-<a name="settings-settings_stream_flush_interval_ms"></a>
 
 ## stream_flush_interval_ms
 
@@ -287,7 +279,6 @@ The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
-<a name="settings-load_balancing"></a>
 
 ## load_balancing
 
@@ -367,7 +358,6 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-<a name="settings-join_use_nulls"></a>
 
 ## join_use_nulls
 
@@ -375,7 +365,6 @@ Affects the behavior of [JOIN](../../query_language/select.md).
 
 With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
 
-<a name="setting-insert_quorum"></a>
 
 ## insert_quorum
 
@@ -404,7 +393,6 @@ When reading the data written from the `insert_quorum`, you can use the[select_s
 - [insert_quorum_timeout]()
 - [select_sequential_consistency]()
 
-<a name="setting-insert_quorum_timeout"></a>
 
 ## insert_quorum_timeout
 
@@ -417,7 +405,6 @@ By default, 60 seconds.
 - [insert_quorum]()
 - [select_sequential_consistency]()
 
-<a name="setting-select_sequential_consistency"></a>
 
 ## select_sequential_consistency
 

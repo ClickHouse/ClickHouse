@@ -27,7 +27,6 @@ Main features:
 !!! info
     The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
 
-<a name="table_engines-mergetree-configuring"></a>
 
 ## Creating a Table
 
@@ -172,7 +171,6 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-<a name="table_engines-mergetree-sorting_key"></a>
 
 ### Choosing the Primary Key that differs from the Sorting Key
 

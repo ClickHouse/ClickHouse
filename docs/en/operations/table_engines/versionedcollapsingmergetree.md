@@ -1,4 +1,3 @@
-<a name="table_engine-versionedcollapsingmergetree"></a>
 
 # VersionedCollapsingMergeTree
 
@@ -71,7 +70,6 @@ All of the parameters excepting `sign` and `version` have the same meaning as in
     Column data type should be `UInt*`.
 </details>
 
-<a name="versionedcollapsingmergetree-collapsing"></a>
 
 ## Collapsing
 

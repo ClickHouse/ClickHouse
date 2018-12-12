@@ -1,4 +1,3 @@
-<a name="dicts-external_dicts_dict_lifetime"></a>
 
 # Обновление словарей
 

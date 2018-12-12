@@ -1,4 +1,3 @@
-<a name="special_data_type-nothing"></a>
 
 # Nothing
 

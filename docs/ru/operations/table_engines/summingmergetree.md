@@ -1,4 +1,3 @@
-<a name="table_engine-summingmergetree"></a>
 
 # SummingMergeTree
 
@@ -85,7 +84,6 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 └─────┴────────────┘
 ```
 
-<a name="summingmergetree-data-processing"></a>
 
 ## Обработка данных
 
