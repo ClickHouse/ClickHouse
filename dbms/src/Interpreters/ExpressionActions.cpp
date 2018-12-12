@@ -143,8 +143,15 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     a.type = ARRAY_JOIN;
     a.array_joined_columns = array_joined_columns;
     a.array_join_is_left = array_join_is_left;
+    a.unaligned_array_join = context.getSettingsRef().enable_unaligned_array_join;
 
-    if (array_join_is_left)
+    if (a.unaligned_array_join)
+    {
+        a.function_length = FunctionFactory::instance().get("length", context);
+        a.function_greatest = FunctionFactory::instance().get("greatest", context);
+        a.function_arrayResize = FunctionFactory::instance().get("arrayResize", context);
+    }
+    else if (array_join_is_left)
         a.function_builder = FunctionFactory::instance().get("emptyArrayToSingle", context);
 
     return a;
@@ -375,7 +382,44 @@ void ExpressionAction::execute(Block & block) const
 
             /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
             std::map<String, ColumnPtr> non_empty_array_columns;
-            if (array_join_is_left)
+
+            if (unaligned_array_join)
+            {
+                /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
+                auto rows = block.rows();
+                auto uint64 = std::make_shared<DataTypeUInt64>();
+                ColumnWithTypeAndName column_of_max_length;
+                if (array_join_is_left)
+                    column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 1u), uint64, {});
+                else
+                    column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 0u), uint64, {});
+
+                for (const auto & name : array_joined_columns)
+                {
+                    auto & src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, {{}, uint64, {}}};
+                    function_length->build({src_col})->execute(tmp_block, {0}, 1, rows);
+
+                    Block tmp_block2{
+                        column_of_max_length, tmp_block.safeGetByPosition(1), {{}, uint64, {}}};
+                    function_greatest->build({column_of_max_length, tmp_block.safeGetByPosition(1)})->execute(tmp_block2, {0, 1}, 2, rows);
+                    column_of_max_length = tmp_block2.safeGetByPosition(2);
+                }
+
+                for (const auto & name : array_joined_columns)
+                {
+                    auto & src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
+                    function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
+                    any_array_ptr = src_col.column = tmp_block.safeGetByPosition(2).column;
+                }
+                if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
+                    any_array_ptr = converted;
+                any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+            }
+            else if (array_join_is_left && !unaligned_array_join)
             {
                 for (const auto & name : array_joined_columns)
                 {
@@ -404,13 +448,13 @@ void ExpressionAction::execute(Block & block) const
                     if (!typeid_cast<const DataTypeArray *>(&*current.type))
                         throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
-                    ColumnPtr array_ptr = array_join_is_left ? non_empty_array_columns[current.name] : current.column;
+                    ColumnPtr array_ptr = (array_join_is_left && !unaligned_array_join) ? non_empty_array_columns[current.name] : current.column;
 
                     if (ColumnPtr converted = array_ptr->convertToFullColumnIfConst())
                         array_ptr = converted;
 
                     const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
-                    if (!array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
+                    if (!unaligned_array_join && !array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
                         throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
                     current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
