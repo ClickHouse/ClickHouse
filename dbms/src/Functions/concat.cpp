@@ -131,7 +131,7 @@ public:
 
     String getSignature() const override
     {
-        return "f(StringOrFixedString, StringOrFixedString, ...) -> String OR f(Array(T1), ...) -> Array(leastSuperType(T1, ...))";
+        return "f(StringOrFixedString, StringOrFixedString, ...) -> String OR f(Array(T1), ...) -> Array(leastSupertype(T1, ...))";
     }
 
 protected:

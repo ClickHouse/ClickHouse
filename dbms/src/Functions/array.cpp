@@ -27,7 +27,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    String getSignature() const override { return "f(T1, ...) -> Array(leastSuperType(T1, ...))"; }
+    String getSignature() const override { return "f(T1, ...) -> Array(leastSupertype(T1, ...))"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

@@ -43,7 +43,7 @@ public:
     String getName() const override { return name; }
     bool useDefaultImplementationForNulls() const override { return false; }
 
-    String getSignature() const override { return "f(cond1 MaybeNullable(UInt8), then1 T1, ..., else U) -> leastSuperType(T1, ..., U)"; }
+    String getSignature() const override { return "f(cond1 MaybeNullable(UInt8), then1 T1, ..., else U) -> leastSupertype(T1, ..., U)"; }
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {
