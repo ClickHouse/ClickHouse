@@ -1,4 +1,3 @@
-<a name="type_conversion_functions"></a>
 
 # Функции преобразования типов
 

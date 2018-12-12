@@ -1,4 +1,3 @@
-<a name="settings_profiles"></a>
 
 # Settings profiles
 

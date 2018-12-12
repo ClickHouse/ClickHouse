@@ -56,7 +56,6 @@ All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
     Column Data Type — `Int8`.
 </details>
 
-<a name="collapsingmergetree-collapsing"></a>
 
 ## Collapsing
 

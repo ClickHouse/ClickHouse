@@ -1,4 +1,3 @@
-<a name="data_type-enum"></a>
 
 # Enum8, Enum16
 

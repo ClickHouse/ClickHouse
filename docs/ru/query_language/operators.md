@@ -151,7 +151,6 @@ WHERE isNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-<a name="operator-is-not-null"></a>
 
 ### IS NOT NULL
 

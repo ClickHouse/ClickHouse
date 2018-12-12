@@ -1,4 +1,3 @@
-<a name="type_conversion_functions"></a>
 
 # Type conversion functions
 
@@ -100,7 +99,6 @@ These functions accept a string and interpret the bytes placed at the beginning 
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
-<a name="type_conversion_function-cast"></a>
 
 ## CAST(x, t)
 

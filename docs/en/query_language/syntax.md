@@ -56,7 +56,6 @@ For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more informa
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
-<a name="syntax-string_literal"></a>
 
 ### String Literals
 

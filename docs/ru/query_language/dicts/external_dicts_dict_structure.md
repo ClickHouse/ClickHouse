@@ -1,4 +1,3 @@
-<a name="dicts-external_dicts_dict_structure"></a>
 
 # Ключ и поля словаря
 
@@ -28,7 +27,6 @@
 -   `<id>` - [ключевой столбец](external_dicts_dict_structure.md).
 -   `<attribute>` - [столбец данных](external_dicts_dict_structure.md). Столбцов может быть много.
 
-<a name="dicts-external_dicts_dict_structure-key"></a>
 
 ## Ключ
 
@@ -85,7 +83,6 @@ ClickHouse поддерживает следующие виды ключей:
 
 При запросе в функции `dictGet*` в качестве ключа передаётся кортеж. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-<a name="dicts-external_dicts_dict_structure-attributes"></a>
 
 ## Атрибуты
 

@@ -1,4 +1,3 @@
-<a name="queries-insert"></a>
 
 ## INSERT
 
@@ -41,7 +40,6 @@ INSERT INTO t FORMAT TabSeparated
 
 在使用命令行客户端或HTTP客户端时，你可以将具体的查询语句与数据分开发送。更多具体信息，请参考“[客户端](../interfaces/index.md#interfaces)”部分。
 
-<a name="queries-insert-select"></a>
 
 ### 使用`SELECT`的结果写入
 

@@ -1,4 +1,3 @@
-<a name="queries-insert"></a>
 
 ## INSERT
 
@@ -41,7 +40,6 @@ INSERT INTO t FORMAT TabSeparated
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
 
-<a name="queries-insert-select"></a>
 
 ### Inserting The Results of `SELECT`
 

@@ -122,7 +122,6 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-<a name="other_functions-transform"></a>
 
 ## transform
 

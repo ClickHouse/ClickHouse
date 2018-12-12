@@ -1,6 +1,5 @@
 # Серверные настройки
 
-<a name="server_settings-builtin_dictionaries_reload_interval"></a>
 
 ## builtin_dictionaries_reload_interval
 
@@ -16,7 +15,6 @@ ClickHouse перезагружает встроенные словари с з�
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<a name="server_settings-compression"></a>
 
 ## compression
 
@@ -58,7 +56,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </compression>
 ```
 
-<a name="server_settings-default_database"></a>
 
 ## default_database
 
@@ -72,7 +69,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_database>default</default_database>
 ```
 
-<a name="server_settings-default_profile"></a>
 
 ## default_profile
 
@@ -86,7 +82,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_profile>default</default_profile>
 ```
 
-<a name="server_settings-dictionaries_config"></a>
 
 ## dictionaries_config
 
@@ -105,7 +100,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-<a name="server_settings-dictionaries_lazy_load"></a>
 
 ## dictionaries_lazy_load
 
@@ -123,7 +117,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-<a name="server_settings-format_schema_path"></a>
 
 ## format_schema_path
 
@@ -137,7 +130,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-<a name="server_settings-graphite"></a>
 
 ## graphite
 
@@ -171,7 +163,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </graphite>
 ```
 
-<a name="server_settings-graphite_rollup"></a>
 
 ## graphite_rollup
 
@@ -201,7 +192,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </graphite_rollup_example>
 ```
 
-<a name="server_settings-http_port"></a>
 
 ## http_port/https_port
 
@@ -217,7 +207,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <https>0000</https>
 ```
 
-<a name="server_settings-http_server_default_response"></a>
 
 ## http_server_default_response
 
@@ -247,7 +236,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-<a name="server_settings-interserver_http_port"></a>
 
 ## interserver_http_port
 
@@ -259,7 +247,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-<a name="server_settings-interserver_http_host"></a>
 
 ## interserver_http_host
 
@@ -275,7 +262,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-<a name="server_settings-keep_alive_timeout"></a>
 
 ## keep_alive_timeout
 
@@ -287,7 +273,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
-<a name="server_settings-listen_host"></a>
 
 ## listen_host
 
@@ -300,7 +285,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <listen_host>127.0.0.1</listen_host>
 ```
 
-<a name="server_settings-logger"></a>
 
 ## logger
 
@@ -349,7 +333,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - format - формат сообщений. Возможные значения - ``bsd`` и ``syslog``
 
 
-<a name="server_settings-macros"></a>
 
 ## macros
 
@@ -365,7 +348,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <macros incl="macros" optional="true" />
 ```
 
-<a name="server_settings-mark_cache_size"></a>
 
 ## mark_cache_size
 
@@ -379,7 +361,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-<a name="server_settings-max_concurrent_queries"></a>
 
 ## max_concurrent_queries
 
@@ -391,7 +372,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-<a name="server_settings-max_connections"></a>
 
 ## max_connections
 
@@ -403,7 +383,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_connections>4096</max_connections>
 ```
 
-<a name="server_settings-max_open_files"></a>
 
 ## max_open_files
 
@@ -419,7 +398,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_open_files>262144</max_open_files>
 ```
 
-<a name="server_settings-max_table_size_to_drop"></a>
 
 ## max_table_size_to_drop
 
@@ -439,7 +417,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-<a name="server_settings-merge_tree"></a>
 
 ## merge_tree
 
@@ -455,7 +432,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </merge_tree>
 ```
 
-<a name="server_settings-openSSL"></a>
 
 ## openSSL
 
@@ -516,7 +492,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </openSSL>
 ```
 
-<a name="server_settings-part_log"></a>
 
 ## part_log
 
@@ -556,7 +531,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </part_log>
 ```
 
-<a name="server_settings-path"></a>
 
 ## path
 
@@ -571,7 +545,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <path>/var/lib/clickhouse/</path>
 ```
 
-<a name="server_settings-query_log"></a>
 
 ## query_log
 
@@ -599,7 +572,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-<a name="server_settings-remote_servers"></a>
 
 ## remote_servers
 
@@ -616,7 +588,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
 
-<a name="server_settings-timezone"></a>
 
 ## timezone
 
@@ -632,7 +603,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <timezone>Europe/Moscow</timezone>
 ```
 
-<a name="server_settings-tcp_port"></a>
 
 ## tcp_port
 
@@ -644,7 +614,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tcp_port>9000</tcp_port>
 ```
 
-<a name="server_settings-tmp_path"></a>
 
 ## tmp_path
 
@@ -659,7 +628,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-<a name="server_settings-uncompressed_cache_size"></a>
 
 ## uncompressed_cache_size
 
@@ -685,7 +653,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-<a name="server_settings-users_config"></a>
 
 ## users_config
 
@@ -702,7 +669,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <users_config>users.xml</users_config>
 ```
 
-<a name="server_settings-zookeeper"></a>
 
 ## zookeeper
 

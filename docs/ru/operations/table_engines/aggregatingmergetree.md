@@ -1,4 +1,3 @@
-<a name="table_engine-aggregatingmergetree"></a>
 
 # AggregatingMergeTree
 

@@ -36,7 +36,6 @@
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-manner"></a>
 
 ## Способы размещения словарей в памяти
 
@@ -84,7 +83,6 @@
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-complex_key_hashed"></a>
 
 ### complex_key_hashed
 
@@ -98,7 +96,6 @@
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-range_hashed"></a>
 
 ### range_hashed
 
@@ -183,7 +180,6 @@
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-cache"></a>
 
 ### cache
 
@@ -220,13 +216,11 @@
 !!! warning
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
 
-<a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 
 ### complex_key_cache
 
 Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md). Аналогичен `cache`.
 
-<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
 
 ### ip_trie
 

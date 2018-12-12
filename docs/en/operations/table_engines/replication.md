@@ -69,7 +69,6 @@ You can have any number of replicas of the same data. Yandex.Metrica uses double
 
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
-<a name="table_engines-replication-creation_of_rep_tables"></a>
 
 ## Creating Replicated Tables
 
@@ -177,7 +176,6 @@ An alternative recovery option is to delete information about the lost replica f
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
-<a name="convert-mergetree-to-replicated"></a>
 
 ## Converting from MergeTree to ReplicatedMergeTree
 

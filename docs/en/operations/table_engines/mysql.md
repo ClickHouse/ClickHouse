@@ -1,4 +1,3 @@
-<a name="table_engines-mysql"></a>
 
 # MySQL
 

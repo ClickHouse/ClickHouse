@@ -27,7 +27,6 @@ Main features:
 !!! info
     The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
 
-<a name="table_engines-mergetree-configuring"></a>
 
 ## Creating a Table
 
