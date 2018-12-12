@@ -7,17 +7,16 @@
 
 namespace Poco
 {
-    namespace MongoDB
-    {
-        class Connection;
-        class Cursor;
-    }
+namespace MongoDB
+{
+    class Connection;
+    class Cursor;
+}
 }
 
 
 namespace DB
 {
-
 /// Converts MongoDB Cursor to a stream of Blocks
 class MongoDBBlockInputStream final : public IProfilingBlockInputStream
 {

@@ -317,6 +317,76 @@ bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return false;
 }
 
+bool ParserSubstringExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Either SUBSTRING(expr FROM start) or SUBSTRING(expr FROM start FOR length) or SUBSTRING(expr, start, length)
+    /// The latter will be parsed normally as a function later.
+
+    ASTPtr expr_node;
+    ASTPtr start_node;
+    ASTPtr length_node;
+
+    if (!ParserKeyword("SUBSTRING").ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, expr_node, expected))
+        return false;
+
+    if (pos->type != TokenType::Comma)
+    {
+        if (!ParserKeyword("FROM").ignore(pos, expected))
+            return false;
+    }
+    else
+    {
+        ++pos;
+    }
+
+    if (!ParserExpression().parse(pos, start_node, expected))
+        return false;
+
+    if (pos->type == TokenType::ClosingRoundBracket)
+    {
+        ++pos;
+    }
+    else
+    {
+        if (pos->type != TokenType::Comma)
+        {
+            if (!ParserKeyword("FOR").ignore(pos, expected))
+                return false;
+        }
+        else
+        {
+            ++pos;
+        }
+
+        if (!ParserExpression().parse(pos, length_node, expected))
+            return false;
+
+        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected);
+    }
+
+    /// Convert to canonical representation in functional form: SUBSTRING(expr, start, length)
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children = {expr_node, start_node};
+
+    if (length_node)
+        expr_list_args->children.push_back(length_node);
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = "substring";
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    node = std::move(func_node);
+    return true;
+}
 
 bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -678,8 +748,9 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)
         || ParserLiteral().parse(pos, node, expected)
-        || ParserExtractExpression().parse(pos, node, expected)
         || ParserCastExpression().parse(pos, node, expected)
+        || ParserExtractExpression().parse(pos, node, expected)
+        || ParserSubstringExpression().parse(pos, node, expected)
         || ParserCase().parse(pos, node, expected)
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
