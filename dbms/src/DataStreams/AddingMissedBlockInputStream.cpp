@@ -1,11 +1,11 @@
-#include <DataStreams/AddingDefaultBlockInputStream.h>
+#include <DataStreams/AddingMissedBlockInputStream.h>
 #include <Interpreters/addMissingDefaults.h>
 
 
 namespace DB
 {
 
-AddingDefaultBlockInputStream::AddingDefaultBlockInputStream(
+AddingMissedBlockInputStream::AddingMissedBlockInputStream(
     const BlockInputStreamPtr & input_,
     const Block & header_,
     const ColumnDefaults & column_defaults_,
@@ -16,7 +16,7 @@ AddingDefaultBlockInputStream::AddingDefaultBlockInputStream(
     children.emplace_back(input);
 }
 
-Block AddingDefaultBlockInputStream::readImpl()
+Block AddingMissedBlockInputStream::readImpl()
 {
     Block src = children.back()->read();
     if (!src)

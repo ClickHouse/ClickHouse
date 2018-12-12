@@ -196,9 +196,9 @@ void ASTAlterCommandList::formatImpl(const FormatSettings & settings, FormatStat
 
 
 /** Get the text that identifies this element. */
-String ASTAlterQuery::getID() const
+String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery_" + database + "_" + table;
+    return "AlterQuery" + (delim + database) + delim + table;
 }
 
 ASTPtr ASTAlterQuery::clone() const
