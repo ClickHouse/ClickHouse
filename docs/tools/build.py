@@ -54,6 +54,7 @@ markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
+    os.environ['SINGLE_PAGE'] = '0'
 
     config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
 
@@ -139,6 +140,7 @@ def build_for_lang(lang, args):
 
 def build_single_page_version(lang, args, cfg):
     logging.info('Building single page version for ' + lang)
+    os.environ['SINGLE_PAGE'] = '1'
 
     with autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
         concatenate(lang, args.docs_dir, single_md)

@@ -2,31 +2,41 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
 
+import os
+
 import markdown.inlinepatterns
 import markdown.extensions
 import markdown.util
 
 import slugify as slugify_impl
 
-class NofollowMixin(object):
+class ClickHouseLinkMixin(object):
+
     def handleMatch(self, m):
+        single_page = (os.environ.get('SINGLE_PAGE') == '1')
         try:
-            el = super(NofollowMixin, self).handleMatch(m)
+            el = super(ClickHouseLinkMixin, self).handleMatch(m)
         except IndexError:
             return
 
         if el is not None:
             href = el.get('href') or ''
-            if href.startswith('http') and not href.startswith('https://clickhouse.yandex'):
+            is_external = href.startswith('http:') or href.startswith('https:')
+            if is_external and not href.startswith('https://clickhouse.yandex'):
                 el.set('rel', 'external nofollow')
+            elif single_page:
+                if '#' in href:
+                    el.set('href', '#' + href.split('#', 1)[1])
+                else:
+                    el.set('href', '#' + href.replace('.md', '/'))
         return el
 
 
-class NofollowAutolinkPattern(NofollowMixin, markdown.inlinepatterns.AutolinkPattern):
+class ClickHouseAutolinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.AutolinkPattern):
     pass
 
 
-class NofollowLinkPattern(NofollowMixin, markdown.inlinepatterns.LinkPattern):
+class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkPattern):
     pass
 
 
@@ -41,9 +51,8 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
 
     def extendMarkdown(self, md, md_globals):
         md.preprocessors['clickhouse'] = ClickHousePreprocessor()
-        md.inlinePatterns['link'] = NofollowLinkPattern(markdown.inlinepatterns.LINK_RE, md)
-        md.inlinePatterns['autolink'] = NofollowAutolinkPattern(markdown.inlinepatterns.AUTOLINK_RE, md)
-
+        md.inlinePatterns['link'] = ClickHouseLinkPattern(markdown.inlinepatterns.LINK_RE, md)
+        md.inlinePatterns['autolink'] = ClickHouseAutolinkPattern(markdown.inlinepatterns.AUTOLINK_RE, md)
 
 def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
