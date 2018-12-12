@@ -451,7 +451,7 @@ public:
     explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
 
     String getName() const override { return function->getName(); }
-    String getSignature() const override { return function->getName(); }
+    String getSignature() const override { return function->getSignature(); }
 
 protected:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
