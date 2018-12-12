@@ -72,6 +72,7 @@ add_headers_and_sources(dbms src/Storages/Kafka)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
+add_headers_and_sources(dbms src/Compression)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -179,6 +180,8 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_parsers
     clickhouse_common_config
+    ${LZ4_LIBRARY}
+    ${ZSTD_LIBRARY}
         PUBLIC
     clickhouse_common_io
         PRIVATE
@@ -252,6 +255,14 @@ if (USE_CAPNP)
     endif ()
 endif ()
 
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
 if (USE_RDKAFKA)
     target_link_libraries (dbms PRIVATE ${RDKAFKA_LIBRARY})
     if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -269,12 +280,6 @@ if (USE_HDFS)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
 endif()
 
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
-endif ()
-if (NOT USE_INTERNAL_ZSTD_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
-endif ()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp

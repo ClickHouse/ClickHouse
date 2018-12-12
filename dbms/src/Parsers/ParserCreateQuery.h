@@ -106,6 +106,8 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
     bool require_type = true;
+    bool isDeclareColumnType(Pos & pos, Expected & expected);
+    bool isDeclareColumnCodec(Pos & pos, Expected & expected);
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -114,18 +116,20 @@ using ParserCompoundColumnDeclaration = IParserColumnDeclaration<ParserCompoundI
 template <typename NameParser>
 bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    ASTPtr column_name;
+    ASTPtr column_type;
+    ASTPtr column_codec;
     NameParser name_parser;
-    ParserIdentifierWithOptionalParameters type_parser;
+    ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
-    ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
-    ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
+    ParserIdentifierWithParameters codec_parser;
+    ParserTernaryOperatorExpression expr_parser;
+    ParserIdentifierWithOptionalParameters type_parser;
 
-    /// mandatory column name
-    ASTPtr name;
-    if (!name_parser.parse(pos, name, expected))
+    if (!name_parser.parse(pos, column_name, expected))
         return false;
 
     /** column name should be followed by type name if it
@@ -144,6 +148,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!type_parser.parse(pos, type, expected))
             return false;
     }
+
+    if (isDeclareColumnType(pos, expected))
+        type_parser.parse(pos, column_type, expected);
+
+    if (isDeclareColumnCodec(pos, expected))
+        codec_parser.parse(pos, column_codec, expected);
 
     Pos pos_before_specifier = pos;
     if (s_default.ignore(pos, expected) || s_materialized.ignore(pos, expected) || s_alias.ignore(pos, expected))
@@ -167,12 +177,19 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     }
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
-    node = column_declaration;
-    column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
-    if (type)
+
+    column_declaration->name = typeid_cast<ASTIdentifier *>(column_name.get())->name;
+
+    if (column_type)
     {
-        column_declaration->type = type;
-        column_declaration->children.push_back(std::move(type));
+        column_declaration->type = column_type;
+        column_declaration->children.push_back(std::move(column_type));
+    }
+
+    if (column_codec)
+    {
+        column_declaration->codec = column_codec;
+        column_declaration->children.push_back(std::move(column_codec));
     }
 
     if (default_expression)
@@ -188,7 +205,24 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->children.push_back(std::move(comment_expression));
     }
 
+    node = column_declaration;
     return true;
+}
+
+template<typename NameParser>
+bool IParserColumnDeclaration<NameParser>::isDeclareColumnType(Pos & pos, Expected & expected)
+{
+    auto check_pos = pos;
+    return !ParserKeyword{"CODEC"}.check(check_pos, expected) &&
+           !ParserKeyword{"ALIAS"}.check(check_pos, expected) &&
+           !ParserKeyword{"DEFAULT"}.check(check_pos, expected) &&
+           !ParserKeyword{"MATERIALIZED"}.check(check_pos, expected);
+}
+template<typename NameParser>
+bool IParserColumnDeclaration<NameParser>::isDeclareColumnCodec(Pos & pos, Expected & expected)
+{
+    auto check_pos = pos;
+    return ParserKeyword{"CODEC"}.check(check_pos, expected);
 }
 
 class ParserColumnDeclarationList : public IParserBase
