@@ -26,4 +26,4 @@ Sphinx==1.6.5
 sphinxcontrib-websupport==1.0.1
 tornado==5.1
 typing==3.6.2
-urllib3==1.22
+urllib3==1.23
