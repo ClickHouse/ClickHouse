@@ -25,7 +25,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combine-if)) and [quantiles](../../query_language/agg_functions/reference.md#agg_function-quantiles) are the aggregate functions supported in ClickHouse.
+[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combine-if)) and [quantiles](../../query_language/agg_functions/reference.md) are the aggregate functions supported in ClickHouse.
 
 ## Usage
 
@@ -60,7 +60,7 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 ## Usage Example
 
-See [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md#table_engine-aggregatingmergetree) engine description.
+See [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) engine description.
 
 
 [Original article](https://clickhouse.yandex/docs/en/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

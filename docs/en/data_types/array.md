@@ -50,7 +50,7 @@ SELECT
 
 ## Working with data types
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or  [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md#data_type-nullable).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or  [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md).
 
 If ClickHouse couldn't determine the data type, it will generate an exception. For instance, this will happen when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 
