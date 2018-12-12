@@ -207,7 +207,8 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull
 
-Results in a value of type [Nullable](../../data_types/nullable.md
+Results in a value of type [Nullable](../../data_types/nullable.md)i for a non- `Nullable`, if the value is not `NULL`.
+
 ```
 assumeNotNull(x)
 ```
