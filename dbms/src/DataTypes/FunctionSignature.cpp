@@ -713,6 +713,9 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
 
     DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const override
     {
+        if (alternatives.size() == 1)
+            return alternatives.front()->check(args, vars, out_reason);
+
         std::vector<std::string> reasons;
 
         for (const auto & alternative : alternatives)

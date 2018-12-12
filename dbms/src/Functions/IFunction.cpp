@@ -479,7 +479,7 @@ DataTypePtr FunctionBuilderImpl::getReturnTypeImpl(const ColumnsWithTypeAndName 
     std::string reason;
     auto res = signature.check(arguments, reason);
     if (!res)
-        throw Exception("Function " + getName() + " is not applicable: " + reason
+        throw Exception("Function '" + getName() + "' is not applicable: " + reason
             + "\nThe function signature is " + getSignature(), ErrorCodes::BAD_ARGUMENTS);
     return res;
 }
