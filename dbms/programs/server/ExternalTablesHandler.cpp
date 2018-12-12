@@ -2,7 +2,7 @@
 
 #include <Poco/Net/MessageHeader.h>
 #include <Interpreters/Context.h>
-#include <IO/ReadBufferFromIStream.h> 
+#include <IO/ReadBufferFromIStream.h>
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
 
