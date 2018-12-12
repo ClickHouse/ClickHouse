@@ -5,7 +5,6 @@
 Для системных таблиц нет файлов с данными на диске и файлов с метаданными. Сервер создаёт все системные таблицы при старте.
 В системные таблицы нельзя записывать данные - можно только читать.
 Системные таблицы расположены в базе данных system.
-<a name="system_tables-system.asynchronous_metrics"></a>
 
 ## system.asynchronous_metrics
 
@@ -69,7 +68,6 @@ default_expression String - выражение для значения по ум
 
 
 Заметим, что количество оперативной памяти, которое использует словарь, не является пропорциональным количеству элементов, хранящихся в словаре. Так, для flat и cached словарей, все ячейки памяти выделяются заранее, независимо от реальной заполненности словаря.
-<a name="system_tables-system.events"></a>
 
 ## system.events
 
@@ -102,7 +100,6 @@ default_expression String - выражение для значения по ум
 - `rows_read UInt64` — Количество прочитанных строк.
 - `bytes_written_uncompressed UInt64` — Количество записанных байт, несжатых.
 - `rows_written UInt64` — Количество записанных строк.
-<a name="system_tables-system.metrics"></a>
 
 ## system.metrics
 ## system.numbers
@@ -122,7 +119,7 @@ default_expression String - выражение для значения по ум
 
 ## system.parts
 
-Содержит информацию о кусках таблиц семейства [MergeTree](table_engines/mergetree.md#table_engines-mergetree).
+Содержит информацию о кусках таблиц семейства [MergeTree](table_engines/mergetree.md).
 
 Каждая строка описывает один кусок данных.
 

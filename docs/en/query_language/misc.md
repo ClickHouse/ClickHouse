@@ -213,7 +213,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Removes all data from a table. When the clause `IF EXISTS` is omitted, the query returns an error if the table does not exist.
 
-The `TRUNCATE` query is not supported for [View](../operations/table_engines/view.md#table_engines-view), [File](../operations/table_engines/file.md#table_engines-file), [URL](../operations/table_engines/url.md#table_engines-url) and [Null](../operations/table_engines/null.md#table_engines-null) table engines.
+The `TRUNCATE` query is not supported for [View](../operations/table_engines/view.md#table_engines-view), [File](../operations/table_engines/file.md#table_engines-file), [URL](../operations/table_engines/url.md#table_engines-url) and [Null](../operations/table_engines/null.md) table engines.
 
 ## USE
 

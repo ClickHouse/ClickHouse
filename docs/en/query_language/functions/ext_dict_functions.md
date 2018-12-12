@@ -2,7 +2,7 @@
 
 # Functions for working with external dictionaries
 
-For information on connecting and configuring external dictionaries, see "[External dictionaries](../dicts/external_dicts.md#dicts-external_dicts)".
+For information on connecting and configuring external dictionaries, see "[External dictionaries](../dicts/external_dicts.md)".
 
 ## dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64
 

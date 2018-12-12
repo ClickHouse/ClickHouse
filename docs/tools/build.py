@@ -21,6 +21,7 @@ from mkdocs import exceptions
 from mkdocs.commands import build as mkdocs_build
 
 from concatenate import concatenate
+import mdx_clickhouse
 
 @contextlib.contextmanager
 def temp_dir():
@@ -53,6 +54,7 @@ markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
+    os.environ['SINGLE_PAGE'] = '0'
 
     config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
 
@@ -107,7 +109,13 @@ def build_for_lang(lang, args):
                 'admonition',
                 'attr_list',
                 'codehilite',
-                'extra'
+                'extra',
+                {
+                    'toc': {
+                        'permalink': True,
+                        'slugify': mdx_clickhouse.slugify
+                    }
+                }
             ],
             plugins=[{
                 'search': {
@@ -132,6 +140,7 @@ def build_for_lang(lang, args):
 
 def build_single_page_version(lang, args, cfg):
     logging.info('Building single page version for ' + lang)
+    os.environ['SINGLE_PAGE'] = '1'
 
     with autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
         concatenate(lang, args.docs_dir, single_md)
