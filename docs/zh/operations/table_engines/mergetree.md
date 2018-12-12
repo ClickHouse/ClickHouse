@@ -39,6 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
+[PRIMARY KEY expr]
 [SAMPLE BY expr]
 [SETTINGS name=value, ...]
 ```
@@ -49,16 +50,23 @@ For a description of request parameters, see [request description](../../query_l
 
 - `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
-- `ORDER BY` — Primary key.
-
-    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounerID, EventDate, intHash32(UserID))`.
-
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
 
     For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md). The partition names here have the `"YYYYMM"` format.
 
-- `SAMPLE BY` — An  expression for sampling. Example: `intHash32(UserID))`.
+- `ORDER BY` — The sorting key.
+
+    A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
+
+- `PRIMARY KEY` - The primary key if it [differs from the sorting key](mergetree.md).
+
+    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause).
+    Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
+
+- `SAMPLE BY` — An  expression for sampling.
+
+    If a sampling expression is used, the primary key must contain it. Example:  
+    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
@@ -71,7 +79,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If, when selecting the data, you define a [SAMPLE](../../query_language/select.md) clause, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If, when selecting the data, you define a [SAMPLE](../../query_language/select.md#sample) clause, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 `index_granularity` could be omitted because 8192 is the default value.
 
@@ -133,7 +141,7 @@ If the data query specifies:
 
 - `CounterID in ('a', 'h')`, the server reads the data in the ranges of marks `[0, 3)` and `[6, 8)`.
 - `CounterID IN ('a', 'h') AND Date = 3`, the server reads the data in the ranges of marks `[1, 3)` and `[7, 8)`.
-- `Date = 3`, the server reads the data in the range of marks `[1, 10)`.
+- `Date = 3`, the server reads the data in the range of marks `[1, 10]`.
 
 The examples above show that it is always more effective to use an index than a full scan.
 
@@ -159,9 +167,31 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
 - Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
 
-    You may need many fields in the primary key even if they are not necessary for the previous steps.
+    In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
+
+
+### Choosing the Primary Key that differs from the Sorting Key
+
+It is possible to specify the primary key (the expression, values of which are written into the index file
+for each mark) that is different from the sorting key (the expression for sorting the rows in data parts).
+In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
+
+This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
+[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines the
+table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure
+columns with arbitrary `GROUP BY` and filtering by dimensions. As SummingMergeTree and AggregatingMergeTree
+aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result
+the key expression consists of a long list of columns and this list must be frequently updated with newly
+added dimensions.
+
+In this case it makes sense to leave only a few columns in the primary key that will provide efficient
+range scans and add the remaining dimension columns to the sorting key tuple.
+
+[ALTER of the sorting key](../../query_language/alter.md) is a
+lightweight operation because when a new column is simultaneously added to the table and to the sorting key
+data parts need not be changed (they remain sorted by the new sorting key expression).
 
 ### Use of Indexes and Partitions in Queries
 
