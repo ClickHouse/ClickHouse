@@ -49,7 +49,7 @@ All of the parameters have the same meaning as in `MergeTree`.
 
 ## SELECT and INSERT
 
-To insert data, use [INSERT SELECT](../../query_language/insert_into.md
+To insert data, use [INSERT SELECT](../../query_language/insert_into.md) query with aggregate -State- functions..
 When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge` suffix.
 
 In the results of `SELECT` query the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
