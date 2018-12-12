@@ -75,7 +75,7 @@ MODIFY ORDER BY new_expression
 ```
 
 Работает только для таблиц семейства [`MergeTree`](../operations/table_engines/mergetree.md) (в том числе [реплицированных](../operations/table_engines/replication.md)). После выполнения запроса
-[ключ сортировки](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) таблицы
+[ключ сортировки](../operations/table_engines/mergetree.md) таблицы
 заменяется на `new_expression` (выражение или кортеж выражений). Первичный ключ при этом остаётся прежним.
 
 Операция затрагивает только метаданные. Чтобы сохранить свойство упорядоченности кусков данных по ключу

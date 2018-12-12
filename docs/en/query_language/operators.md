@@ -53,7 +53,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Operators for Working With Data Sets
 
-*See the section [IN operators](select.md/#query_language-in_operators).*
+*See the section [IN operators](select.md/).*
 
 `a IN ...` – The `in(a, b) function`
 
@@ -134,7 +134,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 ### IS NULL
 
-- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NULL` operator returns:
+- For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
     - `1`, if the value is `NULL`.
     - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
@@ -157,7 +157,7 @@ WHERE isNull(y)
 
 ### IS NOT NULL
 
-- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NOT NULL` operator returns:
+- For [Nullable](../data_types/nullable.md) type values, the `IS NOT NULL` operator returns:
     - `0`, if the value is `NULL`.
     - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.

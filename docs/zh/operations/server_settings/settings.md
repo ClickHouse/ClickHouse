@@ -78,7 +78,7 @@ To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#server_settings-users_config).
+Settings profiles are located in the file specified in the parameter [user_config]().
 
 **Example**
 
@@ -97,7 +97,7 @@ Path:
 - Specify the absolute path or the path relative to the server config file.
 - The path can contain wildcards \* and ?.
 
-See also "[External dictionaries](../../query_language/dicts/external_dicts.md#dicts-external_dicts)".
+See also "[External dictionaries](../../query_language/dicts/external_dicts.md)".
 
 **Example**
 
@@ -176,7 +176,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
+For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
 
 **Example**
 
@@ -206,7 +206,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL](#server_settings-openSSL) must be configured.
+If `https_port` is specified, [openSSL]() must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -357,7 +357,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section "[Creating replicated tables](../../operations/table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
+For more information, see the section "[Creating replicated tables](../../operations/table_engines/replication.md)".
 
 **Example**
 
@@ -369,7 +369,7 @@ For more information, see the section "[Creating replicated tables](../../operat
 
 ## mark_cache_size
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md).
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -425,7 +425,7 @@ We recommend using this option in Mac OS X, since the `getrlimit()` function ret
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../../operations/table_engines/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -443,7 +443,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree
 
-Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -520,7 +520,7 @@ Keys for server/client settings:
 
 ## part_log
 
-Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
@@ -540,7 +540,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 **Example**
@@ -573,7 +573,7 @@ The path to the directory containing data.
 
 ## query_log
 
-Setting for logging queries received with the [log_queries=1](../settings/settings.md#settings_settings-log_queries) setting.
+Setting for logging queries received with the [log_queries=1](../settings/settings.md) setting.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
@@ -581,7 +581,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -603,7 +603,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 
 Configuration of clusters used by the Distributed table engine.
 
-For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md#table_engines-distributed)".
+For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md)".
 
 **Example**
 
@@ -660,9 +660,9 @@ Path to temporary data for processing large queries.
 
 ## uncompressed_cache_size
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
 
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache) is enabled.
+There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md) is enabled.
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 
@@ -674,7 +674,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ## user_files_path
 
-The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md#table_functions-file).
+The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md).
 
 **Example**
 
@@ -709,7 +709,7 @@ ClickHouse uses ZooKeeper for storing replica metadata when using replicated tab
 
 This parameter can be omitted if replicated tables are not used.
 
-For more information, see the section "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
+For more information, see the section "[Replication](../../operations/table_engines/replication.md)".
 
 **Example**
 

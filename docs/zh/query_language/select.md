@@ -341,7 +341,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 JOIN子句用于连接数据，作用与[SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL))的定义相同。
 
 !!! info "注意"
-    与[ARRAY JOIN](#select-array-join)没有关系.
+    与[ARRAY JOIN]()没有关系.
 
 
 ``` sql
@@ -351,8 +351,7 @@ FROM <left_subquery>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-可以使用具体的表名来代替`<left_subquery>`与`<right_subquery>`。但这与使用`SELECT * FROM table`子查询的方式相同。除非你的表是[Join](../operations/table_engines/join.md#table-engine-join)引擎 - 对JOIN进行了预处理。
-
+可以使用具体的表名来代替`<left_subquery>`与`<right_subquery>`。但这与使用`SELECT * FROM table`子查询的方式相同。除非你的表是[Join](../operations/table_engines/join.md
 **支持的`JOIN`类型**
 
 - `INNER JOIN`
@@ -368,7 +367,7 @@ FROM <left_subquery>
 在使用`ALL`修饰符对JOIN进行修饰时，如果右表中存在多个与左表关联的数据，那么系统则将右表中所有可以与左表关联的数据全部返回在结果中。这与SQL标准的JOIN行为相同。
 在使用`ANY`修饰符对JOIN进行修饰时，如果右表中存在多个与左表关联的数据，那么系统仅返回第一个与左表匹配的结果。如果左表与右表一一对应，不存在多余的行时，`ANY`与`ALL`的结果相同。
 
-你可以在会话中通过设置[join_default_strictness](../operations/settings/settings.md#session-setting-join_default_strictness)来指定默认的JOIN修饰符。
+你可以在会话中通过设置[join_default_strictness](../operations/settings/settings.md)来指定默认的JOIN修饰符。
 
 **`GLOBAL` distribution**
 
@@ -376,7 +375,7 @@ FROM <left_subquery>
 
 当使用`GLOBAL ... JOIN`，首先会在请求服务器上计算右表并以临时表的方式将其发送到所有服务器。这时每台服务器将直接使用它进行计算。
 
-使用`GLOBAL`时需要小心。更多信息，参阅[Distributed subqueries](#queries-distributed-subqueries)部分。
+使用`GLOBAL`时需要小心。更多信息，参阅[Distributed subqueries]()部分。
 
 **使用建议**
 
@@ -438,13 +437,13 @@ LIMIT 10
 
 在一些场景下，使用`IN`代替`JOIN`将会得到更高的效率。在各种类型的JOIN中，最高效的是`ANY LEFT JOIN`，然后是`ANY INNER JOIN`，效率最差的是`ALL LEFT JOIN`以及`ALL INNER JOIN`。
 
-如果你需要使用`JOIN`来关联一些纬度表（包含纬度属性的一些相对比较小的表，例如广告活动的名称），那么`JOIN`可能不是好的选择，因为语法负责，并且每次查询都将重新访问这些表。对于这种情况，您应该使用“外部字典”的功能来替换`JOIN`。更多信息，参见[外部字典](dicts/external_dicts.md#dicts-external_dicts)部分。
+如果你需要使用`JOIN`来关联一些纬度表（包含纬度属性的一些相对比较小的表，例如广告活动的名称），那么`JOIN`可能不是好的选择，因为语法负责，并且每次查询都将重新访问这些表。对于这种情况，您应该使用“外部字典”的功能来替换`JOIN`。更多信息，参见[外部字典](dicts/external_dicts.md)部分。
 
 #### Null的处理
 
-JOIN的行为受[join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls)的影响。当`join_use_nulls=1`时，`JOIN`的工作与SQL标准相同。
+JOIN的行为受[join_use_nulls](../operations/settings/settings.md)的影响。当`join_use_nulls=1`时，`JOIN`的工作与SQL标准相同。
 
-如果JOIN的key是[Nullable](../data_types/nullable.md#data_types-nullable)类型的字段，则其中至少一个存在[NULL](syntax.md#null-literal)值的key不会被关联。
+如果JOIN的key是[Nullable](../data_types/nullable.md#data_types-nullable)类型的字段，则其中至少一个存在[NULL](syntax.md)值的key不会被关联。
 
 <a name="query_language-queries-where"></a>
 
@@ -516,7 +515,7 @@ GROUP BY子句会为遇到的每一个不同的key计算一组聚合函数的值
 
 #### NULL 处理
 
-对于GROUP BY子句，ClickHouse将[NULL](syntax.md#null-literal)解释为一个值，并且支持`NULL=NULL`。
+对于GROUP BY子句，ClickHouse将[NULL](syntax.md)解释为一个值，并且支持`NULL=NULL`。
 
 下面这个例子将说明这将意味着什么。
 
@@ -699,7 +698,7 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 
 在SELECT表达式中存在Array类型的列时，不能使用DISTINCT。
 
-`DISTINCT`可以与[NULL](syntax.md#null-literal)一起工作，就好像`NULL`仅是一个特殊的值一样，并且`NULL=NULL`。换而言之，在`DISTINCT`的结果中，与`NULL`不同的组合仅能出现一次。
+`DISTINCT`可以与[NULL](syntax.md)一起工作，就好像`NULL`仅是一个特殊的值一样，并且`NULL=NULL`。换而言之，在`DISTINCT`的结果中，与`NULL`不同的组合仅能出现一次。
 
 ### LIMIT 子句
 
@@ -821,7 +820,7 @@ IN子句中的子查询仅在单个服务器上运行一次。不能够是相关
 
 #### NULL 处理
 
-在处理中，IN操作符总是假定[NULL](syntax.md#null-literal)值的操作结果总是等于`0`，而不管`NULL`位于左侧还是右侧。`NULL`值不应该包含在任何数据集中，它们彼此不能够对应，并且不能够比较。
+在处理中，IN操作符总是假定[NULL](syntax.md)值的操作结果总是等于`0`，而不管`NULL`位于左侧还是右侧。`NULL`值不应该包含在任何数据集中，它们彼此不能够对应，并且不能够比较。
 
 下面的示例中有一个`t_null`表：
 
@@ -859,7 +858,7 @@ FROM t_null
 对于带有子查询的（类似与JOINs）IN中，有两种选择:普通的`IN`／`JOIN`与`GLOBAL IN` ／ `GLOBAL JOIN`。它们对于分布式查询的处理运行方式是不同的。
 
 !!! 注意
-    请记住，下面描述的算法可能因为根据[settings](../operations/settings/settings.md#settings-distributed_product_mode)配置的不同而不同。
+    请记住，下面描述的算法可能因为根据[settings](../operations/settings/settings.md)配置的不同而不同。
 
 当使用普通的IN时，查询总是被发送到远程的服务器，并且在每个服务器中运行“IN”或“JOIN”子句中的子查询。
 

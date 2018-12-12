@@ -2,7 +2,7 @@
 
 ## isNull
 
-Проверяет является ли аргумент [NULL](../syntax.md#null-literal).
+Проверяет является ли аргумент [NULL](../syntax.md).
 
 ```
 isNull(x)
@@ -46,7 +46,7 @@ WHERE isNull(y)
 
 ## isNotNull
 
-Проверяет не является ли аргумент [NULL](../syntax.md#null-literal).
+Проверяет не является ли аргумент [NULL](../syntax.md).
 
 ```
 isNotNull(x)
@@ -204,7 +204,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull
 
-Приводит значение типа [Nullable](../../data_types/nullable.md#data_type-nullable) к не `Nullable`, если значение не `NULL`.
+Приводит значение типа [Nullable](../../data_types/nullable.md) к не `Nullable`, если значение не `NULL`.
 
 ```
 assumeNotNull(x)

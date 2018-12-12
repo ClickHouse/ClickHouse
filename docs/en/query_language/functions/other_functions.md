@@ -298,7 +298,7 @@ Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers i
 
 ## getSizeOfEnumType
 
-Returns the number of fields in [Enum](../../data_types/enum.md#data_type-enum).
+Returns the number of fields in [Enum](../../data_types/enum.md).
 
 ```
 getSizeOfEnumType(value)
@@ -407,7 +407,7 @@ defaultValueOfArgumentType(expression)
 
 - `0` for numbers.
 - Empty string for strings.
-- `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md#data_type-nullable).
+- `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md).
 
 **Example**
 
@@ -445,7 +445,7 @@ The expression passed to the function is not calculated, but ClickHouse applies 
 
 **Example**
 
-Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```
 SELECT count() FROM ontime

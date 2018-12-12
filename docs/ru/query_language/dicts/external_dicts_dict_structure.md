@@ -25,8 +25,8 @@
 
 В структуре описываются столбцы:
 
--   `<id>` - [ключевой столбец](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
--   `<attribute>` - [столбец данных](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Столбцов может быть много.
+-   `<id>` - [ключевой столбец](external_dicts_dict_structure.md).
+-   `<attribute>` - [столбец данных](external_dicts_dict_structure.md). Столбцов может быть много.
 
 <a name="dicts-external_dicts_dict_structure-key"></a>
 
@@ -60,12 +60,12 @@ ClickHouse поддерживает следующие виды ключей:
 
 ### Составной ключ
 
-Ключом может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
+Ключом может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
 
 !!! tip "Совет"
     Cоставной ключ может состоять из одного элемента. Это даёт возможность использовать в качестве ключа, например, строку.
 
-Структура ключа задаётся в элементе `<key>`. Поля ключа задаются в том же формате, что и [атрибуты](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes) словаря. Пример:
+Структура ключа задаётся в элементе `<key>`. Поля ключа задаются в том же формате, что и [атрибуты](external_dicts_dict_structure.md) словаря. Пример:
 
 ```xml
 <structure>

@@ -276,7 +276,7 @@ FROM
 
 ## getSizeOfEnumType
 
-Возвращает количество полей в [Enum](../../data_types/enum.md#data_type-enum).
+Возвращает количество полей в [Enum](../../data_types/enum.md).
 
 ```
 getSizeOfEnumType(value)
@@ -386,7 +386,7 @@ defaultValueOfArgumentType(expression)
 
 - `0` для чисел;
 - Пустая строка для строк;
-- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md#data_type-nullable).
+- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md).
 
 **Пример**
 
@@ -426,7 +426,7 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 **Пример**
 
-Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```
 SELECT count() FROM ontime

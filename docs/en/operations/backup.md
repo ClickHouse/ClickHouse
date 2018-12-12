@@ -1,6 +1,6 @@
 # Data Backup 
 
-While [replication](table_engines/replication.md#table_engines-replication) provides protection from hardware failures, it does not protect against human errors: accidentally deleting data, deleting the wrong table or on the wrong cluster, software bugs leading to incorrect data processing or data corruption. In many cases commands like these will affect all replicas. ClickHouse has built-in safeguards to prevent some of mistakes, for example by default [you can't just drop tables with MergeTree-like engine containing more than 50Gb of data](https://github.com/yandex/ClickHouse/blob/v18.14.18-stable/dbms/programs/server/config.xml#L322-L330), but they don't cover all possible cases and can be circumvented.
+While [replication](table_engines/replication.md#table_engines-replication) provides protection from hardware failures, it does not protect against human errors: accidentally deleting data, deleting the wrong table or on the wrong cluster, software bugs leading to incorrect data processing or data corruption. In many cases commands like these will affect all replicas. ClickHouse has built-in safeguards to prevent some of mistakes, for example by default [you can't just drop tables with MergeTree-like engine containing more than 50Gb of data](https://github.com/yandex/ClickHouse/blob/v18.14.18-stable/dbms/programs/server/config.xml), but they don't cover all possible cases and can be circumvented.
 
 So in order to effectively mitigate possible human errors, you should carefully prepare your backup and restore strategy **in advance**. 
 
@@ -27,7 +27,7 @@ For smaller volumes of data simple `INSERT INTO ... SELECT ...` to remote tables
 
 ClickHouse allows to create a local copy of table partitions using `ALTER TABLE ... FREZE PARTITION ...` query. It's implemented using hardlinks to `/var/lib/clickhouse/shadow/` folder, so for old data it usually does not consume extra disk space. As created file copies are no longer touched by ClickHouse server, you can just leave them there: it's still be a simple backup that doesn't require any additional external system, but will be prone to hardware issues since. It's better to remotely copy them somewhere and then probably remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal file servers attached with large enough capacity might work as well (in this case the transfer will happen via network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
 
-More details on queries related to partition manipulations can be found in [respective section of ALTER documentation](../query_language/alter.md#query_language-manipulation-with-partitions-and-parts).
+More details on queries related to partition manipulations can be found in [respective section of ALTER documentation](../query_language/alter.md).
 
 There's a third-party tool to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
 
