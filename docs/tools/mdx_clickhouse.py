@@ -6,6 +6,7 @@ import markdown.inlinepatterns
 import markdown.extensions
 import markdown.util
 
+import slugify as slugify_impl
 
 class NofollowMixin(object):
     def handleMatch(self, m):
@@ -46,3 +47,6 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
 
 def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
+
+def slugify(value, separator):
+    return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
