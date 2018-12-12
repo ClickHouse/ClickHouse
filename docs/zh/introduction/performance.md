@@ -2,7 +2,7 @@
 
 根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在[这里](https://clickhouse.yandex/benchmark.html)查看具体的测试结果。
 
-许多其他的测试也证实这一点。你可以使用互联网搜索到它们，或者你也可以从[我们收集的部分相关连接](https://clickhouse.yandex/#independent-bookmarks)中查看。
+许多其他的测试也证实这一点。你可以使用互联网搜索到它们，或者你也可以从[我们收集的部分相关连接](https://clickhouse.yandex/#independent-benchmarks)中查看。
 
 ## 单个大查询的吞吐量
 

@@ -1,4 +1,3 @@
-<a name="table_engine-versionedcollapsingmergetree"></a>
 
 # VersionedCollapsingMergeTree
 
@@ -7,9 +6,9 @@ This engine:
 - Allows quick writing of continually changing states of objects.
 - Deletes old states of objects in the background. It causes to significant reduction of the volume of storage.
 
-See the section [Collapsing](#versionedcollapsingmergetree-collapsing) for details.
+See the section [Collapsing](#collapsing) for details.
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm. `VersionedCollapsingMergeTree` solves the same problem as the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) but uses another algorithm of collapsing. It allows inserting the data in any order with multiple threads. The particular `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm. `VersionedCollapsingMergeTree` solves the same problem as the [CollapsingMergeTree](collapsingmergetree.md) but uses another algorithm of collapsing. It allows inserting the data in any order with multiple threads. The particular `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table
 
@@ -26,7 +25,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see [query description](../../query_language/create.md#query_language-queries-create_table).
+For a description of query parameters, see [query description](../../query_language/create.md).
 
 **Engine Parameters**
 
@@ -44,7 +43,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 **Query Clauses**
 
-When creating a `VersionedCollapsingMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
+When creating a `VersionedCollapsingMergeTree` table, the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -71,7 +70,6 @@ All of the parameters excepting `sign` and `version` have the same meaning as in
     Column data type should be `UInt*`.
 </details>
 
-<a name="versionedcollapsingmergetree-collapsing"></a>
 
 ## Collapsing
 
