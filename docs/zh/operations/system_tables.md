@@ -5,7 +5,6 @@ You can't delete a system table (but you can perform DETACH).
 System tables don't have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
 System tables are read-only.
 They are located in the 'system' database.
-<a name="system_tables-system.asynchronous_metrics"></a>
 
 ## system.asynchronous_metrics
 
@@ -70,7 +69,6 @@ Columns:
 - `source String` — Text describing the data source for the dictionary.
 
 Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
-<a name="system_tables-system.events"></a>
 
 ## system.events
 
@@ -105,7 +103,6 @@ Columns:
 - `rows_read UInt64` — Number of rows read.
 - `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
 - `rows_written UInt64` — Number of lines rows written.
-<a name="system_tables-system.metrics"></a>
 
 ## system.metrics
 
@@ -128,7 +125,7 @@ This is similar to the DUAL table found in other DBMSs.
 
 ## system.parts
 
-Contains information about parts of [MergeTree](table_engines/mergetree.md#table_engines-mergetree) tables.
+Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
 
 Each row describes one part of the data.
 

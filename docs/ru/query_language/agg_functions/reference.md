@@ -1,4 +1,3 @@
-<a name="aggregate_functions_reference"></a>
 
 # Справочник функций
 
@@ -35,7 +34,7 @@ anyHeavy(column)
 
 **Пример**
 
-Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
+Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
 ```sql
 SELECT anyHeavy(AirlineID) AS res
@@ -214,7 +213,6 @@ SELECT argMin(user, salary) FROM salary
 
 Вычисляет значение arg при максимальном значении val. Если есть несколько разных значений arg для максимальных значений val, то выдаётся первое попавшееся из таких значений.
 
-<a name="agg_function-sum"></a>
 
 ## sum(x)
 
@@ -227,7 +225,6 @@ SELECT argMin(user, salary) FROM salary
 
 Работает только для чисел.
 
-<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -323,7 +320,6 @@ GROUP BY timeslot
 
 В некоторых случаях, вы всё же можете рассчитывать на порядок выполнения запроса. Это — случаи, когда `SELECT` идёт из подзапроса, в котором используется `ORDER BY`.
 
-<a name="agg_functions_groupArrayInsertAt"></a>
 
 ## groupArrayInsertAt(x)
 
@@ -463,7 +459,7 @@ topK(N)(column)
 
 **Пример**
 
-Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
+Возьмём набор данных [OnTime](../../getting_started/example_datasets/ontime.md) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
 ```sql
 SELECT topK(3)(AirlineID) AS res

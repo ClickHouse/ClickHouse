@@ -2,9 +2,9 @@
 
 # CollapsingMergeTree
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic of rows collapsing to data parts merge algorithm.
+The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 
-`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#collapsingmergetree-collapsing) section of the document.
+`CollapsingMergeTree` asynchronously deletes (collapses) pairs of rows if all of the fields in a row are equivalent excepting the particular field `Sign` which can have `1` and `-1` values. Rows without a pair are kept. For more details see the [Collapsing](#collapsing) section of the document.
 
 The engine may significantly reduce the volume of storage and increase efficiency of `SELECT` query as a consequence.
 
@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see [query description](../../query_language/create.md#query_language-queries-create_table).
+For a description of query parameters, see [query description](../../query_language/create.md).
 
 **CollapsingMergeTree Parameters**
 
@@ -33,7 +33,7 @@ For a description of query parameters, see [query description](../../query_langu
 
 **Query clauses**
 
-When creating a `CollapsingMergeTree` table, the same [clauses](mergetree.md#table_engines-mergetree-configuring) are required, as when creating a `MergeTree` table.
+When creating a `CollapsingMergeTree` table, the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 
@@ -56,7 +56,6 @@ All of the parameters excepting `sign` have the same meaning as in `MergeTree`.
     Column Data Type — `Int8`.
 </details>
 
-<a name="collapsingmergetree-collapsing"></a>
 
 ## Collapsing
 

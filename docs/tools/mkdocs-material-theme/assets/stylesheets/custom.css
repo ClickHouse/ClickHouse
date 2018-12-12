@@ -165,3 +165,7 @@ h1, h2, h3, .md-logo {
         display: none;
     }
 }
+
+.headerlink:hover {
+    text-decoration: none;
+}
