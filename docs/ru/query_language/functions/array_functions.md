@@ -55,7 +55,7 @@ arrayConcat(arrays)
 
 **Параметры**
 
-- `arrays` – произвольное количество элементов типа [Array][../../data_types/array.md
+- `arrays` – произвольное количество элементов типа [Array](../../data_types/array.md)
 **Пример**
 
 ```sql

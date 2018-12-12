@@ -55,7 +55,7 @@ arrayConcat(arrays)
 
 **Parameters**
 
-- `arrays` – Arbitrary number of arguments of [Array][../../data_types/array.md
+- `arrays` – Arbitrary number of arguments of [Array](../../data_types/array.md) type.
 **Example**
 
 ``` sql

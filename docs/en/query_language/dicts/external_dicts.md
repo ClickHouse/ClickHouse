@@ -35,7 +35,7 @@ The dictionary config file has the following format:
 </yandex>
 ```
 
-You can [configure](external_dicts_dict.md).
+You can [configure](external_dicts_dict.md) any number of dictionaries in the same file. The file format is preserved even if there is only one dictionary (i.e. `<yandex><dictionary> <!--configuration -> </dictionary></yandex>`).
 
 See also "[Functions for working with external dictionaries](../functions/ext_dict_functions.md#ext_dict_functions)".
 
