@@ -169,3 +169,9 @@ h1, h2, h3, .md-logo {
 .headerlink:hover {
     text-decoration: none;
 }
+
+@media print {
+    .md-typeset a:after {
+        content: "" !important;
+    }
+}
