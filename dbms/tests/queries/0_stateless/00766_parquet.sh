@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.numbers"
 #${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.numbers ORDER BY number DESC LIMIT 10"
 
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.numbers"
-${CLICKHOUSE_CLIENT} --max_block_size=2 --query="SELECT * FROM system.numbers LIMIT 3 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.numbers FORMAT Parquet"
+#${CLICKHOUSE_CLIENT} --max_block_size=2 --query="SELECT * FROM system.numbers LIMIT 3 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.numbers FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.numbers ORDER BY number DESC LIMIT 10"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.numbers"
