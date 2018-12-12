@@ -2,7 +2,7 @@
 
 ## isNull
 
-Checks whether the argument is [NULL](../syntax.md).
+Checks whether the argument is [NULL](../syntax.md#null).
 
 ```
 isNull(x)
@@ -46,7 +46,7 @@ WHERE isNull(y)
 
 ## isNotNull
 
-Checks whether the argument is [NULL](../syntax.md).
+Checks whether the argument is [NULL](../syntax.md#null).
 
 ```
 isNotNull(x)
