@@ -256,7 +256,7 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 ## stream_flush_interval_ms
 
-Работает для таблиц со стриммингом в случае тайм-аута, или когда поток генерирует [max_insert_block_size]() строк.
+Работает для таблиц со стриммингом в случае тайм-аута, или когда поток генерирует [max_insert_block_size](#max-insert-block-size) строк.
 
 Значение по умолчанию - 7500.
 
@@ -362,7 +362,7 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 Все реплики в кворуме консистентны, т.е. содержат данные всех более ранних запросов `INSERT`. Последовательность `INSERT` линеаризуется.
 
-При чтении данных, записанных с `insert_quorum` можно использовать настройку [select_sequential_consistency]().
+При чтении данных, записанных с `insert_quorum` можно использовать настройку [select_sequential_consistency](#select-sequential-consistency).
 
 **ClickHouse генерирует исключение**
 
@@ -371,8 +371,8 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 **См. также параметры**
 
-- [insert_quorum_timeout]()
-- [select_sequential_consistency]()
+- [insert_quorum_timeout](#insert-quorum-timeout)
+- [select_sequential_consistency](#select-sequential-consitency)
 
 
 ## insert_quorum_timeout
@@ -383,8 +383,8 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 **См. также параметры**
 
-- [insert_quorum]()
-- [select_sequential_consistency]()
+- [insert_quorum](#insert-quorum)
+- [select_sequential_consistency](#select-sequential-consistency)
 
 
 ## select_sequential_consistency
@@ -398,7 +398,7 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 См. также параметры:
 
-- [insert_quorum]()
-- [insert_quorum_timeout]()
+- [insert_quorum](#insert-quorum)
+- [insert_quorum_timeout](#insert-quorum-timeout)
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/settings/) <!--hide-->

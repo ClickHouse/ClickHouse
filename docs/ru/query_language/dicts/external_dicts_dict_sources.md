@@ -24,14 +24,14 @@
 
 Типы источников (`source_type`):
 
-- [Локальный файл]()
-- [Исполняемый файл]()
-- [HTTP(s)]()
+- [Локальный файл](#ispolniaemyi-fail)
+- [Исполняемый файл](#ispolniaemyi-fail)
+- [HTTP(s)](#http-s)
 -   СУБД:
-    - [ODBC]()
-    - [MySQL]()
-    - [ClickHouse]()
-    - [MongoDB]()
+    - [ODBC](#odbc)
+    - [MySQL](#mysql)
+    - [ClickHouse](#clickhouse)
+    - [MongoDB](#mongodb)
 
 
 ## Локальный файл

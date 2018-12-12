@@ -72,7 +72,7 @@ ORDER BY key
 :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
 ```
 
-ClickHouse может не полностью просуммировать все строки ([смотрите ниже по тексту]()), поэтому при запросе мы используем агрегатную функцию `sum` и секцию `GROUP BY`.
+ClickHouse может не полностью просуммировать все строки ([смотрите ниже по тексту](#obrabotka-dannykh)), поэтому при запросе мы используем агрегатную функцию `sum` и секцию `GROUP BY`.
 
 ```sql
 SELECT key, sum(value) FROM summtt GROUP BY key

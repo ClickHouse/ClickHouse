@@ -2,11 +2,11 @@
 
 # Хранение словарей в памяти
 
-Словари можно размещать в памяти [множеством способов]().
+Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache]()".
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache](#cache)".
 
 Повысить производительнось словарей можно следующими способами:
 
@@ -39,15 +39,13 @@
 
 ## Способы размещения словарей в памяти
 
--   [flat]()
--   [hashed]()
--   [cache]()
--   [range_hashed]()
--   [complex_key_hashed]()
--   [complex_key_cache]()
--   [ip_trie]()
-
-<a name="dicts-external_dicts_dict_layout-flat"></a>
+-   [flat](#flat)
+-   [hashed](#hashed)
+-   [cache](#cache)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [ip_trie](#ip-trie)
 
 ### flat
 
