@@ -3,6 +3,7 @@ add_headers_and_sources(clickhouse_core .)
 add_library(clickhouse_core ${LINK_MODE} ${clickhouse_core_sources})
 target_link_libraries(clickhouse_core PUBLIC clickhouse_common_io)
 target_include_directories(clickhouse_core PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories(clickhouse_core  SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
 if(ENABLE_TESTS)
     add_subdirectory(tests)
