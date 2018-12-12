@@ -21,6 +21,7 @@ from mkdocs import exceptions
 from mkdocs.commands import build as mkdocs_build
 
 from concatenate import concatenate
+import mdx_clickhouse
 
 @contextlib.contextmanager
 def temp_dir():
@@ -110,7 +111,8 @@ def build_for_lang(lang, args):
                 'extra',
                 {
                     'toc': {
-                        'permalink': True
+                        'permalink': True,
+                        'slugify': mdx_clickhouse.slugify
                     }
                 }
             ],
