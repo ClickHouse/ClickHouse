@@ -187,7 +187,7 @@ The dictionary is stored in a cache that has a fixed number of cells. These cell
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using ` SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md
+For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used, and it is re-requested the next time it needs to be used.
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
 
 To improve cache performance, use a subquery with ` LIMIT`, and call the function with the dictionary externally.
