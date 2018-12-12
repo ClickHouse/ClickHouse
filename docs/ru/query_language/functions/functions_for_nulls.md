@@ -2,7 +2,7 @@
 
 ## isNull
 
-Проверяет является ли аргумент [NULL](../syntax.md).
+Проверяет является ли аргумент [NULL](../syntax.md#null).
 
 ```
 isNull(x)
@@ -46,7 +46,7 @@ WHERE isNull(y)
 
 ## isNotNull
 
-Проверяет не является ли аргумент [NULL](../syntax.md).
+Проверяет не является ли аргумент [NULL](../syntax.md#null).
 
 ```
 isNotNull(x)
