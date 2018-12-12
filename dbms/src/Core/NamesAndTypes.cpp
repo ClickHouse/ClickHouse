@@ -1,5 +1,4 @@
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeFactory.h>
+#include "NamesAndTypes.h"
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -15,27 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int THERE_IS_NO_COLUMN;
-}
-
-
-void NamesAndTypesList::readText(ReadBuffer & buf)
-{
-    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
-
-    assertString("columns format version: 1\n", buf);
-    size_t count;
-    DB::readText(count, buf);
-    assertString(" columns:\n", buf);
-    resize(count);
-    for (NameAndTypePair & it : *this)
-    {
-        readBackQuotedStringWithSQLStyle(it.name, buf);
-        assertChar(' ', buf);
-        String type_name;
-        readString(type_name, buf);
-        it.type = data_type_factory.get(type_name);
-        assertChar('\n', buf);
-    }
 }
 
 void NamesAndTypesList::writeText(WriteBuffer & buf) const
@@ -57,15 +35,6 @@ String NamesAndTypesList::toString() const
     WriteBufferFromOwnString out;
     writeText(out);
     return out.str();
-}
-
-NamesAndTypesList NamesAndTypesList::parse(const String & s)
-{
-    ReadBufferFromString in(s);
-    NamesAndTypesList res;
-    res.readText(in);
-    assertEOF(in);
-    return res;
 }
 
 bool NamesAndTypesList::isSubsetOf(const NamesAndTypesList & rhs) const

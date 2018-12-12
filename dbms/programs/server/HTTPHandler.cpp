@@ -1,15 +1,14 @@
+#include "HTTPHandler.h"
+
 #include <chrono>
 #include <iomanip>
-
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/NetException.h>
-
 #include <ext/scope_guard.h>
-
-#include <Core/ExternalTable.h>
+#include <Misc/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
@@ -30,16 +29,12 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
-
 #include <DataStreams/IProfilingBlockInputStream.h>
-
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
 #include <Common/typeid_cast.h>
-
 #include <Poco/Net/HTTPStream.h>
-
-#include "HTTPHandler.h"
+#include "ExternalTablesHandler.h"
 
 namespace DB
 {

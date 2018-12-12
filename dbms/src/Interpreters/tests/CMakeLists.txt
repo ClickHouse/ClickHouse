@@ -1,5 +1,5 @@
 add_executable (expression expression.cpp)
-target_link_libraries (expression PRIVATE dbms clickhouse_parsers)
+target_link_libraries (expression PRIVATE dbms clickhouse_parsers clickhouse_formats clickhouse_common_io)
 
 add_executable (create_query create_query.cpp)
 target_link_libraries (create_query PRIVATE dbms clickhouse_parsers)

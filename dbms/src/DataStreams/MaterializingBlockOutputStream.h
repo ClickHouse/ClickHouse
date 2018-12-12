@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/materializeBlock.h>
+#include <Core/materializeBlock.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 

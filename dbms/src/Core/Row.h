@@ -1,7 +1,5 @@
 #pragma once
 
-#include <vector>
-
 #include <Common/AutoArray.h>
 #include <Core/Field.h>
 

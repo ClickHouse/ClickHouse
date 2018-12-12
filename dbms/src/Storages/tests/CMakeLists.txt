@@ -1,8 +1,8 @@
 add_executable (system_numbers system_numbers.cpp)
-target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system clickhouse_common_io)
+target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system clickhouse_formats clickhouse_common_io)
 
 add_executable (storage_log storage_log.cpp)
-target_link_libraries (storage_log PRIVATE dbms)
+target_link_libraries (storage_log PRIVATE dbms clickhouse_core clickhouse_formats)
 
 add_executable (seek_speed_test seek_speed_test.cpp)
 target_link_libraries (seek_speed_test PRIVATE dbms)

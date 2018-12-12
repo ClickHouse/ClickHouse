@@ -11,7 +11,7 @@
 #include <Interpreters/NullableUtils.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Core/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>

@@ -2,8 +2,7 @@
 
 #include <memory>
 #include <string>
-
-#include <Common/ThreadStatus.h>
+#include "ThreadStatus.h"
 
 
 namespace ProfileEvents

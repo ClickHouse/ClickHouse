@@ -1,5 +1,5 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Core/materializeBlock.h>
 
 
 namespace DB

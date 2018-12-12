@@ -1,7 +1,7 @@
 #pragma once
 
 #include <vector>
-#include <Parsers/Lexer.h>
+#include "Lexer.h"
 
 
 namespace DB

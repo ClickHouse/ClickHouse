@@ -29,7 +29,6 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 

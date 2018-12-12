@@ -1,5 +1,5 @@
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Core/materializeBlock.h>
 
 #include <Databases/IDatabase.h>
 

@@ -59,7 +59,7 @@ add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
-add_headers_and_sources(dbms src/Core)
+add_headers_and_sources(dbms src/Misc)
 add_headers_and_sources(dbms src/DataStreams)
 add_headers_and_sources(dbms src/DataTypes)
 add_headers_and_sources(dbms src/Databases)
@@ -71,7 +71,6 @@ add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/Kafka)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
-add_headers_and_sources(dbms src/Formats)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -176,6 +175,8 @@ target_link_libraries (clickhouse_common_io
 )
 
 target_link_libraries (dbms
+        PUBLIC
+    clickhouse_core
         PRIVATE
     clickhouse_parsers
     clickhouse_common_config
@@ -184,6 +185,7 @@ target_link_libraries (dbms
         PRIVATE
     clickhouse_dictionaries
     clickhouse_dictionaries_embedded
+    clickhouse_formats
         PUBLIC
     pocoext
     ${MYSQLXX_LIBRARY}
@@ -243,13 +245,6 @@ target_link_libraries (dbms PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
     target_link_libraries (dbms PRIVATE ${ICU_LIBRARIES})
-endif ()
-
-if (USE_CAPNP)
-    target_link_libraries (dbms PRIVATE ${CAPNP_LIBRARY})
-    if (NOT USE_INTERNAL_CAPNP_LIBRARY)
-        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
-    endif ()
 endif ()
 
 if (USE_RDKAFKA)

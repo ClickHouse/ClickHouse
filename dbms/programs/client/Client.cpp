@@ -33,7 +33,7 @@
 #include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/ExternalTable.h>
+#include <Misc/ExternalTable.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>

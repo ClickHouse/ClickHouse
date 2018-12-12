@@ -1,15 +1,14 @@
-#include <memory>
-
 #include "CurrentThread.h"
+
+#include <memory>
 #include <common/logger_useful.h>
-#include <Common/ThreadStatus.h>
-#include <Common/ObjectPool.h>
-#include <Common/TaskStatsInfoGetter.h>
+#include "ThreadStatus.h"
+#include "ObjectPool.h"
+#include "TaskStatsInfoGetter.h"
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Poco/Ext/ThreadNumber.h>
 #include <Poco/Logger.h>
-
 
 #if defined(ARCADIA_ROOT)
 #   include <util/thread/singleton.h>

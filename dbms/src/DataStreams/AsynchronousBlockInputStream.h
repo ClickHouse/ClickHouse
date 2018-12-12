@@ -7,7 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
-#include <Poco/Ext/ThreadNumber.h>
 
 
 namespace CurrentMetrics

@@ -5,7 +5,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Core/materializeBlock.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>

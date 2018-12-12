@@ -2,7 +2,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/TokenIterator.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Formats/ValuesRowInputStream.h>
 #include <Formats/FormatFactory.h>

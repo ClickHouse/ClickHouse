@@ -13,7 +13,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Core/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
