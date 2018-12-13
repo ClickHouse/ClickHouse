@@ -388,6 +388,116 @@ bool ParserSubstringExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
+bool ParserLeftExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Rewrites left(expr, length) to SUBSTRING(expr, 1, length)
+
+    ASTPtr expr_node;
+    ASTPtr start_node;
+    ASTPtr length_node;
+
+    if (!ParserKeyword("LEFT").ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, expr_node, expected))
+        return false;
+
+    ParserToken(TokenType::Comma).ignore(pos, expected);
+
+    if (!ParserExpression().parse(pos, length_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    start_node = std::make_shared<ASTLiteral>(1);
+    expr_list_args->children = {expr_node, start_node, length_node};
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = "substring";
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    node = std::move(func_node);
+    return true;
+}
+
+bool ParserRightExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Rewrites RIGHT(expr, length) to substring(expr, greatest((length(expr) + 1) - length, 1))
+
+    ASTPtr expr_node;
+    ASTPtr length_node;
+
+    if (!ParserKeyword("RIGHT").ignore(pos, expected))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, expr_node, expected))
+        return false;
+
+    ParserToken(TokenType::Comma).ignore(pos, expected);
+
+    if (!ParserExpression().parse(pos, length_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto length_expr_list_args = std::make_shared<ASTExpressionList>();
+    length_expr_list_args->children = {expr_node};
+
+    auto length_func_node = std::make_shared<ASTFunction>();
+    length_func_node->name = "length";
+    length_func_node->arguments = std::move(length_expr_list_args);
+    length_func_node->children.push_back(length_func_node->arguments);
+
+    auto plus_expr_list_args = std::make_shared<ASTExpressionList>();
+    plus_expr_list_args->children = {length_func_node, std::make_shared<ASTLiteral>(1)};
+
+    auto plus_node = std::make_shared<ASTFunction>();
+    plus_node->name = "plus";
+    plus_node->arguments = std::move(plus_expr_list_args);
+    plus_node->children.push_back(plus_node->arguments);
+
+    auto minus_expr_list_args = std::make_shared<ASTExpressionList>();
+    minus_expr_list_args->children = {plus_node, length_node};
+
+    auto minus_node = std::make_shared<ASTFunction>();
+    minus_node->name = "minus";
+    minus_node->arguments = std::move(minus_expr_list_args);
+    minus_node->children.push_back(minus_node->arguments);
+
+    auto start_expr_list_args = std::make_shared<ASTExpressionList>();
+    start_expr_list_args->children = {minus_node, std::make_shared<ASTLiteral>(1)};
+
+    auto start_node = std::make_shared<ASTFunction>();
+    start_node->name = "greatest";
+    start_node->arguments = std::move(start_expr_list_args);
+    start_node->children.push_back(start_node->arguments);
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children = {expr_node, start_node};
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = "substring";
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    node = std::move(func_node);
+    return true;
+}
+
 bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     auto begin = pos;
@@ -751,6 +861,8 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserCastExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
         || ParserSubstringExpression().parse(pos, node, expected)
+        || ParserLeftExpression().parse(pos, node, expected)
+        || ParserRightExpression().parse(pos, node, expected)
         || ParserCase().parse(pos, node, expected)
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)

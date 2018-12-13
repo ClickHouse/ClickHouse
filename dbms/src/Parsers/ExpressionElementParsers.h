@@ -103,6 +103,20 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserLeftExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "LEFT expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserRightExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "RIGHT expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserExtractExpression : public IParserBase
 {
 protected:
