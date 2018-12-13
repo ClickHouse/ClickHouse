@@ -12,7 +12,11 @@ namespace DB
 namespace
 {
     template <typename Factory>
-    void fillRow(MutableColumns & res_columns, const String & name, UInt64 is_aggregate, const Factory & f)
+    void fillRow(
+        MutableColumns & res_columns,
+        const String & name,
+        UInt64 is_aggregate,
+        const Factory & f)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(is_aggregate);
@@ -31,16 +35,24 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
         {"is_aggregate", std::make_shared<DataTypeUInt8>()},
         {"case_insensitive", std::make_shared<DataTypeUInt8>()},
         {"alias_to", std::make_shared<DataTypeString>()},
+        {"signature", std::make_shared<DataTypeString>()},
+        {"default_implementation_for_null", std::make_shared<DataTypeUInt8>()},
+        {"default_implementation_for_low_cardinality", std::make_shared<DataTypeUInt8>()},
     };
 }
 
-void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto & functions_factory = FunctionFactory::instance();
     const auto & function_names = functions_factory.getAllRegisteredNames();
     for (const auto & name : function_names)
     {
         fillRow(res_columns, name, UInt64(0), functions_factory);
+
+        auto function = functions_factory.get(name, context);
+        res_columns[4]->insert(function->getSignature());
+        res_columns[5]->insert(function->useDefaultImplementationForNulls());
+        res_columns[6]->insert(function->useDefaultImplementationForLowCardinalityColumns());
     }
 
     const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
@@ -48,6 +60,9 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Contex
     for (const auto & name : aggregate_function_names)
     {
         fillRow(res_columns, name, UInt64(1), aggregate_functions_factory);
+        res_columns[4]->insertDefault();
+        res_columns[5]->insertDefault();
+        res_columns[6]->insertDefault();
     }
 }
 }

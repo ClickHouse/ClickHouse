@@ -36,7 +36,7 @@ public:
     String getSignature() const override
     {
         return String("f(StringOrFixedString) -> ") + TypeName<ResultType>::get()
-            + String("OR f(Array) -> ") + TypeName<ResultType>::get();
+            + String(" OR f(Array) -> ") + TypeName<ResultType>::get();
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

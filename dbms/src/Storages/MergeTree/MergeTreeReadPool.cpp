@@ -43,7 +43,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
 {
     const std::lock_guard<std::mutex> lock{mutex};
 
-    /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
+    /// If number of threads have been lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
     if (thread >= backoff_state.current_threads)
         return nullptr;
 

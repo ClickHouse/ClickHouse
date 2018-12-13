@@ -26,7 +26,7 @@ public:
 
     String getName() const override { return name; }
 
-    String getSignature() const override { return "f(Array(T), U) -> Array(leastSuperType(T, U))"; }
+    String getSignature() const override { return "f(Array(T), U) -> Array(leastSupertype(T, U))"; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {

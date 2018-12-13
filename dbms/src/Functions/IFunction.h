@@ -239,6 +239,22 @@ public:
     /// You pass data types with empty DataTypeFunction for lambda arguments.
     /// This function will replace it with DataTypeFunction containing actual types.
     virtual void getLambdaArgumentTypes(DataTypes & arguments) const = 0;
+
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl():
+      *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call buildImpl() with return_type = Nullable(Nothing),
+      *  if some of arguments are Nullable, then:
+      *   - Nullable types are substituted with nested types for getReturnType() function
+      *   - wrap getReturnType() result in Nullable type and pass to buildImpl
+      *
+      * Otherwise build returns buildImpl(arguments, getReturnType(arguments));
+      */
+    virtual bool useDefaultImplementationForNulls() const { return true; }
+
+    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl().
+      * If function arguments has low cardinality types, convert them to ordinary types.
+      * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
+      */
+    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 };
 
 using FunctionBuilderPtr = std::shared_ptr<IFunctionBuilder>;
@@ -261,22 +277,6 @@ public:
 protected:
     /// Get the result type by argument type. If the function does not apply to these arguments, throw an exception.
     virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const;
-
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl():
-      *  if some of arguments are Nullable(Nothing) then don't call getReturnType(), call buildImpl() with return_type = Nullable(Nothing),
-      *  if some of arguments are Nullable, then:
-      *   - Nullable types are substituted with nested types for getReturnType() function
-      *   - wrap getReturnType() result in Nullable type and pass to buildImpl
-      *
-      * Otherwise build returns buildImpl(arguments, getReturnType(arguments));
-      */
-    virtual bool useDefaultImplementationForNulls() const { return true; }
-
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl().
-      * If function arguments has low cardinality types, convert them to ordinary types.
-      * getReturnType returns ColumnLowCardinality if at least one argument type is ColumnLowCardinality.
-      */
-    virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
@@ -451,7 +451,7 @@ public:
     explicit DefaultFunctionBuilder(std::shared_ptr<IFunction> function) : function(std::move(function)) {}
 
     String getName() const override { return function->getName(); }
-    String getSignature() const override { return function->getName(); }
+    String getSignature() const override { return function->getSignature(); }
 
 protected:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }

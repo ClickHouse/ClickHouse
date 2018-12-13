@@ -150,6 +150,12 @@ void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 
+namespace FunctionSignatures
+{
+    void registerTypeMatchers();
+    void registerTypeFunctions();
+}
+
 
 DataTypeFactory::DataTypeFactory()
 {
@@ -169,6 +175,9 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
+
+    FunctionSignatures::registerTypeMatchers();
+    FunctionSignatures::registerTypeFunctions();
 }
 
 }

@@ -33,7 +33,7 @@ namespace ErrorCodes
   *  and as a result, builds an array with values are located at corresponding positions.
   *
   * If more than one value was inserted to single position, the any value (first in case of single thread) is stored.
-  * If no values was inserted to some position, then default value will be substituted.
+  * If no values have inserted to some position, then default value will be substituted.
   *
   * Aggregate function also accept optional parameters:
   * - default value to substitute;

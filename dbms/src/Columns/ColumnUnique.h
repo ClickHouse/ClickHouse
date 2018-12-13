@@ -207,7 +207,7 @@ void ColumnUnique<ColumnType>::updateNullMask()
     if (is_nullable)
     {
         if (!nested_null_mask)
-            throw Exception("Null mask for ColumnUnique is was not created.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Null mask for ColumnUnique has not created.", ErrorCodes::LOGICAL_ERROR);
 
         size_t size = getRawColumnPtr()->size();
 

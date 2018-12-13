@@ -53,7 +53,7 @@ BlockIO InterpreterRenameQuery::execute()
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
 
-    /** In case of error while renaming, it is possible that only part of tables was renamed
+    /** In case of error while renaming, it is possible that only some tables have been renamed
       *  or we will be in inconsistent state. (It is worth to be fixed.)
       */
 

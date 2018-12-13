@@ -78,14 +78,6 @@ struct Key
 };
 
 
-static inline size_t getCommonIndex(size_t i, size_t j)
-{
-    if (i && j && i != j)
-        throw Exception("Different indices of variables in subexpression", ErrorCodes::BAD_FUNCTION_SIGNATURE);
-    return i ? i : j;
-}
-
-
 bool Value::operator==(const Value & rhs) const
 {
     return value.index() == rhs.value.index()
@@ -121,20 +113,6 @@ std::string Value::toString() const
     }
     else
         return applyVisitor(FieldVisitorToString(), std::get<Field>(value));
-}
-
-
-template <typename Container, typename WriteElem, typename WriteDelim>
-void writeList(Container && container, WriteElem && write_elem, WriteDelim && write_delim)
-{
-    bool is_first = true;
-    for (const auto & elem : container)
-    {
-        if (!is_first)
-            write_delim();
-        is_first = false;
-        write_elem(elem);
-    }
 }
 
 
@@ -247,12 +225,9 @@ public:
         return type->getName();
     }
 
-    bool match(const DataTypePtr & what, Variables &, size_t, size_t, std::string & out_reason) const override
+    bool match(const DataTypePtr & what, Variables &, size_t, size_t, std::string &) const override
     {
-        if (type->equals(*what))
-            return true;
-        out_reason = "type must be " + type->getName() + ", but it is " + what->getName();
-        return false;
+        return type->equals(*what);
     }
 
     size_t getIndex() const override { return 0; }
@@ -302,19 +277,24 @@ struct ArgumentDescription
     {
         if (is_const && (!column || !column->isColumnConst()))
         {
-            out_reason = "argument " + DB::toString(arg_num + 1) + " must be " + toString() + ", but it is not constant";
+            out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
+                + " must be " + toString() + ", but it is not constant";
             return false;
         }
 
-        auto key = argument_name.incrementIndex(iteration);
-        if (is_const && !vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
+        if (!argument_name.name.empty())
         {
-            return false;
+            auto key = argument_name.incrementIndex(iteration);
+            if (is_const && !vars.assignOrCheck(key, typeid_cast<const ColumnConst &>(*column).getField(), arg_num, out_reason))
+            {
+                return false;
+            }
         }
 
         if (!type_matcher->match(type, vars, iteration, arg_num, out_reason))
         {
-            out_reason = "argument " + DB::toString(arg_num + 1) + " has type " + type->getName() + " that is not " + type_matcher->toString()
+            out_reason = "argument " + DB::toString(arg_num + 1) + (argument_name.name.empty() ? "" : " (" + argument_name.name + ")")
+                + " has type " + type->getName() + " that is not " + type_matcher->toString()
                 + (out_reason.empty() ? "" : ": " + out_reason);
             return false;
         }
@@ -733,9 +713,26 @@ struct AlternativeFunctionSignatureImpl : public IFunctionSignatureImpl
 
     DataTypePtr check(const ColumnsWithTypeAndName & args, Variables & vars, std::string & out_reason) const override
     {
+        if (alternatives.size() == 1)
+            return alternatives.front()->check(args, vars, out_reason);
+
+        std::vector<std::string> reasons;
+
         for (const auto & alternative : alternatives)
-            if (vars.reset(); DataTypePtr res = alternative->check(args, vars, out_reason)) /// TODO out_reason
+        {
+            vars.reset();
+            reasons.emplace_back();
+            if (DataTypePtr res = alternative->check(args, vars, reasons.back()))
                 return res;
+        }
+
+        WriteBufferFromString out(out_reason);
+        out << "None of the alternative function signatures matched.\n";
+        size_t num_alternatives = alternatives.size();
+        for (size_t i = 0; i < num_alternatives; ++i)
+            out << "Variant " << alternatives[i]->toString() << " doesn't match because " << reasons[i] << ".\n";
+        out.finish();
+
         return nullptr;
     }
 
@@ -873,7 +870,15 @@ bool parseTypeExpression(TokenIterator & pos, TypeExpressionPtr & res)
             auto prev_pos = pos;
             --prev_pos;
             const std::string full_name(begin->begin, prev_pos->end);
-            res = std::make_shared<ConstantTypeExpression>(factory.get(full_name));
+            try
+            {
+                res = std::make_shared<ConstantTypeExpression>(factory.get(full_name));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("in expression " + full_name);
+                throw;
+            }
             return true;
         }
 
@@ -923,13 +928,21 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
             auto prev_pos = pos;
             --prev_pos;
             const std::string full_name(begin->begin, prev_pos->end);
-            res = std::make_shared<ExactTypeMatcher>(factory.get(full_name));
+            try
+            {
+                res = std::make_shared<ExactTypeMatcher>(factory.get(full_name));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("in expression " + full_name);
+                throw;
+            }
             return true;
         }
 
         /// Type variable (example: T)
 
-        if (args.empty())
+        if (args.empty() && name.size() < 3)    /// Size limit for better disambiguation with type matchers.
         {
             res = std::make_shared<AssignTypeMatcher>(nullptr, name);
             return true;
@@ -1164,8 +1177,16 @@ FunctionSignature::FunctionSignature(const std::string & str)
     Tokens tokens(str.data(), str.data() + str.size());
     TokenIterator it(tokens);
 
-    if (!FunctionSignatures::parseFunctionSignature(it, impl) || it->type != TokenType::EndOfStream)
-        throw Exception("Cannot parse function signature: " + str, ErrorCodes::SYNTAX_ERROR);
+    try
+    {
+        if (!FunctionSignatures::parseFunctionSignature(it, impl) || it->type != TokenType::EndOfStream)
+            throw Exception("Cannot parse function signature: " + str, ErrorCodes::SYNTAX_ERROR);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("Cannot parse function signature: " + str);
+        throw;
+    }
 }
 
 DataTypePtr FunctionSignature::check(const ColumnsWithTypeAndName & args, std::string & out_reason) const

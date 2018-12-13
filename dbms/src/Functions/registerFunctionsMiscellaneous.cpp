@@ -40,6 +40,7 @@ void registerFunctionToLowCardinality(FunctionFactory &);
 void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
+void registerFunctionJoinGet(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -80,6 +81,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionLowCardinalityIndices(factory);
     registerFunctionLowCardinalityKeys(factory);
     registerFunctionsIn(factory);
+    registerFunctionJoinGet(factory);
 }
 
 }

@@ -185,8 +185,6 @@ public:
     FunctionTransformWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
         : owned_dict(owned_dict_)
     {
-        if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -207,6 +205,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
+        if (!owned_dict)
+            throw Exception("Dictionaries have not been loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
@@ -262,8 +263,6 @@ public:
     FunctionIsInWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
         : owned_dict(owned_dict_)
     {
-        if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -281,6 +280,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
+        if (!owned_dict)
+            throw Exception("Dictionaries have not been loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
@@ -376,10 +378,8 @@ private:
 
 public:
     FunctionHierarchyWithDictionary(const std::shared_ptr<typename DictGetter::Src> & owned_dict_)
-    : owned_dict(owned_dict_)
+        : owned_dict(owned_dict_)
     {
-        if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -400,6 +400,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
+        if (!owned_dict)
+            throw Exception("Dictionaries have not been loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
 
@@ -633,8 +636,6 @@ public:
     FunctionRegionToName(const MultiVersion<RegionsNames>::Version & owned_dict_)
         : owned_dict(owned_dict_)
     {
-        if (!owned_dict)
-            throw Exception("Dictionaries was not loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
     }
 
     String getName() const override
@@ -658,6 +659,9 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
+        if (!owned_dict)
+            throw Exception("Dictionaries have not been loaded. You need to check configuration file.", ErrorCodes::DICTIONARIES_WAS_NOT_LOADED);
+
         RegionsNames::Language language = RegionsNames::Language::RU;
 
         /// If the result language is specified

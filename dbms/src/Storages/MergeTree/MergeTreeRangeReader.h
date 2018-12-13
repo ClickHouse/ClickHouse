@@ -145,9 +145,9 @@ public:
         NumRows rows_per_granule;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
-        /// The number of rows was read at first step. May be zero if no read columns present in part.
+        /// The number of rows have been read at first step. May be zero if no read columns present in part.
         size_t num_read_rows = 0;
-        /// The number of rows was removed from last granule after clear or optimize.
+        /// The number of rows have been removed from last granule after clear or optimize.
         size_t num_rows_to_skip_in_last_granule = 0;
         /// Without any filtration.
         size_t num_bytes_read = 0;

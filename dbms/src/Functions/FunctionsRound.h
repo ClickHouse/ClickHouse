@@ -478,7 +478,7 @@ public:
         return name;
     }
 
-    String getSignature() const override { return "f(T : NumberOrDecimal, [NumberOrDecimal]) -> T"; }
+    String getSignature() const override { return "f(T : Number, [Number]) -> T"; }
 
     static Int64 getScaleArg(Block & block, const ColumnNumbers & arguments)
     {

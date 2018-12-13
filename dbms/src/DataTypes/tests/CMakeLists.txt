@@ -11,3 +11,6 @@ target_link_libraries (data_type_get_common_type PRIVATE dbms gtest_main)
 
 add_executable (function_signatures function_signatures.cpp)
 target_link_libraries (function_signatures PRIVATE dbms clickhouse_parsers clickhouse_common_io)
+
+add_executable (check_all_function_signatures check_all_function_signatures.cpp)
+target_link_libraries (check_all_function_signatures PRIVATE dbms clickhouse_parsers clickhouse_common_io clickhouse_functions)

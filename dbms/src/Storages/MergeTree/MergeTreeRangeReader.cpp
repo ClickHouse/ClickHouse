@@ -348,7 +348,7 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
         if (new_size != total_rows_per_granule)
             throw Exception("Can't set filter because it's size is " + toString(new_size) + " but "
-                            + toString(total_rows_per_granule) + " rows was read.", ErrorCodes::LOGICAL_ERROR);
+                            + toString(total_rows_per_granule) + " rows have been read.", ErrorCodes::LOGICAL_ERROR);
     }
 
     ConstantFilterDescription const_description(*new_filter);

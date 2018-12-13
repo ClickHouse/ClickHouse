@@ -1906,7 +1906,7 @@ public:
     FunctionBuilderCast(const Context & context) : context(context) {}
 
     String getName() const override { return name; }
-    String getSignature() const override { return "f(T, const type String) -> TypeFromString(type)"; }
+    String getSignature() const override { return "f(T, const type String) -> typeFromString(type)"; }
 
 
 protected:

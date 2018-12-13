@@ -4,7 +4,6 @@
 
 namespace DB
 {
-
 class DictionaryBlockInputStreamBase : public IProfilingBlockInputStream
 {
 protected:

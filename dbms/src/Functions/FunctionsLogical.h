@@ -471,7 +471,7 @@ public:
 
     String getSignature() const override
     {
-        return "f(Number, Number) -> UInt8";
+        return "f(Number) -> UInt8";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
