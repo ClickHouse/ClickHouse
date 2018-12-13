@@ -138,7 +138,7 @@ public:
     StringRef getRawData() const override { return StringRef(chars.data(), chars.size()); }
 
     /// Specialized part of interface, not from IColumn.
-
+    void insertString(const String & string) { insertData(string.c_str(), string.size()); }
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }
 

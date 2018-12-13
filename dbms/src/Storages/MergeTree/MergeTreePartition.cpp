@@ -98,7 +98,7 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
         const DataTypePtr & type = storage.partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
         column->insert(value[0]);
-        type->serializeText(*column, 0, out, format_settings);
+        type->serializeAsText(*column, 0, out, format_settings);
     }
     else
     {

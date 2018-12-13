@@ -43,7 +43,7 @@ static void writeRow(const Block & block, size_t row_idx, WriteBuffer & out, con
         {
             {
                 WriteBufferFromString text_out(buffer);
-                col.type->serializeText(*col.column, row_idx, text_out, format_settings);
+                col.type->serializeAsText(*col.column, row_idx, text_out, format_settings);
             }
             writeODBCString(out, buffer);
         }

@@ -134,7 +134,7 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
 
     try
     {
-        header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr, format_settings);
+        header.getByPosition(index).type->deserializeAsTextJSON(*columns[index], istr, format_settings);
     }
     catch (Exception & e)
     {
