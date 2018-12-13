@@ -76,7 +76,7 @@ size_t CompressionCodecMultiple::decompress(char * source, size_t source_size, c
 
     PODArray<char> compressed_buf;
     PODArray<char> uncompressed_buf;
-    compressed_buf.insert(&source[compression_methods_size + 1], source_size - (compression_methods_size + 1));
+    compressed_buf.insert(&source[compression_methods_size + 1], &source[source_size - (compression_methods_size + 1)]);
 
     for (size_t idx = 0; idx < compression_methods_size; ++idx)
     {
