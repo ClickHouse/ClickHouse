@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -14,6 +16,8 @@
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+
+#include <optional>
 
 
 namespace DB
@@ -152,21 +156,67 @@ public:
     std::string name() const override { return "difference"; }
 };
 
+/// If the type was already Nullable, return it as is.
+class TypeFunctionNullable : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception("Wrong number of arguments for type function Nullable", ErrorCodes::LOGICAL_ERROR);
+
+        return makeNullable(args.front().type());
+    }
+
+    std::string name() const override { return "Nullable"; }
+};
+
+class TypeFunctionLowCardinality : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception("Wrong number of arguments for type function LowCardinality", ErrorCodes::LOGICAL_ERROR);
+
+        const DataTypePtr & type = args.front().type();
+        if (type->lowCardinality())
+            return type;
+        else
+            return DataTypePtr(std::make_shared<DataTypeLowCardinality>(type));
+    }
+
+    std::string name() const override { return "LowCardinality"; }
+};
+
 
 class TypeFunctionTuplesHaveSameSize : public ITypeFunction
 {
 public:
     Value apply(const Values & args) const override
     {
-        if (args.size() != 1)
-            throw Exception("Wrong number of arguments for type function TypeFromString", ErrorCodes::LOGICAL_ERROR);
+        if (args.size() <= 1)
+            throw Exception("Wrong number of arguments for type function tuplesHaveSameSize", ErrorCodes::LOGICAL_ERROR);
 
-        const DataTypeFactory & factory = DataTypeFactory::instance();
+        std::optional<size_t> tuple_size;
 
-        return factory.get(args.front().field().safeGet<String>());
+        for (const auto & arg : args)
+        {
+            const DataTypePtr & type = arg.type();
+            if (!isTuple(type))
+                return Value(Field(UInt64(false)));
+
+            const DataTypeTuple & tuple = typeid_cast<const DataTypeTuple &>(*type);
+            if (!tuple_size)
+                tuple_size = tuple.getElements().size();
+            else if (*tuple_size != tuple.getElements().size())
+                return Value(Field(UInt64(false)));
+        }
+
+        return Value(Field(UInt64(true)));
     }
 
-    std::string name() const override { return "typeFromString"; }
+    std::string name() const override { return "tuplesHaveSameSize"; }
 };
 
 
@@ -180,6 +230,11 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionDateTime>();
     factory.registerElement<TypeFunctionDifference>();
     factory.registerElement<TypeFunctionTypeFromString>();
+    factory.registerElement<TypeFunctionNullable>();
+    factory.registerElement<TypeFunctionLowCardinality>();
+
+    /// Predicates
+    factory.registerElement<TypeFunctionTuplesHaveSameSize>();
 }
 
 }

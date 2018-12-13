@@ -942,7 +942,7 @@ bool parseSimpleTypeMatcher(TokenIterator & pos, TypeMatcherPtr & res)
 
         /// Type variable (example: T)
 
-        if (args.empty())
+        if (args.empty() && name.size() < 3)    /// Size limit for better disambiguation with type matchers.
         {
             res = std::make_shared<AssignTypeMatcher>(nullptr, name);
             return true;
