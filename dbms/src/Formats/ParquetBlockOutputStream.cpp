@@ -278,14 +278,8 @@ void ParquetBlockOutputStream::write(const Block & block)
     std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(std::move(arrow_fields));
     std::shared_ptr<arrow::Table> arrow_table = arrow::Table::Make(arrow_schema, arrow_arrays);
 
-
-    // TODO: ostreamOutputStream !!!!!!!!!!!!!!!!!!!!
-
-
-    //std::shared_ptr<parquet::InMemoryOutputStream> sink = std::make_shared<parquet::InMemoryOutputStream>();
     auto sink = std::make_shared<OstreamOutputStream>(ostr);
 
-    // TODO: calculate row_group_size depending on a number of rows and table size
 
 #    if 0
     arrow::Status write_status = parquet::arrow::WriteTable(
@@ -295,12 +289,11 @@ void ParquetBlockOutputStream::write(const Block & block)
         /* row_group_size = */ arrow_table->num_rows(),
         parquet::default_writer_properties(),
         parquet::arrow::default_arrow_writer_properties());
-    if (!write_status.ok())
-        throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 #    endif
 
-    std::unique_ptr<parquet::arrow::FileWriter> file_writer;
     // TODO CHECK RETURN_NOT_OK
+    if (!file_writer)
+    {
     parquet::arrow::FileWriter::Open(
         *arrow_table->schema(),
         arrow::default_memory_pool(),
@@ -308,17 +301,25 @@ void ParquetBlockOutputStream::write(const Block & block)
         parquet::default_writer_properties(),
         parquet::arrow::default_arrow_writer_properties(),
         &file_writer);
+    }
 
     //parquet::RowGroupWriter* rg_writer = file_writer->AppendBufferedRowGroup();
 
-    file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
+    // TODO: calculate row_group_size depending on a number of rows and table size
+    auto write_status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
 
-    file_writer->Close();
-
+    if (!write_status.ok())
+       throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void ParquetBlockOutputStream::writeSuffix()
 {
+    if (file_writer)
+    {
+        auto write_status = file_writer->Close();
+        if (!write_status.ok())
+            throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+    }
 }
 
 

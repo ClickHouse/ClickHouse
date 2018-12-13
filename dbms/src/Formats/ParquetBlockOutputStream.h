@@ -10,6 +10,8 @@ class Array;
 class DataType;
 }
 
+namespace parquet { namespace arrow { class FileWriter; }}
+
 namespace DB
 {
 class ParquetBlockOutputStream : public IBlockOutputStream
@@ -37,6 +39,8 @@ private:
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);
 
     static const std::unordered_map<String, std::shared_ptr<arrow::DataType>> internal_type_to_arrow_type;
+
+    std::unique_ptr<parquet::arrow::FileWriter> file_writer;
 };
 
 }
