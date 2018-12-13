@@ -961,7 +961,8 @@ struct JavaHashImpl
     static Int32 apply(const char * data, const size_t size)
     {
         Int32 h = 0;
-        for (int i = 0; i < (int)size; ++i) {
+        for (int i = 0; i < (int)size; ++i) 
+	{
             h = 31 * h + data[i];
         }
         return h;
@@ -1042,7 +1043,8 @@ public:
  * this hive function works for hive-version < 3.0,
  * after 3.0, hive use murmur-hash3
  */
-class FunctionHiveHash : public FunctionJavaHash{
+class FunctionHiveHash : public FunctionJavaHash
+{
 public:
     static constexpr auto name = "HiveHash";
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionHiveHash>(); }
