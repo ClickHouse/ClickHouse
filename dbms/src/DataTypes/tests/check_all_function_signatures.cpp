@@ -5,6 +5,8 @@
 #include <DataTypes/FunctionSignature.h>
 #include <Interpreters/Context.h>
 
+#include <Poco/Util/Application.h>
+
 
 namespace DB
 {
@@ -17,27 +19,54 @@ namespace DB
 
 using namespace DB;
 
-int main(int, char **)
+
+class Test : public Poco::Util::Application
+{
+private:
+    void initialize(Poco::Util::Application & self) override
+    {
+        Poco::Util::Application::initialize(self);
+    }
+
+    int main(const std::vector<std::string> & /*args*/) override
+    try
+    {
+        const auto & factory = FunctionFactory::instance();
+        auto names = factory.getAllRegisteredNames();
+
+        Context context = Context::createGlobal();
+        context.setGlobalContext(context);
+
+        for (const auto & name : names)
+        {
+            const auto & function = factory.get(name, context);
+            std::string signature = function->getSignature();
+
+            if (signature.empty())
+                continue;
+
+            std::cerr << name << ": " << signature << "\n";
+
+            FunctionSignature checker(signature);
+        }
+
+        return 0;
+    }
+    catch (...)
+    {
+        std::cerr << getCurrentExceptionMessage(true) << std::endl;
+        throw;
+    }
+};
+
+
+int main(int argc, char ** argv)
 try
 {
     registerFunctions();
-
-    const auto & factory = FunctionFactory::instance();
-    auto names = factory.getAllRegisteredNames();
-
-    Context context = Context::createGlobal();
-
-    for (const auto & name : names)
-    {
-        const auto & function = factory.get(name, context);
-        std::string signature = function->getSignature();
-
-        std::cerr << name << ": " << signature << "\n";
-
-        FunctionSignature checker(signature);
-    }
-
-    return 0;
+    Test app;
+    app.init(argc, argv);
+    return app.run();
 }
 catch (...)
 {

@@ -153,6 +153,23 @@ public:
 };
 
 
+class TypeFunctionTuplesHaveSameSize : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception("Wrong number of arguments for type function TypeFromString", ErrorCodes::LOGICAL_ERROR);
+
+        const DataTypeFactory & factory = DataTypeFactory::instance();
+
+        return factory.get(args.front().field().safeGet<String>());
+    }
+
+    std::string name() const override { return "typeFromString"; }
+};
+
+
 void registerTypeFunctions()
 {
     auto & factory = TypeFunctionFactory::instance();

@@ -200,7 +200,7 @@ void DatabaseOrdinary::loadTables(
 
     exception_handler.throwIfException();
 
-    /// After all tables was basically initialized, startup them.
+    /// After all tables have been basically initialized, startup them.
     startupTables(thread_pool);
 }
 

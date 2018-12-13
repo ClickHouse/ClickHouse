@@ -10,7 +10,7 @@
   *  - for high-level profiling.
   *
   * See also ProfileEvents.h
-  * ProfileEvents counts number of happened events - for example, how many times queries was executed.
+  * ProfileEvents counts number of happened events - for example, how many times queries have been executed.
   * CurrentMetrics counts number of simultaneously happening events - for example, number of currently executing queries, right now,
   *  or just current value of some metric - for example, replica delay in seconds.
   *

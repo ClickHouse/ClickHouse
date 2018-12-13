@@ -74,7 +74,7 @@ private:
 
     void waitForJobs();
 
-    /// Returns the number of blocks was written for each cluster node. Uses during exception handling.
+    /// Returns the number of blocks have been written for each cluster node. Uses during exception handling.
     std::string getCurrentStateDescription();
 
 private:

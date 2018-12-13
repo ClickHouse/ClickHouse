@@ -700,7 +700,7 @@ void TCPHandler::receiveQuery()
 
         if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         {
-            /// 'Current' fields was set at receiveHello.
+            /// 'Current' fields have been set at receiveHello.
             client_info.initial_user = client_info.current_user;
             client_info.initial_query_id = client_info.current_query_id;
             client_info.initial_address = client_info.current_address;

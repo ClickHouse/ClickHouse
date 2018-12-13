@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Common/typeid_cast.h>
 
@@ -154,6 +155,32 @@ public:
     }
 };
 
+class TypeMatcherMaybeNullable : public ITypeMatcher
+{
+private:
+    TypeMatcherPtr child_matcher;
+public:
+    TypeMatcherMaybeNullable(const TypeMatchers & child_matchers)
+    {
+        if (child_matchers.size() != 1)
+            throw Exception("MaybeNullable type matcher requires single argument", ErrorCodes::LOGICAL_ERROR);
+
+        child_matcher = child_matchers[0];
+    }
+
+    std::string toString() const override { return "MaybeNullable(" + child_matcher->toString() + ")"; }
+
+    bool match(const DataTypePtr & type, Variables & variables, size_t iteration, size_t arg_num, std::string & out_reason) const override
+    {
+        return child_matcher->match(removeNullable(type), variables, iteration, arg_num, out_reason);
+    }
+
+    size_t getIndex() const override
+    {
+        return child_matcher->getIndex();
+    }
+};
+
 
 template <typename TypeMatcher>
 void registerTypeMatcherWithNoArguments(TypeMatcherFactory & factory)
@@ -182,6 +209,7 @@ void registerTypeMatchers()
 
     factory.registerElement("Array", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherTuple>(children); });
+    factory.registerElement("MaybeNullable", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherMaybeNullable>(children); });
 }
 
 }

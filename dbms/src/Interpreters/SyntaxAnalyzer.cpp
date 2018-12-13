@@ -151,7 +151,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, select_query, context, subquery_depth);
 
-    /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
+    /// Optimize if with constant condition after constants have been substituted instead of sclalar subqueries.
     optimizeIfWithConstantCondition(query, result.aliases);
 
     /// GROUP BY injective function elimination.
