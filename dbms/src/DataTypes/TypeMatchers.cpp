@@ -55,6 +55,30 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherEnum : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Enum"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isEnum(type); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherNULL : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "NULL"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->onlyNull(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherRepresentedByNumber : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "RepresentedByNumber"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->isValueRepresentedByNumber(); }
+    size_t getIndex() const override { return 0; }
+};
+
 
 class TypeMatcherArray : public ITypeMatcher
 {
@@ -206,6 +230,9 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherNumber>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNativeUInt>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherStringOrFixedString>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherEnum>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherNULL>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
 
     factory.registerElement("Array", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherTuple>(children); });
