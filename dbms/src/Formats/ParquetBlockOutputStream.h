@@ -19,6 +19,7 @@ public:
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
+    void writeSuffix() override;
     void flush() override;
 
     String getContentType() const override { return "application/octet-stream"; }

@@ -138,15 +138,15 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
 }
 
 #    define FOR_INTERNAL_NUMERIC_TYPES(M) \
-        M(UInt8, arrow::UInt8Builder)     \
-        M(Int8, arrow::Int8Builder)       \
-        M(UInt16, arrow::UInt16Builder)   \
-        M(Int16, arrow::Int16Builder)     \
-        M(UInt32, arrow::UInt32Builder)   \
-        M(Int32, arrow::Int32Builder)     \
-        M(UInt64, arrow::UInt64Builder)   \
-        M(Int64, arrow::Int64Builder)     \
-        M(Float32, arrow::FloatBuilder)   \
+        M(UInt8, arrow::UInt8Builder) \
+        M(Int8, arrow::Int8Builder) \
+        M(UInt16, arrow::UInt16Builder) \
+        M(Int16, arrow::Int16Builder) \
+        M(UInt32, arrow::UInt32Builder) \
+        M(Int32, arrow::Int32Builder) \
+        M(UInt64, arrow::UInt64Builder) \
+        M(Int64, arrow::Int64Builder) \
+        M(Float32, arrow::FloatBuilder) \
         M(Float64, arrow::DoubleBuilder)
 
 const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockOutputStream::internal_type_to_arrow_type = {
@@ -176,6 +176,33 @@ const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
     const PaddedPODArray<UInt8> & null_bytemap = static_cast<const ColumnVector<UInt8> &>(*null_column).getData();
     return &null_bytemap;
 }
+
+
+class OstreamOutputStream : public parquet::OutputStream
+{
+public:
+    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_){};
+
+    virtual ~OstreamOutputStream(){};
+
+    // Close is currently a no-op with the in-memory stream
+    virtual void Close() {}
+
+    virtual int64_t Tell() { return tell; };
+
+    virtual void Write(const uint8_t * data, int64_t length)
+    {
+        ostr.write(reinterpret_cast<const char *>(data), length);
+        tell += length;
+    };
+
+private:
+    WriteBuffer & ostr;
+    int64_t tell = 0;
+
+    PARQUET_DISALLOW_COPY_AND_ASSIGN(OstreamOutputStream);
+};
+
 
 void ParquetBlockOutputStream::write(const Block & block)
 {
@@ -226,9 +253,9 @@ void ParquetBlockOutputStream::write(const Block & block)
         {
             fillArrowArrayWithDateColumnData(nested_column, arrow_array, null_bytemap);
         }
-#    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE)                                                                       \
-        else if (#CPP_NUMERIC_TYPE == column_nested_type_name)                                                                   \
-        {                                                                                                                        \
+#    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
+        else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
+        { \
             fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(nested_column, arrow_array, null_bytemap); \
         }
 
@@ -251,11 +278,16 @@ void ParquetBlockOutputStream::write(const Block & block)
     std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(std::move(arrow_fields));
     std::shared_ptr<arrow::Table> arrow_table = arrow::Table::Make(arrow_schema, arrow_arrays);
 
-    // TODO: get rid of extra copying
-    std::shared_ptr<parquet::InMemoryOutputStream> sink = std::make_shared<parquet::InMemoryOutputStream>();
+
+    // TODO: ostreamOutputStream !!!!!!!!!!!!!!!!!!!!
+
+
+    //std::shared_ptr<parquet::InMemoryOutputStream> sink = std::make_shared<parquet::InMemoryOutputStream>();
+    auto sink = std::make_shared<OstreamOutputStream>(ostr);
 
     // TODO: calculate row_group_size depending on a number of rows and table size
 
+#    if 0
     arrow::Status write_status = parquet::arrow::WriteTable(
         *arrow_table,
         arrow::default_memory_pool(),
@@ -265,10 +297,30 @@ void ParquetBlockOutputStream::write(const Block & block)
         parquet::arrow::default_arrow_writer_properties());
     if (!write_status.ok())
         throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+#    endif
 
-    std::shared_ptr<arrow::Buffer> table_buffer = sink->GetBuffer();
-    writeString(reinterpret_cast<const char *>(table_buffer->data()), table_buffer->size(), ostr);
+    std::unique_ptr<parquet::arrow::FileWriter> file_writer;
+    // TODO CHECK RETURN_NOT_OK
+    parquet::arrow::FileWriter::Open(
+        *arrow_table->schema(),
+        arrow::default_memory_pool(),
+        sink,
+        parquet::default_writer_properties(),
+        parquet::arrow::default_arrow_writer_properties(),
+        &file_writer);
+
+    //parquet::RowGroupWriter* rg_writer = file_writer->AppendBufferedRowGroup();
+
+    file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
+
+    file_writer->Close();
+
 }
+
+void ParquetBlockOutputStream::writeSuffix()
+{
+}
+
 
 void registerOutputFormatParquet(FormatFactory & factory)
 {

@@ -181,14 +181,14 @@ void ParquetBlockInputStream::fillByteMapFromArrowColumn(std::shared_ptr<arrow::
 }
 
 #    define FOR_ARROW_NUMERIC_TYPES(M) \
-        M(arrow::Type::UINT8, UInt8)   \
-        M(arrow::Type::INT8, Int8)     \
+        M(arrow::Type::UINT8, UInt8) \
+        M(arrow::Type::INT8, Int8) \
         M(arrow::Type::UINT16, UInt16) \
-        M(arrow::Type::INT16, Int16)   \
+        M(arrow::Type::INT16, Int16) \
         M(arrow::Type::UINT32, UInt32) \
-        M(arrow::Type::INT32, Int32)   \
+        M(arrow::Type::INT32, Int32) \
         M(arrow::Type::UINT64, UInt64) \
-        M(arrow::Type::INT64, Int64)   \
+        M(arrow::Type::INT64, Int64) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -326,8 +326,8 @@ Block ParquetBlockInputStream::readImpl()
             case arrow::Type::DATE32:
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
-#    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE)                          \
-        case ARROW_NUMERIC_TYPE:                                                    \
+#    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
+        case ARROW_NUMERIC_TYPE: \
             fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
             break;
 
