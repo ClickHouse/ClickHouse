@@ -95,7 +95,7 @@ world
 
 数组写在方括号内的逗号分隔值列表中。 通常情况下，数组中的数字项目会被拼凑，但日期，带时间的日期以及字符串将使用与上面相同的转义规则用单引号引起来。
 
-[NULL](../query_language/syntax.md#null-literal) 将输出为 `\N`。
+[NULL](../query_language/syntax.md) 将输出为 `\N`。
 
 <a name="tabseparatedraw"></a>
 
@@ -141,7 +141,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../query_language/syntax.md#null-literal) 输出为 `\N`。
+[NULL](../query_language/syntax.md) 输出为 `\N`。
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -267,7 +267,7 @@ JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格式中以 `null`  输出来表示.
+ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null`  输出来表示.
 
 参考 JSONEachRow 格式。
 
@@ -361,7 +361,7 @@ ClickHouse 支持 [NULL](../query_language/syntax.md#null-literal), 在 JSON 格
 它会绘制一个完整的表格，每行数据在终端中占用两行。
 每一个结果块都会以单独的表格输出。这是很有必要的，以便结果块不用缓冲结果输出（缓冲在可以预见结果集宽度的时候是很有必要的）。
 
-[NULL](../query_language/syntax.md#null-literal) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../query_language/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 ``` sql
 SELECT * FROM t_null
@@ -456,11 +456,11 @@ FixedString 被简单地表示为一个字节序列。
 
 数组表示为 varint 长度（无符号[LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
 
-对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md#data_type-nullable) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
+对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
 
 ## Values
 
-在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../query_language/syntax.md#null-literal) 为 `NULL`。
+在括号中打印每一行。行由逗号分隔。最后一行之后没有逗号。括号内的值也用逗号分隔。数字以十进制格式输出，不含引号。 数组以方括号输出。带有时间的字符串，日期和时间用引号包围输出。转义字符的解析规则与 [TabSeparated](#tabseparated) 格式类似。 在格式化过程中，不插入额外的空格，但在解析过程中，空格是被允许并跳过的（除了数组值之外的空格，这是不允许的）。[NULL](../query_language/syntax.md) 为 `NULL`。
 
 以 Values 格式传递数据时需要转义的最小字符集是：单引号和反斜线。
 
@@ -472,7 +472,7 @@ FixedString 被简单地表示为一个字节序列。
 
 使用指定的列名在单独的行上打印每个值。如果每行都包含大量列，则此格式便于打印一行或几行。
 
-[NULL](../query_language/syntax.md#null-literal) 输出为 `ᴺᵁᴸᴸ`。
+[NULL](../query_language/syntax.md) 输出为 `ᴺᵁᴸᴸ`。
 
 示例:
 
@@ -618,7 +618,7 @@ struct Message {
 }
 ```
 
-格式文件存储的目录可以在服务配置中的[ format_schema_path ](../operations/server_settings/settings.md#server_settings-format_schema_path) 指定。
+格式文件存储的目录可以在服务配置中的[ format_schema_path ](../operations/server_settings/settings.md) 指定。
 
 Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
 

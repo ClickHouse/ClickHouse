@@ -9,7 +9,6 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 `A database` is just a directory for tables.
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
-<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 

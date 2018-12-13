@@ -31,6 +31,8 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"refcount",                                   std::make_shared<DataTypeUInt32>()},
         {"min_date",                                   std::make_shared<DataTypeDate>()},
         {"max_date",                                   std::make_shared<DataTypeDate>()},
+        {"min_time",                                   std::make_shared<DataTypeDateTime>()},
+        {"max_time",                                   std::make_shared<DataTypeDateTime>()},
         {"partition_id",                               std::make_shared<DataTypeString>()},
         {"min_block_number",                           std::make_shared<DataTypeInt64>()},
         {"max_block_number",                           std::make_shared<DataTypeInt64>()},
@@ -82,6 +84,8 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
 
         columns[i++]->insert(part->getMinDate());
         columns[i++]->insert(part->getMaxDate());
+        columns[i++]->insert(part->getMinTime());
+        columns[i++]->insert(part->getMaxTime());
         columns[i++]->insert(part->info.partition_id);
         columns[i++]->insert(part->info.min_block);
         columns[i++]->insert(part->info.max_block);

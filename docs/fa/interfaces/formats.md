@@ -578,7 +578,7 @@ struct Message {
 
 <div dir="rtl" markdown="1">
 
-فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) قرار گرفته اند.
+فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md) قرار گرفته اند.
 
 عملیات Deserialization موثر است و معمولا لود سیستم را افزایش نمی دهد.
 
