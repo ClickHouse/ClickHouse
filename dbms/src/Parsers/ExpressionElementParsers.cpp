@@ -488,7 +488,8 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             };
             func_name = "replaceRegexpAll";
         }
-        else {
+        else
+        {
             if (trim_left)
             {
                 pattern_list_args->children = {
@@ -521,7 +522,8 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             pattern_node = std::make_shared<ASTLiteral>("^ *\\| *$");
             func_name = "replaceRegexpAll";
         }
-        else {
+        else
+        {
             if (trim_left)
             {
                 pattern_node = std::make_shared<ASTLiteral>("^ *");
