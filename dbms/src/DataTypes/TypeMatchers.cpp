@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeSet.h>
 
 #include <Common/typeid_cast.h>
 
@@ -76,6 +77,33 @@ class TypeMatcherRepresentedByNumber : public ITypeMatcher
 public:
     std::string toString() const override { return "RepresentedByNumber"; }
     bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return type->isValueRepresentedByNumber(); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherSet : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "Set"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return typeid_cast<const DataTypeSet *>(type.get()); }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherUnambiguouslyRepresentedInContiguousMemoryRegion : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "UnambiguouslyRepresentedInContiguousMemoryRegion"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override
+    {
+        return type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    }
+    size_t getIndex() const override { return 0; }
+};
+
+class TypeMatcherDateOrDateTime : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "DateOrDateTime"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override { return isDateOrDateTime(type); }
     size_t getIndex() const override { return 0; }
 };
 
@@ -233,6 +261,9 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherEnum>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNULL>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherRepresentedByNumber>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherDateOrDateTime>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherUnambiguouslyRepresentedInContiguousMemoryRegion>(factory);
 
     factory.registerElement("Array", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherArray>(children); });
     factory.registerElement("Tuple", [](const TypeMatchers & children) { return std::make_shared<TypeMatcherTuple>(children); });
