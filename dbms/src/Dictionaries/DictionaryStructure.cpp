@@ -355,7 +355,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
                 {
                     ReadBufferFromString null_value_buffer{null_value_string};
                     auto column_with_null_value = type->createColumn();
-                    type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
+                    type->deserializeAsTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                     null_value = (*column_with_null_value)[0];
                 }
             }

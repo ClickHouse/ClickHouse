@@ -14,6 +14,9 @@ namespace DB
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
+class IDataTypeDomain;
+using DataTypeDomainPtr = std::unique_ptr<const IDataTypeDomain>;
+
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -37,13 +40,24 @@ public:
     /// Register a simple data type, that have no parameters.
     void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
+    // Register a domain - a refinement of existing type.
+    void registerDataTypeDomain(const String & type_name, DataTypeDomainPtr domain, CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+private:
+    static void setDataTypeDomain(const IDataType & data_type, const IDataTypeDomain & domain);
+    const Creator& findCreatorByName(const String & family_name) const;
+
 private:
     DataTypesDictionary data_types;
 
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;
 
+    // All domains are owned by factory and shared amongst DataType instances.
+    std::vector<DataTypeDomainPtr> all_domains;
+
     DataTypeFactory();
+    ~DataTypeFactory() override;
 
     const DataTypesDictionary & getCreatorMap() const override { return data_types; }
 

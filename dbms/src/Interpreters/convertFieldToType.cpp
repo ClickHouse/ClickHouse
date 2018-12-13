@@ -249,6 +249,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
     }
 
+    if (src.getType() == Field::Types::String)
+    {
+        const auto col = type.createColumn();
+        ReadBufferFromString buffer(src.get<String>());
+        type.deserializeAsTextEscaped(*col, buffer, FormatSettings{});
+
+        return (*col)[0];
+    }
+    // TODO (nemkov): should we attempt to parse value using or `type.deserializeAsTextEscaped()` type.deserializeAsTextEscaped() ?
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
 }

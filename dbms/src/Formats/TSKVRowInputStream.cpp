@@ -135,7 +135,7 @@ bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 
                     read_columns[index] = true;
 
-                    header.getByPosition(index).type->deserializeTextEscaped(*columns[index], istr, format_settings);
+                    header.getByPosition(index).type->deserializeAsTextEscaped(*columns[index], istr, format_settings);
                 }
             }
             else

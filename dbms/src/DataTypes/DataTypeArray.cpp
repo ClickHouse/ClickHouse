@@ -350,7 +350,7 @@ void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteB
     serializeTextImpl(column, row_num, ostr,
         [&](const IColumn & nested_column, size_t i)
         {
-            nested->serializeTextQuoted(nested_column, i, ostr, settings);
+            nested->serializeAsTextQuoted(nested_column, i, ostr, settings);
         });
 }
 
@@ -360,7 +360,7 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
-            nested->deserializeTextQuoted(nested_column, istr, settings);
+            nested->deserializeAsTextQuoted(nested_column, istr, settings);
         });
 }
 
@@ -379,7 +379,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     {
         if (i != offset)
             writeChar(',', ostr);
-        nested->serializeTextJSON(nested_column, i, ostr, settings);
+        nested->serializeAsTextJSON(nested_column, i, ostr, settings);
     }
     writeChar(']', ostr);
 }
@@ -387,7 +387,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 
 void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr, settings); });
+    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeAsTextJSON(nested_column, istr, settings); });
 }
 
 
@@ -405,7 +405,7 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
     for (size_t i = offset; i < next_offset; ++i)
     {
         writeCString("<elem>", ostr);
-        nested->serializeTextXML(nested_column, i, ostr, settings);
+        nested->serializeAsTextXML(nested_column, i, ostr, settings);
         writeCString("</elem>", ostr);
     }
     writeCString("</array>", ostr);

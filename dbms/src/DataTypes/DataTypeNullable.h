@@ -14,7 +14,7 @@ public:
     static constexpr bool is_parametric = true;
 
     explicit DataTypeNullable(const DataTypePtr & nested_data_type_);
-    std::string getName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
+    std::string doGetName() const override { return "Nullable(" + nested_data_type->getName() + ")"; }
     const char * getFamilyName() const override { return "Nullable"; }
     TypeIndex getTypeId() const override { return TypeIndex::Nullable; }
 

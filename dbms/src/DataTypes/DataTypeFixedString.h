@@ -30,7 +30,7 @@ public:
             throw Exception("FixedString size is too large", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    std::string getName() const override;
+    std::string doGetName() const override;
     TypeIndex getTypeId() const override { return TypeIndex::FixedString; }
 
     const char * getFamilyName() const override { return "FixedString"; }

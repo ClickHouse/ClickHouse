@@ -71,7 +71,7 @@ void JSONRowOutputStream::writeField(const IColumn & column, const IDataType & t
     writeCString("\t\t\t", *ostr);
     writeString(fields[field_number].name, *ostr);
     writeCString(": ", *ostr);
-    type.serializeTextJSON(column, row_num, *ostr, settings);
+    type.serializeAsTextJSON(column, row_num, *ostr, settings);
     ++field_number;
 }
 
@@ -151,7 +151,7 @@ void JSONRowOutputStream::writeTotals()
             writeCString("\t\t", *ostr);
             writeJSONString(column.name, *ostr, settings);
             writeCString(": ", *ostr);
-            column.type->serializeTextJSON(*column.column.get(), 0, *ostr, settings);
+            column.type->serializeAsTextJSON(*column.column.get(), 0, *ostr, settings);
         }
 
         writeChar('\n', *ostr);
@@ -178,7 +178,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
         writeCString("\t\t\t", ostr);
         writeJSONString(column.name, ostr, settings);
         writeCString(": ", ostr);
-        column.type->serializeTextJSON(*column.column.get(), row_num, ostr, settings);
+        column.type->serializeAsTextJSON(*column.column.get(), row_num, ostr, settings);
     }
 
     writeChar('\n', ostr);
