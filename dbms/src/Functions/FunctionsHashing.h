@@ -961,8 +961,8 @@ struct JavaHashImpl
     static Int32 apply(const char * data, const size_t size)
     {
         Int32 h = 0;
-        for (int i = 0; i < (int)size; ++i) 
-	{
+        for (int i = 0; i < (int)size; ++i)
+        {
             h = 31 * h + data[i];
         }
         return h;
