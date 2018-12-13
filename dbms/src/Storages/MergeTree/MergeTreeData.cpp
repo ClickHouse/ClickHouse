@@ -413,6 +413,25 @@ void MergeTreeData::initPartitionKey()
             }
         }
     }
+    if (!encountered_date_column)
+    {
+        for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+        {
+            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_column_types[i].get()))
+            {
+                if (!encountered_date_column)
+                {
+                    minmax_idx_time_column_pos = i;
+                    encountered_date_column = true;
+                }
+                else
+                {
+                    /// There is more than one DateTime column in partition key and we don't know which one to choose.
+                   minmax_idx_time_column_pos = -1;
+                }
+            }
+        }
+    }
 }
 
 
