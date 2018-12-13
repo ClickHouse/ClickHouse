@@ -96,10 +96,10 @@ void CompressionCodecReadBuffer::decompress(char * to, size_t size_decompressed,
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
     UInt8 current_method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
-    if (current_method != method)
+    if (!codec || current_method != method)
     {
         method = current_method;
-        codec = CompressionCodecFactory::instance().get(current_method);
+        codec = CompressionCodecFactory::instance().get(method);
     }
 
     codec->decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE,
