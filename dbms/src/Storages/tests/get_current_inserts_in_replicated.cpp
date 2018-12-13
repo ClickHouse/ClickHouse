@@ -44,14 +44,14 @@ try
             lock_holder_paths.insert(zookeeper_path + "/temp/" + entry);
     }
     std::cerr << "Stage 1 (get lock holders): " << lock_holder_paths.size()
-              << " lock holders, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
+              << " lock holders, elapsed: " << stage.elapsedSeconds() << "s." << std::endl;
     stage.restart();
 
     if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
         std::cerr << "Stage 2 (get partitions): " << partitions.size()
-                  << " partitions, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
+                  << " partitions, elapsed: " << stage.elapsedSeconds() << "s." << std::endl;
         stage.restart();
 
         std::vector<std::future<Coordination::ListResponse>> lock_futures;
@@ -79,7 +79,7 @@ try
             }
         }
         std::cerr << "Stage 3 (get block numbers): " << block_infos.size()
-                  << " block numbers, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
+                  << " block numbers, elapsed: " << stage.elapsedSeconds() << "s." << std::endl;
         stage.restart();
 
         size_t total_count = 0;
@@ -93,7 +93,7 @@ try
             }
         }
         std::cerr << "Stage 4 (get block number contents): " << total_count
-                  << " current_inserts, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
+                  << " current_inserts, elapsed: " << stage.elapsedSeconds() << "s." << std::endl;
         stage.restart();
     }
 

@@ -1,155 +1,163 @@
-## 创建数据库
+## CREATE DATABASE
 
-创建 `db_name` 数据库。
+该查询用于根据指定名称创建数据库。
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name
 ```
 
-数据库是一个包含多个表的目录，如果在CREATE DATABASE语句中包含`IF NOT EXISTS`，则在数据库已经存在的情况下查询也不会返回错误。
+数据库其实只是用于存放表的一个目录。
+如果查询中存在`IF NOT EXISTS`，则当数据库已经存在时，该查询不会返回任何错误。
 
-<a name="query_language-queries-create_table"></a>
 
-## 创建表
+## CREATE TABLE
 
-`CREATE TABLE` 语句有几种形式.
+对于`CREATE TABLE`，存在以下几种方式。
 
 ```sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1]，
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2]，
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
 ) ENGINE = engine
 ```
 
-如果`db`没有设置， 在数据库`db`中或者当前数据库中， 创建一个表名为`name`的表， 在括号和`engine` 引擎中指定结构。 表的结构是一个列描述的列表。 如果引擎支持索引， 则他们将是表引擎的参数。
+在指定的‘db’数据库中创建一个名为‘name’的表，如果查询中没有包含‘db’，则默认使用当前选择的数据库作为‘db’。后面的是包含在括号中的表结构以及表引擎的声明。
+其中表结构声明是一个包含一组列描述声明的组合。如果表引擎是支持索引的，那么可以在表引擎的参数中对其进行说明。
 
-表结构是一个列描述的列表。 如果引擎支持索引， 他们以表引擎的参数表示。
+在最简单的情况下，列描述是指`名称 类型`这样的子句。例如： `RegionID UInt32`。
+但是也可以为列另外定义默认值表达式（见后文）。
 
-在最简单的情况， 一个列描述是'命名类型'。 例如: RegionID UInt32。 对于默认值， 表达式也能够被定义。
-
-```sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS [db2.]name2 [ENGINE = engine]
 ```
 
-创建一个表， 其结构与另一个表相同。 你能够为此表指定一个不同的引擎。 如果引擎没有被指定， 相同的引擎将被用于`db2。name2`表上。
+创建一个与`db2.name2`具有相同结构的表，同时你可以对其指定不同的表引擎声明。如果没有表引擎声明，则创建的表将与`db2.name2`使用相同的表引擎。
 
-```sql
-CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
+``` sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 ```
 
-创建一个表，其结构类似于 SELECT 查询后的结果， 带有`engine` 引擎， 从 SELECT查询数据填充它。
+使用指定的引擎创建一个与`SELECT`子句的结果具有相同结构的表，并使用`SELECT`子句的结果填充它。
 
-在所有情况下，如果`IF NOT EXISTS`被指定， 如果表已经存在， 查询并不返回一个错误。 在这种情况下， 查询并不做任何事情。
+以上所有情况，如果指定了`IF NOT EXISTS`，那么在该表已经存在的情况下，查询不会返回任何错误。在这种情况下，查询几乎不会做任何事情。
+
+在`ENGINE`子句后还可能存在一些其他的子句，更详细的信息可以参考[表引擎](../operations/table_engines/index.md#table_engines)中关于建表的描述。
 
 ### 默认值
 
-列描述能够为默认值指定一个表达式， 其中一个方法是:DEFAULT expr， MATERIALIZED expr， ALIAS expr。 
-例如: URLDomain String DEFAULT domain(URL)。
+在列描述中你可以通过以下方式之一为列指定默认表达式：`DEFAULT expr`，`MATERIALIZED expr`，`ALIAS expr`。
+示例：`URLDomain String DEFAULT domain(URL)`。
 
-如果默认值的一个表达式没有定义， 如果字段是数字类型， 默认值是将设置为0， 如果是字符类型， 则设置为空字符串， 日期类型则设置为 0000-00-00 或者 0000-00-00 00:00:00(时间戳)。 NULLs 则不支持。
+如果在列描述中未定义任何默认表达式，那么系统将会根据类型设置对应的默认值，如：数值类型为零、字符串类型为空字符串、数组类型为空数组、日期类型为‘0000-00-00’以及时间类型为‘0000-00-00 00:00:00’。不支持使用NULL作为普通类型的默认值。
 
-如果默认表达式被定义， 字段类型是可选的。 如果没有明确的定义类型， 则将使用默认表达式。 例如: EventDate DEFAULT toDate(EventTime) – `Date` 类型将用于 `EventDate` 字段。
+如果定义了默认表达式，则可以不定义列的类型。如果没有明确的定义类的类型，则使用默认表达式的类型。例如：`EventDate DEFAULT toDate(EventTime)` - 最终‘EventDate’将使用‘Date’作为类型。
 
-如果数据类型和默认表达式被明确定义， 此表达式将使用函数被转换为特定的类型。 例如: Hits UInt32 DEFAULT 0 与 Hits UInt32 DEFAULT toUInt32(0)是等价的。
+如果同时指定了默认表达式与列的类型，则将使用类型转换函数将默认表达式转换为指定的类型。例如：`Hits UInt32 DEFAULT 0`与`Hits UInt32 DEFAULT toUInt32(0)`意思相同。
 
-默认表达是可能被定义为一个任意的表达式，如表的常量和字段。 当创建和更改表结构时， 它将检查表达式是否包含循环。 对于 INSERT操作来说， 它将检查表达式是否可解析 – 所有的字段通过传参后进行计算。
+默认表达式可以包含常量或表的任意其他列。当创建或更改表结构时，系统将会运行检查，确保不会包含循环依赖。对于INSERT, 它仅检查表达式是否是可以解析的 - 它们可以从中计算出所有需要的列的默认值。
 
 `DEFAULT expr`
 
-正常的默认值。 如果 INSERT 查询并没有指定对应的字段， 它将通过计算对应的表达式来填充。
+普通的默认值，如果INSERT中不包含指定的列，那么将通过表达式计算它的默认值并填充它。
 
-`物化表达式`
+`MATERIALIZED expr`
 
-物化表达式。 此类型字段并没有指定插入操作， 因为它经常执行计算任务。 对一个插入操作， 无字段列表， 那么这些字段将不考虑。 另外， 当在一个SELECT查询语句中使用星号时， 此字段并不被替换。 这将保证INSERT INTO SELECT * FROM 的不可变性。
+物化表达式，被该表达式指定的列不能包含在INSERT的列表中，因为它总是被计算出来的。
+对于INSERT而言，不需要考虑这些列。
+另外，在SELECT查询中如果包含星号，此列不会被用来替换星号，这是因为考虑到数据转储，在使用`SELECT *`查询出的结果总能够被'INSERT'回表。
 
-`别名表达式`
+`ALIAS expr`
 
-别名。 此字段不存储在表中。 
-此列的值不插入到表中， 当在一个SELECT查询语句中使用星号时，此字段并不被替换。 
-它能够用在 SELECTs中，如果别名在查询解析时被扩展。
+别名。这样的列不会存储在表中。
+它的值不能够通过INSERT写入，同时使用SELECT查询星号时，这些列也不会被用来替换星号。
+但是它们可以显示的用于SELECT中，在这种情况下，在查询分析中别名将被替换。
 
-当使用更新查询添加一个新的字段， 这些列的旧值不被写入。 相反， 新字段没有值，当读取旧值时， 表达式将被计算。 然而，如果运行表达式需要不同的字段， 这些字段将被读取 ， 但是仅读取相关的数据块。
+当使用ALTER查询对添加新的列时，不同于为所有旧数据添加这个列，对于需要在旧数据中查询新列，只会在查询时动态计算这个新列的值。但是如果新列的默认表示中依赖其他列的值进行计算，那么同样会加载这些依赖的列的数据。
 
-如果你添加一个新的字段到表中， 然后改变它的默认表达式， 对于使用的旧值将更改(对于此数据， 值不保存在磁盘上)。 当运行背景线程时， 缺少合并数据块的字段数据写入到合并数据块中。
+如果你向表中添加一个新列，并在之后的一段时间后修改它的默认表达式，则旧数据中的值将会被改变。请注意，在运行后台合并时，缺少的列的值将被计算后写入到合并后的数据部分中。
 
-在嵌套数据结构中设置默认值是不允许的。
-
+不能够为nested类型的列设置默认值。
 
 ### 临时表
 
-在任何情况下， 如果临时表被指定， 一个临时表将被创建。 临时表有如下的特性:
+ClickHouse支持临时表，其具有以下特征：
 
-- 当会话结束后， 临时表将删除，或者连接丢失。
-- 一个临时表使用内存表引擎创建。 其他的表引擎不支持临时表。
-- 数据库不能为一个临时表指定。 它将创建在数据库之外。
-- 如果一个临时表与另外的表有相同的名称 ，一个查询指定了表名并没有指定数据库， 将使用临时表。
-- 对于分布式查询处理， 查询中的临时表将被传递给远程服务器。
+- 当回话结束时，临时表将随会话一起消失，这包含链接中断。
+- 临时表仅能够使用Memory表引擎。
+- 无法为临时表指定数据库。它是在数据库之外创建的。
+- 如果临时表与另一个表名称相同，那么当在查询时没有显示的指定db的情况下，将优先使用临时表。
+- 对于分布式处理，查询中使用的临时表将被传递到远程服务器。
 
-在大多数情况下， 临时表并不能手工创建， 但当查询外部数据或使用分布式全局(GLOBAL)IN时，可以创建临时表。 
-
-分布式 DDL 查询 (ON CLUSTER clause)
-----------------------------------------------
-
-`CREATE`， `DROP`， `ALTER`， 和 `RENAME` 查询支持在集群上分布式执行。 例如， 如下的查询在集群中的每个机器节点上创建了 all_hits Distributed 表:
+可以使用下面的语法创建一个临时表：
 
 ```sql
-CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date， i Int32) ENGINE = Distributed(cluster， default， hits)
+CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+)
 ```
 
-为了正确执行这些语句，每个节点必须有相同的集群设置(为了简化同步配置，可以使用 zookeeper 来替换)。 这些节点也可以连接到ZooKeeper 服务器。
-查询语句会在每个节点上执行， 而`ALTER`查询目前暂不支持在同步表(replicated table)上执行。
+大多数情况下，临时表不是手动创建的，只有在分布式查询处理中使用`(GLOBAL) IN`时为外部数据创建。更多信息，可以参考相关章节。
 
+## 分布式DDL查询 （ON CLUSTER 子句）
 
+对于 `CREATE`， `DROP`， `ALTER`，以及`RENAME`查询，系统支持其运行在整个集群上。
+例如，以下查询将在`cluster`集群的所有节点上创建名为`all_hits`的`Distributed`表：
+
+``` sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+```
+
+为了能够正确的运行这种查询，每台主机必须具有相同的cluster声明（为了简化配置的同步，你可以使用zookeeper的方式进行配置）。同时这些主机还必须链接到zookeeper服务器。
+这个查询将最终在集群的每台主机上运行，即使一些主机当前处于不可用状态。同时它还保证了所有的查询在单台主机中的执行顺序。
+replicated系列表还没有支持`ALTER`查询。
 
 ## CREATE VIEW
 
-```sql
-CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
+``` sql
+CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
-创建一个视图。 有两种类型的视图: 正常视图和物化(MATERIALIZED)视图。
+创建一个视图。它存在两种可选择的类型：普通视图与物化视图。
 
-当创建一个物化视图时， 你必须指定表引擎 – 此表引擎用于存储数据
+普通视图不存储任何数据，只是执行从另一个表中的读取。换句话说，普通视图只是保存了视图的查询，当从视图中查询时，此查询被作为子查询用于替换FROM子句。
 
-一个物化视图工作流程如下所示: 当插入数据到SELECT 查询指定的表中时， 插入数据部分通过SELECT查询部分来转换， 结果插入到视图中。
+举个例子，假设你已经创建了一个视图：
 
-正常视图不保存任何数据， 但是可以从任意表中读取数据。 换句话说，正常视图可以看作是查询结果的一个结果缓存。 当从一个视图中读取数据时， 此查询可以看做是 FROM语句的子查询。
-
-例如， 假设你已经创建了一个视图:
-
-```sql
+``` sql
 CREATE VIEW view AS SELECT ...
 ```
 
-写了一个查询语句:
+还有一个查询：
 
-```sql
+``` sql
 SELECT a, b, c FROM view
 ```
-此查询完全等价于子查询:
 
-```sql
+这个查询完全等价于：
+
+``` sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-物化视图保存由SELECT语句查询转换的数据。
+物化视图存储的数据是由相应的SELECT查询转换得来的。
 
-当创建一个物化视图时，你必须指定一个引擎 – 存储数据的目标引擎。
+在创建物化视图时，你还必须指定表的引擎 - 将会使用这个表引擎存储数据。
 
-一个物化视图使用流程如下:  当插入数据到 SELECT 指定的表时， 插入数据部分通过SELECT 来转换， 同时结果被插入到视图中。
+目前物化视图的工作原理：当将数据写入到物化视图中SELECT子句所指定的表时，插入的数据会通过SELECT子句查询进行转换并将最终结果插入到视图中。
 
+如果创建物化视图时指定了POPULATE子句，则在创建时将该表的数据插入到物化视图中。就像使用`CREATE TABLE ... AS SELECT ...`一样。否则，物化视图只会包含在物化视图创建后的新写入的数据。我们不推荐使用POPULATE，因为在视图创建期间写入的数据将不会写入其中。
 
-如果你指定了 POPULATE， 当创建时， 现有的表数据被插入到了视图中， 类似于 `CREATE TABLE ... AS SELECT ...` . 否则， 在创建视图之后，查询仅包含表中插入的数据. 我们不建议使用 POPULATE， 在视图创建过程中，插入到表中的数据不插入到其中.
+当一个`SELECT`子句包含`DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`时，请注意，这些仅会在插入数据时在每个单独的数据块上执行。例如，如果你在其中包含了`GROUP BY`，则只会在查询期间进行聚合，但聚合范围仅限于单个批的写入数据。数据不会进一步被聚合。但是当你使用一些其他数据聚合引擎时这是例外的，如：`SummingMergeTree`。
 
-一个`SELECT`查询可以包含 `DISTINCT`， `GROUP BY`， `ORDER BY`， `LIMIT`。。。 对应的转换在每个数据块上独立执行。 例如， 如果 GROUP BY 被设置， 数据将在插入过程中进行聚合， 但仅是在一个插入数据包中。数据不再进一步聚合。 当使用一个引擎时， 如SummingMergeTree，它将独立执行数据聚合。
+目前对物化视图执行`ALTER`是不支持的，因此这可能是不方便的。如果物化视图是使用的`TO [db.]name`的方式进行构建的，你可以使用`DETACH`语句现将视图剥离，然后使用`ALTER`运行在目标表上，然后使用`ATTACH`将之前剥离的表重新加载进来。
 
-视图看起来和正常表相同。 例如， 你可以使用 SHOW TABLES来列出视图表的相关信息。
+视图看起来和普通的表相同。例如，你可以通过`SHOW TABLES`查看到它们。
 
-物化视图的`ALTER`查询执行还没有完全开发出来， 因此使用上可能不方便。 如果物化视图使用 `TO [db。]name`， 你能够 `DETACH` 视图， 在目标表运行 `ALTER`， 然后 `ATTACH` 之前的 `DETACH`视图。
+没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
-视图看起来和正常表相同。 例如， 你可以使用 `SHOW TABLES` 来列出视图表的相关信息。
-
-因此并没有一个单独的SQL语句来删除视图。 为了删除一个视图， 可以使用  `DROP TABLE`。
-
+[来源文章](https://clickhouse.yandex/docs/en/query_language/create/) <!--hide-->

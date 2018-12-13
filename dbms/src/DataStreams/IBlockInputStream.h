@@ -63,11 +63,10 @@ public:
       */
     virtual Block read() = 0;
 
-    /** Get information about the last block received.
-      */
-    virtual BlockExtraInfo getBlockExtraInfo() const
+    virtual const BlockMissingValues & getMissingValues() const
     {
-        throw Exception("Method getBlockExtraInfo is not supported by the data stream " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        static const BlockMissingValues none;
+        return none;
     }
 
     /** Read something before starting all data or after the end of all data.

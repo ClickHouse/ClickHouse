@@ -4,7 +4,7 @@ endif ()
 
 if (ENABLE_RDKAFKA)
 
-if (OS_LINUX)
+if (OS_LINUX AND NOT ARCH_ARM)
     option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
 endif ()
 
@@ -31,7 +31,7 @@ if (RDKAFKA_LIB AND RDKAFKA_INCLUDE_DIR)
     if (LZ4_LIBRARY)
        list (APPEND RDKAFKA_LIBRARY ${LZ4_LIBRARY})
     endif ()
-elseif (NOT MISSING_INTERNAL_RDKAFKA_LIBRARY)
+elseif (NOT MISSING_INTERNAL_RDKAFKA_LIBRARY AND NOT ARCH_ARM)
     set (USE_INTERNAL_RDKAFKA_LIBRARY 1)
     set (RDKAFKA_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
     set (RDKAFKA_LIBRARY rdkafka)

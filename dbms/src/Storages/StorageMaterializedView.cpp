@@ -185,12 +185,21 @@ BlockInputStreams StorageMaterializedView::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return getTargetTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    auto storage = getTargetTable();
+    auto lock = storage->lockStructure(false);
+    auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    for (auto & stream : streams)
+        stream->addTableLock(lock);
+    return streams;
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
-    return getTargetTable()->write(query, settings);
+    auto storage = getTargetTable();
+    auto lock = storage->lockStructure(true);
+    auto stream = storage->write(query, settings);
+    stream->addTableLock(lock);
+    return stream;
 }
 
 
@@ -240,10 +249,10 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
-void StorageMaterializedView::partition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
+void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->partition(query, commands, context);
+    getTargetTable()->alterPartition(query, commands, context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)

@@ -13,6 +13,15 @@
 
 using namespace DB;
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+}
+
+
 int main(int argc, char ** argv)
 {
     srand(123456);
@@ -75,7 +84,7 @@ int main(int argc, char ** argv)
             }
 
             if (res_block.rows() != n * m)
-                throw Exception("Result block size mismatch");
+                throw Exception("Result block size mismatch", ErrorCodes::LOGICAL_ERROR);
 
             const auto & columns = res_block.getColumns();
 
@@ -86,7 +95,7 @@ int main(int argc, char ** argv)
                     if (res < 0)
                         break;
                     else if (res > 0)
-                        throw Exception("Result stream not sorted");
+                        throw Exception("Result stream not sorted", ErrorCodes::LOGICAL_ERROR);
                 }
 
             stopwatch.stop();

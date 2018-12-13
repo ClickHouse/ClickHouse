@@ -45,6 +45,9 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "default_expression";
     block.insert(col);
 
+    col.name = "comment_expression";
+    block.insert(col);
+
     return block;
 }
 
@@ -55,6 +58,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
 
     NamesAndTypesList columns;
     ColumnDefaults column_defaults;
+    ColumnComments column_comments;
     StoragePtr table;
 
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
@@ -98,9 +102,10 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             table = context.getTable(database_name, table_name);
         }
 
-        auto table_lock = table->lockStructure(false, __PRETTY_FUNCTION__);
+        auto table_lock = table->lockStructure(false);
         columns = table->getColumns().getAll();
         column_defaults = table->getColumns().defaults;
+        column_comments = table->getColumns().comments;
     }
 
     Block sample_block = getSampleBlock();
@@ -111,16 +116,26 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         res_columns[0]->insert(column.name);
         res_columns[1]->insert(column.type->getName());
 
-        const auto it = column_defaults.find(column.name);
-        if (it == std::end(column_defaults))
+        const auto defaults_it = column_defaults.find(column.name);
+        if (defaults_it == std::end(column_defaults))
         {
             res_columns[2]->insertDefault();
             res_columns[3]->insertDefault();
         }
         else
         {
-            res_columns[2]->insert(toString(it->second.kind));
-            res_columns[3]->insert(queryToString(it->second.expression));
+            res_columns[2]->insert(toString(defaults_it->second.kind));
+            res_columns[3]->insert(queryToString(defaults_it->second.expression));
+        }
+
+        const auto comments_it = column_comments.find(column.name);
+        if (comments_it == std::end(column_comments))
+        {
+            res_columns[4]->insertDefault();
+        }
+        else
+        {
+            res_columns[4]->insert(comments_it->second);
         }
     }
 

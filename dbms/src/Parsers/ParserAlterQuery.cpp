@@ -23,7 +23,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_column("DROP COLUMN");
     ParserKeyword s_clear_column("CLEAR COLUMN");
     ParserKeyword s_modify_column("MODIFY COLUMN");
+    ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_primary_key("MODIFY PRIMARY KEY");
+    ParserKeyword s_modify_order_by("MODIFY ORDER BY");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
     ParserKeyword s_detach_partition("DETACH PARTITION");
@@ -47,6 +49,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserCompoundColumnDeclaration parser_col_decl;
+    ParserCompoundColumnDeclaration parser_modify_col_decl(false);
     ParserPartition parser_partition;
     ParserExpression parser_exp_elem;
     ParserList parser_assignment_list(
@@ -188,25 +191,24 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_modify_column.ignore(pos, expected))
     {
-        if (!parser_col_decl.parse(pos, command->col_decl, expected))
+        if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
             return false;
 
         command->type = ASTAlterCommand::MODIFY_COLUMN;
     }
     else if (s_modify_primary_key.ignore(pos, expected))
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
+        if (!parser_exp_elem.parse(pos, command->primary_key, expected))
             return false;
-        ++pos;
-
-        if (!ParserNotEmptyExpressionList(false).parse(pos, command->primary_key, expected))
-            return false;
-
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
 
         command->type = ASTAlterCommand::MODIFY_PRIMARY_KEY;
+    }
+    else if (s_modify_order_by.ignore(pos, expected))
+    {
+        if (!parser_exp_elem.parse(pos, command->order_by, expected))
+            return false;
+
+        command->type = ASTAlterCommand::MODIFY_ORDER_BY;
     }
     else if (s_delete_where.ignore(pos, expected))
     {
@@ -227,6 +229,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             return false;
 
         command->type = ASTAlterCommand::UPDATE;
+    }
+    else if (s_comment_column.ignore(pos, expected))
+    {
+        if (!parser_name.parse(pos, command->column, expected))
+            return false;
+
+        if (!parser_string_literal.parse(pos, command->comment, expected))
+            return false;
+
+        command->type = ASTAlterCommand::COMMENT_COLUMN;
     }
     else
         return false;

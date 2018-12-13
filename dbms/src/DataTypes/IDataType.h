@@ -398,6 +398,8 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
+    /// Strings, Numbers, Date, DateTime, Nullable
+    virtual bool canBeInsideLowCardinality() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
@@ -510,6 +512,13 @@ inline bool isNumber(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isInt() || which.isUInt() || which.isFloat();
+}
+
+template <typename T>
+inline bool isColumnedAsNumber(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
 }
 
 template <typename T>

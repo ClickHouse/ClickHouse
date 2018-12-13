@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -154,7 +155,7 @@ struct PositionImpl
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
-    static void vector_constant(const ColumnString::Chars_t & data,
+    static void vector_constant(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & needle,
         PaddedPODArray<UInt64> & res)
@@ -209,9 +210,9 @@ struct PositionImpl
     }
 
     /// Search each time for a different single substring inside each time different string.
-    static void vector_vector(const ColumnString::Chars_t & haystack_data,
+    static void vector_vector(const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const ColumnString::Chars_t & needle_data,
+        const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         PaddedPODArray<UInt64> & res)
     {
@@ -257,7 +258,7 @@ struct PositionImpl
 
     /// Find many substrings in one line.
     static void constant_vector(const String & haystack,
-        const ColumnString::Chars_t & needle_data,
+        const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
         PaddedPODArray<UInt64> & res)
     {
@@ -347,7 +348,7 @@ struct MatchImpl
 {
     using ResultType = UInt8;
 
-    static void vector_constant(const ColumnString::Chars_t & data,
+    static void vector_constant(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
         PaddedPODArray<UInt8> & res)
@@ -518,10 +519,10 @@ struct MatchImpl
 
 struct ExtractImpl
 {
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         res_data.reserve(data.size() / 5);
@@ -622,7 +623,7 @@ struct ReplaceRegexpImpl
 
 
     static void processString(const re2_st::StringPiece & input,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offset & res_offset,
         re2_st::RE2 & searcher,
         int num_captures,
@@ -686,11 +687,11 @@ struct ReplaceRegexpImpl
     }
 
 
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & needle,
         const std::string & replacement,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         ColumnString::Offset res_offset = 0;
@@ -714,11 +715,11 @@ struct ReplaceRegexpImpl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data,
+    static void vector_fixed(const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
         const std::string & replacement,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         ColumnString::Offset res_offset = 0;
@@ -748,11 +749,11 @@ struct ReplaceRegexpImpl
 template <bool replace_one = false>
 struct ReplaceStringImpl
 {
-    static void vector(const ColumnString::Chars_t & data,
+    static void vector(const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & needle,
         const std::string & replacement,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         const UInt8 * begin = data.data();
@@ -823,11 +824,11 @@ struct ReplaceStringImpl
 
     /// Note: this function converts fixed-length strings to variable-length strings
     ///       and each variable-length string should ends with zero byte.
-    static void vector_fixed(const ColumnString::Chars_t & data,
+    static void vector_fixed(const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
         const std::string & replacement,
-        ColumnString::Chars_t & res_data,
+        ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
         const UInt8 * begin = data.data();
@@ -976,7 +977,7 @@ public:
         const ColumnPtr column_replacement = block.getByPosition(arguments[2]).column;
 
         if (!column_needle->isColumnConst() || !column_replacement->isColumnConst())
-            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.");
+            throw Exception("2nd and 3rd arguments of function " + getName() + " must be constants.", ErrorCodes::ILLEGAL_COLUMN);
 
         const IColumn * c1 = block.getByPosition(arguments[1]).column.get();
         const IColumn * c2 = block.getByPosition(arguments[2]).column.get();
@@ -1087,5 +1088,7 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionLike>();
     factory.registerFunction<FunctionNotLike>();
     factory.registerFunction<FunctionExtract>();
+    factory.registerAlias("locate", NamePosition::name, FunctionFactory::CaseInsensitive);
+    factory.registerAlias("replace", NameReplaceAll::name, FunctionFactory::CaseInsensitive);
 }
 }

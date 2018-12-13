@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
@@ -96,6 +98,7 @@ public:
 
         Block block;
         std::unique_ptr<Exception> exception;
+        std::vector<String> multistring_message;
         Progress progress;
         BlockStreamProfileInfo profile_info;
 
@@ -158,11 +161,6 @@ public:
       *  (when someone continues to wait for something) after an exception.
       */
     void disconnect();
-
-    /** Fill in the information that is needed when getting the block for some tasks
-      * (so far only for a DESCRIBE TABLE query with Distributed tables).
-      */
-    void fillBlockExtraInfo(BlockExtraInfo & info) const;
 
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
@@ -259,6 +257,7 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
     BlockStreamProfileInfo receiveProfileInfo();

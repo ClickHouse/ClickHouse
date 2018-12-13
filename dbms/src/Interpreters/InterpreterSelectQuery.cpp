@@ -182,7 +182,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
 
     if (storage)
-        table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
+        table_lock = storage->lockStructure(false);
 
     syntax_analyzer_result = SyntaxAnalyzer(context, storage)
             .analyze(query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth);
@@ -339,9 +339,23 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     {
         ExpressionActionsChain chain(context);
 
-        ASTPtr sampling_expression = (storage && query.sample_size()) ? storage->getSamplingExpression() : nullptr;
-        ASTPtr primary_expression = (storage && query.final()) ? storage->getPrimaryExpression() : nullptr;
-        if (query_analyzer->appendPrewhere(chain, !res.first_stage, sampling_expression, primary_expression))
+        Names additional_required_columns_after_prewhere;
+
+        if (storage && query.sample_size())
+        {
+            Names columns_for_sampling = storage->getColumnsRequiredForSampling();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_sampling.begin(), columns_for_sampling.end());
+        }
+
+        if (storage && query.final())
+        {
+            Names columns_for_final = storage->getColumnsRequiredForFinal();
+            additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
+                columns_for_final.begin(), columns_for_final.end());
+        }
+
+        if (query_analyzer->appendPrewhere(chain, !res.first_stage, additional_required_columns_after_prewhere))
         {
             has_prewhere = true;
 
@@ -590,7 +604,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
                     if (query.group_by_with_rollup)
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                    else if(query.group_by_with_cube)
+                    else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
                 }
                 else if (expressions.has_having)
@@ -729,9 +743,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
 
             /// We will create an expression to return all the requested columns, with the calculation of the required ALIAS columns.
-            auto required_columns_expr_list = std::make_shared<ASTExpressionList>();
+            ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
             /// Separate expression for columns used in prewhere.
-            auto required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
+            ASTPtr required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
 
             for (const auto & column : required_columns)
             {
@@ -809,8 +823,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
+                auto source_columns = storage->getColumns().getAllPhysical();
+                auto analyzed_result = SyntaxAnalyzer(context, {}).analyze(required_prewhere_columns_expr_list, source_columns);
                 prewhere_info->alias_actions =
-                    ExpressionAnalyzer(required_prewhere_columns_expr_list, syntax_analyzer_result, context)
+                    ExpressionAnalyzer(required_prewhere_columns_expr_list, analyzed_result, context)
                     .getActions(true, false);
 
                 /// Add columns required by alias actions.
@@ -929,8 +945,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (query_info.prewhere_info)
                 pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
                         pipeline.streams.back(), prewhere_info->prewhere_actions,
-                        prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column
-                );
+                        prewhere_info->prewhere_column_name, prewhere_info->remove_prewhere_column);
         }
 
         pipeline.transform([&](auto & stream)
@@ -1309,7 +1324,7 @@ void InterpreterSelectQuery::executeUnion(Pipeline & pipeline)
     {
         unifyStreams(pipeline);
 
-        pipeline.firstStream() = std::make_shared<UnionBlockInputStream<>>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
+        pipeline.firstStream() = std::make_shared<UnionBlockInputStream>(pipeline.streams, pipeline.stream_with_non_joined_data, max_streams);
         pipeline.stream_with_non_joined_data = nullptr;
         pipeline.streams.resize(1);
     }

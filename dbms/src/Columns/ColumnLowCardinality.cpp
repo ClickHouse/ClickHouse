@@ -163,7 +163,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
     auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -259,7 +259,7 @@ void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_di
     if (limit == 0)
         limit = size();
 
-    size_t unique_limit = std::min(limit, getDictionary().size());
+    size_t unique_limit = getDictionary().size();
     Permutation unique_perm;
     getDictionary().getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
 
@@ -604,7 +604,7 @@ void ColumnLowCardinality::Index::check(size_t /*max_dictionary_size*/)
 void ColumnLowCardinality::Index::checkSizeOfType()
 {
     if (size_of_type != getSizeOfIndexType(*positions, size_of_type))
-        throw Exception("Invalid size of type. Expected "  + toString(8 * size_of_type) +
+        throw Exception("Invalid size of type. Expected " + toString(8 * size_of_type) +
                         ", but positions are " + positions->getName(), ErrorCodes::LOGICAL_ERROR);
 }
 

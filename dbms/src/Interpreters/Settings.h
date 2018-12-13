@@ -125,6 +125,7 @@ struct Settings
     M(SettingUInt64, max_concurrent_queries_for_user, 0, "The maximum number of concurrent requests per user.") \
     \
     M(SettingBool, insert_deduplicate, true, "For INSERT queries in the replicated table, specifies that deduplication of insertings blocks should be preformed") \
+    M(SettingBool, insert_sample_with_metadata, false, "For INSERT queries, specifies that the server need to send metadata about column defaults to the client. This will be used to calculate default expressions.") \
     \
     M(SettingUInt64, insert_quorum, 0, "For INSERT queries in the replicated table, wait writing for the specified number of replicas and linearize the addition of the data. 0 - disabled.") \
     M(SettingMilliseconds, insert_quorum_timeout, 600000, "") \
@@ -272,7 +273,6 @@ struct Settings
     M(SettingBool, format_csv_allow_single_quotes, 1, "If it is set to true, allow strings in single quotes.") \
     M(SettingBool, format_csv_allow_double_quotes, 1, "If it is set to true, allow strings in double quotes.") \
     \
-    M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
     M(SettingBool, log_profile_events, true, "Log query performance statistics into the query_log and query_thread_log.") \
     M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \

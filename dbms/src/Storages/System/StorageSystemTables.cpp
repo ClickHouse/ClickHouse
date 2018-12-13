@@ -40,10 +40,10 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"create_table_query", std::make_shared<DataTypeString>()},
         {"engine_full", std::make_shared<DataTypeString>()},
-        {"primary_key", std::make_shared<DataTypeString>()},
-        {"order_key", std::make_shared<DataTypeString>()},
         {"partition_key", std::make_shared<DataTypeString>()},
-        {"sample_key", std::make_shared<DataTypeString>()},
+        {"sorting_key", std::make_shared<DataTypeString>()},
+        {"primary_key", std::make_shared<DataTypeString>()},
+        {"sampling_key", std::make_shared<DataTypeString>()},
     }));
 }
 
@@ -54,7 +54,7 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
     for (const auto & db : context.getDatabases())
         column->insert(db.first);
 
-    Block block { ColumnWithTypeAndName( std::move(column), std::make_shared<DataTypeString>(), "database" ) };
+    Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
     VirtualColumnUtils::filterBlockWithQuery(query, block, context);
     return block.getByPosition(0).column;
 }
@@ -104,7 +104,7 @@ protected:
                 break;
             }
 
-            /// This is for temporary tables.  They are output in single block regardless to max_block_size.
+            /// This is for temporary tables. They are output in single block regardless to max_block_size.
             if (database_idx >= databases->size())
             {
                 if (context.hasSessionContext())
@@ -257,7 +257,7 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getPrimaryExpression()))
+                    if ((expression_ptr = table_it->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -265,7 +265,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getOrderExpression()))
+                    if ((expression_ptr = table_it->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -273,7 +273,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getPartitionExpression()))
+                    if ((expression_ptr = table_it->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();
@@ -281,7 +281,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if ((expression_ptr = table_it->getSamplingExpression()))
+                    if ((expression_ptr = table_it->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
                         res_columns[res_index++]->insertDefault();

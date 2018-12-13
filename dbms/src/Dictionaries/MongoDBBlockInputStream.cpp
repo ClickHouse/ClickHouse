@@ -1,29 +1,28 @@
 #include <Common/config.h>
 #if USE_POCO_MONGODB
 
-#include <vector>
-#include <string>
-#include <sstream>
+#    include <sstream>
+#    include <string>
+#    include <vector>
 
-#include <Poco/MongoDB/Connection.h>
-#include <Poco/MongoDB/Cursor.h>
-#include <Poco/MongoDB/Element.h>
-#include <Poco/MongoDB/ObjectId.h>
+#    include <Poco/MongoDB/Connection.h>
+#    include <Poco/MongoDB/Cursor.h>
+#    include <Poco/MongoDB/Element.h>
+#    include <Poco/MongoDB/ObjectId.h>
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/MongoDBBlockInputStream.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
-#include <Common/FieldVisitors.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <ext/range.h>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <Common/FieldVisitors.h>
+#    include <ext/range.h>
+#    include "DictionaryStructure.h"
+#    include "MongoDBBlockInputStream.h"
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
@@ -55,16 +54,20 @@ namespace
         switch (value.type())
         {
             case Poco::MongoDB::ElementTraits<Int32>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<bool>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
+                static_cast<ColumnVector<T> &>(column).getData().push_back(
+                    static_cast<const Poco::MongoDB::ConcreteElement<bool> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().emplace_back();
@@ -74,26 +77,46 @@ namespace
                     parse<T>(static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value()));
                 break;
             default:
-                throw Exception("Type mismatch, expected a number, got type id = " + toString(value.type()) +
-                    " for column " + name, ErrorCodes::TYPE_MISMATCH);
+                throw Exception(
+                    "Type mismatch, expected a number, got type id = " + toString(value.type()) + " for column " + name,
+                    ErrorCodes::TYPE_MISMATCH);
         }
     }
 
-    void insertValue(
-        IColumn & column, const ValueType type, const Poco::MongoDB::Element & value, const std::string & name)
+    void insertValue(IColumn & column, const ValueType type, const Poco::MongoDB::Element & value, const std::string & name)
     {
         switch (type)
         {
-            case ValueType::UInt8: insertNumber<UInt8>(column, value, name); break;
-            case ValueType::UInt16: insertNumber<UInt16>(column, value, name); break;
-            case ValueType::UInt32: insertNumber<UInt32>(column, value, name); break;
-            case ValueType::UInt64: insertNumber<UInt64>(column, value, name); break;
-            case ValueType::Int8: insertNumber<Int8>(column, value, name); break;
-            case ValueType::Int16: insertNumber<Int16>(column, value, name); break;
-            case ValueType::Int32: insertNumber<Int32>(column, value, name); break;
-            case ValueType::Int64: insertNumber<Int64>(column, value, name); break;
-            case ValueType::Float32: insertNumber<Float32>(column, value, name); break;
-            case ValueType::Float64: insertNumber<Float64>(column, value, name); break;
+            case ValueType::UInt8:
+                insertNumber<UInt8>(column, value, name);
+                break;
+            case ValueType::UInt16:
+                insertNumber<UInt16>(column, value, name);
+                break;
+            case ValueType::UInt32:
+                insertNumber<UInt32>(column, value, name);
+                break;
+            case ValueType::UInt64:
+                insertNumber<UInt64>(column, value, name);
+                break;
+            case ValueType::Int8:
+                insertNumber<Int8>(column, value, name);
+                break;
+            case ValueType::Int16:
+                insertNumber<Int16>(column, value, name);
+                break;
+            case ValueType::Int32:
+                insertNumber<Int32>(column, value, name);
+                break;
+            case ValueType::Int64:
+                insertNumber<Int64>(column, value, name);
+                break;
+            case ValueType::Float32:
+                insertNumber<Float32>(column, value, name);
+                break;
+            case ValueType::Float64:
+                insertNumber<Float64>(column, value, name);
+                break;
 
             case ValueType::String:
             {
@@ -110,27 +133,26 @@ namespace
                     break;
                 }
 
-                throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) +
-                    " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) + " for column " + name,
+                                ErrorCodes::TYPE_MISMATCH};
             }
 
             case ValueType::Date:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
-                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
+                                    ErrorCodes::TYPE_MISMATCH};
 
-                static_cast<ColumnUInt16 &>(column).getData().push_back(
-                    UInt16{DateLUT::instance().toDayNum(
-                        static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
+                static_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
+                    static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
                 break;
             }
 
             case ValueType::DateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
-                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
+                                    ErrorCodes::TYPE_MISMATCH};
 
                 static_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
@@ -144,17 +166,15 @@ namespace
                     static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
                 }
                 else
-                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) +
-                              " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "
+                                        + name,
+                                    ErrorCodes::TYPE_MISMATCH};
                 break;
             }
         }
     }
 
-    void insertDefaultValue(IColumn & column, const IColumn & sample_column)
-    {
-        column.insertFrom(sample_column, 0);
-    }
+    void insertDefaultValue(IColumn & column, const IColumn & sample_column) { column.insertFrom(sample_column, 0); }
 }
 
 

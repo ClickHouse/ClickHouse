@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS test.datetime;
+
 CREATE TABLE test.datetime (d DateTime) ENGINE = Memory;
 INSERT INTO test.datetime(d) VALUES(toDateTime('2016-06-15 23:00:00'));
 
@@ -24,3 +26,5 @@ SELECT quantilesTDigest(0.2)(d) FROM test.datetime;
 
 SELECT quantileTDigestWeighted(0.2)(d, 1) FROM test.datetime;
 SELECT quantilesTDigestWeighted(0.2)(d, 1) FROM test.datetime;
+
+DROP TABLE test.datetime;
