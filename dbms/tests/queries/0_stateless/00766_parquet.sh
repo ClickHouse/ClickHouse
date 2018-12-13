@@ -10,6 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #${CLICKHOUSE_CLIENT} --max_block_size=15 --query="SELECT * FROM system.numbers LIMIT 10 FORMAT Parquet" > ${CLICKHOUSE_TMP}/t15.pq
 #${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.numbers LIMIT 100000 FORMAT Parquet" > ${CLICKHOUSE_TMP}/t100000.pq
 #${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.numbers LIMIT 1000000000 FORMAT Parquet" > ${CLICKHOUSE_TMP}/t1g.pq
+#valgrind --tool=massif  ${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.numbers LIMIT 1000000 FORMAT Parquet" > ${CLICKHOUSE_TMP}/t1g.pq
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.contributors"
@@ -31,6 +32,12 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.numbers LIMIT 100000 FORMAT P
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.numbers ORDER BY number DESC LIMIT 10"
 
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.numbers"
+
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM system.numbers LIMIT 100000000 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.numbers FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.numbers ORDER BY number DESC LIMIT 10"
+
+${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.numbers"
+
 ${CLICKHOUSE_CLIENT} --max_block_size=2 --query="SELECT * FROM system.numbers LIMIT 3 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.numbers FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.numbers ORDER BY number DESC LIMIT 10"
 

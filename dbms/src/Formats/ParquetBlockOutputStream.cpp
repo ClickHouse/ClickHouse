@@ -5,10 +5,12 @@
 // TODO: clean includes
 #    include <Columns/ColumnNullable.h>
 #    include <Columns/ColumnString.h>
+#    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnVector.h>
 #    include <Columns/ColumnsNumber.h>
 #    include <Core/ColumnWithTypeAndName.h>
 #    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeDateTime.h>
 #    include <Formats/FormatFactory.h>
 #    include <IO/WriteHelpers.h>
 
@@ -76,7 +78,7 @@ void ParquetBlockOutputStream::fillArrowArrayWithNumericColumnData(
     {
         /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
         arrow_null_bytemap.reserve(null_bytemap->size());
-        for (size_t i = 0; i != null_bytemap->size(); ++i)
+        for (size_t i = 0, size = null_bytemap->size(); i < size; ++i)
             arrow_null_bytemap.emplace_back(1 ^ (*null_bytemap)[i]);
 
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
@@ -89,14 +91,41 @@ void ParquetBlockOutputStream::fillArrowArrayWithNumericColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
+//TODO join string + fixed string via template
 void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
-    const ColumnString & internal_column = static_cast<const ColumnString &>(*write_column);
+    const auto & internal_column = static_cast<const ColumnString &>(*write_column);
     arrow::StringBuilder string_builder;
     arrow::Status append_status;
 
-    for (size_t string_i = 0; string_i != internal_column.size(); ++string_i)
+    for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
+    {
+        if (null_bytemap && (*null_bytemap)[string_i])
+        {
+            append_status = string_builder.AppendNull();
+        }
+        else
+        {
+            StringRef string_ref = internal_column.getDataAt(string_i);
+            append_status = string_builder.Append(string_ref.data, string_ref.size);
+        }
+
+        checkAppendStatus(append_status, write_column->getName());
+    }
+
+    arrow::Status finish_status = string_builder.Finish(&arrow_array);
+    checkFinishStatus(finish_status, write_column->getName());
+}
+
+void ParquetBlockOutputStream::fillArrowArrayWithFixedStringColumnData(
+    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+{
+    const auto & internal_column = static_cast<const ColumnFixedString &>(*write_column);
+    arrow::StringBuilder string_builder;
+    arrow::Status append_status;
+
+    for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
     {
         if (null_bytemap && (*null_bytemap)[string_i])
         {
@@ -122,7 +151,7 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
     arrow::Date32Builder date32_builder;
     arrow::Status append_status;
 
-    for (size_t value_i = 0; value_i != internal_data.size(); ++value_i)
+    for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
     {
         if (null_bytemap && (*null_bytemap)[value_i])
             append_status = date32_builder.AppendNull();
@@ -161,10 +190,14 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockO
     {"Float32", arrow::float32()},
     {"Float64", arrow::float64()},
 
-    {"Date", arrow::date32()},
+    //{"Date", arrow::date64()},
+    {"Date", arrow::uint16()}, // CHECK
+    {"DateTime", arrow::date64()},
 
     // TODO: ClickHouse can actually store non-utf8 strings!
-    {"String", arrow::utf8()} //,
+    {"String", arrow::utf8()},
+    {"FixedString", arrow::utf8()},
+
     // TODO: add other types:
     // 1. FixedString
     // 2. DateTime
@@ -181,24 +214,19 @@ const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
 class OstreamOutputStream : public parquet::OutputStream
 {
 public:
-    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_){};
-
-    virtual ~OstreamOutputStream(){};
-
-    // Close is currently a no-op with the in-memory stream
-    virtual void Close() {}
-
-    virtual int64_t Tell() { return tell; };
-
+    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { };
+    virtual ~OstreamOutputStream() { };
+    virtual void Close() { }
+    virtual int64_t Tell() { return total_length; };
     virtual void Write(const uint8_t * data, int64_t length)
     {
         ostr.write(reinterpret_cast<const char *>(data), length);
-        tell += length;
+        total_length += length;
     };
 
 private:
     WriteBuffer & ostr;
-    int64_t tell = 0;
+    int64_t total_length = 0;
 
     PARQUET_DISALLOW_COPY_AND_ASSIGN(OstreamOutputStream);
 };
@@ -226,7 +254,8 @@ void ParquetBlockOutputStream::write(const Block & block)
             = is_column_nullable ? static_cast<const DataTypeNullable *>(column.type.get())->getNestedType() : column.type;
         const DataTypePtr column_type = column.type;
         // TODO: do not mix std::string and String
-        const std::string column_nested_type_name = column_nested_type->getName();
+        //const std::string column_nested_type_name = column_nested_type->getName();
+        const std::string column_nested_type_name = column_nested_type->getFamilyName();
 
         if (internal_type_to_arrow_type.find(column_nested_type_name) == internal_type_to_arrow_type.end())
         {
@@ -249,7 +278,11 @@ void ParquetBlockOutputStream::write(const Block & block)
         {
             fillArrowArrayWithStringColumnData(nested_column, arrow_array, null_bytemap);
         }
-        else if ("Date" == column_nested_type_name)
+        else if ("FixedString" == column_nested_type_name)
+        {
+            fillArrowArrayWithFixedStringColumnData(nested_column, arrow_array, null_bytemap);
+        }
+        else if ("Date" == column_nested_type_name || "DateTime" == column_nested_type_name)
         {
             fillArrowArrayWithDateColumnData(nested_column, arrow_array, null_bytemap);
         }
@@ -304,6 +337,8 @@ void ParquetBlockOutputStream::write(const Block & block)
     }
 
     //parquet::RowGroupWriter* rg_writer = file_writer->AppendBufferedRowGroup();
+    //rg_writer->Close();
+    //file_writer->NewRowGroup(0);
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto write_status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());

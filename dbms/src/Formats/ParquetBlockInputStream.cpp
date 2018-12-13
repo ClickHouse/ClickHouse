@@ -17,7 +17,7 @@
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
-
+#    include <DataTypes/DataTypeDateTime.h>
 #    include <Formats/FormatFactory.h>
 #    include <IO/BufferBase.h>
 #    include <IO/ReadBufferFromMemory.h>
@@ -208,7 +208,8 @@ const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> ParquetB
     {arrow::Type::DOUBLE, std::make_shared<DataTypeFloat64>()},
 
     {arrow::Type::BOOL, std::make_shared<DataTypeUInt8>()},
-    {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
+    //{arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
+    {arrow::Type::DATE32, std::make_shared<DataTypeDateTime>()},
 
     {arrow::Type::STRING, std::make_shared<DataTypeString>()} //,
     // TODO: add other types that are convertable to internal ones:
