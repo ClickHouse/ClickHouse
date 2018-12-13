@@ -103,6 +103,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserTrimExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "TRIM expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserLeftExpression : public IParserBase
 {
 protected:
