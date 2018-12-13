@@ -388,6 +388,154 @@ bool ParserSubstringExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
+bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    /// Handles all possible TRIM/LTRIM/RTRIM call variants
+
+    std::string func_name = "replaceRegexpOne";
+    bool trim_left = false;
+    bool trim_right = false;
+    bool char_override = false;
+    ASTPtr expr_node;
+    ASTPtr pattern_node;
+    ASTPtr to_remove;
+
+    if (ParserKeyword("LTRIM").ignore(pos, expected))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+        trim_left = true;
+    }
+    else if (ParserKeyword("RTRIM").ignore(pos, expected))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+        trim_right = true;
+    }
+    else if (ParserKeyword("TRIM").ignore(pos, expected))
+    {
+        if (pos->type != TokenType::OpeningRoundBracket)
+            return false;
+        ++pos;
+
+        if (ParserKeyword("BOTH").ignore(pos, expected))
+        {
+            trim_left = true;
+            trim_right = true;
+            char_override = true;
+        }
+        else if (ParserKeyword("LEADING").ignore(pos, expected))
+        {
+            trim_left = true;
+            char_override = true;
+        }
+        else if (ParserKeyword("TRAILING").ignore(pos, expected))
+        {
+            trim_right = true;
+            char_override = true;
+        }
+        else
+        {
+            trim_left = true;
+            trim_right = true;
+        }
+
+        if (char_override)
+        {
+            if (!ParserExpression().parse(pos, to_remove, expected)) /// TODO: wrap in RE2::QuoteMeta call
+                return false;
+            if (!ParserKeyword("FROM").ignore(pos, expected))
+                return false;
+        }
+    }
+
+    if (!(trim_left || trim_right))
+        return false;
+
+    if (!ParserExpression().parse(pos, expr_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    /// Convert to regexp replace function call
+
+    auto pattern_func_node = std::make_shared<ASTFunction>();
+    if (char_override)
+    {
+        auto pattern_list_args = std::make_shared<ASTExpressionList>();
+        if (trim_left && trim_right)
+        {
+            pattern_list_args->children = {
+                std::make_shared<ASTLiteral>("^["),
+                to_remove,
+                std::make_shared<ASTLiteral>("]*|["),
+                to_remove,
+                std::make_shared<ASTLiteral>("]*$")
+            };
+            func_name = "replaceRegexpAll";
+        }
+        else {
+            if (trim_left)
+            {
+                pattern_list_args->children = {
+                    std::make_shared<ASTLiteral>("^["),
+                    to_remove,
+                    std::make_shared<ASTLiteral>("]*")
+                };
+            }
+            else
+            {
+                /// trim_right == false not possible
+                pattern_list_args->children = {
+                    std::make_shared<ASTLiteral>("["),
+                    to_remove,
+                    std::make_shared<ASTLiteral>("]*$")
+                };
+            }
+        }
+
+        pattern_func_node->name = "concat";
+        pattern_func_node->arguments = std::move(pattern_list_args);
+        pattern_func_node->children.push_back(pattern_func_node->arguments);
+
+        pattern_node = std::move(pattern_func_node);
+    }
+    else
+    {
+        if (trim_left && trim_right)
+        {
+            pattern_node = std::make_shared<ASTLiteral>("^ *\\| *$");
+            func_name = "replaceRegexpAll";
+        }
+        else {
+            if (trim_left)
+            {
+                pattern_node = std::make_shared<ASTLiteral>("^ *");
+            }
+            else
+            {
+                /// trim_right == false not possible
+                pattern_node = std::make_shared<ASTLiteral>(" *$");
+            }
+        }
+    }
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children = {expr_node, pattern_node, std::make_shared<ASTLiteral>("")};
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = func_name;
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    node = std::move(func_node);
+    return true;
+}
+
 bool ParserLeftExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Rewrites left(expr, length) to SUBSTRING(expr, 1, length)
@@ -861,6 +1009,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserCastExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
         || ParserSubstringExpression().parse(pos, node, expected)
+        || ParserTrimExpression().parse(pos, node, expected)
         || ParserLeftExpression().parse(pos, node, expected)
         || ParserRightExpression().parse(pos, node, expected)
         || ParserCase().parse(pos, node, expected)

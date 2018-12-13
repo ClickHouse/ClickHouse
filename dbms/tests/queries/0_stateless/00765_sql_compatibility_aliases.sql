@@ -14,3 +14,8 @@ select substring('foo' from 1 + 1);
 select SUBSTRING('foo' FROM 2 FOR 1);
 select left('foo', 2);
 select RIGHT('bar', 1);
+select ltrim('   foo');
+select RTRIM('   foo   ');
+select trim(TRAILING 'x' FROM 'xxfooxx');
+select Trim(LEADING 'ab' FROM 'abbafooabba');
+select TRIM(both 'ab' FROM 'abbafooabbafooabba');
