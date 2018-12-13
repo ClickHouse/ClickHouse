@@ -80,6 +80,7 @@ public:
 
     virtual char getMethodByte() = 0;
 
+    /// TODO(alesap) FIXME
     virtual void getCodecDesc(String & codec_desc) = 0;
 
     virtual size_t compress(char * source, size_t source_size, char * dest) = 0;

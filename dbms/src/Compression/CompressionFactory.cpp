@@ -33,12 +33,6 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast.get()))
     {
-        if (func->parameters)
-            throw Exception("Compression codec cannot have multiple parenthesed parameters.", ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
-
-        if (Poco::toLower(func->name) != "codec")
-            throw Exception("", ErrorCodes::UNKNOWN_CODEC);
-
         Codecs codecs;
         codecs.reserve(func->arguments->children.size());
         for (const auto & inner_codec_ast : func->arguments->children)
@@ -48,7 +42,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
             else if (const auto * ast_func = typeid_cast<const ASTFunction *>(inner_codec_ast.get()))
                 codecs.emplace_back(getImpl(ast_func->name, ast_func->arguments));
             else
-                throw Exception("Unexpected AST element for compression codec.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
+                throw Exception("Unexpected AST element for compression codec", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
         }
 
         if (codecs.size() == 1)

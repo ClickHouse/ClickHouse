@@ -5,6 +5,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Parsers/DumpASTNode.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
@@ -25,6 +26,7 @@
 #include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/queryToString.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -281,6 +283,35 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserCodecDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+}
+
+bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserCodecDeclarationList codecs;
+    ASTPtr expr_list_args;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+
+    ++pos;
+    if (!codecs.parse(pos, expr_list_args, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->arguments = expr_list_args;
+    function_node->children.push_back(function_node->arguments);
+
+    node = function_node;
+    return true;
+}
 
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
