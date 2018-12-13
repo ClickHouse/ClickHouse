@@ -6,6 +6,6 @@ INSERT INTO test.compression_codec VALUES(1, 'hello');
 INSERT INTO test.compression_codec VALUES(2, 'world');
 INSERT INTO test.compression_codec VALUES(3, '!');
 
-SELECT * FROM test.compression_codec;
+SELECT * FROM test.compression_codec order by id;
 
 DROP TABLE IF EXISTS test.compression_codec;

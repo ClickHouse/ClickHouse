@@ -8,6 +8,7 @@
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
+#include <iostream>
 
 namespace ProfileEvents
 {
@@ -95,9 +96,22 @@ void CompressionCodecReadBuffer::decompress(char * to, size_t size_decompressed,
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
+    std::cerr << "Size:" << size_compressed_without_checksum << std::endl;
+    std::cerr << "Compressed buffer:\n";
+    std::cerr << std::hex << std::endl;
+    for (size_t i = 0; i < size_compressed_without_checksum; ++i)
+    {
+        std::cerr << +(compressed_buffer[i]) << " ";
+    }
+    std::cerr << "\n";
     UInt8 current_method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
+    std::cerr << "CURRENT METHOD:" << +current_method << std::endl;
+    std::cerr << std::dec << std::endl;
     if (current_method != method)
-        codec =  CompressionCodecFactory::instance().get(method);
+    {
+        method = current_method;
+        codec = CompressionCodecFactory::instance().get(current_method);
+    }
 
     codec->decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE,
         size_compressed_without_checksum - COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed);
@@ -177,6 +191,11 @@ void CompressionCodecWriteBuffer::nextImpl()
 
     compressed_buffer.resize(header_size + compressed_reserve_size);
     compressed_buffer[0] = compression_codec.getMethodByte();
+    std::cerr << "Total compressed buffer size:" << compressed_buffer.size() << std::endl;
+    std::cerr << "Header size:" << header_size << std::endl;
+    std::cerr << std::hex << std::endl;
+    std::cerr << "Original byte:" << +compression_codec.getMethodByte() << std::endl;
+    std::cerr << std::dec << std::endl;
     size_t compressed_size = header_size + compression_codec.compress(working_buffer.begin(), uncompressed_size, &compressed_buffer[header_size]);
 
     UInt32 compressed_size_32 = compressed_size;
@@ -184,6 +203,11 @@ void CompressionCodecWriteBuffer::nextImpl()
     unalignedStore(&compressed_buffer[1], compressed_size_32);
     unalignedStore(&compressed_buffer[5], uncompressed_size_32);
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
+    std::cerr << std::hex << std::endl;
+    std::cerr << "Codec sign:" << +(compressed_buffer[0]) << std::endl;
+    std::cerr << std::dec << std::endl;
+    std::cerr << "CHeckSum first byte:" << checksum.first << std::endl;
+    std::cerr << "CHeckSum second byte:" << checksum.second << std::endl;
     out.write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
     out.write(compressed_buffer.data(), compressed_size);
 }
