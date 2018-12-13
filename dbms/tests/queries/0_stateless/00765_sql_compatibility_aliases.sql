@@ -19,3 +19,4 @@ select RTRIM('   foo   ');
 select trim(TRAILING 'x' FROM 'xxfooxx');
 select Trim(LEADING 'ab' FROM 'abbafooabba');
 select TRIM(both 'ab' FROM 'abbafooabbafooabba');
+select trim(LEADING '*[]{}|\\' FROM '\\|[[[}}}*foo*');

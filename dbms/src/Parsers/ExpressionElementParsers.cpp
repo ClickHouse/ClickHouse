@@ -444,10 +444,20 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
         if (char_override)
         {
-            if (!ParserExpression().parse(pos, to_remove, expected)) /// TODO: wrap in RE2::QuoteMeta call
+            if (!ParserExpression().parse(pos, to_remove, expected))
                 return false;
             if (!ParserKeyword("FROM").ignore(pos, expected))
                 return false;
+
+            auto quote_meta_func_node = std::make_shared<ASTFunction>();
+            auto quote_meta_list_args = std::make_shared<ASTExpressionList>();
+            quote_meta_list_args->children = {to_remove};
+
+            quote_meta_func_node->name = "regexpQuoteMeta";
+            quote_meta_func_node->arguments = std::move(quote_meta_list_args);
+            quote_meta_func_node->children.push_back(quote_meta_func_node->arguments);
+
+            to_remove = std::move(quote_meta_func_node);
         }
     }
 
@@ -463,9 +473,9 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
     /// Convert to regexp replace function call
 
-    auto pattern_func_node = std::make_shared<ASTFunction>();
     if (char_override)
     {
+        auto pattern_func_node = std::make_shared<ASTFunction>();
         auto pattern_list_args = std::make_shared<ASTExpressionList>();
         if (trim_left && trim_right)
         {
