@@ -956,6 +956,9 @@ private:
     }
 };
 
+/*
+ * http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
+ */
 struct JavaHashImpl
 {
     static Int32 apply(const char * data, const size_t size)
