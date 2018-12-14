@@ -1,5 +1,6 @@
 #include <Compression/CompressionCodecZSTD.h>
 #include <IO/CompressedStream.h>
+#include <IO/ReadHelpers.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
 #include <Core/Field.h>
@@ -15,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
 }
 
 char CompressionCodecZSTD::getMethodByte()
@@ -66,6 +68,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
         int level = 0;
         if (arguments && !arguments->children.empty())
         {
+            if (arguments->children.size() != 1)
+                throw Exception("ZSTD codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
+
             const auto children = arguments->children;
             const ASTLiteral * literal = static_cast<const ASTLiteral *>(children[0].get());
             level = literal->value.safeGet<UInt64>();
