@@ -14,6 +14,8 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
     query_log = createDefaultSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
     query_thread_log = createDefaultSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");
     part_log = createDefaultSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log");
+
+    part_log_database = config.getString("part_log.database", "system");
 }
 
 
