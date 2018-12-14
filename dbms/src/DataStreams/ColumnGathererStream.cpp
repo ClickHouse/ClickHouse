@@ -100,15 +100,18 @@ void ColumnGathererStream::readSuffixImpl()
         return;
 
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
-    std::stringstream speed;
-    if (seconds)
-        speed << ", " << profile_info.rows / seconds << " rows/sec., "
-            << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
-    LOG_TRACE(log, std::fixed << std::setprecision(2)
+
+    std::stringstream message;
+    message << std::fixed << std::setprecision(2)
         << "Gathered column " << column_name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
-        << " in " << seconds << " sec."
-        << speed.str());
+        << " in " << seconds << " sec.";
+
+    if (seconds)
+        message << ", " << profile_info.rows / seconds << " rows/sec., "
+            << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
+
+    LOG_TRACE(log, message.str());
 }
 
 }

@@ -8,3 +8,5 @@ Note that this behavior differs from MySQL behavior for the CHAR type (where str
 
 Fewer functions can work with the FixedString(N) type than with String, so it is less convenient to use.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/fixedstring/) <!--hide-->

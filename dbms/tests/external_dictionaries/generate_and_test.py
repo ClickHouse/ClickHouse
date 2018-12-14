@@ -7,6 +7,7 @@ import subprocess
 import time
 import lxml.etree as et
 import atexit
+import fnmatch
 from itertools import chain
 from os import system
 from argparse import ArgumentParser
@@ -136,8 +137,23 @@ def generate_structure(args):
             # [ 'library_c_complex_mixed_key_cache', 2, False ],
         ])
 
+    for range_hashed_range_type in range_hashed_range_types:
+        base_name = 'range_hashed_' + range_hashed_range_type
+        dictionaries.extend([
+            [ 'file_' + base_name, 3, False ],
+            [ 'clickhouse_' + base_name, 3, False ],
+            # [ 'executable_flat' + base_name, 3, True ]
+        ])
 
-files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv' ]
+    if not args.no_mysql:
+        for range_hashed_range_type in range_hashed_range_types:
+            base_name = 'range_hashed_' + range_hashed_range_type
+            dictionaries.extend([
+                ['mysql_' + base_name, 3, False],
+            ])
+
+
+files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv', 'key_range_hashed_{range_hashed_range_type}.tsv' ]
 
 
 types = [
@@ -145,7 +161,7 @@ types = [
     'Int8', 'Int16', 'Int32', 'Int64',
     'Float32', 'Float64',
     'String',
-    'Date', 'DateTime'
+    'Date', 'DateTime', 'UUID'
 ]
 
 
@@ -154,7 +170,7 @@ explicit_defaults = [
     '-42', '-42', '-42', '-42',
     '1.5', '1.6',
     "'explicit-default'",
-    "'2015-01-01'", "'2015-01-01 00:00:00'"
+    "'2015-01-01'", "'2015-01-01 00:00:00'", "'550e8400-e29b-41d4-a716-446655440000'"
 ]
 
 
@@ -163,8 +179,69 @@ implicit_defaults = [
     '-1', '-1', '-1', '-1',
     '2.71828', '2.71828',
     'implicit-default',
-    '2015-11-25', '2015-11-25 00:00:00'
+    '2015-11-25', '2015-11-25 00:00:00', "550e8400-e29b-41d4-a716-446655440000"
 ]
+
+range_hashed_range_types = [
+    '', # default type (Date) for compatibility with older versions
+    'UInt8', 'UInt16', 'UInt32', 'UInt64',
+    'Int8', 'Int16', 'Int32', 'Int64',
+    'Date', 'DateTime'
+]
+
+# values for range_hashed dictionary according to range_min/range_max type.
+range_hashed_dictGet_values = {
+    # [(range_min, range_max), (hit, ...), (miss, ...)]
+    # due to the nature of reference results, there should be equal number of hit and miss cases.
+    'UInt8':  [('1', '10'), ('1', '5', '10'), ('0', '11', '255')],
+    'UInt16': [('1', '10'), ('1', '5', '10'), ('0', '11', '65535')],
+    'UInt32': [('1', '10'), ('1', '5', '10'), ('0', '11', '4294967295')],
+    'UInt64': [('1', '10'), ('1', '5', '10'), ('0', '11', '18446744073709551605')],
+    'Int8':   [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '255')],
+    'Int16':  [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '65535')],
+    'Int32':  [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '4294967295')],
+    'Int64':  [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '18446744073709551605')],
+    # default type (Date) for compatibility with older versions:
+    '':         [("toDate('2015-11-20')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-20')", "toDate('2015-11-22')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-19')", "toDate('2015-11-26')", "toDate('2018-09-14')")],
+    'Date':     [("toDate('2015-11-20')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-20')", "toDate('2015-11-22')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-19')", "toDate('2015-11-26')", "toDate('2018-09-14')")],
+    'DateTime': [("toDateTime('2015-11-20 00:00:00')", "toDateTime('2015-11-25 00:00:00')"),
+                 ("toDateTime('2015-11-20 00:00:00')", "toDateTime('2015-11-22 00:00:00')", "toDateTime('2015-11-25 00:00:00')"),
+                 ("toDateTime('2015-11-19 23:59:59')", "toDateTime('2015-10-26 00:00:01')", "toDateTime('2018-09-14 00:00:00')")],
+}
+
+range_hashed_mysql_column_types = {
+    'UInt8':  'tinyint unsigned',
+    'UInt16': 'smallint unsigned',
+    'UInt32': 'int unsigned',
+    'UInt64': 'bigint unsigned',
+    'Int8':   'tinyint',
+    'Int16':  'smallint',
+    'Int32':  'int',
+    'Int64':  'bigint',
+    # default type (Date) for compatibility with older versions:
+    '':       'date',
+    'Date':   'date',
+    'DateTime': 'datetime',
+}
+
+range_hashed_clickhouse_column_types = {
+    'UInt8':  'UInt8',
+    'UInt16': 'UInt16',
+    'UInt32': 'UInt32',
+    'UInt64': 'UInt64',
+    'Int8':   'Int8',
+    'Int16':  'Int16',
+    'Int32':  'Int32',
+    'Int64':  'Int64',
+    # default type (Date) for compatibility with older versions:
+    '':       'Date',
+    'Date':   'Date',
+    'DateTime': 'DateTime',
+}
 
 
 def dump_report(destination, suite, test_case, report):
@@ -196,7 +273,8 @@ def generate_data(args):
     key_columns = [
         [ 'id' ],
         [ 'key0', 'key1' ],
-        [ 'key0_str', 'key1' ]
+        [ 'key0_str', 'key1' ],
+        # Explicitly no column for range_hashed, since it is completely separate case
     ]
 
     print 'Creating ClickHouse table'
@@ -210,16 +288,57 @@ def generate_data(args):
                     'Int8_ Int8, Int16_ Int16, Int32_ Int32, Int64_ Int64,'
                     'Float32_ Float32, Float64_ Float64,'
                     'String_ String,'
-                    'Date_ Date, DateTime_ DateTime, Parent UInt64'
+                    'Date_ Date, DateTime_ DateTime, Parent UInt64, UUID_ UUID'
               ') engine=Log; insert into test.dictionary_source format TabSeparated'
               '"'.format(source = args.source, ch = args.client, port = args.port))
 
-    # generate 3 files with different key types
+    # generate files with different key types
     print 'Creating .tsv files'
     file_source_query = 'select %s from test.dictionary_source format TabSeparated;'
     for file, keys in zip(files, key_columns):
         query = file_source_query % comma_separated(chain(keys, columns(), [ 'Parent' ] if 1 == len(keys) else []))
         call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
+
+    for range_hashed_range_type in range_hashed_range_types:
+        file = files[3].format(range_hashed_range_type=range_hashed_range_type)
+        keys = list(chain(['id'], range_hashed_dictGet_values[range_hashed_range_type][0]))
+        query = file_source_query % comma_separated(chain(keys, columns(), ['Parent'] if 1 == len(keys) else []))
+        call([args.client, '--port', args.port, '--query', query], 'generated/' + file)
+
+        table_name = "test.dictionary_source_" + range_hashed_range_type
+        col_type = range_hashed_clickhouse_column_types[range_hashed_range_type]
+
+        source_tsv_full_path = "{0}/generated/{1}".format(prefix, file)
+        print 'Creating Clickhouse table for "{0}" range_hashed dictionary...'.format(range_hashed_range_type)
+        system('cat {source} | {ch} --port={port} -m -n --query "'
+              'create database if not exists test;'
+              'drop table if exists {table_name};'
+              'create table {table_name} ('
+                    'id UInt64, StartDate {col_type}, EndDate {col_type},'
+                    'UInt8_ UInt8, UInt16_ UInt16, UInt32_ UInt32, UInt64_ UInt64,'
+                    'Int8_ Int8, Int16_ Int16, Int32_ Int32, Int64_ Int64,'
+                    'Float32_ Float32, Float64_ Float64,'
+                    'String_ String,'
+                    'Date_ Date, DateTime_ DateTime, UUID_ UUID'
+              ') engine=Log; insert into {table_name} format TabSeparated'
+              '"'.format(table_name=table_name, col_type=col_type, source=source_tsv_full_path, ch=args.client, port=args.port))
+
+        if not args.no_mysql:
+            print 'Creating MySQL table for "{0}" range_hashed dictionary...'.format(range_hashed_range_type)
+            col_type = range_hashed_mysql_column_types[range_hashed_range_type]
+            subprocess.check_call('echo "'
+                      'create database if not exists test;'
+                      'drop table if exists {table_name};'
+                      'create table {table_name} ('
+                              'id tinyint unsigned, StartDate {col_type}, EndDate {col_type}, '
+                              'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
+                              'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
+                              'Float32_ float, Float64_ double, '
+                              'String_ text, Date_ date, DateTime_ datetime, UUID_ varchar(36)'
+                      ');'
+                      'load data local infile \'{source}\' into table {table_name};" | mysql $MYSQL_OPTIONS --local-infile=1'
+                      .format(prefix, table_name=table_name, col_type=col_type, source=source_tsv_full_path), shell=True)
+
 
     # create MySQL table from complete_query
     if not args.no_mysql:
@@ -232,7 +351,7 @@ def generate_data(args):
                         'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
                         'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
                         'Float32_ float, Float64_ double, '
-                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
+                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned, UUID_ varchar(36)'
                   ');'
                   'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
                   .format(prefix), shell=True)
@@ -318,7 +437,7 @@ def generate_dictionaries(args):
         <user>default</user>
         <password></password>
         <db>test</db>
-        <table>dictionary_source</table>
+        <table>dictionary_source{key_type}</table>
     </clickhouse>
     ''' % args.port
 
@@ -337,7 +456,7 @@ def generate_dictionaries(args):
         <user>root</user>
         <password></password>
         <db>test</db>
-        <table>dictionary_source</table>
+        <table>dictionary_source{key_type}</table>
     </mysql>
     '''
 
@@ -411,6 +530,7 @@ def generate_dictionaries(args):
     layout_cache = '<cache><size_in_cells>128</size_in_cells></cache>'
     layout_complex_key_hashed = '<complex_key_hashed />'
     layout_complex_key_cache = '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>'
+    layout_range_hashed = '<range_hashed />'
 
     key_simple = '''
     <id>
@@ -444,7 +564,22 @@ def generate_dictionaries(args):
     </key>
     '''
 
-    keys = [ key_simple, key_complex_integers, key_complex_mixed ]
+    # For range hashed, range_min and range_max are kind of additional keys, so it makes sense to put it here.
+    key_range_hashed = '''
+    <id>
+        <name>id</name>
+    </id>
+    <range_min>
+            <name>StartDate</name>
+            {range_hashed_range_type}
+    </range_min>
+    <range_max>
+            <name>EndDate</name>
+            {range_hashed_range_type}
+    </range_max>
+    '''
+
+    keys = [ key_simple, key_complex_integers, key_complex_mixed, key_range_hashed ]
 
     parent_attribute = '''
     <attribute>
@@ -455,33 +590,34 @@ def generate_dictionaries(args):
     </attribute>
     '''
 
+    source_clickhouse_deafult = source_clickhouse.format(key_type="")
     sources_and_layouts = [
         # Simple key dictionaries
         [ source_file % (generated_prefix + files[0]), layout_flat],
-        [ source_clickhouse, layout_flat ],
+        [ source_clickhouse_deafult, layout_flat ],
         [ source_executable % (generated_prefix + files[0]), layout_flat ],
 
         [ source_file % (generated_prefix + files[0]), layout_hashed],
-        [ source_clickhouse, layout_hashed ],
+        [ source_clickhouse_deafult, layout_hashed ],
         [ source_executable % (generated_prefix + files[0]), layout_hashed ],
 
-        [ source_clickhouse, layout_cache ],
+        [ source_clickhouse_deafult, layout_cache ],
         [ source_executable_cache % (generated_prefix + files[0]), layout_cache ],
 
         # Complex key dictionaries with (UInt8, UInt8) key
         [ source_file % (generated_prefix + files[1]), layout_complex_key_hashed],
-        [ source_clickhouse, layout_complex_key_hashed ],
+        [ source_clickhouse_deafult, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[1]), layout_complex_key_hashed ],
 
-        [ source_clickhouse, layout_complex_key_cache ],
+        [ source_clickhouse_deafult, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[1]), layout_complex_key_cache ],
 
         # Complex key dictionaries with (String, UInt8) key
         [ source_file % (generated_prefix + files[2]), layout_complex_key_hashed],
-        [ source_clickhouse, layout_complex_key_hashed ],
+        [ source_clickhouse_deafult, layout_complex_key_hashed ],
         [ source_executable % (generated_prefix + files[2]), layout_complex_key_hashed ],
 
-        [ source_clickhouse, layout_complex_key_cache ],
+        [ source_clickhouse_deafult, layout_complex_key_cache ],
         [ source_executable_cache % (generated_prefix + files[2]), layout_complex_key_cache ],
     ]
 
@@ -505,14 +641,15 @@ def generate_dictionaries(args):
     ])
 
     if not args.no_mysql:
+        source_mysql_default = source_mysql.format(key_type="")
         sources_and_layouts.extend([
-        [ source_mysql, layout_flat ],
-        [ source_mysql, layout_hashed ],
-        [ source_mysql, layout_cache ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_cache ],
-        [ source_mysql, layout_complex_key_hashed ],
-        [ source_mysql, layout_complex_key_cache ],
+        [ source_mysql_default, layout_flat ],
+        [ source_mysql_default, layout_hashed ],
+        [ source_mysql_default, layout_cache ],
+        [ source_mysql_default, layout_complex_key_hashed ],
+        [ source_mysql_default, layout_complex_key_cache ],
+        [ source_mysql_default, layout_complex_key_hashed ],
+        [ source_mysql_default, layout_complex_key_cache ],
     ])
 
     if not args.no_mongo:
@@ -549,11 +686,40 @@ def generate_dictionaries(args):
         #[ source_library_c, layout_complex_key_cache ],
     ])
 
+    for range_hashed_range_type in range_hashed_range_types:
+        key_type = "_" + range_hashed_range_type
+        sources_and_layouts.extend([
+            [ source_file % (generated_prefix + (files[3].format(range_hashed_range_type=range_hashed_range_type))), (layout_range_hashed, range_hashed_range_type) ],
+            [ source_clickhouse.format(key_type=key_type), (layout_range_hashed, range_hashed_range_type) ],
+            # [ source_executable, layout_range_hashed ]
+        ])
+
+    if not args.no_mysql:
+        for range_hashed_range_type in range_hashed_range_types:
+            key_type = "_" + range_hashed_range_type
+            source_mysql_typed = source_mysql.format(key_type=key_type)
+            sources_and_layouts.extend([
+                [source_mysql_typed,
+                 (layout_range_hashed, range_hashed_range_type)],
+            ])
+
+    dict_name_filter = args.filter.split('/')[0] if args.filter else None
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
+        if args.filter and not fnmatch.fnmatch(name, dict_name_filter):
+            continue
+
         filename = os.path.join(args.generated, 'dictionary_%s.xml' % name)
+        key = keys[key_idx]
+        if key_idx == 3:
+            layout, range_hashed_range_type = layout
+            # Wrap non-empty type (default) with <type> tag.
+            if range_hashed_range_type:
+                range_hashed_range_type = '<type>{}</type>'.format(range_hashed_range_type)
+            key = key.format(range_hashed_range_type=range_hashed_range_type)
+
         with open(filename, 'w') as file:
             dictionary_xml = dictionary_skeleton.format(
-                key = keys[key_idx], parent = parent_attribute if has_parent else '', **locals())
+                parent = parent_attribute if has_parent else '', **locals())
             file.write(dictionary_xml)
 
 
@@ -570,17 +736,39 @@ def run_tests(args):
         def https_killer():
            https_server.kill()
 
-    keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
+    if args.filter:
+        print 'Only test cases matching filter "{}" are going to be executed.'.format(args.filter)
+
+    keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)', 'toUInt64(n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
+    dict_get_notype_query_skeleton = "select dictGet('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
     dict_get_or_default_query_skeleton = "select dictGet{type}OrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
+    dict_get_notype_or_default_query_skeleton = "select dictGetOrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
     dict_hierarchy_query_skeleton = "select dictGetHierarchy('{name}' as d, key), dictIsIn(d, key, toUInt64(1)), dictIsIn(d, key, key) from system.one array join range(toUInt64(8)) as key;"
+    # Designed to match 4 rows hit, 4 rows miss pattern of reference file
+    dict_get_query_range_hashed_skeleton = """
+            select dictGet{type}('{name}', '{type}_', {key}, r)
+            from system.one
+                array join range(4) as n
+                cross join (select r from system.one array join array({hit}, {miss}) as r);
+    """
+    dict_get_notype_query_range_hashed_skeleton = """
+            select dictGet('{name}', '{type}_', {key}, r)
+            from system.one
+                array join range(4) as n
+                cross join (select r from system.one array join array({hit}, {miss}) as r);
+    """
 
     def test_query(dict, query, reference, name):
         global failures
         global SERVER_DIED
 
         print "{0:100}".format('Dictionary: ' + dict + ' Name: ' + name + ": "),
+        if args.filter and not fnmatch.fnmatch(dict + "/" + name, args.filter):
+            print " ... skipped due to filter."
+            return
+
         sys.stdout.flush()
         report_testcase = et.Element("testcase", attrib = {"name": name})
 
@@ -626,7 +814,7 @@ def run_tests(args):
                     stderr_element = et.Element("system-err")
                     stderr_element.text = et.CDATA(stderr)
                     report_testcase.append(stderr_element)
-                    print(stderr)
+                    print(stderr.encode('utf-8'))
 
                 if 'Connection refused' in stderr or 'Attempt to read after eof' in stderr:
                     SERVER_DIED = True
@@ -688,19 +876,39 @@ def run_tests(args):
         key = keys[key_idx]
         print 'Testing dictionary', name
 
-        # query dictHas
-        test_query(name, dict_has_query_skeleton.format(**locals()), 'has', 'dictHas')
+        if key_idx == 3:
+            t = name.split('_')[-1] # get range_min/max type from dictionary name
+            for type, default in zip(types, explicit_defaults):
+                if SERVER_DIED and not args.no_break:
+                    break
+                for hit, miss in zip(*range_hashed_dictGet_values[t][1:]):
+                    test_query(name,
+                        dict_get_query_range_hashed_skeleton.format(**locals()),
+                            type, 'dictGet' + type)
+                    test_query(name,
+                        dict_get_notype_query_range_hashed_skeleton.format(**locals()),
+                            type, 'dictGet' + type)
 
-        # query dictGet*
-        for type, default in zip(types, explicit_defaults):
-            if SERVER_DIED and not args.no_break:
-                break
-            test_query(name,
-                dict_get_query_skeleton.format(**locals()),
-                type, 'dictGet' + type)
-            test_query(name,
-                dict_get_or_default_query_skeleton.format(**locals()),
-                type + 'OrDefault', 'dictGet' + type + 'OrDefault')
+        else:
+            # query dictHas is not supported for range_hashed dictionaries
+            test_query(name, dict_has_query_skeleton.format(**locals()), 'has', 'dictHas')
+
+            # query dictGet*
+            for type, default in zip(types, explicit_defaults):
+                if SERVER_DIED and not args.no_break:
+                    break
+                test_query(name,
+                    dict_get_query_skeleton.format(**locals()),
+                    type, 'dictGet' + type)
+                test_query(name,
+                    dict_get_notype_query_skeleton.format(**locals()),
+                    type, 'dictGet' + type)
+                test_query(name,
+                    dict_get_or_default_query_skeleton.format(**locals()),
+                    type + 'OrDefault', 'dictGet' + type + 'OrDefault')
+                test_query(name,
+                    dict_get_notype_or_default_query_skeleton.format(**locals()),
+                    type + 'OrDefault', 'dictGet' + type + 'OrDefault')
 
         # query dictGetHierarchy, dictIsIn
         if has_parent:
@@ -749,6 +957,8 @@ if __name__ == '__main__':
     parser.add_argument('--https_host', default = 'localhost', help = 'https server host')
     parser.add_argument('--https_path', default = '/generated/', help = 'https server path')
     parser.add_argument('--no_break', action='store_true', help = 'Dont stop on errors')
+
+    parser.add_argument('--filter', type = str, default = None, help = 'Run only test cases matching given glob filter.')
 
     args = parser.parse_args()
 

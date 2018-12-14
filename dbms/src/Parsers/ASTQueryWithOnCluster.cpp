@@ -2,8 +2,6 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/evaluateConstantExpression.h>

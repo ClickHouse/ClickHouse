@@ -188,26 +188,6 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
     assertChar(')', istr);
 }
 
-void DataTypeTuple::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-void DataTypeTuple::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
-void DataTypeTuple::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
 void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('[', ostr);
@@ -417,6 +397,7 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     auto * tuple_state = checkAndGetTupleDeserializeState(state);
 
     settings.path.push_back(Substream::TupleElement);
+    settings.avg_value_size_hint = 0;
     for (const auto i : ext::range(0, ext::size(elems)))
     {
         settings.path.back().tuple_element_name = names[i];

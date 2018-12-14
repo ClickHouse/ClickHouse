@@ -115,14 +115,18 @@ public:
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
+        bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
+        {
             setImpl(key, token->value, cache_lock);
+            result = true;
+        }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, true);
+        return std::make_pair(token->value, result);
     }
 
     void getStats(size_t & out_hits, size_t & out_misses) const
@@ -157,6 +161,29 @@ public:
 
     virtual ~LRUCache() {}
 
+protected:
+    using LRUQueue = std::list<Key>;
+    using LRUQueueIterator = typename LRUQueue::iterator;
+
+    struct Cell
+    {
+        bool expired(const Timestamp & last_timestamp, const Delay & delay) const
+        {
+            return (delay == Delay::zero()) ||
+                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > delay));
+        }
+
+        MappedPtr value;
+        size_t size;
+        LRUQueueIterator queue_iterator;
+        Timestamp timestamp;
+    };
+
+    using Cells = std::unordered_map<Key, Cell, HashFunction>;
+
+    Cells cells;
+
+    mutable std::mutex mutex;
 private:
 
     /// Represents pending insertion attempt.
@@ -222,36 +249,16 @@ private:
 
     friend struct InsertTokenHolder;
 
-    using LRUQueue = std::list<Key>;
-    using LRUQueueIterator = typename LRUQueue::iterator;
-
-    struct Cell
-    {
-        bool expired(const Timestamp & last_timestamp, const Delay & delay) const
-        {
-            return (delay == Delay::zero()) ||
-                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > delay));
-        }
-
-        MappedPtr value;
-        size_t size;
-        LRUQueueIterator queue_iterator;
-        Timestamp timestamp;
-    };
-
-    using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
     InsertTokenById insert_tokens;
 
     LRUQueue queue;
-    Cells cells;
 
     /// Total weight of values.
     size_t current_size = 0;
     const size_t max_size;
     const Delay expiration_delay;
 
-    mutable std::mutex mutex;
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
 

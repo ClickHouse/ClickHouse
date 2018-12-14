@@ -8,9 +8,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/MessageHeader.h>
-#include <Common/HTMLForm.h>
 
 #include <Core/ExternalTable.h>
 
@@ -170,7 +168,7 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     /// Write data
     data.first->readPrefix();
     output->writePrefix();
-    while(Block block = data.first->read())
+    while (Block block = data.first->read())
         output->write(block);
     data.first->readSuffix();
     output->writeSuffix();

@@ -12,7 +12,7 @@ struct StrongTypedef
                                , boost::totally_ordered2< StrongTypedef<T, Tag>, T> >
 {
 private:
-    using Self = StrongTypedef<T, Tag>;
+    using Self = StrongTypedef;
     T t;
 
 public:

@@ -54,17 +54,18 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 
         AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniqUpTo>(*argument_types[0], threshold));
 
+        WhichDataType which(argument_type);
         if (res)
             return res;
-        else if (typeid_cast<const DataTypeDate *>(&argument_type))
+        else if (which.isDate())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDate::FieldType>>(threshold);
-        else if (typeid_cast<const DataTypeDateTime *>(&argument_type))
+        else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeDateTime::FieldType>>(threshold);
-        else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString*>(&argument_type))
+        else if (which.isStringOrFixedString())
             return std::make_shared<AggregateFunctionUniqUpTo<String>>(threshold);
-        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+        else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniqUpTo<DataTypeUUID::FieldType>>(threshold);
-        else if (typeid_cast<const DataTypeTuple *>(&argument_type))
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
                 return std::make_shared<AggregateFunctionUniqUpToVariadic<true, true>>(argument_types, threshold);

@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # ClickHouse چیست؟
 
@@ -84,9 +84,8 @@ ClickHouse یک مدیریت دیتابیس (DBMS) ستون گرا برای پر
 
  برای مثال، query "تعداد رکوردها به ازای هر بستر نیازمندی" نیازمند خواندن ستون "آیدی بستر آگهی"، که 1 بایت بدون فشرده طول می کشد، خواهد بود. اگر بیشتر ترافیک مربوط به بستر های نیازمندی نبود، شما می توانید انتظار حداقل 10 برابر فشرده سازی این ستون را داشته باشید. زمانی که از الگوریتم فشرده سازی quick استفاده می کنید، عملیات decompression داده ها با سرعت حداقل چندین گیگابایت در ثانیه انجام می شود. به عبارت دیگر، این query توانایی پردازش تقریبا چندین میلیارد رکورد در ثانیه به ازای یک سرور را دارد. این سرعت در عمل واقعی و دست یافتنی است.
 
-<details><summary>مثال</summary>
-<p>
-<pre>
+<details markdown="1"><summary>مثال</summary>
+```
 $ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
@@ -128,8 +127,7 @@ LIMIT 20
 20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
 
 :)
-</pre>
-</p>
+```
 </details>
 
 ### CPU
@@ -147,3 +145,5 @@ LIMIT 20
 توجه کنید که برای کارایی CPU، query language باید SQL یا MDX باشد، یا حداقل یک بردارد (J, K) باشد. query برای بهینه سازی باید فقط دارای حلقه های implicit باشد.
 
 </div>
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/) <!--hide-->

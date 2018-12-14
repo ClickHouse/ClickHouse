@@ -30,7 +30,6 @@ public:
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     bool isCategorial() const override { return true; }
-    bool isEnum() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool isComparable() const override { return true; }
 };

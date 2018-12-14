@@ -14,7 +14,7 @@ Similar to IPv4NumToString, but using xxx instead of the last octet.
 
 Example:
 
-```sql
+``` sql
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
@@ -24,7 +24,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─k──────────────┬─────c─┐
 │ 83.149.9.xxx   │ 26238 │
 │ 217.118.81.xxx │ 26074 │
@@ -46,17 +46,17 @@ Since using 'xxx' is highly unusual, this may be changed in the future. We recom
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
 IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. Examples:
 
-```sql
+``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
-```text
+```
 ┌─addr─────────┐
 │ 2a02:6b8::11 │
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -67,7 +67,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
 │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
 │ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
@@ -82,7 +82,7 @@ LIMIT 10
 └─────────────────────────────────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -93,7 +93,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
 │ ::ffff:94.26.111.111       │ 747440 │
 │ ::ffff:37.143.222.4        │ 529483 │
@@ -113,3 +113,5 @@ LIMIT 10
 The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
 HEX can be uppercase or lowercase.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

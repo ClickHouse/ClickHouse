@@ -9,3 +9,5 @@
 Прочие настройки описаны в разделе "[Настройки](../settings/index.md#settings)".
 
 Перед изучением настроек ознакомьтесь с разделом [Конфигурационные файлы](../configuration_files.md#configuration_files), обратите внимание на использование подстановок (атрибуты `incl` и `optional`).
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/) <!--hide-->

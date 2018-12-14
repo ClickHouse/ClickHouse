@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Enum
 
@@ -8,11 +8,11 @@ Enum8 یا Enum16، به شما اجازه ی ذخیره سازی مجموعه �
 
 </div>
 
-```text
+```
 Enum8('hello' = 1, 'world' = 2)
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 - مقدار داخل این ستون می تواند یکی از دو مقدار 'hello' یا 'world' باشد.
 
@@ -31,3 +31,4 @@ Enum8('hello' = 1, 'world' = 2)
 استفاده از ALTER برای تبدیل Enum8 به Enum16 یا برعکس، ممکن است، دقیقا شبیه به Int8 به Int16.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/enum/) <!--hide-->

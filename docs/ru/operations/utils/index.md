@@ -1,4 +1,6 @@
 # Утилиты ClickHouse
 
-* [clickhouse-local](clickhouse-local.md#utils-clickhouse-local) - позволяет выполнять SQL-запросы над данными без установки сервера ClickHouse подобно тому, как это делает `awk`.
+* [clickhouse-local](clickhouse-local.md* [clickhouse-copier](clickhouse-copier.md) данные с одного кластера на другой.
 * [clickhouse-copier](clickhouse-copier.md#utils-clickhouse-copier) - копирует (и перешардирует) данные с одного кластера на другой.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/utils/) <!--hide-->

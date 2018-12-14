@@ -27,7 +27,7 @@ struct MergeTreeDataPart
     using Checksums = MergeTreeDataPartChecksums;
     using Checksum = MergeTreeDataPartChecksums::Checksum;
 
-    MergeTreeDataPart(MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
+    MergeTreeDataPart(const MergeTreeData & storage_, const String & name_, const MergeTreePartInfo & info_)
         : storage(storage_), name(name_), info(info_)
     {
     }
@@ -75,9 +75,13 @@ struct MergeTreeDataPart
     DayNum getMinDate() const;
     DayNum getMaxDate() const;
 
+    /// otherwise, if the partition key includes dateTime column (also a common case), these functions will return min and max values for this column.
+    time_t getMinTime() const;
+    time_t getMaxTime() const;
+
     bool isEmpty() const { return rows_count == 0; }
 
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
 
     String name;
     MergeTreePartInfo info;
@@ -90,6 +94,7 @@ struct MergeTreeDataPart
     size_t marks_count = 0;
     std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
                                             /// Is used from several threads without locks (it is changed with ALTER).
+                                            /// May not contain size of checksums.txt and columns.txt
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
@@ -188,7 +193,7 @@ struct MergeTreeDataPart
 
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
-            : parallelogram(1, Range(static_cast<UInt64>(min_date), true, static_cast<UInt64>(max_date), true))
+            : parallelogram(1, Range(min_date, true, max_date, true))
             , initialized(true)
         {
         }

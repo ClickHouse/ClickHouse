@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -375,7 +376,7 @@ private:
     std::unordered_map<String, std::set<Int64>> committing_blocks;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
-    String last_quorum_part;
+    std::set<std::string> last_quorum_parts;
     String inprogress_quorum_part;
 };
 

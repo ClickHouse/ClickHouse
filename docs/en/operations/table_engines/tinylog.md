@@ -17,3 +17,5 @@ The situation when you have a large number of small tables guarantees poor produ
 
 In Yandex.Metrica, TinyLog tables are used for intermediary data that is processed in small batches.
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/tinylog/) <!--hide-->

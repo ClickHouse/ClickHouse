@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations(d, x, s) VALUES \
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE nonexistent = 0" 2>/dev/null || echo "Query should fail 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
 # TODO: Queries involving alias columns are not supported yet and should fail on submission.
-${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE a = 0" 2>/dev/null || echo "Query involving aliases should fail on submission"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations UPDATE s = s || '' WHERE a = 0" 2>/dev/null || echo "Query involving aliases should fail on submission"
 
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations DELETE WHERE x % 2 = 1"
@@ -42,6 +42,8 @@ ${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM test.mutations ORDER BY d, 
 # Check the contents of the system.mutations table.
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done \
     FROM system.mutations WHERE table = 'mutations' ORDER BY mutation_id"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations"
 
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Test mutations cleaner ***'"
@@ -69,5 +71,4 @@ sleep 0.1
 # Check that the first mutation is cleaned
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, is_done FROM system.mutations WHERE table = 'mutations_cleaner' ORDER BY mutation_id"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations_cleaner"

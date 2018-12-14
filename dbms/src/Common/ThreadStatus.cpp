@@ -1,6 +1,5 @@
 #include <sstream>
 
-#include <common/Types.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
@@ -22,18 +21,15 @@ namespace ErrorCodes
 }
 
 
-/// Order of current_thread and current_thread_scope matters
-thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
-thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
+extern SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
 
 
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    current_thread->taskstats_getter->getStat(res.stat, current_thread->os_thread_id);
+    CurrentThread::get()->taskstats_getter->getStat(res.stat, CurrentThread::get()->os_thread_id);
     return res;
 }
-
 
 ThreadStatus::ThreadStatus()
 {
@@ -78,10 +74,8 @@ void ThreadStatus::initPerformanceCounters()
         if (TaskStatsInfoGetter::checkPermissions())
         {
             if (!taskstats_getter)
-            {
-                static SimpleObjectPool<TaskStatsInfoGetter> pool;
-                taskstats_getter = pool.getDefault();
-            }
+                taskstats_getter = task_stats_info_getter_pool.getDefault();
+
             *last_taskstats = TasksStatsCounters::current();
         }
     }

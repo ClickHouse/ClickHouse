@@ -1,4 +1,3 @@
-<a name="utils-clickhouse-local"></a>
 
 # clickhouse-local
 
@@ -24,7 +23,7 @@ clickhouse-local --structure "table_structure" --input-format "format_of_incomin
 - `-S`, `--structure` — структура таблицы, в которую будут помещены входящие данные.
 - `-if`, `--input-format` — формат входящих данных. По умолчанию — `TSV`.
 - `-f`, `--file` — путь к файлу с данными. По умолчанию — `stdin`.
-- `-q` `--query` — запросы на выполнение. Разделитель запросов — `;`.
+- `-q`, `--query` — запросы на выполнение. Разделитель запросов — `;`.
 - `-N`, `--table` — имя таблицы, в которую будут помещены входящие данные. По умолчанию - `table`.
 - `-of`, `--format`, `--output-format` — формат выходных данных. По умолчанию — `TSV`.
 - `--stacktrace` — вывод отладочной информации при исключениях.
@@ -66,3 +65,5 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/utils/clickhouse-local/) <!--hide-->

@@ -64,3 +64,5 @@ A fast, decent-quality non-cryptographic hash function for a string obtained fro
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 Levels are the same as in URLHierarchy. This function is specific to Yandex.Metrica.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/hash_functions/) <!--hide-->

@@ -46,3 +46,5 @@ multiIf(cond_1, then_1, cond_2, then_2...else)
 │                                       ᴺᵁᴸᴸ │
 └────────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/conditional_functions/) <!--hide-->

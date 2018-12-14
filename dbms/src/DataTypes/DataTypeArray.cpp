@@ -259,6 +259,10 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     if (last_offset < nested_column.size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
+
+    /// Adjust value size hint. Divide it to the average array size.
+    settings.avg_value_size_hint = nested_limit ? settings.avg_value_size_hint / nested_limit * offset_values.size() : 0;
+
     nested->deserializeBinaryBulkWithMultipleStreams(nested_column, nested_limit, settings, state);
     settings.path.pop_back();
 
@@ -359,31 +363,6 @@ void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const F
             nested->deserializeTextQuoted(nested_column, istr, settings);
         });
 }
-
-
-void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-
-void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
-
-void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-
-void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
 
 void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {

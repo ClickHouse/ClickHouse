@@ -11,6 +11,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/randomSeed.h>
+#include <Common/Exception.h>
+
+#include <Poco/Net/NetException.h>
+
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
 #define ZOOKEEPER_OPERATION_TIMEOUT_MS 10000
@@ -58,8 +62,21 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
     boost::split(addresses_strings, hosts, boost::is_any_of(","));
     Coordination::ZooKeeper::Addresses addresses;
     addresses.reserve(addresses_strings.size());
+
     for (const auto & address_string : addresses_strings)
-        addresses.emplace_back(address_string);
+    {
+        try
+        {
+            addresses.emplace_back(address_string);
+        }
+        catch (const Poco::Net::DNSException & e)
+        {
+            LOG_ERROR(log, "Cannot use ZooKeeper address " << address_string << ", reason: " << e.displayText());
+        }
+    }
+
+    if (addresses.empty())
+        throw KeeperException("Cannot use any of provided ZooKeeper addresses", Coordination::ZBADARGUMENTS);
 
     impl = std::make_unique<Coordination::ZooKeeper>(
         addresses,

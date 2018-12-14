@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -95,16 +96,32 @@ template <typename T, typename TResult, typename Data>
 class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>
 {
 public:
+    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
+
     String getName() const override { return "sum"; }
+
+    AggregateFunctionSum()
+        : scale(0)
+    {}
+
+    AggregateFunctionSum(const IDataType & data_type)
+        : scale(getDecimalScale(data_type))
+    {}
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNumber<TResult>>();
+        if constexpr (IsDecimalNumber<T>)
+            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        else
+            return std::make_shared<ResultDataType>();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).add(static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num]);
+        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        this->data(place).add(column.getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -124,11 +141,14 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnVector<TResult> &>(to).getData().push_back(this->data(place).get());
+        auto & column = static_cast<ColVecResult &>(to);
+        column.getData().push_back(this->data(place).get());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
-};
 
+private:
+    UInt32 scale;
+};
 
 }

@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
+#include <Parsers/ASTSelectQuery.h>
 
 
 namespace DB
@@ -37,6 +38,8 @@ public:
 private:
     String table_name;
     ASTPtr inner_query;
+
+    void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery);
 
 protected:
     StorageView(

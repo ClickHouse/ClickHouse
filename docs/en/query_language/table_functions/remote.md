@@ -1,4 +1,3 @@
-<a name="table_functions-remote"></a>
 
 # remote
 
@@ -6,7 +5,7 @@ Allows you to access remote servers without creating a `Distributed` table.
 
 Signatures:
 
-```sql
+``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
 ```
@@ -18,7 +17,7 @@ remote('addresses_expr', db.table[, 'user'[, 'password']])
 
 Examples:
 
-```text
+```
 example01-01-1
 example01-01-1:9000
 localhost
@@ -31,29 +30,29 @@ Multiple addresses can be comma-separated. In this case, ClickHouse will use dis
 
 Example:
 
-```text
+```
 example01-01-1,example01-02-1
 ```
 
 Part of the expression can be specified in curly brackets. The previous example can be written as follows:
 
-```text
+```
 example01-0{1,2}-1
 ```
 
 Curly brackets can contain a range of numbers separated by two dots (non-negative integers). In this case, the range is expanded to a set of values that generate shard addresses. If the first number starts with zero, the values are formed with the same zero alignment. The previous example can be written as follows:
 
-```text
+```
 example01-{01..02}-1
 ```
 
 If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
 
-Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing) setting.
+Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md) setting.
 
 Example:
 
-```text
+```
 example01-{01..02}-{1|2}
 ```
 
@@ -73,3 +72,5 @@ The `remote` table function can be useful in the following cases:
 If the user is not specified, `default` is used.
 If the password is not specified, an empty password is used.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/remote/) <!--hide-->

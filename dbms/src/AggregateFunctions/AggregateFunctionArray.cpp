@@ -1,6 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
-
+#include <Common/typeid_cast.h>
 
 namespace DB
 {

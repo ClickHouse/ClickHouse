@@ -1,4 +1,3 @@
-<a name="table_functions-file"></a>
 
 # file
 
@@ -34,7 +33,7 @@ $ cat /var/lib/clickhouse/user_files/test.csv
 
 Таблица из `test.csv` и выборка первых двух строк из неё:
 
-```sql
+``` sql
 SELECT *
 FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 LIMIT 2
@@ -45,3 +44,5 @@ LIMIT 2
 │       3 │       2 │       1 │
 └─────────┴─────────┴─────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/file/) <!--hide-->

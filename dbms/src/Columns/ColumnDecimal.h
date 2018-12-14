@@ -55,13 +55,14 @@ private:
 template <typename T>
 class ColumnDecimal final : public COWPtrHelper<IColumn, ColumnDecimal<T>>
 {
+    static_assert(IsDecimalNumber<T>);
+
 private:
-    using Self = ColumnDecimal<T>;
+    using Self = ColumnDecimal;
     friend class COWPtrHelper<IColumn, Self>;
 
 public:
-    using value_type = T;
-    using Container = DecimalPaddedPODArray<value_type>;
+    using Container = DecimalPaddedPODArray<T>;
 
 private:
     ColumnDecimal(const size_t n, UInt32 scale_)
@@ -78,7 +79,7 @@ public:
     const char * getFamilyName() const override { return TypeName<T>::get(); }
 
     bool isNumeric() const override { return false; }
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
 
@@ -88,9 +89,9 @@ public:
     void reserve(size_t n) override { data.reserve(n); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
-    void insertData(const char * pos, size_t /*length*/) override { data.push_back(*reinterpret_cast<const T *>(pos)); }
+    void insertData(const char * pos, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
-    void insert(const Field & x) override { data.push_back(DB::get<typename NearestFieldType<T>::Type>(x)); }
+    void insert(const Field & x) override { data.push_back(DB::get<NearestFieldType<T>>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     void popBack(size_t n) override { data.resize_assume_reserved(data.size() - n); }
@@ -110,6 +111,8 @@ public:
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n]); }
     Int64 getInt(size_t n) const override { return Int64(data[n] * scale); }
+    UInt64 get64(size_t n) const override;
+    bool isDefaultAt(size_t n) const override { return data[n] == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
@@ -138,6 +141,24 @@ public:
 protected:
     Container data;
     UInt32 scale;
+
+    template <typename U>
+    void permutation(bool reverse, size_t limit, PaddedPODArray<U> & res) const
+    {
+        size_t s = data.size();
+        res.resize(s);
+        for (U i = 0; i < s; ++i)
+            res[i] = i;
+
+        auto sort_end = res.end();
+        if (limit && limit < s)
+            sort_end = res.begin() + limit;
+
+        if (reverse)
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+    }
 };
 
 template <typename T>

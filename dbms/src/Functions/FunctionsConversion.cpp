@@ -20,7 +20,7 @@ void throwExceptionForIncompletelyParsedValue(
     else
         message_buf << " at begin of string";
 
-    if (to_type.isNumber())
+    if (isNumber(to_type))
         message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
     throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);

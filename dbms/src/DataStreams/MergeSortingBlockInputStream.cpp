@@ -2,8 +2,11 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <DataStreams/processConstants.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
+#include <Interpreters/sortBlock.h>
 
 
 namespace ProfileEvents
@@ -15,59 +18,12 @@ namespace ProfileEvents
 namespace DB
 {
 
-
-/** Remove constant columns from block.
-  */
-static void removeConstantsFromBlock(Block & block)
-{
-    size_t columns = block.columns();
-    size_t i = 0;
-    while (i < columns)
-    {
-        if (block.getByPosition(i).column->isColumnConst())
-        {
-            block.erase(i);
-            --columns;
-        }
-        else
-            ++i;
-    }
-}
-
-static void removeConstantsFromSortDescription(const Block & header, SortDescription & description)
-{
-    description.erase(std::remove_if(description.begin(), description.end(),
-        [&](const SortColumnDescription & elem)
-        {
-            if (!elem.column_name.empty())
-                return header.getByName(elem.column_name).column->isColumnConst();
-            else
-                return header.safeGetByPosition(elem.column_number).column->isColumnConst();
-        }), description.end());
-}
-
-/** Add into block, whose constant columns was removed by previous function,
-  *  constant columns from header (which must have structure as before removal of constants from block).
-  */
-static void enrichBlockWithConstants(Block & block, const Block & header)
-{
-    size_t rows = block.rows();
-    size_t columns = header.columns();
-
-    for (size_t i = 0; i < columns; ++i)
-    {
-        const auto & col_type_name = header.getByPosition(i);
-        if (col_type_name.column->isColumnConst())
-            block.insert(i, {col_type_name.column->cloneResized(rows), col_type_name.type, col_type_name.name});
-    }
-}
-
-
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
-    size_t max_merged_block_size_, size_t limit_,
+    size_t max_merged_block_size_, size_t limit_, size_t max_bytes_before_remerge_,
     size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+    max_bytes_before_remerge(max_bytes_before_remerge_),
     max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
 {
     children.push_back(input);
@@ -100,7 +56,20 @@ Block MergeSortingBlockInputStream::readImpl()
             removeConstantsFromBlock(block);
 
             blocks.push_back(block);
-            sum_bytes_in_blocks += block.bytes();
+            sum_rows_in_blocks += block.rows();
+            sum_bytes_in_blocks += block.allocatedBytes();
+
+            /** If significant amount of data was accumulated, perform preliminary merging step.
+              */
+            if (blocks.size() > 1
+                && limit
+                && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+                && remerge_is_useful
+                && max_bytes_before_remerge
+                && sum_bytes_in_blocks > max_bytes_before_remerge)
+            {
+                remerge();
+            }
 
             /** If too many of them and if external sorting is enabled,
               *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
@@ -123,6 +92,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
                 blocks.clear();
                 sum_bytes_in_blocks = 0;
+                sum_rows_in_blocks = 0;
             }
         }
 
@@ -255,4 +225,36 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
 }
 
 
+void MergeSortingBlockInputStream::remerge()
+{
+    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << blocks.size() << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
+
+    /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
+    MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);
+
+    Blocks new_blocks;
+    size_t new_sum_rows_in_blocks = 0;
+    size_t new_sum_bytes_in_blocks = 0;
+
+    merger.readPrefix();
+    while (Block block = merger.read())
+    {
+        new_sum_rows_in_blocks += block.rows();
+        new_sum_bytes_in_blocks += block.allocatedBytes();
+        new_blocks.emplace_back(std::move(block));
+    }
+    merger.readSuffix();
+
+    LOG_DEBUG(log, "Memory usage is lowered from "
+        << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to "
+        << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+
+    /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
+    if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)
+        remerge_is_useful = false;
+
+    blocks = std::move(new_blocks);
+    sum_rows_in_blocks = new_sum_rows_in_blocks;
+    sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+}
 }

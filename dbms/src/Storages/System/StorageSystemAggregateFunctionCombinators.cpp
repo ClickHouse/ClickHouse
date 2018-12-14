@@ -18,7 +18,7 @@ void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_co
     for (const auto & pair : combinators)
     {
         res_columns[0]->insert(pair.first);
-        res_columns[1]->insert(UInt64(pair.second->isForInternalUsageOnly()));
+        res_columns[1]->insert(pair.second->isForInternalUsageOnly());
     }
 }
 

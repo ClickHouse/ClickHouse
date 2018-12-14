@@ -5,20 +5,21 @@ The search substring or regular expression must be a constant in all these funct
 
 ## position(haystack, needle)
 
-Search for the `needle` substring in the `haystack` string.
+Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
 
-For case-insensitive search use `positionCaseInsensitive` function.
+For a case-insensitive search, use the function `positionCaseInsensitive`.
 
 ## positionUTF8(haystack, needle)
 
 The same as `position`, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 
-For case-insensitive search use `positionCaseInsensitiveUTF8` function.
+For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 
-Checks whether the string matches the 'pattern' regular expression. A re2 regular expression.
+Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax)  of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
+
 Returns 0 if it doesn't match, or 1 if it matches.
 
 Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
@@ -51,3 +52,6 @@ For other regular expressions, the code is the same as for the 'match' function.
 ## notLike(haystack, pattern), haystack NOT LIKE pattern operator
 
 The same thing as 'like', but negative.
+
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

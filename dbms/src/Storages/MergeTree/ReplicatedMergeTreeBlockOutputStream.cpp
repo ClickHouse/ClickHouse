@@ -18,7 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LESS_LIVE_REPLICAS;
+    extern const int TOO_FEW_LIVE_REPLICAS;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
@@ -27,6 +27,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_STATUS_OF_INSERT;
     extern const int INSERT_WAS_DEDUPLICATED;
     extern const int KEEPER_EXCEPTION;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int NO_ACTIVE_REPLICAS;
 }
 
 
@@ -74,7 +76,7 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
     if (leader_election_stat.numChildren < static_cast<int32_t>(quorum))
         throw Exception("Number of alive replicas ("
             + toString(leader_election_stat.numChildren) + ") is less than requested quorum (" + toString(quorum) + ").",
-            ErrorCodes::TOO_LESS_LIVE_REPLICAS);
+            ErrorCodes::TOO_FEW_LIVE_REPLICAS);
 
     /** Is there a quorum for the last part for which a quorum is needed?
         * Write of all the parts with the included quorum is linearly ordered.
@@ -295,7 +297,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                 quorum_info.host_node_version));
     }
 
-    MergeTreeData::Transaction transaction; /// If you can not add a part to ZK, we'll remove it back from the working set.
+    MergeTreeData::Transaction transaction(storage.data); /// If you can not add a part to ZK, we'll remove it back from the working set.
     storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
     Coordination::Responses responses;
@@ -389,14 +391,14 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
                     break;
 
                 if (!event->tryWait(quorum_timeout_ms))
-                    throw Exception("Timeout while waiting for quorum");
+                    throw Exception("Timeout while waiting for quorum", ErrorCodes::TIMEOUT_EXCEEDED);
             }
 
             /// And what if it is possible that the current replica at this time has ceased to be active and the quorum is marked as failed and deleted?
             String value;
             if (!zookeeper->tryGet(storage.replica_path + "/is_active", value, nullptr)
                 || value != quorum_info.is_active_node_value)
-                throw Exception("Replica become inactive while waiting for quorum");
+                throw Exception("Replica become inactive while waiting for quorum", ErrorCodes::NO_ACTIVE_REPLICAS);
         }
         catch (...)
         {

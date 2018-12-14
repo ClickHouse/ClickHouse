@@ -58,7 +58,7 @@ namespace ErrorCodes
 
 inline char parseEscapeSequence(char c)
 {
-    switch(c)
+    switch (c)
     {
         case 'a':
             return '\a';
@@ -162,7 +162,18 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
 
 void assertString(const char * s, ReadBuffer & buf);
 void assertEOF(ReadBuffer & buf);
-void assertChar(char symbol, ReadBuffer & buf);
+
+void throwAtAssertionFailed(const char * s, ReadBuffer & buf);
+
+inline void assertChar(char symbol, ReadBuffer & buf)
+{
+    if (buf.eof() || *buf.position() != symbol)
+    {
+        char err[2] = {symbol, '\0'};
+        throwAtAssertionFailed(err, buf);
+    }
+    ++buf.position();
+}
 
 inline void assertString(const String & s, ReadBuffer & buf)
 {
@@ -648,6 +659,9 @@ inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf);
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 

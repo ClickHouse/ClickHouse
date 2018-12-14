@@ -2,7 +2,7 @@
 
 ## in, notIn, globalIn, globalNotIn
 
-See the section "IN operators".
+See the section [IN operators](../select.md/).
 
 ## tuple(x, y, ...), operator (x, y, ...)
 
@@ -16,3 +16,5 @@ A function that allows getting a column from a tuple.
 'N' is the column index, starting from 1. N must be a constant. 'N' must be a constant. 'N' must be a strict postive integer no greater than the size of the tuple.
 There is no cost to execute the function.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/in_functions/) <!--hide-->

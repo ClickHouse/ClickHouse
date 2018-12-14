@@ -2,11 +2,11 @@
 
 # Хранение словарей в памяти
 
-Словари можно размещать в памяти [множеством способов](#dicts-external_dicts_dict_layout-manner).
+Словари можно размещать в памяти множеством способов.
 
-Рекомендуем [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#flat), [hashed](#hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache](#dicts-external_dicts_dict_layout-cache)".
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache](#cache)".
 
 Повысить производительнось словарей можно следующими способами:
 
@@ -36,19 +36,16 @@
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-manner"></a>
 
 ## Способы размещения словарей в памяти
 
--   [flat](#dicts-external_dicts_dict_layout-flat)
--   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [cache](#dicts-external_dicts_dict_layout-cache)
--   [range_hashed](#dicts-external_dicts_dict_layout-range_hashed)
--   [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed)
--   [complex_key_cache](#dicts-external_dicts_dict_layout-complex_key_cache)
--   [ip_trie](#dicts-external_dicts_dict_layout-ip_trie)
-
-<a name="dicts-external_dicts_dict_layout-flat"></a>
+-   [flat](#flat)
+-   [hashed](#hashed)
+-   [cache](#cache)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
+-   [ip_trie](#ip-trie)
 
 ### flat
 
@@ -84,11 +81,10 @@
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-complex_key_hashed"></a>
 
 ### complex_key_hashed
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md). Аналогичен `hashed`.
 
 Пример конфигурации:
 
@@ -98,7 +94,6 @@
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-range_hashed"></a>
 
 ### range_hashed
 
@@ -120,7 +115,7 @@
 +---------------+---------------------+-------------------+--------+
 ```
 
-Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
+Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md) определить элементы `range_min`, `range_max`.
 
 Пример:
 
@@ -183,7 +178,6 @@
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-cache"></a>
 
 ### cache
 
@@ -191,13 +185,13 @@
 
 При поиске в словаре сначала просматривается кэш. На каждый блок данных, все не найденные в кэше или устаревшие ключи запрашиваются у источника с помощью `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Затем, полученные данные записываются в кэш.
 
-Для cache-словарей может быть задано время устаревания [lifetime](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime) данных в кэше. Если от загрузки данных в ячейке прошло больше времени, чем `lifetime`, то значение не используется, и будет запрошено заново при следующей необходимости его использовать.
+Для cache-словарей может быть задано время устаревания [lifetime](external_dicts_dict_lifetime.md) данных в кэше. Если от загрузки данных в ячейке прошло больше времени, чем `lifetime`, то значение не используется, и будет запрошено заново при следующей необходимости его использовать.
 
 Это наименее эффективный из всех способов размещения словарей. Скорость работы кэша очень сильно зависит от правильности настройки и сценария использования. Словарь типа cache показывает высокую производительность лишь при достаточно больших hit rate-ах (рекомендуется 99% и выше). Посмотреть средний hit rate можно в таблице `system.dictionaries`.
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются [источники](external_dicts_dict_sources.md): MySQL, ClickHouse, executable, HTTP.
 
 Пример настройки:
 
@@ -220,13 +214,11 @@
 !!! warning
     Не используйте в качестве источника ClickHouse, поскольку он медленно обрабатывает запросы со случайным чтением.
 
-<a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 
 ### complex_key_cache
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `cache`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md). Аналогичен `cache`.
 
-<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
 
 ### ip_trie
 
@@ -290,3 +282,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
 
 Данные хранятся в побитовом дереве (`trie`), он должены полностью помещаться в оперативной памяти.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

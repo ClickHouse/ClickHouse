@@ -5,6 +5,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+#include <common/unaligned.h>
+
 
 namespace DB
 {
@@ -101,7 +103,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
 
     auto res = ColumnString::create();
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
@@ -126,7 +128,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 
     auto res = ColumnString::create();
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
     if (limit == size)
@@ -176,7 +178,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 {
-    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    const size_t string_size = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size);
 
     const size_t old_size = chars.size();
@@ -202,7 +204,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
 
     auto res = ColumnString::create();
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
     size_t new_chars_size = 0;
@@ -287,7 +289,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     if (0 == col_size)
         return res;
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
     res_chars.reserve(chars.size() / col_size * replicate_offsets.back());
     res_offsets.reserve(replicate_offsets.back());

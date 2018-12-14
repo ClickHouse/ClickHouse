@@ -131,6 +131,8 @@ protected:
         Context & context_,
         size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
         const String & destination_database_, const String & destination_table_, bool allow_materialized_);
+
+    ~StorageBuffer() override;
 };
 
 }

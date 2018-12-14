@@ -1,4 +1,3 @@
-<a name="type_conversion_functions"></a>
 
 # Функции преобразования типов
 
@@ -12,6 +11,10 @@
 
 ## toDate, toDateTime
 
+## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
+Приводит строку или число value к типу [Decimal](../../data_types/decimal.md) указанной точности.
+Параметр S (scale) определяет число десятичных знаков после запятой.
+
 ## toString
 Функции преобразования между числами, строками (но не фиксированными строками), датами и датами-с-временем.
 Все эти функции принимают один аргумент.
@@ -23,7 +26,7 @@
 
 Форматы даты и даты-с-временем для функций toDate/toDateTime определены следующим образом:
 
-```text
+```
 YYYY-MM-DD
 YYYY-MM-DD hh:mm:ss
 ```
@@ -36,13 +39,13 @@ YYYY-MM-DD hh:mm:ss
 
 Дополнительно, функция toString от аргумента типа DateTime может принимать второй аргумент String - имя тайм-зоны. Пример: `Asia/Yekaterinburg` В этом случае, форматирование времени производится согласно указанной тайм-зоне.
 
-```sql
+``` sql
 SELECT
     now() AS now_local,
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 ```
 
-```text
+```
 ┌───────────now_local─┬─now_yekat───────────┐
 │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
 └─────────────────────┴─────────────────────┘
@@ -59,21 +62,21 @@ SELECT
 
 Пример:
 
-```sql
+``` sql
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```text
+```
 ┌─s─────────────┬─s_cut─┐
 │ foo\0\0\0\0\0 │ foo   │
 └───────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-```text
+```
 ┌─s──────────┬─s_cut─┐
 │ foo\0bar\0 │ foo   │
 └────────────┴───────┘
@@ -97,7 +100,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 Пример:
 
-```sql
+``` sql
 SELECT
     '2016-06-15 23:00:00' AS timestamp,
     CAST(timestamp AS DateTime) AS datetime,
@@ -106,7 +109,7 @@ SELECT
     CAST(timestamp, 'FixedString(22)') AS fixed_string
 ```
 
-```text
+```
 ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
@@ -114,7 +117,7 @@ SELECT
 
 Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
 
-Поддержано преобразование к типу [Nullable](../../data_types/nullable.md#data_type-nullable) и обратно. Пример:
+Поддержано преобразование к типу [Nullable](../../data_types/nullable.md) и обратно. Пример:
 
 ```
 SELECT toTypeName(x) FROM t_null
@@ -131,3 +134,5 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 │ Nullable(UInt16)                        │
 └─────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

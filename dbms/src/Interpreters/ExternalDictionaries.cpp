@@ -7,7 +7,7 @@ namespace DB
 
 namespace
 {
-    const ExternalLoaderUpdateSettings externalDictionariesUpdateSettings { };
+    const ExternalLoaderUpdateSettings externalDictionariesUpdateSettings {};
 
     const ExternalLoaderConfigSettings & getExternalDictionariesConfigSettings()
     {

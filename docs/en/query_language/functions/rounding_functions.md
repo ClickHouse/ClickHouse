@@ -18,9 +18,41 @@ Returns the smallest round number that is greater than or equal to 'x'. In every
 
 ## round(x\[, N\])
 
-Returns the round number nearest to 'num', which may be less than, greater than, or equal to 'x'.If 'x' is exactly in the middle between the nearest round numbers, one of them is returned (implementation-specific).
-The number '-0.' may or may not be considered round (implementation-specific).
-In every other way, this function is the same as 'floor' and 'ceil' described above.
+Implements [banker's rounding](https://en.wikipedia.org/wiki/Rounding#Round_half_to_even), i.e., rounding to the nearest even integer.
+
+**Function arguments:**
+
+- `x` — the number to be rounded. [Type](../../data_types/index.md#data_types) —  any number.
+- `N`—  the position of the number after the decimal point to round the number to.
+
+**Returned value:**
+
+The rounded number of the same type as the input number `x`
+
+**Example:**
+
+``` sql
+SELECT
+    number / 2 AS x,
+    round(x)
+FROM system.numbers
+LIMIT 10
+```
+
+```
+┌───x─┬─round(divide(number, 2))─┐
+│   0 │                        0 │
+│ 0.5 │                        0 │
+│   1 │                        1 │
+│ 1.5 │                        2 │
+│   2 │                        2 │
+│ 2.5 │                        2 │
+│   3 │                        3 │
+│ 3.5 │                        4 │
+│   4 │                        4 │
+│ 4.5 │                        4 │
+└─────┴──────────────────────────┘
+```
 
 ## roundToExp2(num)
 
@@ -34,3 +66,5 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->

@@ -26,10 +26,12 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
+#include <Common/Config/configReadClient.h>
 
 
 /** A tool for evaluating ClickHouse performance.
@@ -41,23 +43,21 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int BAD_ARGUMENTS;
+    extern const int EMPTY_DATA_PASSED;
 }
 
-class Benchmark
+class Benchmark : public Poco::Util::Application
 {
 public:
     Benchmark(unsigned concurrency_, double delay_,
-            const String & host_, UInt16 port_, const String & default_database_,
+            const String & host_, UInt16 port_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
             const String & json_path_, const ConnectionTimeouts & timeouts, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency),
-        connections(concurrency, host_, port_, default_database_, user_, password_, timeouts),
+        connections(concurrency, host_, port_, default_database_, user_, password_, timeouts, "benchmark", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
         randomize(randomize_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), settings(settings_), global_context(Context::createGlobal()), pool(concurrency)
     {
@@ -76,13 +76,26 @@ public:
         else
             throw Exception("Unknown query processing stage: " + stage, ErrorCodes::BAD_ARGUMENTS);
 
+    }
+
+    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    {
+        std::string home_path;
+        const char * home_path_cstr = getenv("HOME");
+        if (home_path_cstr)
+            home_path = home_path_cstr;
+
+        configReadClient(config(), home_path);
+    }
+
+    int main(const std::vector<std::string> &)
+    {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
-        {
             Poco::File(json_path).remove();
-        }
 
         readQueries();
-        run();
+        runBenchmark();
+        return 0;
     }
 
 private:
@@ -108,6 +121,8 @@ private:
 
     /// Don't execute new queries after timelimit or SIGINT or exception
     std::atomic<bool> shutdown{false};
+
+    std::atomic<size_t> queries_executed{0};
 
     struct Stats
     {
@@ -167,7 +182,7 @@ private:
         }
 
         if (queries.empty())
-            throw Exception("Empty list of queries.");
+            throw Exception("Empty list of queries.", ErrorCodes::EMPTY_DATA_PASSED);
 
         std::cerr << "Loaded " << queries.size() << " queries.\n";
     }
@@ -219,7 +234,7 @@ private:
         return true;
     }
 
-    void run()
+    void runBenchmark()
     {
         pcg64 generator(randomSeed());
         std::uniform_int_distribution<size_t> distribution(0, queries.size() - 1);
@@ -237,10 +252,12 @@ private:
             size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
             if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
+            {
+                shutdown = true;
                 break;
+            }
         }
 
-        shutdown = true;
         pool.wait();
         info_total.watch.stop();
 
@@ -273,11 +290,12 @@ private:
                 {
                     extracted = queue.tryPop(query, 100);
 
-                    if (shutdown)
+                    if (shutdown || (max_iterations && queries_executed == max_iterations))
                         return;
                 }
 
                 execute(connection, query);
+                ++queries_executed;
             }
         }
         catch (...)
@@ -418,20 +436,21 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         boost::program_options::options_description desc("Allowed options");
         desc.add_options()
-            ("help",                                                                 "produce help message")
-            ("concurrency,c",    value<unsigned>()->default_value(1),                 "number of parallel queries")
-            ("delay,d",         value<double>()->default_value(1),                     "delay between intermediate reports in seconds (set 0 to disable reports)")
-            ("stage",            value<std::string>()->default_value("complete"),     "request query processing up to specified stage")
-            ("iterations,i",    value<size_t>()->default_value(0),                    "amount of queries to be executed")
-            ("timelimit,t",        value<double>()->default_value(0.),                 "stop launch of queries after specified time limit")
-            ("randomize,r",        value<bool>()->default_value(false),                "randomize order of execution")
-            ("json",            value<std::string>()->default_value(""),            "write final report to specified file in JSON format")
-            ("host,h",            value<std::string>()->default_value("localhost"),     "")
-            ("port",             value<UInt16>()->default_value(9000),                 "")
-            ("user",             value<std::string>()->default_value("default"),        "")
-            ("password",        value<std::string>()->default_value(""),             "")
-            ("database",        value<std::string>()->default_value("default"),     "")
-            ("stacktrace",                                                            "print stack traces of exceptions")
+            ("help",                                                            "produce help message")
+            ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
+            ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
+            ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage")
+            ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
+            ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
+            ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
+            ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
+            ("host,h",        value<std::string>()->default_value("localhost"), "")
+            ("port",          value<UInt16>()->default_value(9000),             "")
+            ("secure,s",                                                        "Use TLS connection")
+            ("user",          value<std::string>()->default_value("default"),   "")
+            ("password",      value<std::string>()->default_value(""),          "")
+            ("database",      value<std::string>()->default_value("default"),   "")
+            ("stacktrace",                                                      "print stack traces of exceptions")
 
         #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
@@ -459,11 +478,14 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
         #undef EXTRACT_SETTING
 
+        UseSSL use_ssl;
+
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
             options["host"].as<std::string>(),
             options["port"].as<UInt16>(),
+            options.count("secure"),
             options["database"].as<std::string>(),
             options["user"].as<std::string>(),
             options["password"].as<std::string>(),
@@ -474,6 +496,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["json"].as<std::string>(),
             ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings),
             settings);
+        return benchmark.run();
     }
     catch (...)
     {

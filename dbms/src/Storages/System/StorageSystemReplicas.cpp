@@ -55,12 +55,11 @@ BlockInputStreams StorageSystemReplicas::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     check(column_names);
-    checkQueryProcessingStage(processed_stage, context);
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
@@ -137,32 +136,32 @@ BlockInputStreams StorageSystemReplicas::read(
                 [(*col_table)[i].safeGet<const String &>()]).getStatus(status, with_zk_fields);
 
         size_t col_num = 3;
-        res_columns[col_num++]->insert(UInt64(status.is_leader));
-        res_columns[col_num++]->insert(UInt64(status.is_readonly));
-        res_columns[col_num++]->insert(UInt64(status.is_session_expired));
-        res_columns[col_num++]->insert(UInt64(status.queue.future_parts));
-        res_columns[col_num++]->insert(UInt64(status.parts_to_check));
+        res_columns[col_num++]->insert(status.is_leader);
+        res_columns[col_num++]->insert(status.is_readonly);
+        res_columns[col_num++]->insert(status.is_session_expired);
+        res_columns[col_num++]->insert(status.queue.future_parts);
+        res_columns[col_num++]->insert(status.parts_to_check);
         res_columns[col_num++]->insert(status.zookeeper_path);
         res_columns[col_num++]->insert(status.replica_name);
         res_columns[col_num++]->insert(status.replica_path);
-        res_columns[col_num++]->insert(Int64(status.columns_version));
-        res_columns[col_num++]->insert(UInt64(status.queue.queue_size));
-        res_columns[col_num++]->insert(UInt64(status.queue.inserts_in_queue));
-        res_columns[col_num++]->insert(UInt64(status.queue.merges_in_queue));
-        res_columns[col_num++]->insert(UInt64(status.queue.part_mutations_in_queue));
-        res_columns[col_num++]->insert(UInt64(status.queue.queue_oldest_time));
-        res_columns[col_num++]->insert(UInt64(status.queue.inserts_oldest_time));
-        res_columns[col_num++]->insert(UInt64(status.queue.merges_oldest_time));
-        res_columns[col_num++]->insert(UInt64(status.queue.part_mutations_oldest_time));
+        res_columns[col_num++]->insert(status.columns_version);
+        res_columns[col_num++]->insert(status.queue.queue_size);
+        res_columns[col_num++]->insert(status.queue.inserts_in_queue);
+        res_columns[col_num++]->insert(status.queue.merges_in_queue);
+        res_columns[col_num++]->insert(status.queue.part_mutations_in_queue);
+        res_columns[col_num++]->insert(status.queue.queue_oldest_time);
+        res_columns[col_num++]->insert(status.queue.inserts_oldest_time);
+        res_columns[col_num++]->insert(status.queue.merges_oldest_time);
+        res_columns[col_num++]->insert(status.queue.part_mutations_oldest_time);
         res_columns[col_num++]->insert(status.queue.oldest_part_to_get);
         res_columns[col_num++]->insert(status.queue.oldest_part_to_merge_to);
         res_columns[col_num++]->insert(status.queue.oldest_part_to_mutate_to);
         res_columns[col_num++]->insert(status.log_max_index);
         res_columns[col_num++]->insert(status.log_pointer);
-        res_columns[col_num++]->insert(UInt64(status.queue.last_queue_update));
-        res_columns[col_num++]->insert(UInt64(status.absolute_delay));
-        res_columns[col_num++]->insert(UInt64(status.total_replicas));
-        res_columns[col_num++]->insert(UInt64(status.active_replicas));
+        res_columns[col_num++]->insert(status.queue.last_queue_update);
+        res_columns[col_num++]->insert(status.absolute_delay);
+        res_columns[col_num++]->insert(status.total_replicas);
+        res_columns[col_num++]->insert(status.active_replicas);
     }
 
     Block res = getSampleBlock().cloneEmpty();

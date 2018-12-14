@@ -2,7 +2,6 @@
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
 
@@ -34,7 +33,7 @@ public:
         if (num_arguments == 0)
             throw Exception("Aggregate function " + getName() + " require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!typeid_cast<const DataTypeUInt8 *>(types.back().get()))
+        if (!isUInt8(types.back()))
             throw Exception("Last argument for aggregate function " + getName() + " must be UInt8", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

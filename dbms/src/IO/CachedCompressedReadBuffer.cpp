@@ -1,3 +1,4 @@
+#include <IO/createReadBufferFromFileBase.h>
 #include <IO/CachedCompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/CompressedStream.h>

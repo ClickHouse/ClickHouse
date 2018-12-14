@@ -99,6 +99,13 @@ void Block::insertUnique(ColumnWithTypeAndName && elem)
 }
 
 
+void Block::erase(const std::set<size_t> & positions)
+{
+    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
+        erase(*it);
+}
+
+
 void Block::erase(size_t position)
 {
     if (data.empty())
@@ -317,7 +324,7 @@ Columns Block::getColumns() const
 }
 
 
-MutableColumns Block::mutateColumns() const
+MutableColumns Block::mutateColumns()
 {
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);

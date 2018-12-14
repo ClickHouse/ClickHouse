@@ -38,7 +38,7 @@ ReadBufferFromFile::ReadBufferFromFile(
     if (o_direct)
         flags = flags & ~O_DIRECT;
 #endif
-    fd = open(file_name.c_str(), flags == -1 ? O_RDONLY : flags);
+    fd = ::open(file_name.c_str(), flags == -1 ? O_RDONLY : flags);
 
     if (-1 == fd)
         throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);

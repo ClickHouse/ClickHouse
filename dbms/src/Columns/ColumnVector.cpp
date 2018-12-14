@@ -1,18 +1,16 @@
+#include "ColumnVector.h"
+
 #include <cstring>
 #include <cmath>
-
+#include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-
-#include <Columns/ColumnVector.h>
-
+#include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
-
 #include <ext/bit_cast.h>
 
 #if __SSE2__
@@ -36,14 +34,14 @@ template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto pos = arena.allocContinue(sizeof(T), begin);
-    memcpy(pos, &data[n], sizeof(T));
+    unalignedStore(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(*reinterpret_cast<const T *>(pos));
+    data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
 }
 
@@ -278,8 +276,8 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
     if (size == 0)
     {
-        min = typename NearestFieldType<T>::Type(0);
-        max = typename NearestFieldType<T>::Type(0);
+        min = T(0);
+        max = T(0);
         return;
     }
 
@@ -313,8 +311,8 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min);
-    max = typename NearestFieldType<T>::Type(cur_max);
+    min = NearestFieldType<T>(cur_min);
+    max = NearestFieldType<T>(cur_max);
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

@@ -49,6 +49,7 @@ struct FormatSettings
 
     bool skip_unknown_fields = false;
     bool write_statistics = true;
+    bool import_nested_json = false;
 
     enum class DateTimeInputFormat
     {

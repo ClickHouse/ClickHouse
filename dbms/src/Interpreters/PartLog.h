@@ -25,6 +25,7 @@ struct PartLogElement
     String database_name;
     String table_name;
     String part_name;
+    String partition_id;
 
     /// Size of the part
     UInt64 rows = 0;

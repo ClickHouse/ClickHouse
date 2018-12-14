@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Functions/FunctionsArithmetic.h>
+#include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -20,6 +21,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -37,119 +41,7 @@ namespace ErrorCodes
     * Type of the result is the type of argument.
     * For integer arguments, when passing negative scale, overflow can occur.
     * In that case, the behavior is implementation specific.
-    *
-    * roundToExp2 - down to the nearest power of two (see below);
-    *
-    * Deprecated functions:
-    * roundDuration - down to the nearest of: 0, 1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000;
-    * roundAge - down to the nearest of: 0, 18, 25, 35, 45, 55.
     */
-
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) <= sizeof(UInt32)), T>
-roundDownToPowerOfTwo(T x)
-{
-    return x <= 0 ? 0 : (T(1) << (31 - __builtin_clz(x)));
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == sizeof(UInt64)), T>
-roundDownToPowerOfTwo(T x)
-{
-    return x <= 0 ? 0 : (T(1) << (63 - __builtin_clzll(x)));
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Float32>, T>
-roundDownToPowerOfTwo(T x)
-{
-    return ext::bit_cast<T>(ext::bit_cast<UInt32>(x) & ~((1ULL << 23) - 1));
-}
-
-template <typename T>
-inline std::enable_if_t<std::is_same_v<T, Float64>, T>
-roundDownToPowerOfTwo(T x)
-{
-    return ext::bit_cast<T>(ext::bit_cast<UInt64>(x) & ~((1ULL << 52) - 1));
-}
-
-/** For integer data types:
-  * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(100) = 64, roundToExp2(64) = 64);
-  * - otherwise, return 0.
-  *
-  * For floating point data types: zero out mantissa, but leave exponent.
-  * - if number is greater than zero, round it down to nearest power of two (example: roundToExp2(3) = 2);
-  * - negative powers are also used (example: roundToExp2(0.7) = 0.5);
-  * - if number is zero, return zero;
-  * - if number is less than zero, the result is symmetrical: roundToExp2(x) = -roundToExp2(-x). (example: roundToExp2(-0.3) = -0.25);
-  */
-
-template <typename T>
-struct RoundToExp2Impl
-{
-    using ResultType = T;
-
-    static inline T apply(T x)
-    {
-        return roundDownToPowerOfTwo<T>(x);
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
-#endif
-};
-
-
-template <typename A>
-struct RoundDurationImpl
-{
-    using ResultType = UInt16;
-
-    static inline ResultType apply(A x)
-    {
-        return x < 1 ? 0
-            : (x < 10 ? 1
-            : (x < 30 ? 10
-            : (x < 60 ? 30
-            : (x < 120 ? 60
-            : (x < 180 ? 120
-            : (x < 240 ? 180
-            : (x < 300 ? 240
-            : (x < 600 ? 300
-            : (x < 1200 ? 600
-            : (x < 1800 ? 1200
-            : (x < 3600 ? 1800
-            : (x < 7200 ? 3600
-            : (x < 18000 ? 7200
-            : (x < 36000 ? 18000
-            : 36000))))))))))))));
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
-#endif
-};
-
-template <typename A>
-struct RoundAgeImpl
-{
-    using ResultType = UInt8;
-
-    static inline ResultType apply(A x)
-    {
-        return x < 1 ? 0
-            : (x < 18 ? 17
-            : (x < 25 ? 18
-            : (x < 35 ? 25
-            : (x < 45 ? 35
-            : (x < 55 ? 45
-            : 55)))));
-    }
-
-#if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = false;
-#endif
-};
 
 
 /** This parameter controls the behavior of the rounding functions.
@@ -425,7 +317,6 @@ struct IntegerRoundingImpl
 {
 private:
     using Op = IntegerRoundingComputation<T, rounding_mode, scale_mode>;
-    using Data = T;
 
 public:
     template <size_t scale>
@@ -476,70 +367,103 @@ public:
     }
 };
 
-template <typename T, RoundingMode rounding_mode, ScaleMode scale_mode>
-using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
-    FloatRoundingImpl<T, rounding_mode, scale_mode>,
-    IntegerRoundingImpl<T, rounding_mode, scale_mode>>;
+
+template <typename T, RoundingMode rounding_mode>
+class DecimalRounding
+{
+    using NativeType = typename T::NativeType;
+    using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative>;
+    using Container = typename ColumnDecimal<T>::Container;
+
+public:
+    static NO_INLINE void apply(const Container & in, Container & out, Int64 scale_arg)
+    {
+        scale_arg = in.getScale() - scale_arg;
+        if (scale_arg > 0)
+        {
+            size_t scale = intExp10(scale_arg);
+
+            const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
+            const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();
+            NativeType * __restrict p_out = reinterpret_cast<NativeType *>(out.data());
+
+            while (p_in < end_in)
+            {
+                Op::compute(p_in, scale, p_out);
+                ++p_in;
+                ++p_out;
+            }
+        }
+        else
+            memcpy(out.data(), in.data(), in.size() * sizeof(T));
+    }
+};
 
 
 /** Select the appropriate processing algorithm depending on the scale.
   */
 template <typename T, RoundingMode rounding_mode>
-struct Dispatcher
+class Dispatcher
 {
-    static void apply(Block & block, const ColumnVector<T> * col, const ColumnNumbers & arguments, size_t result)
+    template <ScaleMode scale_mode>
+    using FunctionRoundingImpl = std::conditional_t<std::is_floating_point_v<T>,
+        FloatRoundingImpl<T, rounding_mode, scale_mode>,
+        IntegerRoundingImpl<T, rounding_mode, scale_mode>>;
+
+    static void apply(Block & block, const ColumnVector<T> * col, Int64 scale_arg, size_t result)
     {
-        size_t scale = 1;
-        Int64 scale_arg = 0;
-
-        if (arguments.size() == 2)
-        {
-            const IColumn & scale_column = *block.getByPosition(arguments[1]).column;
-            if (!scale_column.isColumnConst())
-                throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
-
-            Field scale_field = static_cast<const ColumnConst &>(scale_column).getField();
-            if (scale_field.getType() != Field::Types::UInt64
-                && scale_field.getType() != Field::Types::Int64)
-                throw Exception("Scale argument for rounding functions must have integer type.", ErrorCodes::ILLEGAL_COLUMN);
-
-            scale_arg = scale_field.get<Int64>();
-        }
-
         auto col_res = ColumnVector<T>::create();
 
         typename ColumnVector<T>::Container & vec_res = col_res->getData();
         vec_res.resize(col->getData().size());
 
-        if (vec_res.empty())
+        if (!vec_res.empty())
         {
-            block.getByPosition(result).column = std::move(col_res);
-            return;
-        }
-
-        if (scale_arg == 0)
-        {
-            scale = 1;
-            FunctionRoundingImpl<T, rounding_mode, ScaleMode::Zero>::apply(col->getData(), scale, vec_res);
-        }
-        else if (scale_arg > 0)
-        {
-            scale = pow(10, scale_arg);
-            FunctionRoundingImpl<T, rounding_mode, ScaleMode::Positive>::apply(col->getData(), scale, vec_res);
-        }
-        else
-        {
-            scale = pow(10, -scale_arg);
-            FunctionRoundingImpl<T, rounding_mode, ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
+            if (scale_arg == 0)
+            {
+                size_t scale = 1;
+                FunctionRoundingImpl<ScaleMode::Zero>::apply(col->getData(), scale, vec_res);
+            }
+            else if (scale_arg > 0)
+            {
+                size_t scale = intExp10(scale_arg);
+                FunctionRoundingImpl<ScaleMode::Positive>::apply(col->getData(), scale, vec_res);
+            }
+            else
+            {
+                size_t scale = intExp10(-scale_arg);
+                FunctionRoundingImpl<ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
+            }
         }
 
         block.getByPosition(result).column = std::move(col_res);
     }
+
+    static void apply(Block & block, const ColumnDecimal<T> * col, Int64 scale_arg, size_t result)
+    {
+        const typename ColumnDecimal<T>::Container & vec_src = col->getData();
+
+        auto col_res = ColumnDecimal<T>::create(vec_src.size(), vec_src.getScale());
+        auto & vec_res = col_res->getData();
+
+        if (!vec_res.empty())
+            DecimalRounding<T, rounding_mode>::apply(col->getData(), vec_res, scale_arg);
+
+        block.getByPosition(result).column = std::move(col_res);
+    }
+
+public:
+    static void apply(Block & block, const IColumn * column, Int64 scale_arg, size_t result)
+    {
+        if constexpr (IsNumber<T>)
+            apply(block, checkAndGetColumn<ColumnVector<T>>(column), scale_arg, result);
+        else if constexpr (IsDecimalNumber<T>)
+            apply(block, checkAndGetColumn<ColumnDecimal<T>>(column), scale_arg, result);
+    }
 };
 
 /** A template for functions that round the value of an input parameter of type
-  * (U)Int8/16/32/64 or Float32/64, and accept an additional optional
-  * parameter (default is 0).
+  * (U)Int8/16/32/64, Float32/64 or Decimal32/64/128, and accept an additional optional parameter (default is 0).
   */
 template <typename Name, RoundingMode rounding_mode>
 class FunctionRounding : public IFunction
@@ -547,18 +471,6 @@ class FunctionRounding : public IFunction
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionRounding>(); }
-
-private:
-    template <typename T>
-    bool executeForType(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (auto col = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            Dispatcher<T, rounding_mode>::apply(block, col, arguments, result);
-            return true;
-        }
-        return false;
-    }
 
 public:
     String getName() const override
@@ -578,11 +490,29 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!type->isNumber())
+            if (!isNumber(type) && !isDecimal(type))
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return arguments[0];
+    }
+
+    static Int64 getScaleArg(Block & block, const ColumnNumbers & arguments)
+    {
+        if (arguments.size() == 2)
+        {
+            const IColumn & scale_column = *block.getByPosition(arguments[1]).column;
+            if (!scale_column.isColumnConst())
+                throw Exception("Scale argument for rounding functions must be constant.", ErrorCodes::ILLEGAL_COLUMN);
+
+            Field scale_field = static_cast<const ColumnConst &>(scale_column).getField();
+            if (scale_field.getType() != Field::Types::UInt64
+                && scale_field.getType() != Field::Types::Int64)
+                throw Exception("Scale argument for rounding functions must have integer type.", ErrorCodes::ILLEGAL_COLUMN);
+
+            return scale_field.get<Int64>();
+        }
+        return 0;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -590,19 +520,26 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!(    executeForType<UInt8>(block, arguments, result)
-            ||    executeForType<UInt16>(block, arguments, result)
-            ||    executeForType<UInt32>(block, arguments, result)
-            ||    executeForType<UInt64>(block, arguments, result)
-            ||    executeForType<Int8>(block, arguments, result)
-            ||    executeForType<Int16>(block, arguments, result)
-            ||    executeForType<Int32>(block, arguments, result)
-            ||    executeForType<Int64>(block, arguments, result)
-            ||    executeForType<Float32>(block, arguments, result)
-            ||    executeForType<Float64>(block, arguments, result)))
+        const ColumnWithTypeAndName & column = block.getByPosition(arguments[0]);
+        Int64 scale_arg = getScaleArg(block, arguments);
+
+        auto call = [&](const auto & types) -> bool
         {
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of argument of function " + getName(),
+            using Types = std::decay_t<decltype(types)>;
+            using DataType = typename Types::LeftType;
+
+            if constexpr (IsDataTypeNumber<DataType> || IsDataTypeDecimal<DataType>)
+            {
+                using FieldType = typename DataType::FieldType;
+                Dispatcher<FieldType, rounding_mode>::apply(block, column.column.get(), scale_arg, result);
+                return true;
+            }
+            return false;
+        };
+
+        if (!callOnIndexAndDataType<void>(column.type->getTypeId(), call))
+        {
+            throw Exception("Illegal column " + column.name + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
     }
@@ -619,36 +556,14 @@ public:
 };
 
 
-struct NameRoundToExp2 { static constexpr auto name = "roundToExp2"; };
-struct NameRoundDuration { static constexpr auto name = "roundDuration"; };
-struct NameRoundAge { static constexpr auto name = "roundAge"; };
-
 struct NameRound { static constexpr auto name = "round"; };
 struct NameCeil { static constexpr auto name = "ceil"; };
 struct NameFloor { static constexpr auto name = "floor"; };
 struct NameTrunc { static constexpr auto name = "trunc"; };
 
-using FunctionRoundToExp2 = FunctionUnaryArithmetic<RoundToExp2Impl, NameRoundToExp2, false>;
-using FunctionRoundDuration = FunctionUnaryArithmetic<RoundDurationImpl, NameRoundDuration, false>;
-using FunctionRoundAge = FunctionUnaryArithmetic<RoundAgeImpl, NameRoundAge, false>;
-
 using FunctionRound = FunctionRounding<NameRound, RoundingMode::Round>;
 using FunctionFloor = FunctionRounding<NameFloor, RoundingMode::Floor>;
 using FunctionCeil = FunctionRounding<NameCeil, RoundingMode::Ceil>;
 using FunctionTrunc = FunctionRounding<NameTrunc, RoundingMode::Trunc>;
-
-
-struct PositiveMonotonicity
-{
-    static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field &, const Field &)
-    {
-        return { true };
-    }
-};
-
-template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundToExp2> : PositiveMonotonicity {};
-template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundDuration> : PositiveMonotonicity {};
-template <> struct FunctionUnaryArithmeticMonotonicity<NameRoundAge> : PositiveMonotonicity {};
 
 }

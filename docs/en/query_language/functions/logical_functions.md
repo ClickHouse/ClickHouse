@@ -12,3 +12,5 @@ Zero as an argument is considered "false," while any non-zero value is considere
 
 ## xor
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/logical_functions/) <!--hide-->

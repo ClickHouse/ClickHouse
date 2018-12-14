@@ -33,12 +33,11 @@ public:
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override
     {
         check(column_names);
-        checkQueryProcessingStage(processed_stage, context);
 
         Block sample_block = getSampleBlock();
         MutableColumns res_columns = sample_block.cloneEmptyColumns();

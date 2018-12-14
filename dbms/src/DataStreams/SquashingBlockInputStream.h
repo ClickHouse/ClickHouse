@@ -16,12 +16,13 @@ public:
 
     String getName() const override { return "Squashing"; }
 
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
 
 private:
+    Block header;
     SquashingTransform transform;
     bool all_read = false;
 };

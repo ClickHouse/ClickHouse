@@ -67,20 +67,20 @@ def test_deduplication_works_in_case_of_intensive_inserts(started_cluster):
         inserters.append(CommandRequest(['/bin/bash'], timeout=10, stdin="""
 set -e
 for i in `seq 1000`; do
-    clickhouse-client --host {} -q "INSERT INTO simple VALUES (0, 0)"
+    {} --host {} -q "INSERT INTO simple VALUES (0, 0)"
 done
-""".format(host)))
+""".format(cluster.get_client_cmd(), host)))
 
         fetchers.append(CommandRequest(['/bin/bash'], timeout=10, stdin="""
 set -e
 for i in `seq 1000`; do
-    res=`clickhouse-client --host {} -q "SELECT count() FROM simple"`
+    res=`{} --host {} -q "SELECT count() FROM simple"`
     if [[ $? -ne 0 || $res -ne 1 ]]; then
         echo "Selected $res elements! Host: {}" 1>&2
         exit -1
     fi;
 done
-""".format(host, node.name)))
+""".format(cluster.get_client_cmd(), host, node.name)))
 
     # There were not errors during INSERTs
     for inserter in inserters:

@@ -1,14 +1,13 @@
 #pragma once
 
 #include <string>
-#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
+#include <Formats/FormatSettings.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 
 
 namespace DB
 {
-
 struct DictionaryStructure;
 class WriteBuffer;
 
@@ -18,25 +17,26 @@ class WriteBuffer;
 struct ExternalQueryBuilder
 {
     const DictionaryStructure & dict_struct;
-    const std::string & db;
-    const std::string & table;
+    std::string db;
+    std::string table;
+    std::string schema;
     const std::string & where;
 
     IdentifierQuotingStyle quoting_style;
 
 
     ExternalQueryBuilder(
-        const DictionaryStructure & dict_struct,
-        const std::string & db,
-        const std::string & table,
-        const std::string & where,
-        IdentifierQuotingStyle quoting_style);
+        const DictionaryStructure & dict_struct_,
+        const std::string & db_,
+        const std::string & table_,
+        const std::string & where_,
+        IdentifierQuotingStyle quoting_style_);
 
     /** Generate a query to load all data. */
     std::string composeLoadAllQuery() const;
 
     /** Generate a query to load data after certain time point*/
-    std::string composeUpdateQuery(const std::string &update_field, const std::string &time_point) const;
+    std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
     std::string composeLoadIdsQuery(const std::vector<UInt64> & ids);
@@ -52,10 +52,7 @@ struct ExternalQueryBuilder
         IN_WITH_TUPLES,
     };
 
-    std::string composeLoadKeysQuery(
-        const Columns & key_columns,
-        const std::vector<size_t> & requested_rows,
-        LoadKeysMethod method);
+    std::string composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method);
 
 
 private:
