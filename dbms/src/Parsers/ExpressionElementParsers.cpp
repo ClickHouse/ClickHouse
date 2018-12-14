@@ -590,7 +590,7 @@ bool ParserLeftExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 
 bool ParserRightExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// Rewrites RIGHT(expr, length) to substring(expr, greatest((length(expr) + 1) - length, 1))
+    /// Rewrites RIGHT(expr, length) to substring(expr, -length)
 
     ASTPtr expr_node;
     ASTPtr length_node;
@@ -614,35 +614,11 @@ bool ParserRightExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     ++pos;
 
-    auto length_expr_list_args = std::make_shared<ASTExpressionList>();
-    length_expr_list_args->children = {expr_node};
-
-    auto length_func_node = std::make_shared<ASTFunction>();
-    length_func_node->name = "length";
-    length_func_node->arguments = std::move(length_expr_list_args);
-    length_func_node->children.push_back(length_func_node->arguments);
-
-    auto plus_expr_list_args = std::make_shared<ASTExpressionList>();
-    plus_expr_list_args->children = {length_func_node, std::make_shared<ASTLiteral>(1)};
-
-    auto plus_node = std::make_shared<ASTFunction>();
-    plus_node->name = "plus";
-    plus_node->arguments = std::move(plus_expr_list_args);
-    plus_node->children.push_back(plus_node->arguments);
-
-    auto minus_expr_list_args = std::make_shared<ASTExpressionList>();
-    minus_expr_list_args->children = {plus_node, length_node};
-
-    auto minus_node = std::make_shared<ASTFunction>();
-    minus_node->name = "minus";
-    minus_node->arguments = std::move(minus_expr_list_args);
-    minus_node->children.push_back(minus_node->arguments);
-
     auto start_expr_list_args = std::make_shared<ASTExpressionList>();
-    start_expr_list_args->children = {minus_node, std::make_shared<ASTLiteral>(1)};
+    start_expr_list_args->children = {length_node};
 
     auto start_node = std::make_shared<ASTFunction>();
-    start_node->name = "greatest";
+    start_node->name = "negate";
     start_node->arguments = std::move(start_expr_list_args);
     start_node->children.push_back(start_node->arguments);
 
