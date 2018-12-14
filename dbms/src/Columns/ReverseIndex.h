@@ -112,7 +112,7 @@ namespace
             else
             {
                 using ValueType = typename ColumnType::value_type;
-                ValueType value = *reinterpret_cast<const ValueType *>(state.index_column->getDataAt(key).data);
+                ValueType value = *reinterpret_cast<const ValueType *>(state.index_column->getDataAt(index).data);
                 return DefaultHash<ValueType>()(value);
             }
         }
