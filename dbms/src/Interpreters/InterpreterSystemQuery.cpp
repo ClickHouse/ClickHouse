@@ -206,9 +206,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:

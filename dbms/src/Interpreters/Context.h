@@ -389,12 +389,12 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog(bool create_if_not_exists = true);
-    QueryThreadLog * getQueryThreadLog(bool create_if_not_exists = true);
+    QueryLog * getQueryLog();
+    QueryThreadLog * getQueryThreadLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database, bool create_if_not_exists = true);
+    PartLog * getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
 
