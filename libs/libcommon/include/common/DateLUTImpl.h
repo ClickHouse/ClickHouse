@@ -24,6 +24,7 @@ public:
     DateLUTImpl(const std::string & time_zone);
 
 public:
+    /// The order of fields matters for alignment and sizeof.
     struct Values
     {
         /// Least significat 32 bits from time_t at beginning of the day.
@@ -42,9 +43,11 @@ public:
         UInt8 days_in_month;
 
         /// For days, when offset from UTC was changed due to daylight saving time or permanent change, following values could be non zero.
-        UInt16 time_at_offset_change; /// In seconds from beginning of the day. Assuming offset never changed close to the end of day (so, value < 65536).
         Int16 amount_of_offset_change; /// Usually -3600 or 3600, but look at Lord Howe Island.
+        UInt32 time_at_offset_change; /// In seconds from beginning of the day.
     };
+
+    static_assert(sizeof(Values) == 16);
 
 private:
     /// Lookup table is indexed by DayNum.
@@ -247,8 +250,7 @@ public:
 
         time_t res = t - lut[index].date;
 
-        /// NOTE We doesn't support cases when time change result in switching to previous day.
-        /// Data is cleaned to avoid these cases, so no underflow occurs here.
+        /// Data is cleaned to avoid possibility of underflow.
         if (res >= lut[index].time_at_offset_change)
             res += lut[index].amount_of_offset_change;
 

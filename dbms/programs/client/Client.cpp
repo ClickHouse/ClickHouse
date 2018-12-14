@@ -617,8 +617,14 @@ private:
                     {
                         std::cerr << std::endl
                             << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                            << std::endl;
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl
+                                      << e.getStackTrace().toString() << std::endl;
+
+                        std::cerr << std::endl;
+
                     }
 
                     /// Client-side exception during query execution can result in the loss of
