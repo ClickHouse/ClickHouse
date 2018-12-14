@@ -157,10 +157,10 @@ struct ContextShared
     public:
         size_t operator()(const Context::SessionKey & key) const
         {
-            size_t seed = 0;
-            boost::hash_combine(seed, key.first);
-            boost::hash_combine(seed, key.second);
-            return seed;
+            SipHash hash;
+            hash.update(key.first);
+            hash.update(key.second);
+            return hash.get64();
         }
     };
 
@@ -549,7 +549,7 @@ void Context::setConfig(const ConfigurationPtr & config)
     shared->config = config;
 }
 
-Poco::Util::AbstractConfiguration & Context::getConfigRef() const
+const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 {
     auto lock = getLock();
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
@@ -1537,94 +1537,49 @@ Compiler & Context::getCompiler()
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    system_logs = std::make_shared<SystemLogs>();
+
+    if (!global_context)
+        throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
+
+    system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
 }
 
 
-QueryLog * Context::getQueryLog(bool create_if_not_exists)
+QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!system_logs)
+    if (!system_logs || !system_logs->query_log)
         return nullptr;
-
-    if (!system_logs->query_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->query_log = createDefaultSystemLog<QueryLog>(*global_context, "system", "query_log", getConfigRef(), "query_log");
-    }
 
     return system_logs->query_log.get();
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
+QueryThreadLog * Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
-    if (!system_logs)
+    if (!system_logs || !system_logs->query_thread_log)
         return nullptr;
-
-    if (!system_logs->query_thread_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for query thread log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->query_thread_log = createDefaultSystemLog<QueryThreadLog>(
-                *global_context, "system", "query_thread_log", getConfigRef(), "query_thread_log");
-    }
 
     return system_logs->query_thread_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
+PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
-    if (!config.has("part_log"))
-        return nullptr;
-
     /// System logs are shutting down.
-    if (!system_logs)
+    if (!system_logs || !system_logs->part_log)
         return nullptr;
-
-    String database = config.getString("part_log.database", "system");
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (!part_database.empty() && part_database == database)
+    if (part_database == system_logs->part_log_database)
         return nullptr;
-
-    if (!system_logs->part_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->part_log = createDefaultSystemLog<PartLog>(*global_context, "system", "part_log", getConfigRef(), "part_log");
-    }
 
     return system_logs->part_log.get();
 }
