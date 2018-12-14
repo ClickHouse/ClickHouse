@@ -101,3 +101,61 @@ TEST(column_unique, column_unique_unique_insert_range_with_overflow_Test)
         ASSERT_EQ(std::to_string(max_val + i), add_keys->getDataAt(i).toString());
     }
 }
+
+TEST(column_unique, column_unique_unique_deserialize_from_arena_String_Test)
+{
+    auto data_type = std::make_shared<DataTypeString>();
+    auto column_string = ColumnString::create();
+
+    size_t num_values = 1000000;
+    size_t mod_to = 1000;
+
+    std::vector<size_t> indexes(num_values);
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        String str = toString(i % mod_to);
+        column_string->insertData(str.data(), str.size());
+    }
+
+
+    for (size_t i = 0; i < num_values; ++i)
+    {
+        String str = toString(i % mod_to);
+        column_string->insertData(str.data(), str.size());
+    }
+
+    {
+        /// Check serialization is reversible.
+        Arena arena;
+        auto column_unique_pattern = ColumnUnique<ColumnString>::create(*data_type);
+        auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
+        auto idx = column_unique_pattern->uniqueInsertRangeFrom(*column_string, 0, num_values);
+
+        const char * pos = nullptr;
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            auto ref = column_unique_pattern->serializeValueIntoArena(idx->getUInt(i), arena, pos);
+            const char * new_pos;
+            column_unique->uniqueDeserializeAndInsertFromArena(ref.data, new_pos);
+            ASSERT_EQ(new_pos - ref.data, ref.size) << "Deserialized data has different sizes at position " << i;
+            ASSERT_EQ(column_unique_pattern->getDataAt(idx->getUInt(i)), column_unique->getDataAt(idx->getUInt(i))) << "Deserialized data is different from pattern at position " << i;
+        }
+    }
+
+    {
+        /// Check serialization the same with ordinary column.
+        Arena arena_string;
+        Arena arena_lc;
+        auto column_unique = ColumnUnique<ColumnString>::create(*data_type);
+        auto idx = column_unique->uniqueInsertRangeFrom(*column_string, 0, num_values);
+
+        const char * pos_string = nullptr;
+        const char * pos_lc = nullptr;
+        for (size_t i = 0; i < num_values; ++i)
+        {
+            auto ref_string = column_string->serializeValueIntoArena(i, arena_string, pos_string);
+            auto ref_lc = column_unique->serializeValueIntoArena(idx->getUInt(i), arena_lc, pos_lc);
+            ASSERT_EQ(ref_string, ref_lc) << "Serialized data is different from pattern at position " << i;
+        }
+    }
+}
