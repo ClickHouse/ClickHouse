@@ -291,7 +291,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 }
 
 
-static NamesAndTypesList removeAndReturnColumns(ColumnsDeclarationAndModifiers & columns_declare, const ColumnDefaultKind kind)
+static NamesAndTypesList removeAndReturnColumns(ColumnsAndDefaults & columns_declare, const ColumnDefaultKind kind)
 {
     auto & columns = std::get<0>(columns_declare);
     auto & defaults = std::get<1>(columns_declare);
@@ -391,12 +391,13 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     ColumnsDescription res;
 
     auto && parsed_columns = parseColumns(columns, context);
-    res.ordinary = std::move(std::get<0>(parsed_columns));
-    res.defaults = std::move(std::get<1>(parsed_columns));
+    auto columns_and_defaults = std::make_pair(std::move(std::get<0>(parsed_columns)), std::move(std::get<1>(parsed_columns)));
+    res.aliases = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Alias);
+    res.materialized = removeAndReturnColumns(columns_and_defaults, ColumnDefaultKind::Materialized);
+    res.ordinary = std::move(columns_and_defaults.first);
+    res.defaults = std::move(columns_and_defaults.second);
     res.codecs = std::move(std::get<2>(parsed_columns));
     res.comments = std::move(std::get<3>(parsed_columns));
-    res.aliases = removeAndReturnColumns(parsed_columns, ColumnDefaultKind::Alias);
-    res.materialized = removeAndReturnColumns(parsed_columns, ColumnDefaultKind::Materialized);
 
     if (res.ordinary.size() + res.materialized.size() == 0)
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
