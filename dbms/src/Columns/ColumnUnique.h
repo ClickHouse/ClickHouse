@@ -323,17 +323,20 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
         }
     }
 
+    /// Numbers, FixedString
     if (size_of_value_if_fixed)
     {
         new_pos = pos + size_of_value_if_fixed;
         return uniqueInsertData(pos, size_of_value_if_fixed);
     }
 
+    /// String
     const size_t string_size = *reinterpret_cast<const size_t *>(pos);
     pos += sizeof(string_size);
     new_pos = pos + string_size;
 
-    return uniqueInsertData(pos, string_size);
+    /// -1 because of terminating zero
+    return uniqueInsertData(pos, string_size - 1);
 }
 
 template <typename ColumnType>
