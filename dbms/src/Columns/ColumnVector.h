@@ -1,9 +1,7 @@
 #pragma once
 
 #include <cmath>
-
 #include <Columns/IColumn.h>
-
 #include <common/unaligned.h>
 
 
