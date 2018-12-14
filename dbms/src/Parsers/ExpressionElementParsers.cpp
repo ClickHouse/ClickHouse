@@ -519,7 +519,7 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     {
         if (trim_left && trim_right)
         {
-            pattern_node = std::make_shared<ASTLiteral>("^ *\\| *$");
+            pattern_node = std::make_shared<ASTLiteral>("^ *| *$");
             func_name = "replaceRegexpAll";
         }
         else
