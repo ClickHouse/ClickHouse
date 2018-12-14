@@ -33,7 +33,9 @@ if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()
 
-if (CLICKHOUSE_SPLIT_BINARY)
-    add_executable (clickhouse-odbc-bridge odbc-bridge.cpp)
-    target_link_libraries (clickhouse-odbc-bridge PRIVATE clickhouse-odbc-bridge-lib)
-endif ()
+# clickhouse-odbc-bridge is always a separate binary.
+# Reason: it must not export symbols from SSL, mariadb-client, etc. to not break ABI compatibility with ODBC drivers.
+
+add_executable (clickhouse-odbc-bridge odbc-bridge.cpp)
+target_link_libraries (clickhouse-odbc-bridge PRIVATE clickhouse-odbc-bridge-lib)
+install (TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)

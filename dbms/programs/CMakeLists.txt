@@ -28,11 +28,18 @@ add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (clang)
 add_subdirectory (obfuscator)
-add_subdirectory (odbc-bridge)
+
+if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
+    add_subdirectory (odbc-bridge)
+endif ()
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
-            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-copier clickhouse-odbc-bridge)
+            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-copier)
+
+    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
+        list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-odbc-bridge)
+    endif ()
 
     if (USE_EMBEDDED_COMPILER)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)
@@ -85,9 +92,6 @@ else ()
     if (USE_EMBEDDED_COMPILER)
         target_link_libraries (clickhouse PRIVATE clickhouse-compiler-lib)
     endif ()
-    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-        target_link_libraries (clickhouse PRIVATE clickhouse-odbc-bridge-lib)
-    endif()
 
     set (CLICKHOUSE_BUNDLE)
     if (ENABLE_CLICKHOUSE_SERVER)
@@ -140,12 +144,6 @@ else ()
         install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-obfuscator DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-obfuscator)
     endif ()
-    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-        add_custom_target (clickhouse-odbc-bridge ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-odbc-bridge DEPENDS clickhouse)
-        install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-odbc-bridge DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-odbc-bridge)
-    endif ()
-
 
     # install always because depian package want this files:
     add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
