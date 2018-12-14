@@ -75,7 +75,7 @@ static void checkForCarriageReturn(ReadBuffer & istr)
 }
 
 
-bool TabSeparatedRowInputStream::read(MutableColumns & columns)
+bool TabSeparatedRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;

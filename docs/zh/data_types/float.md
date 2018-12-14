@@ -69,4 +69,4 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-可以在[ORDER BY 子句](../query_language/select.md#query_language-queries-order_by) 查看更多关于 ` NaN` 排序的规则。
+可以在[ORDER BY 子句](../query_language/select.md) 查看更多关于 ` NaN` 排序的规则。

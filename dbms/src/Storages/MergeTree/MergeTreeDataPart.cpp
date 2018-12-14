@@ -248,7 +248,6 @@ String MergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) co
         return new_part_info.getPartName();
 }
 
-
 DayNum MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
@@ -266,6 +265,22 @@ DayNum MergeTreeDataPart::getMaxDate() const
         return DayNum();
 }
 
+time_t MergeTreeDataPart::getMinTime() const
+{
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
+        return minmax_idx.parallelogram[storage.minmax_idx_time_column_pos].left.get<UInt64>();
+    else
+        return 0;
+}
+
+
+time_t MergeTreeDataPart::getMaxTime() const
+{
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
+        return minmax_idx.parallelogram[storage.minmax_idx_time_column_pos].right.get<UInt64>();
+    else
+        return 0;
+}
 
 MergeTreeDataPart::~MergeTreeDataPart()
 {
@@ -549,7 +564,7 @@ void MergeTreeDataPart::loadRowsCount()
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
-            if (!column_col->isFixedAndContiguous())
+            if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
             size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;

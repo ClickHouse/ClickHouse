@@ -43,6 +43,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -61,6 +62,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <common/argsToConfig.h>
 #include <Common/Config/configReadClient.h>
+#include <Storages/ColumnsDescription.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -69,7 +71,6 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -618,8 +619,14 @@ DUMP(argv().size());
                     {
                         std::cerr << std::endl
                             << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                            << std::endl;
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl
+                                      << e.getStackTrace().toString() << std::endl;
+
+                        std::cerr << std::endl;
+
                     }
 
                     /// Client-side exception during query execution can result in the loss of
@@ -877,11 +884,12 @@ DUMP(argv().size());
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
+            sendData(sample, columns_description);
             receiveEndOfQuery();
         }
     }
@@ -919,7 +927,7 @@ DUMP(argv().size());
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -930,19 +938,19 @@ DUMP(argv().size());
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, columns_description);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, columns_description);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description)
     {
         String current_format = insert_format;
 
@@ -953,6 +961,10 @@ DUMP(argv().size());
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
+
+        const auto & column_defaults = columns_description.defaults;
+        if (!column_defaults.empty())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
@@ -1091,7 +1103,7 @@ DUMP(argv().size());
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description)
     {
         while (true)
         {
@@ -1111,6 +1123,10 @@ DUMP(argv().size());
                 case Protocol::Server::Log:
                     onLogData(packet.block);
                     break;
+
+                case Protocol::Server::TableColumns:
+                    columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                    return receiveSampleBlock(out, columns_description);
 
                 default:
                     throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "

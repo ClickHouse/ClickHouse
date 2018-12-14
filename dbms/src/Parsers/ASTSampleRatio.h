@@ -28,7 +28,7 @@ public:
 
     ASTSampleRatio(Rational & ratio_) : ratio(ratio_) {}
 
-    String getID() const override { return "SampleRatio_" + toString(ratio); }
+    String getID(char delim) const override { return "SampleRatio" + (delim + toString(ratio)); }
 
     ASTPtr clone() const override { return std::make_shared<ASTSampleRatio>(*this); }
 
