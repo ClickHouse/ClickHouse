@@ -17,7 +17,7 @@ class WriteBuffer;
   * A header is displayed with the required information.
   * The data is then output in the order of the rows. Each value is displayed as follows: length in Int32 format (-1 for NULL), then data in text form.
   */
-class ODBCDriver2BlockOutputStream : public IBlockOutputStream
+class ODBCDriver2BlockOutputStream final : public IBlockOutputStream
 {
 public:
     ODBCDriver2BlockOutputStream(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings);
@@ -41,8 +41,8 @@ private:
     WriteBuffer & out;
     const Block header;
     const FormatSettings format_settings;
+
 protected:
-    void writeTotals();
     Block totals;
 };
 
