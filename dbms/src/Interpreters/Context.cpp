@@ -1545,7 +1545,7 @@ void Context::initializeSystemLogs()
 }
 
 
-QueryLog * Context::getQueryLog(bool create_if_not_exists)
+QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
@@ -1556,7 +1556,7 @@ QueryLog * Context::getQueryLog(bool create_if_not_exists)
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
+QueryThreadLog * Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
@@ -1567,7 +1567,7 @@ QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
 }
 
 
-PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
+PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
