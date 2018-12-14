@@ -21,6 +21,8 @@ struct MergeTreeMutationEntry
 
     /// Create a new entry and write it to a temporary file.
     MergeTreeMutationEntry(MutationCommands commands_, const String & path_prefix_, Int64 tmp_number);
+    MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
+    MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
     /// Commit entry and rename it to a permanent file.
     void commit(Int64 block_number_);

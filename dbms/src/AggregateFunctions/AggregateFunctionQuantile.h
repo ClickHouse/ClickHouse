@@ -1,18 +1,28 @@
 #pragma once
 
-#include <type_traits>
+#include <AggregateFunctions/FactoryHelpers.h>
 
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeArray.h>
+/// These must be exposed in header for the purpose of dynamic compilation.
+#include <AggregateFunctions/QuantileReservoirSampler.h>
+#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
+#include <AggregateFunctions/QuantileExact.h>
+#include <AggregateFunctions/QuantileExactWeighted.h>
+#include <AggregateFunctions/QuantileTiming.h>
+#include <AggregateFunctions/QuantileTDigest.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/QuantilesCommon.h>
-
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <type_traits>
 
 
 namespace DB
@@ -35,10 +45,10 @@ template <
     typename Data,
     /// Structure with static member "name", containing the name of the aggregate function.
     typename Name,
-    /// If true, the function accept second argument
+    /// If true, the function accepts the second argument
     /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
     /// Second argument is always obtained through 'getUInt' method.
-    bool have_second_arg,
+    bool has_second_arg,
     /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
@@ -48,10 +58,15 @@ template <
     bool returns_many
 >
 class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
-    AggregateFunctionQuantile<Value, Data, Name, have_second_arg, FloatReturnType, returns_many>>
+    AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
-    static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
+
+    static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>)
+        && (!(std::is_same_v<Value, DataTypeDate::FieldType> || std::is_same_v<Value, DataTypeDateTime::FieldType>)
+            || std::is_same_v<Data, QuantileTiming<Value>>);
+    static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 
@@ -87,13 +102,13 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        if constexpr (have_second_arg)
+        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        if constexpr (has_second_arg)
             this->data(place).add(
-                static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num],
+                column.getData()[row_num],
                 columns[1]->getUInt(row_num));
         else
-            this->data(place).add(
-                static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num]);
+            this->data(place).add(column.getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -134,15 +149,15 @@ public:
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getManyFloat(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
+                data.getManyFloat(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
             }
             else
             {
-                auto & data_to = static_cast<ColumnVector<Value> &>(arr_to.getData()).getData();
+                auto & data_to = static_cast<ColVecType &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
-                data.getMany(&levels.levels[0], &levels.permutation[0], size, &data_to[old_size]);
+                data.getMany(levels.levels.data(), levels.permutation.data(), size, &data_to[old_size]);
             }
         }
         else
@@ -150,26 +165,21 @@ public:
             if constexpr (returns_float)
                 static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
             else
-                static_cast<ColumnVector<Value> &>(to).getData().push_back(data.get(level));
+                static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+    static void assertSecondArg(const DataTypes & argument_types)
+    {
+        if constexpr (has_second_arg)
+            /// TODO: check that second argument is of numerical type.
+            assertBinary(Name::name, argument_types);
+        else
+            assertUnary(Name::name, argument_types);
+    }
 };
-
-}
-
-
-/// These must be exposed in header for the purpose of dynamic compilation.
-#include <AggregateFunctions/QuantileReservoirSampler.h>
-#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
-#include <AggregateFunctions/QuantileExact.h>
-#include <AggregateFunctions/QuantileExactWeighted.h>
-#include <AggregateFunctions/QuantileTiming.h>
-#include <AggregateFunctions/QuantileTDigest.h>
-
-namespace DB
-{
 
 struct NameQuantile { static constexpr auto name = "quantile"; };
 struct NameQuantiles { static constexpr auto name = "quantiles"; };

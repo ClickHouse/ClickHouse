@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -78,7 +79,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     try
     {
-        auto storage_lock = owned_storage->lockStructure(false, __PRETTY_FUNCTION__);
+        auto storage_lock = owned_storage->lockStructure(false);
 
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
@@ -125,7 +126,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         part->checksums.checkEqual(data_checksums, false);
     }
-    catch (const NetException & e)
+    catch (const NetException &)
     {
         /// Network error or error on remote side. No need to enqueue part for check.
         throw;
@@ -161,11 +162,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & host,
     int port,
     const ConnectionTimeouts & timeouts,
+    const String & user,
+    const String & password,
+    const String & interserver_scheme,
     bool to_detached,
     const String & tmp_prefix_)
 {
     Poco::URI uri;
-    uri.setScheme("http");
+    uri.setScheme(interserver_scheme);
     uri.setHost(host);
     uri.setPort(port);
     uri.setQueryParameters(
@@ -175,7 +179,22 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress", "false"}
     });
 
-    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts};
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!user.empty())
+    {
+        creds.setUsername(user);
+        creds.setPassword(password);
+    }
+
+    PooledReadWriteBufferFromHTTP in{
+        uri,
+        Poco::Net::HTTPRequest::HTTP_POST,
+        {},
+        timeouts,
+        creds,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        data.settings.replicated_max_parallel_fetches_for_host
+    };
 
     static const String TMP_PREFIX = "tmp_fetch_";
     String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
@@ -222,7 +241,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         readPODBinary(expected_hash, in);
 
         if (expected_hash != hashing_out.getHash())
-            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path);
+            throw Exception("Checksum mismatch for file " + absolute_part_path + file_name + " transferred from " + replica_path,
+                ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt")

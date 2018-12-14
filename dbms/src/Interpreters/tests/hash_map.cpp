@@ -139,7 +139,7 @@ int main(int argc, char ** argv)
         ReadBufferFromFile in1("UniqID.bin");
         CompressedReadBuffer in2(in1);
 
-        in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
+        in2.readStrict(reinterpret_cast<char*>(data.data()), sizeof(data[0]) * n);
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)

@@ -1,30 +1,33 @@
 #pragma once
 
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <common/StringRef.h>
-#include <Common/HashTable/HashMap.h>
-#include <Columns/ColumnString.h>
-#include <Common/Arena.h>
-#include <ext/range.h>
 #include <atomic>
 #include <memory>
-#include <tuple>
+#include <variant>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashMap.h>
+#include <common/StringRef.h>
 #include <common/logger_useful.h>
+#include <ext/range.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 
 struct btrie_s;
 typedef struct btrie_s btrie_t;
 
 namespace DB
 {
-
 class TrieDictionary final : public IDictionaryBase
 {
 public:
     TrieDictionary(
-        const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
-        const DictionaryLifetime dict_lifetime, bool require_nonempty);
+        const std::string & name,
+        const DictionaryStructure & dict_struct,
+        DictionarySourcePtr source_ptr,
+        const DictionaryLifetime dict_lifetime,
+        bool require_nonempty);
 
     TrieDictionary(const TrieDictionary & other);
 
@@ -58,20 +61,19 @@ public:
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
-    {
-        return creation_time;
-    }
+    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-#define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
-        PaddedPODArray<TYPE> & out) const;
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -83,16 +85,20 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-        ColumnString * out) const;
+    void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
 
-#define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
-        const PaddedPODArray<TYPE> & def, PaddedPODArray<TYPE> & out) const;
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -104,16 +110,25 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-        const ColumnString * const def, ColumnString * const out) const;
+        const std::string & attribute_name,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const ColumnString * const def,
+        ColumnString * const out) const;
 
-#define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,\
-        const TYPE def, PaddedPODArray<TYPE> & out) const;
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -125,35 +140,63 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-        const String & def, ColumnString * const out) const;
+        const std::string & attribute_name,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const String & def,
+        ColumnString * const out) const;
 
     void has(const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<UInt8> & out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value> using ContainerType = std::vector<Value>;
-    template <typename Value> using ContainerPtrType = std::unique_ptr<ContainerType<Value>>;
+    template <typename Value>
+    using ContainerType = std::vector<Value>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<
-            UInt8, UInt16, UInt32, UInt64,
+        std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
             UInt128,
-            Int8, Int16, Int32, Int64,
-            Float32, Float64,
-            String> null_values;
-        std::tuple<
-            ContainerPtrType<UInt8>, ContainerPtrType<UInt16>, ContainerPtrType<UInt32>, ContainerPtrType<UInt64>,
-            ContainerPtrType<UInt128>,
-            ContainerPtrType<Int8>, ContainerPtrType<Int16>, ContainerPtrType<Int32>, ContainerPtrType<Int64>,
-            ContainerPtrType<Float32>, ContainerPtrType<Float64>,
-            ContainerPtrType<StringRef>> maps;
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            String>
+            null_values;
+        std::variant<
+            ContainerType<UInt8>,
+            ContainerType<UInt16>,
+            ContainerType<UInt32>,
+            ContainerType<UInt64>,
+            ContainerType<UInt128>,
+            ContainerType<Int8>,
+            ContainerType<Int16>,
+            ContainerType<Int32>,
+            ContainerType<Int64>,
+            ContainerType<Decimal32>,
+            ContainerType<Decimal64>,
+            ContainerType<Decimal128>,
+            ContainerType<Float32>,
+            ContainerType<Float64>,
+            ContainerType<StringRef>>
+            maps;
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -175,18 +218,12 @@ private:
 
 
     template <typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void getItemsNumber(
-        const Attribute & attribute,
-        const Columns & key_columns,
-        ValueSetter && set_value,
-        DefaultGetter && get_default) const;
+    void
+    getItemsNumber(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
-    void getItemsImpl(
-        const Attribute & attribute,
-        const Columns & key_columns,
-        ValueSetter && set_value,
-        DefaultGetter && get_default) const;
+    void
+    getItemsImpl(const Attribute & attribute, const Columns & key_columns, ValueSetter && set_value, DefaultGetter && get_default) const;
 
 
     template <typename T>
@@ -227,6 +264,5 @@ private:
 
     Logger * logger;
 };
-
 
 }

@@ -18,17 +18,17 @@ bool Lock::tryLock()
         std::string dummy;
         int32_t code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
 
-        if (code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+        if (code == Coordination::ZNODEEXISTS)
         {
             locked.reset(nullptr);
         }
-        else if (code == ZooKeeperImpl::ZooKeeper::ZOK)
+        else if (code == Coordination::ZOK)
         {
             locked.reset(new ZooKeeperHandler(zookeeper));
         }
         else
         {
-            throw zkutil::KeeperException(code);
+            throw Coordination::Exception(code);
         }
     }
     return bool(locked);
@@ -50,7 +50,7 @@ Lock::Status Lock::tryCheck() const
     auto zookeeper = zookeeper_holder->getZooKeeper();
 
     Status lock_status;
-    Stat stat;
+    Coordination::Stat stat;
     std::string dummy;
     bool result = zookeeper->tryGet(lock_path, dummy, &stat);
     if (!result)

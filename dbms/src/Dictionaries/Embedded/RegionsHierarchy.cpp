@@ -1,17 +1,23 @@
-#include <Dictionaries/Embedded/RegionsHierarchy.h>
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-
-#include <Poco/Util/Application.h>
-#include <Poco/Exception.h>
-
-#include <common/logger_useful.h>
-#include <ext/singleton.h>
+#include "RegionsHierarchy.h"
 
 #include <IO/WriteHelpers.h>
+#include <Poco/Exception.h>
+#include <Poco/Util/Application.h>
+#include <common/logger_useful.h>
+#include <ext/singleton.h>
+#include "GeodataProviders/IHierarchiesProvider.h"
 
 
-RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_)
-    : data_source(data_source_)
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+}
+
+
+RegionsHierarchy::RegionsHierarchy(IRegionsHierarchyDataSourcePtr data_source_) : data_source(data_source_)
 {
 }
 
@@ -36,11 +42,10 @@ void RegionsHierarchy::reload()
     RegionParents new_continent(initial_size);
     RegionParents new_top_continent(initial_size);
     RegionPopulations new_populations(initial_size);
-    RegionDepths  new_depths(initial_size);
+    RegionDepths new_depths(initial_size);
     RegionTypes types(initial_size);
 
     RegionID max_region_id = 0;
-
 
     auto regions_reader = data_source->createReader();
 
@@ -50,7 +55,9 @@ void RegionsHierarchy::reload()
         if (region_entry.id > max_region_id)
         {
             if (region_entry.id > max_size)
-                throw DB::Exception("Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size));
+                throw DB::Exception(
+                    "Region id is too large: " + DB::toString(region_entry.id) + ", should be not more than " + DB::toString(max_size),
+                    DB::ErrorCodes::INCORRECT_DATA);
 
             max_region_id = region_entry.id;
 
@@ -67,16 +74,16 @@ void RegionsHierarchy::reload()
         types[region_entry.id] = region_entry.type;
     }
 
-    new_parents      .resize(max_region_id + 1);
-    new_city         .resize(max_region_id + 1);
-    new_country      .resize(max_region_id + 1);
-    new_area         .resize(max_region_id + 1);
-    new_district     .resize(max_region_id + 1);
-    new_continent    .resize(max_region_id + 1);
+    new_parents.resize(max_region_id + 1);
+    new_city.resize(max_region_id + 1);
+    new_country.resize(max_region_id + 1);
+    new_area.resize(max_region_id + 1);
+    new_district.resize(max_region_id + 1);
+    new_continent.resize(max_region_id + 1);
     new_top_continent.resize(max_region_id + 1);
-    new_populations  .resize(max_region_id + 1);
-    new_depths       .resize(max_region_id + 1);
-    types            .resize(max_region_id + 1);
+    new_populations.resize(max_region_id + 1);
+    new_depths.resize(max_region_id + 1);
+    types.resize(max_region_id + 1);
 
     /// prescribe the cities and countries for the regions
     for (RegionID i = 0; i <= max_region_id; ++i)
@@ -106,14 +113,16 @@ void RegionsHierarchy::reload()
             ++depth;
 
             if (depth == std::numeric_limits<RegionDepth>::max())
-                throw Poco::Exception("Logical error in regions hierarchy: region " + DB::toString(current) + " possible is inside infinite loop");
+                throw Poco::Exception(
+                    "Logical error in regions hierarchy: region " + DB::toString(current) + " possible is inside infinite loop");
 
             current = new_parents[current];
             if (current == 0)
                 break;
 
             if (current > max_region_id)
-                throw Poco::Exception("Logical error in regions hierarchy: region " + DB::toString(current) + " (specified as parent) doesn't exist");
+                throw Poco::Exception(
+                    "Logical error in regions hierarchy: region " + DB::toString(current) + " (specified as parent) doesn't exist");
 
             if (types[current] == RegionType::City)
                 new_city[i] = current;

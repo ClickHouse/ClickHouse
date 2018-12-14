@@ -47,6 +47,7 @@ void PrettyBlockOutputStream::calculateWidths(
 
     /// Calculate widths of all values.
     String serialized_value;
+    size_t prefix = 2; // Tab character adjustment
     for (size_t i = 0; i < columns; ++i)
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(i);
@@ -60,15 +61,19 @@ void PrettyBlockOutputStream::calculateWidths(
                 elem.type->serializeText(*elem.column, j, out, format_settings);
             }
 
-            widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+            widths[i][j] = std::min(format_settings.pretty.max_column_pad_width,
+                UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size(), prefix));
             max_widths[i] = std::max(max_widths[i], widths[i][j]);
         }
 
         /// And also calculate widths for names of columns.
         {
-            name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size());
+            // name string doesn't contain Tab, no need to pass `prefix`
+            name_widths[i] = std::min(format_settings.pretty.max_column_pad_width,
+                UTF8::computeWidth(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size()));
             max_widths[i] = std::max(max_widths[i], name_widths[i]);
         }
+        prefix += max_widths[i] + 3;
     }
 }
 

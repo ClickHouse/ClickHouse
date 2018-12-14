@@ -213,7 +213,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (type->isFixedString())
+            if (isFixedString(type))
             {
                 have_string = true;
                 if (!fixed_string_type)
@@ -221,7 +221,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 else if (!type->equals(*fixed_string_type))
                     return getNothingOrThrow(" because some of them are FixedStrings with different length");
             }
-            else if (type->isString())
+            else if (isString(type))
                 have_string = true;
             else
                 all_strings = false;
@@ -243,7 +243,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
 
         for (const auto & type : types)
         {
-            if (type->isDateOrDateTime())
+            if (isDateOrDateTime(type))
                 have_date_or_datetime = true;
             else
                 all_date_or_datetime = false;

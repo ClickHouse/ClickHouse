@@ -158,7 +158,7 @@ namespace detail
         void serialize(WriteBuffer & buf) const
         {
             writeBinary(elems.size(), buf);
-            buf.write(reinterpret_cast<const char *>(&elems[0]), elems.size() * sizeof(elems[0]));
+            buf.write(reinterpret_cast<const char *>(elems.data()), elems.size() * sizeof(elems[0]));
         }
 
         void deserialize(ReadBuffer & buf)
@@ -166,7 +166,7 @@ namespace detail
             size_t size = 0;
             readBinary(size, buf);
             elems.resize(size);
-            buf.readStrict(reinterpret_cast<char *>(&elems[0]), size * sizeof(elems[0]));
+            buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));
         }
 
         UInt16 get(double level) const

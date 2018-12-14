@@ -76,15 +76,10 @@ private:
     /// Cache required fields
     struct Source
     {
-        const IColumn * column;
-        size_t pos;
-        size_t size;
+        const IColumn * column = nullptr;
+        size_t pos = 0;
+        size_t size = 0;
         Block block;
-
-        Source(Block && block_, const String & name) : block(std::move(block_))
-        {
-            update(name);
-        }
 
         void update(const String & name)
         {
@@ -94,7 +89,6 @@ private:
         }
     };
 
-    void init();
     void fetchNewBlock(Source & source, size_t source_num);
 
     String column_name;

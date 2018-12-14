@@ -14,9 +14,15 @@ void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
 
+#if USE_HDFS
+void registerTableFunctionHDFS(TableFunctionFactory & factory);
+#endif
+
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 #endif
+
+void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -35,9 +41,14 @@ void registerTableFunctions()
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
 
+#if USE_HDFS
+    registerTableFunctionHDFS(factory);
+#endif
+
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
 #endif
+    registerTableFunctionJDBC(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);

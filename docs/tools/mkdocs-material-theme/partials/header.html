@@ -40,9 +40,10 @@
           {% endif %}
         {% endblock %}
       </div>
-      {% if config.repo_url %}
+      {% if page %}
         <div class="md-flex__cell md-flex__cell--shrink">
           <div id="md-language-switch" class="md-header-nav__source">
+            {% include "partials/flags.html" %}
           </div>
         </div>
       {% endif %}

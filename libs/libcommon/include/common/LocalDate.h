@@ -165,6 +165,9 @@ public:
     }
 };
 
+static_assert(sizeof(LocalDate) == 4);
+
+
 inline std::ostream & operator<< (std::ostream & ostr, const LocalDate & date)
 {
     return ostr << date.year()

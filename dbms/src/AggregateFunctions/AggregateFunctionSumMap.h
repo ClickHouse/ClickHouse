@@ -8,6 +8,8 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 
 #include <Common/FieldVisitors.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -50,9 +52,11 @@ struct AggregateFunctionSumMapData
 
 template <typename T>
 class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<
-    AggregateFunctionSumMapData<typename NearestFieldType<T>::Type>, AggregateFunctionSumMap<T>>
+    AggregateFunctionSumMapData<NearestFieldType<T>>, AggregateFunctionSumMap<T>>
 {
 private:
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+
     DataTypePtr keys_type;
     DataTypes values_types;
 
@@ -78,7 +82,7 @@ public:
         // Column 0 contains array of keys of known type
         const ColumnArray & array_column = static_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = array_column.getOffsets();
-        const auto & keys_vec = static_cast<const ColumnVector<T> &>(array_column.getData());
+        const auto & keys_vec = static_cast<const ColVecType &>(array_column.getData());
         const size_t keys_vec_offset = row_num == 0 ? 0 : offsets[row_num - 1];
         const size_t keys_vec_size = (offsets[row_num] - keys_vec_offset);
 
@@ -99,9 +103,20 @@ public:
             // Insert column values for all keys
             for (size_t i = 0; i < keys_vec_size; ++i)
             {
+                using MapType = std::decay_t<decltype(merged_maps)>;
+                using IteratorType = typename MapType::iterator;
+
                 array_column.getData().get(values_vec_offset + i, value);
                 const auto & key = keys_vec.getData()[keys_vec_offset + i];
-                const auto & it = merged_maps.find(key);
+
+                IteratorType it;
+                if constexpr (IsDecimalNumber<T>)
+                {
+                    UInt32 scale = keys_vec.getData().getScale();
+                    it = merged_maps.find(DecimalField<T>(key, scale));
+                }
+                else
+                    it = merged_maps.find(key);
 
                 if (it != merged_maps.end())
                     applyVisitor(FieldVisitorSum(value), it->second[col]);
@@ -113,7 +128,13 @@ public:
                     for (size_t k = 0; k < new_values.size(); ++k)
                         new_values[k] = (k == col) ? value : values_types[k]->getDefault();
 
-                    merged_maps[key] = std::move(new_values);
+                    if constexpr (IsDecimalNumber<T>)
+                    {
+                        UInt32 scale = keys_vec.getData().getScale();
+                        merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
+                    }
+                    else
+                        merged_maps.emplace(key, std::move(new_values));
                 }
             }
         }
@@ -167,7 +188,10 @@ public:
             for (size_t col = 0; col < values_types.size(); ++col)
                 values_types[col]->deserializeBinary(values[col], buf);
 
-            merged_maps[key.get<T>()] = values;
+            if constexpr (IsDecimalNumber<T>)
+                merged_maps[key.get<DecimalField<T>>()] = values;
+            else
+                merged_maps[key.get<T>()] = values;
         }
     }
 

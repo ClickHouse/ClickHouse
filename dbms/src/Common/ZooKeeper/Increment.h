@@ -20,7 +20,7 @@ public:
 
         size_t result = 0;
         std::string result_str;
-        zkutil::Stat stat;
+        Coordination::Stat stat;
 
         bool success = false;
         auto zookeeper = zookeeper_holder->getZooKeeper();
@@ -29,11 +29,11 @@ public:
             if (zookeeper->tryGet(path, result_str, &stat))
             {
                 result = std::stol(result_str) + 1;
-                success = zookeeper->trySet(path, std::to_string(result), stat.version) == ZooKeeperImpl::ZooKeeper::ZOK;
+                success = zookeeper->trySet(path, std::to_string(result), stat.version) == Coordination::ZOK;
             }
             else
             {
-                success = zookeeper->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == ZooKeeperImpl::ZooKeeper::ZOK;
+                success = zookeeper->tryCreate(path, std::to_string(result), zkutil::CreateMode::Persistent) == Coordination::ZOK;
             }
         }
         while (!success);

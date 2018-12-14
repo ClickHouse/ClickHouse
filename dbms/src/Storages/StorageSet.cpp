@@ -81,8 +81,8 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 
 BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
-    ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(increment) + ".bin");
+    UInt64 id = ++increment;
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(id) + ".bin");
 }
 
 
@@ -131,7 +131,7 @@ void StorageSet::truncate(const ASTPtr &)
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false);
     set->setHeader(header);
-};
+}
 
 
 void StorageSetOrJoinBase::restore()

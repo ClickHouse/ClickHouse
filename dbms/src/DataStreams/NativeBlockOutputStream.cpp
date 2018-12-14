@@ -9,6 +9,7 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -52,8 +53,15 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     else
         full_column = column;
 
-    IDataType::OutputStreamGetter output_stream_getter = [&] (const IDataType::SubstreamPath &) { return &ostr; };
-    type.serializeBinaryBulkWithMultipleStreams(*full_column, output_stream_getter, offset, limit, false, {});
+    IDataType::SerializeBinaryBulkSettings settings;
+    settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };
+    settings.position_independent_encoding = false;
+    settings.low_cardinality_max_dictionary_size = 0;
+
+    IDataType::SerializeBinaryBulkStatePtr state;
+    type.serializeBinaryBulkStatePrefix(settings, state);
+    type.serializeBinaryBulkWithMultipleStreams(*full_column, offset, limit, settings, state);
+    type.serializeBinaryBulkStateSuffix(settings, state);
 }
 
 
@@ -93,7 +101,14 @@ void NativeBlockOutputStream::write(const Block & block)
             mark.offset_in_decompressed_block = ostr_concrete->getRemainingBytes();
         }
 
-        const ColumnWithTypeAndName & column = block.safeGetByPosition(i);
+        ColumnWithTypeAndName column = block.safeGetByPosition(i);
+
+        /// Send data to old clients without low cardinality type.
+        if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+        {
+            column.column = recursiveRemoveLowCardinality(column.column);
+            column.type = recursiveRemoveLowCardinality(column.type);
+        }
 
         /// Name
         writeStringBinary(column.name, ostr);

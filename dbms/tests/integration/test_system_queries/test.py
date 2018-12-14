@@ -57,7 +57,10 @@ def test_SYSTEM_RELOAD_DICTIONARY(started_cluster):
 def test_DROP_DNS_CACHE(started_cluster):
     instance = cluster.instances['ch1']
 
-    instance.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host > /etc/hosts'], privileged=True, user='root')
+    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 localhost > /etc/hosts'], privileged=True, user='root')
+    instance.exec_in_container(['bash', '-c', 'echo ::1 localhost >> /etc/hosts'], privileged=True, user='root')
+
+    instance.exec_in_container(['bash', '-c', 'echo 127.255.255.255 lost_host >> /etc/hosts'], privileged=True, user='root')
     instance.query("SYSTEM DROP DNS CACHE")
 
     with pytest.raises(QueryRuntimeException):
@@ -67,7 +70,10 @@ def test_DROP_DNS_CACHE(started_cluster):
     with pytest.raises(QueryRuntimeException):
         instance.query("SELECT * FROM distributed_lost_host")
 
-    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 lost_host > /etc/hosts'], privileged=True, user='root')
+    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 localhost > /etc/hosts'], privileged=True, user='root')
+    instance.exec_in_container(['bash', '-c', 'echo ::1 localhost >> /etc/hosts'], privileged=True, user='root')
+
+    instance.exec_in_container(['bash', '-c', 'echo 127.0.0.1 lost_host >> /etc/hosts'], privileged=True, user='root')
     instance.query("SYSTEM DROP DNS CACHE")
 
     instance.query("SELECT * FROM remote('lost_host', 'system', 'one')")

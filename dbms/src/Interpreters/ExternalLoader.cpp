@@ -1,4 +1,5 @@
-#include <Interpreters/ExternalLoader.h>
+#include "ExternalLoader.h"
+#include <Core/Defines.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
@@ -42,12 +43,12 @@ void ExternalLoader::reloadPeriodically()
 }
 
 
-ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config,
+ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config_main,
                                const ExternalLoaderUpdateSettings & update_settings,
                                const ExternalLoaderConfigSettings & config_settings,
                                std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
                                Logger * log, const std::string & loadable_object_name)
-        : config(config)
+        : config_main(config_main)
         , update_settings(update_settings)
         , config_settings(config_settings)
         , config_repository(std::move(config_repository))
@@ -66,7 +67,7 @@ void ExternalLoader::init(bool throw_on_error)
     {
         /// During synchronous loading of external dictionaries at moment of query execution,
         /// we should not use per query memory limit.
-        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         reloadAndUpdate(throw_on_error);
     }
@@ -78,7 +79,9 @@ void ExternalLoader::init(bool throw_on_error)
 ExternalLoader::~ExternalLoader()
 {
     destroy.set();
-    reloading_thread.join();
+    /// It can be partially initialized
+    if (reloading_thread.joinable())
+        reloading_thread.join();
 }
 
 
@@ -212,7 +215,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
 void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool force_reload, const std::string & only_dictionary)
 {
-    const auto config_paths = config_repository->list(config, config_settings.path_setting_name);
+    const auto config_paths = config_repository->list(config_main, config_settings.path_setting_name);
 
     for (const auto & config_path : config_paths)
     {
@@ -228,6 +231,17 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
                 throw;
         }
     }
+
+    /// erase removed from config loadable objects
+    std::list<std::string> removed_loadable_objects;
+    for (const auto & loadable : loadable_objects)
+    {
+        const auto & current_config = loadable_objects_defined_in_config[loadable.second.origin];
+        if (current_config.find(loadable.first) == std::end(current_config))
+            removed_loadable_objects.emplace_back(loadable.first);
+    }
+    for (const auto & name : removed_loadable_objects)
+        loadable_objects.erase(name);
 }
 
 void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
@@ -249,7 +263,9 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_repository->getLastModificationTime(config_path);
         if (force_reload || last_modified > config_last_modified)
         {
-            auto config = config_repository->load(config_path);
+            auto loaded_config = config_repository->load(config_path, config_main.getString("path", DBMS_DEFAULT_PATH));
+
+            loadable_objects_defined_in_config[config_path].clear();
 
             /// Definitions of loadable objects may have changed, recreate all of them
 
@@ -259,7 +275,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
             /// get all objects' definitions
             Poco::Util::AbstractConfiguration::Keys keys;
-            config->keys(keys);
+            loaded_config->keys(keys);
 
             /// for each loadable object defined in xml config
             for (const auto & key : keys)
@@ -276,13 +292,14 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                 try
                 {
-                    name = config->getString(key + "." + config_settings.external_name);
+                    name = loaded_config->getString(key + "." + config_settings.external_name);
                     if (name.empty())
                     {
                         LOG_WARNING(log, config_path << ": " + config_settings.external_name + " name cannot be empty");
                         continue;
                     }
 
+                    loadable_objects_defined_in_config[config_path].emplace(name);
                     if (!loadable_name.empty() && name != loadable_name)
                         continue;
 
@@ -298,7 +315,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                                         + " already declared in file " + object_it->second.origin,
                                         ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
-                    auto object_ptr = create(name, *config, key);
+                    auto object_ptr = create(name, *loaded_config, key);
 
                     /// If the object could not be loaded.
                     if (const auto exception_ptr = object_ptr->getCreationException())

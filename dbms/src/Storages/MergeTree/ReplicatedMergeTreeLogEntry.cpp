@@ -197,7 +197,7 @@ String ReplicatedMergeTreeLogEntryData::toString() const
     return out.str();
 }
 
-ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const zkutil::Stat & stat)
+ReplicatedMergeTreeLogEntry::Ptr ReplicatedMergeTreeLogEntry::parse(const String & s, const Coordination::Stat & stat)
 {
     ReadBufferFromString in(s);
     Ptr res = std::make_shared<ReplicatedMergeTreeLogEntry>();

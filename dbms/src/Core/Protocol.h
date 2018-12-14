@@ -69,6 +69,8 @@ namespace Protocol
             Totals = 7,               /// A block with totals (compressed or not).
             Extremes = 8,             /// A block with minimums and maximums (compressed or not).
             TablesStatusResponse = 9, /// A response to TablesStatus request.
+            Log = 10,                 /// System logs of the query execution
+            TableColumns = 11,        /// Columns' description for default values calculation
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -77,10 +79,23 @@ namespace Protocol
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes", "TablesStatusResponse" };
-            return packet < 10
+            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals",
+                "Extremes", "TablesStatusResponse", "Log", "TableColumns" };
+            return packet < 12
                 ? data[packet]
                 : "Unknown packet";
+        }
+
+        inline size_t stringsInMessage(UInt64 msg_type)
+        {
+            switch (msg_type)
+            {
+                case TableColumns:
+                    return 2;
+                default:
+                    break;
+            }
+            return 0;
         }
     }
 
@@ -97,12 +112,13 @@ namespace Protocol
             Cancel = 3,              /// Cancel the query execution.
             Ping = 4,                /// Check that connection to the server is alive.
             TablesStatusRequest = 5, /// Check status of tables on the server.
+            KeepAlive = 6            /// Keep the connection alive
         };
 
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping", "TablesStatusRequest" };
-            return packet < 6
+            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping", "TablesStatusRequest", "KeepAlive" };
+            return packet < 7
                 ? data[packet]
                 : "Unknown packet";
         }

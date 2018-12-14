@@ -6,6 +6,7 @@
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
+#include <Core/callOnTypeIndex.h>
 
 
 namespace DB
@@ -18,13 +19,6 @@ const Type * checkAndGetDataType(const IDataType * data_type)
 {
     return typeid_cast<const Type *>(data_type);
 }
-
-template <typename Type>
-bool checkDataType(const IDataType * data_type)
-{
-    return checkAndGetDataType<Type>(data_type);
-}
-
 
 template <typename Type>
 const Type * checkAndGetColumn(const IColumn * column)
@@ -77,9 +71,15 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 /// Transform anything to Field.
 template <typename T>
-inline Field toField(const T & x)
+inline std::enable_if_t<!IsDecimalNumber<T>, Field> toField(const T & x)
 {
-    return Field(typename NearestFieldType<T>::Type(x));
+    return Field(NearestFieldType<T>(x));
+}
+
+template <typename T>
+inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 scale)
+{
+    return Field(NearestFieldType<T>(x, scale));
 }
 
 
@@ -93,6 +93,5 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 
 /// Similar function as above. Additionally transform the result type if needed.
 Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
-
 
 }

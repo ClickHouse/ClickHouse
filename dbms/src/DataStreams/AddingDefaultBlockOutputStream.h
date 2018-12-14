@@ -10,8 +10,11 @@ namespace DB
 {
 
 
-/** Adds missing columns to the block with default values.
-  * These columns are materialized (not constants).
+/** This stream adds three types of columns into block
+  * 1. Columns, that are missed inside request, but present in table without defaults (missed columns)
+  * 2. Columns, that are missed inside request, but present in table with defaults (columns with default values)
+  * 3. Columns that materialized from other columns (materialized columns)
+  * All three types of columns are materialized (not constants).
   */
 class AddingDefaultBlockOutputStream : public IBlockOutputStream
 {
@@ -19,10 +22,10 @@ public:
     AddingDefaultBlockOutputStream(
         const BlockOutputStreamPtr & output_,
         const Block & header_,
-        NamesAndTypesList required_columns_,
+        const Block & output_block_,
         const ColumnDefaults & column_defaults_,
         const Context & context_)
-        : output(output_), header(header_), required_columns(required_columns_),
+        : output(output_), header(header_), output_block(output_block_),
           column_defaults(column_defaults_), context(context_)
     {
     }
@@ -37,8 +40,9 @@ public:
 
 private:
     BlockOutputStreamPtr output;
-    Block header;
-    NamesAndTypesList required_columns;
+    const Block header;
+    /// Blocks after this stream should have this structure
+    const Block output_block;
     const ColumnDefaults column_defaults;
     const Context & context;
 };

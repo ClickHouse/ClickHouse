@@ -18,7 +18,7 @@ JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, cons
     for (size_t i = 0; i < columns; ++i)
     {
         WriteBufferFromString out(fields[i]);
-        writeJSONString(sample.getByPosition(i).name, out);
+        writeJSONString(sample.getByPosition(i).name, out, settings);
     }
 }
 

@@ -3,6 +3,10 @@
 #endif
 
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnVector.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -17,7 +21,7 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
       * It would be better to use != 0, then this does not allow SSE2.
       */
 
-    const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
+    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data());
     const Int8 * end = pos + filt.size();
 
 #if __SSE2__ && __POPCNT__
@@ -192,10 +196,10 @@ namespace
                 res_elems.reserve((result_size_hint * src_elems.size() + size - 1) / size);
         }
 
-        const UInt8 * filt_pos = &filt[0];
+        const UInt8 * filt_pos = filt.data();
         const auto filt_end = filt_pos + size;
 
-        auto offsets_pos = &src_offsets[0];
+        auto offsets_pos = src_offsets.data();
         const auto offsets_begin = offsets_pos;
 
         /// copy array ending at *end_offset_ptr
@@ -307,5 +311,23 @@ INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 
 #undef INSTANTIATE
+
+namespace detail
+{
+    template <typename T>
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes)
+    {
+        auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
+    template const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const IColumn & indexes);
+    template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const IColumn & indexes);
+    template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
+    template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
+}
 
 }

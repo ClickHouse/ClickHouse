@@ -88,6 +88,15 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     return ColumnFunction::create(limit, function, capture);
 }
 
+ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
+{
+    ColumnsWithTypeAndName capture = captured_columns;
+    for (auto & column : capture)
+        column.column = column.column->index(indexes, limit);
+
+    return ColumnFunction::create(limit, function, capture);
+}
+
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
                                                       const IColumn::Selector & selector) const
 {
@@ -174,7 +183,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
     auto index = captured_columns.size();
     if (!column.type->equals(*argumnet_types[index]))
         throw Exception("Cannot capture column " + std::to_string(argumnet_types.size()) +
-                        "because it has incompatible type: got " + column.type->getName() +
+                        " because it has incompatible type: got " + column.type->getName() +
                         ", but " + argumnet_types[index]->getName() + " is expected.", ErrorCodes::LOGICAL_ERROR);
 
     captured_columns.push_back(column);

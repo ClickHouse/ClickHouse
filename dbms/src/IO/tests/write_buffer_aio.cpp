@@ -124,7 +124,7 @@ bool test1()
         if (out.getFD() == -1)
             return false;
 
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
     }
 
     std::ifstream in(filename.c_str());
@@ -155,7 +155,7 @@ bool test2()
         if (out.getFD() == -1)
             return false;
 
-        out.write(&buf[0], buf.length() / 2);
+        out.write(buf.data(), buf.length() / 2);
         out.seek(DEFAULT_AIO_FILE_BLOCK_SIZE, SEEK_CUR);
         out.write(&buf[buf.length() / 2], buf.length() / 2);
     }
@@ -195,7 +195,7 @@ bool test3()
         if (out.getFD() == -1)
             return false;
 
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
 
         off_t pos1 = out.getPositionInFile();
 
@@ -235,7 +235,7 @@ bool test4()
         if (out.getFD() == -1)
             return false;
 
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
 
         off_t pos1 = out.getPositionInFile();
 
@@ -282,7 +282,7 @@ bool test5()
             return false;
 
         out.seek(1, SEEK_SET);
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
     }
 
     std::ifstream in(filename.c_str());
@@ -316,9 +316,9 @@ bool test6()
             return false;
 
         out.seek(3, SEEK_SET);
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
         out.seek(-2 * DEFAULT_AIO_FILE_BLOCK_SIZE, SEEK_CUR);
-        out.write(&buf2[0], buf2.length());
+        out.write(buf2.data(), buf2.length());
     }
 
     std::ifstream in(filename.c_str());
@@ -357,7 +357,7 @@ bool test7()
             return false;
 
         out.seek(DEFAULT_AIO_FILE_BLOCK_SIZE - (buf2.length() / 2), SEEK_SET);
-        out.write(&buf2[0], buf2.length());
+        out.write(buf2.data(), buf2.length());
     }
 
     std::ifstream in(filename.c_str());
@@ -394,7 +394,7 @@ bool test8()
             return false;
 
         out.seek(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - (buf2.length() / 2), SEEK_SET);
-        out.write(&buf2[0], buf2.length());
+        out.write(buf2.data(), buf2.length());
     }
 
     std::ifstream in(filename.c_str());
@@ -435,9 +435,9 @@ bool test9()
             return false;
 
         out.seek(3, SEEK_SET);
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
         out.seek(-DEFAULT_AIO_FILE_BLOCK_SIZE, SEEK_CUR);
-        out.write(&buf2[0], buf2.length());
+        out.write(buf2.data(), buf2.length());
     }
 
     std::ifstream in(filename.c_str());
@@ -474,7 +474,7 @@ bool test10()
         if (out.getFD() == -1)
             return false;
 
-        out.write(&buf[0], buf.length());
+        out.write(buf.data(), buf.length());
     }
 
     std::ifstream in(filename.c_str());

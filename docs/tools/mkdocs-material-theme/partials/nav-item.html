@@ -1,3 +1,4 @@
+{% if nav_item.title != "hidden" %}
 {% set class = "md-nav__item" %}
 {% if nav_item.active %}
   {% set class = "md-nav__item md-nav__item--active" %}
@@ -38,8 +39,8 @@
         {{ nav_item.title }}
       </label>
     {% endif %}
-    <a href="{{ nav_item.url }}" title="{{ nav_item.title }}" class="md-nav__link md-nav__link--active">
-      {{ nav_item.title }}
+    <a href="{{ base_url }}/{{ nav_item.url }}" title="{{ nav_item.title }}" class="md-nav__link md-nav__link--active">
+      <strong>{{ nav_item.title }}</strong>
     </a>
     {% if toc_ | first is defined %}
       {% include "partials/toc.html" %}
@@ -47,8 +48,9 @@
   </li>
 {% else %}
   <li class="{{ class }}">
-    <a href="{{ nav_item.url }}" title="{{ nav_item.title }}" class="md-nav__link">
+    <a href="{{ base_url }}/{{ nav_item.url }}" title="{{ nav_item.title }}" class="md-nav__link">
       {{ nav_item.title }}
     </a>
   </li>
+{% endif %}
 {% endif %}

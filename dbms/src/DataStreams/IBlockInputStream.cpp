@@ -65,7 +65,7 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
 }
 
 
-void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier)
+void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t multiplier) const
 {
     ostr << String(indent, ' ') << getName();
     if (multiplier > 1)
@@ -78,16 +78,16 @@ void IBlockInputStream::dumpTree(std::ostream & ostr, size_t indent, size_t mult
     using Multipliers = std::map<String, size_t>;
     Multipliers multipliers;
 
-    for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
-        ++multipliers[(*it)->getTreeID()];
+    for (const auto & child : children)
+        ++multipliers[child->getTreeID()];
 
-    for (BlockInputStreams::iterator it = children.begin(); it != children.end(); ++it)
+    for (const auto & child : children)
     {
-        String id = (*it)->getTreeID();
+        String id = child->getTreeID();
         size_t & subtree_multiplier = multipliers[id];
         if (subtree_multiplier != 0)    /// Already printed subtrees are marked with zero in the array of multipliers.
         {
-            (*it)->dumpTree(ostr, indent, subtree_multiplier);
+            child->dumpTree(ostr, indent, subtree_multiplier);
             subtree_multiplier = 0;
         }
     }

@@ -39,15 +39,15 @@ Tables DatabaseDictionary::loadTables()
     Tables tables;
     for (const auto & pair : dictionaries)
     {
-        const std::string & name = pair.first;
-        if (deleted_tables.count(name))
+        const std::string & dict_name = pair.first;
+        if (deleted_tables.count(dict_name))
             continue;
         auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(pair.second.loadable);
         if (dict_ptr)
         {
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[name] = StorageDictionary::create(name, ColumnsDescription{columns}, dictionary_structure, name);
+            tables[dict_name] = StorageDictionary::create(dict_name, ColumnsDescription{columns}, dictionary_structure, dict_name);
         }
     }
 

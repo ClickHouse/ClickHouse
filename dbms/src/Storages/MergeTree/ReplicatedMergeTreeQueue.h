@@ -8,9 +8,10 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -140,15 +141,14 @@ private:
     /// Notify subscribers about queue change
     void notifySubscribers(size_t new_queue_size);
 
+    /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
+    bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
 
     /// Put a set of (already existing) parts in virtual_parts.
     void addVirtualParts(const MergeTreeData::DataParts & parts);
-
-    /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
-    bool load(zkutil::ZooKeeperPtr zookeeper);
 
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -220,7 +220,7 @@ public:
     ~ReplicatedMergeTreeQueue();
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-        const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
+        const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
@@ -233,6 +233,12 @@ public:
       */
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
+    /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
+      * If queue was not empty load() would not load duplicate records.
+      * return true, if we update queue.
+      */
+    bool load(zkutil::ZooKeeperPtr zookeeper);
+
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
@@ -240,16 +246,16 @@ public:
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       */
-    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback = {});
+    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback = {});
+    void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
 
     /** Throws and exception if there are currently executing entries in the range .
      */
@@ -274,6 +280,15 @@ public:
       * Returns true if there were no exceptions during the processing.
       */
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
+
+    /// Count the number of merges and mutations of single parts in the queue.
+    size_t countMergesAndPartMutations() const;
+
+    /// Count the total number of active mutations.
+    size_t countMutations() const;
+
+    /// Count the total number of active mutations that are finished (is_done = true).
+    size_t countFinishedMutations() const;
 
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
@@ -345,12 +360,6 @@ public:
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
 
-    /// Count the number of merges and mutations of single parts in the queue.
-    size_t countMergesAndPartMutations() const;
-
-    /// Count the total number of active mutations.
-    size_t countMutations() const;
-
     /// Return nonempty optional if the part can and should be mutated.
     /// Returned mutation version number is always the biggest possible.
     std::optional<Int64> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
@@ -367,7 +376,7 @@ private:
     std::unordered_map<String, std::set<Int64>> committing_blocks;
 
     /// Quorum state taken at some later time than prev_virtual_parts.
-    String last_quorum_part;
+    std::set<std::string> last_quorum_parts;
     String inprogress_quorum_part;
 };
 

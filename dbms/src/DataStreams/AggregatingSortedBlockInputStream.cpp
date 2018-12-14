@@ -63,7 +63,7 @@ Block AggregatingSortedBlockInputStream::readImpl()
     for (size_t i = 0, size = columns_to_aggregate.size(); i < size; ++i)
         columns_to_aggregate[i] = typeid_cast<ColumnAggregateFunction *>(merged_columns[column_numbers_to_aggregate[i]].get());
 
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 

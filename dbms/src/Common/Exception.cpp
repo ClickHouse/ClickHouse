@@ -25,7 +25,7 @@ namespace ErrorCodes
 }
 
 
-void throwFromErrno(const std::string & s, int code, int e)
+std::string errnoToString(int code, int e)
 {
     const size_t buf_size = 128;
     char buf[buf_size];
@@ -43,12 +43,17 @@ void throwFromErrno(const std::string & s, int code, int e)
         strcpy(buf, unknown_message);
         strcpy(buf + strlen(unknown_message), code);
     }
-    throw ErrnoException(s + ", errno: " + toString(e) + ", strerror: " + std::string(buf), code, e);
+    return "errno: " + toString(e) + ", strerror: " + std::string(buf);
 #else
-    throw ErrnoException(s + ", errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf))), code, e);
+    (void)code;
+    return "errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf)));
 #endif
 }
 
+void throwFromErrno(const std::string & s, int code, int e)
+{
+    throw ErrnoException(s + ", " + errnoToString(code, e), code, e);
+}
 
 void tryLogCurrentException(const char * log_name, const std::string & start_of_message)
 {
@@ -130,11 +135,11 @@ int getCurrentExceptionCode()
     {
         return e.code();
     }
-    catch (const Poco::Exception & e)
+    catch (const Poco::Exception &)
     {
         return ErrorCodes::POCO_EXCEPTION;
     }
-    catch (const std::exception & e)
+    catch (const std::exception &)
     {
         return ErrorCodes::STD_EXCEPTION;
     }

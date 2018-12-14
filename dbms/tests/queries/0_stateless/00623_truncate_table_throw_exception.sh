@@ -15,7 +15,7 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_truncate.test_view_depend VALUES(
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_truncate.test_view;"
 
 ${CLICKHOUSE_CLIENT} --query "SELECT '========Execute Truncate========';"
-echo `${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE test_truncate.test_view;" 2>&1 | grep -c "Code: 48.*Truncate is not supported by storage View"`
+echo `${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE test_truncate.test_view;" --server_logs_file=/dev/null 2>&1 | grep -c "Code: 48.*Truncate is not supported by storage View"`
 
 ${CLICKHOUSE_CLIENT} --query "SELECT '========After Truncate========';"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_truncate.test_view;"

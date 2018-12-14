@@ -287,12 +287,13 @@ private:
     /// Size of counter's rank in bits.
     static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get();
 
-private:
-    using Value_t = UInt64;
+    using Value = UInt64;
     using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
 
 public:
-    void insert(Value_t value)
+    using value_type = Value;
+
+    void insert(Value value)
     {
         HashValueType hash = getHash(value);
 
@@ -309,9 +310,9 @@ public:
     {
         /// Normalizing factor for harmonic mean.
         static constexpr double alpha_m =
-            bucket_count == 2  ? 0.351 :
-            bucket_count == 4  ? 0.532 :
-            bucket_count == 8  ? 0.626 :
+            bucket_count == 2 ? 0.351 :
+            bucket_count == 4 ? 0.532 :
+            bucket_count == 8 ? 0.626 :
             bucket_count == 16 ? 0.673 :
             bucket_count == 32 ? 0.697 :
             bucket_count == 64 ? 0.709 : 0.7213 / (1 + 1.079 / bucket_count);
@@ -413,7 +414,7 @@ private:
         return zeros_plus_one;
     }
 
-    inline HashValueType getHash(Value_t key) const
+    inline HashValueType getHash(Value key) const
     {
         return Hash::operator()(key);
     }

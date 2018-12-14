@@ -1,10 +1,10 @@
 #pragma once
 
 #include <common/Types.h>
+#include <common/DayNum.h>
 #include <common/likely.h>
-#include <common/strong_typedef.h>
-
 #include <ctime>
+#include <string>
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
@@ -13,9 +13,6 @@
 #define DATE_LUT_MIN_YEAR 1970
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
-
-
-STRONG_TYPEDEF(UInt16, DayNum);
 
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
@@ -27,6 +24,7 @@ public:
     DateLUTImpl(const std::string & time_zone);
 
 public:
+    /// The order of fields matters for alignment and sizeof.
     struct Values
     {
         /// Least significat 32 bits from time_t at beginning of the day.
@@ -45,9 +43,11 @@ public:
         UInt8 days_in_month;
 
         /// For days, when offset from UTC was changed due to daylight saving time or permanent change, following values could be non zero.
-        UInt16 time_at_offset_change; /// In seconds from beginning of the day. Assuming offset never changed close to the end of day (so, value < 65536).
         Int16 amount_of_offset_change; /// Usually -3600 or 3600, but look at Lord Howe Island.
+        UInt32 time_at_offset_change; /// In seconds from beginning of the day.
     };
+
+    static_assert(sizeof(Values) == 16);
 
 private:
     /// Lookup table is indexed by DayNum.
@@ -250,6 +250,7 @@ public:
 
         time_t res = t - lut[index].date;
 
+        /// Data is cleaned to avoid possibility of underflow.
         if (res >= lut[index].time_at_offset_change)
             res += lut[index].amount_of_offset_change;
 
@@ -309,6 +310,9 @@ public:
     inline unsigned toYear(DayNum d) const { return lut[d].year; }
     inline unsigned toDayOfWeek(DayNum d) const { return lut[d].day_of_week; }
     inline unsigned toDayOfMonth(DayNum d) const { return lut[d].day_of_month; }
+    inline unsigned toDayOfYear(DayNum d) const { return d + 1 - toFirstDayNumOfYear(d); }
+
+    inline unsigned toDayOfYear(time_t t) const { return toDayOfYear(toDayNum(t)); }
 
     /// Number of week from some fixed moment in the past. Week begins at monday.
     /// (round down to monday and divide DayNum by 7; we made an assumption,
@@ -316,12 +320,61 @@ public:
     inline unsigned toRelativeWeekNum(DayNum d) const
     {
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return (d + 8 - lut[d].day_of_week) / 7;
+        return (d + 8 - toDayOfWeek(d)) / 7;
     }
 
     inline unsigned toRelativeWeekNum(time_t t) const
     {
         return toRelativeWeekNum(toDayNum(t));
+    }
+
+    /// Get year that contains most of the current week. Week begins at monday.
+    inline unsigned toISOYear(DayNum d) const
+    {
+        /// That's effectively the year of thursday of current week.
+        return toYear(DayNum(d + 4 - toDayOfWeek(d)));
+    }
+
+    inline unsigned toISOYear(time_t t) const
+    {
+        return toISOYear(toDayNum(t));
+    }
+
+    /// ISO year begins with a monday of the week that is contained more than by half in the corresponding calendar year.
+    /// Example: ISO year 2019 begins at 2018-12-31. And ISO year 2017 begins at 2017-01-02.
+    /// https://en.wikipedia.org/wiki/ISO_week_date
+    inline DayNum toFirstDayNumOfISOYear(DayNum d) const
+    {
+        auto iso_year = toISOYear(d);
+
+        DayNum first_day_of_year = years_lut[iso_year - DATE_LUT_MIN_YEAR];
+        auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
+
+        return DayNum(first_day_of_week_of_year <= 4
+            ? first_day_of_year + 1 - first_day_of_week_of_year
+            : first_day_of_year + 8 - first_day_of_week_of_year);
+    }
+
+    inline DayNum toFirstDayNumOfISOYear(time_t t) const
+    {
+        return toFirstDayNumOfISOYear(toDayNum(t));
+    }
+
+    inline time_t toFirstDayOfISOYear(time_t t) const
+    {
+        return fromDayNum(toFirstDayNumOfISOYear(t));
+    }
+
+    /// ISO 8601 week number. Week begins at monday.
+    /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
+    inline unsigned toISOWeek(DayNum d) const
+    {
+        return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
+    }
+
+    inline unsigned toISOWeek(time_t t) const
+    {
+        return toISOWeek(toDayNum(t));
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)

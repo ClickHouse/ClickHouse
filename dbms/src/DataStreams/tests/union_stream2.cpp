@@ -34,13 +34,13 @@ try
 
     StoragePtr table = context.getTable("default", "hits6");
 
-    QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
     BlockInputStreams streams = table->read(column_names, {}, context, stage, settings.max_block_size, settings.max_threads);
 
     for (size_t i = 0, size = streams.size(); i < size; ++i)
         streams[i] = std::make_shared<AsynchronousBlockInputStream>(streams[i]);
 
-    BlockInputStreamPtr stream = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, settings.max_threads);
+    BlockInputStreamPtr stream = std::make_shared<UnionBlockInputStream>(streams, nullptr, settings.max_threads);
     stream = std::make_shared<LimitBlockInputStream>(stream, 10, 0);
 
     WriteBufferFromFileDescriptor wb(STDERR_FILENO);

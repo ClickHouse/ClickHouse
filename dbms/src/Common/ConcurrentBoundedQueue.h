@@ -37,7 +37,7 @@ namespace detail
     {
         MoveOrCopyIfThrow<T>()(std::forward<T>(src), dst);
     }
-};
+}
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty.

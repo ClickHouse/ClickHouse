@@ -79,7 +79,7 @@ namespace ZeroTraits
 
     template <>
     inline void set<SmallStringRef>(SmallStringRef & x) { x.size = 0; }
-};
+}
 
 template <>
 struct DefaultHash<SmallStringRef>

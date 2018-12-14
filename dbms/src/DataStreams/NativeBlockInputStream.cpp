@@ -9,6 +9,7 @@
 #include <ext/range.h>
 
 #include <DataStreams/NativeBlockInputStream.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -59,8 +60,14 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
-    IDataType::InputStreamGetter input_stream_getter = [&] (const IDataType::SubstreamPath &) { return &istr; };
-    type.deserializeBinaryBulkWithMultipleStreams(column, input_stream_getter, rows, avg_value_size_hint, false, {});
+    IDataType::DeserializeBinaryBulkSettings settings;
+    settings.getter = [&](IDataType::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.avg_value_size_hint = avg_value_size_hint;
+    settings.position_independent_encoding = false;
+
+    IDataType::DeserializeBinaryBulkStatePtr state;
+    type.deserializeBinaryBulkStatePrefix(settings, state);
+    type.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state);
 
     if (column.size() != rows)
         throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: " + toString(rows) + ".",
@@ -145,6 +152,13 @@ Block NativeBlockInputStream::readImpl()
             readData(*column.type, *read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
+
+        /// Support insert from old clients without low cardinality type.
+        if (header && server_revision && server_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+        {
+            column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+            column.type = header.getByPosition(i).type;
+        }
 
         res.insert(std::move(column));
 

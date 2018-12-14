@@ -1,4 +1,8 @@
+#if __has_include(<mariadb/mysql.h>)
+#include <mariadb/mysql.h> // Y_IGNORE
+#else
 #include <mysql/mysql.h>
+#endif
 
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Exception.h>
@@ -26,8 +30,6 @@ LibrarySingleton::~LibrarySingleton()
 Connection::Connection()
     : driver(std::make_unique<MYSQL>())
 {
-    is_connected = false;
-
     /// MySQL library initialization.
     LibrarySingleton::instance();
 }
@@ -43,17 +45,16 @@ Connection::Connection(
     const char* ssl_cert,
     const char* ssl_key,
     unsigned timeout,
-    unsigned rw_timeout)
-    : driver(std::make_unique<MYSQL>())
+    unsigned rw_timeout,
+    bool enable_local_infile)
+    : Connection()
 {
-    is_connected = false;
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile);
 }
 
 Connection::Connection(const std::string & config_name)
-    : driver(std::make_unique<MYSQL>())
+    : Connection()
 {
-    is_connected = false;
     connect(config_name);
 }
 
@@ -73,16 +74,15 @@ void Connection::connect(const char* db,
     const char * ssl_cert,
     const char * ssl_key,
     unsigned timeout,
-    unsigned rw_timeout)
+    unsigned rw_timeout,
+    bool enable_local_infile)
 {
     if (is_connected)
         disconnect();
 
-    /// MySQL library initialization.
-    LibrarySingleton::instance();
-
     if (!mysql_init(driver.get()))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
+    is_initialized = true;
 
     /// Set timeouts.
     if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, &timeout))
@@ -94,9 +94,9 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, &rw_timeout))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Disable LOAD DATA LOCAL INFILE because it is insecure.
-    unsigned enable_local_infile = 0;
-    if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile))
+    /// Disable LOAD DATA LOCAL INFILE because it is insecure if necessary.
+    unsigned enable_local_infile_arg = static_cast<unsigned>(enable_local_infile);
+    if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile_arg))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Specifies particular ssl key and certificate if it needs
@@ -125,11 +125,13 @@ bool Connection::connected() const
 
 void Connection::disconnect()
 {
-    if (!is_connected)
+    if (!is_initialized)
         return;
 
     mysql_close(driver.get());
     memset(driver.get(), 0, sizeof(*driver));
+
+    is_initialized = false;
     is_connected = false;
 }
 

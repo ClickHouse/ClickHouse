@@ -18,6 +18,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -40,8 +41,10 @@ try
 
     Context context = Context::createGlobal();
 
-    ExpressionAnalyzer analyzer(ast, context, {}, {NameAndTypePair("number", std::make_shared<DataTypeUInt64>())});
-    ExpressionActionsChain chain;
+    NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    ExpressionAnalyzer analyzer(ast, syntax_result, context);
+    ExpressionActionsChain chain(context);
     analyzer.appendSelect(chain, false);
     analyzer.appendProjectResult(chain);
     chain.finalize();
@@ -52,7 +55,7 @@ try
     Names column_names;
     column_names.push_back("number");
 
-    QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
     BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
     in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(modulo(number, 3), 1)");

@@ -30,6 +30,27 @@ typedef struct
     int someField;
 } DataHolder;
 
+typedef struct
+{
+    const void * data;
+    uint64_t size;
+} ClickHouseLibField;
+
+typedef struct
+{
+    const ClickHouseLibField * data;
+    uint64_t size;
+} ClickHouseLibRow;
+
+typedef struct
+{
+    const ClickHouseLibRow * data;
+    uint64_t size;
+    uint64_t error_code;
+    const char * error_string;
+} ClickHouseLibTable;
+
+
 #define LOG(logger, format, ...)                  \
     do                                            \
     {                                             \
@@ -54,11 +75,10 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibCStrings * 
     return 0;
 }
 
-void * ClickHouseDictionary_v3_loadKeys(
-    void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, const ClickHouseLibVectorUInt64 * requested_rows)
+void * ClickHouseDictionary_v3_loadKeys(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibTable* requested_keys)
 {
     LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
-    LOG(lib->log, "loadKeys c lib call ptr=%p size=%" PRIu64, data_ptr, requested_rows->size);
+    LOG(lib->log, "loadKeys c lib call ptr=%p size=%" PRIu64, data_ptr, requested_keys->size);
     return 0;
 }
 

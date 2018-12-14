@@ -58,6 +58,11 @@ public:
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
+    const FormatsDictionary & getAllFormats() const
+    {
+        return dict;
+    }
+
 private:
     FormatsDictionary dict;
 

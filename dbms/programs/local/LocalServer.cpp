@@ -17,9 +17,11 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
@@ -28,6 +30,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 
@@ -100,10 +103,12 @@ try
 {
     Logger * log = &logger();
 
+    UseSSL use_ssl;
+
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
     {
-        if (!config().hasOption("silent"))
-            std::cerr << "There are no queries to process." << std::endl;
+        if (config().hasOption("verbose"))
+            std::cerr << "There are no queries to process." << '\n';
 
         return Application::EXIT_OK;
     }
@@ -111,9 +116,11 @@ try
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
+        const auto config_path = config().getString("config-file", "config.xml");
+        ConfigProcessor config_processor(config_path, false, true);
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", DBMS_DEFAULT_PATH));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
@@ -136,6 +143,7 @@ try
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -198,8 +206,7 @@ try
 }
 catch (const Exception & e)
 {
-    if (!config().hasOption("silent"))
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
@@ -269,7 +276,10 @@ void LocalServer::processQueries()
     context->setCurrentQueryId("");
     applyCmdSettings(*context);
 
-    bool echo_query = config().hasOption("echo") || config().hasOption("verbose");
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(*context);
+
+    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
 
     for (const auto & query : queries)
@@ -277,8 +287,12 @@ void LocalServer::processQueries()
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
-        if (echo_query)
-            std::cerr << query << "\n";
+        if (echo_queries)
+        {
+            writeString(query, write_buf);
+            writeChar('\n', write_buf);
+            write_buf.next();
+        }
 
         try
         {
@@ -292,8 +306,7 @@ void LocalServer::processQueries()
             if (!exception)
                 exception = std::current_exception();
 
-            if (!config().has("silent"))
-                std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
         }
     }
 
@@ -339,7 +352,7 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         users_config = loaded_config.configuration;
     }
     else
@@ -355,10 +368,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-        << "." << DBMS_VERSION_MINOR
-        << "." << ClickHouseRevision::get()
-        << "." << std::endl;
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << '\n';
 }
 
 std::string LocalServer::getHelpHeader() const
@@ -419,7 +429,6 @@ void LocalServer::init(int argc, char ** argv)
         ("format,f", po::value<std::string>(), "default output format (clickhouse-client compatibility)")
         ("output-format", po::value<std::string>(), "default output format")
 
-        ("silent,s", "quiet mode, do not print errors")
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
@@ -475,8 +484,6 @@ void LocalServer::init(int argc, char ** argv)
     if (options.count("output-format"))
         config().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.count("silent"))
-        config().setBool("silent", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
     if (options.count("echo"))
@@ -505,7 +512,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
         auto code = DB::getCurrentExceptionCode();
         return code ? code : 1;
     }

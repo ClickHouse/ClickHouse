@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
+#include <Common/CurrentThread.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -38,22 +39,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
-/** Union mode.
-  */
-enum class StreamUnionMode
-{
-    Basic = 0, /// take out blocks
-    ExtraInfo  /// take out blocks + additional information
-};
-
 /// Example of the handler.
 struct ParallelInputsHandler
 {
     /// Processing the data block.
     void onBlock(Block & /*block*/, size_t /*thread_num*/) {}
-
-    /// Processing the data block + additional information.
-    void onBlock(Block & /*block*/, BlockExtraInfo & /*extra_info*/, size_t /*thread_num*/) {}
 
     /// Called for each thread, when the thread has nothing else to do.
     /// Due to the fact that part of the sources has run out, and now there are fewer sources left than streams.
@@ -69,7 +59,7 @@ struct ParallelInputsHandler
 };
 
 
-template <typename Handler, StreamUnionMode mode = StreamUnionMode::Basic>
+template <typename Handler>
 class ParallelInputsProcessor
 {
 public:
@@ -105,8 +95,27 @@ public:
     {
         active_threads = max_threads;
         threads.reserve(max_threads);
-        for (size_t i = 0; i < max_threads; ++i)
-            threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
+        auto thread_group = CurrentThread::getGroup();
+
+        try
+        {
+            for (size_t i = 0; i < max_threads; ++i)
+                threads.emplace_back([=] () { thread(thread_group, i); });
+        }
+        catch (...)
+        {
+            cancel(false);
+            wait();
+            if (active_threads)
+            {
+                active_threads = 0;
+                /// handler.onFinish() is supposed to be called from one of the threads when the number of
+                /// finished threads reaches max_threads. But since we weren't able to launch all threads,
+                /// we have to call onFinish() manually here.
+                handler.onFinish();
+            }
+            throw;
+        }
     }
 
     /// Ask all sources to stop earlier than they run out.
@@ -163,27 +172,21 @@ private:
         InputData(const BlockInputStreamPtr & in_, size_t i_) : in(in_), i(i_) {}
     };
 
-    void publishPayload(BlockInputStreamPtr & stream, Block & block, size_t thread_num)
+    void publishPayload(Block & block, size_t thread_num)
     {
-        if constexpr (mode == StreamUnionMode::Basic)
-            handler.onBlock(block, thread_num);
-        else
-        {
-            BlockExtraInfo extra_info = stream->getBlockExtraInfo();
-            handler.onBlock(block, extra_info, thread_num);
-        }
+        handler.onBlock(block, thread_num);
     }
 
-    void thread(MemoryTracker * memory_tracker, size_t thread_num)
+    void thread(ThreadGroupStatusPtr thread_group, size_t thread_num)
     {
-        current_memory_tracker = memory_tracker;
         std::exception_ptr exception;
-
-        setThreadName("ParalInputsProc");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
         try
         {
+            setThreadName("ParalInputsProc");
+            CurrentThread::attachTo(thread_group);
+
             while (!finish)
             {
                 InputData unprepared_input;
@@ -229,7 +232,7 @@ private:
                 {
                     additional_input_at_end->readPrefix();
                     while (Block block = additional_input_at_end->read())
-                        publishPayload(additional_input_at_end, block, thread_num);
+                        publishPayload(block, thread_num);
                 }
                 catch (...)
                 {
@@ -292,7 +295,7 @@ private:
                     break;
 
                 if (block)
-                    publishPayload(input.in, block, thread_num);
+                    publishPayload(block, thread_num);
             }
         }
     }

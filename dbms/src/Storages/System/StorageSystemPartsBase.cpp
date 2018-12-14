@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemPartsBase.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -59,7 +60,10 @@ public:
             /// Add column 'database'.
             MutableColumnPtr database_column_mut = ColumnString::create();
             for (const auto & database : databases)
-                database_column_mut->insert(database.first);
+            {
+                if (context.hasDatabaseAccessRights(database.first))
+                    database_column_mut->insert(database.first);
+            }
             block_to_filter.insert(ColumnWithTypeAndName(
                     std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
@@ -162,7 +166,7 @@ public:
             try
             {
                 /// For table not to be dropped and set of columns to remain constant.
-                info.table_lock = info.storage->lockStructure(false, __PRETTY_FUNCTION__);
+                info.table_lock = info.storage->lockStructure(false);
             }
             catch (const Exception & e)
             {
@@ -234,13 +238,11 @@ BlockInputStreams StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names);
-
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     StoragesInfoStream stream(query_info, context, has_state_column);
 
@@ -305,7 +307,7 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults)));
+    setColumns(ColumnsDescription(std::move(columns_), {}, std::move(aliases), std::move(defaults), ColumnComments{}));
 }
 
 }

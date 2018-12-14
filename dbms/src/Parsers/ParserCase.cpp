@@ -50,12 +50,18 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!has_branch)
             return false;
 
-        if (!s_else.ignore(pos, expected))
-            return false;
-
         ASTPtr expr_else;
-        if (!p_expr.parse(pos, expr_else, expected))
-            return false;
+        if (s_else.ignore(pos, expected))
+        {
+            if (!p_expr.parse(pos, expr_else, expected))
+                return false;
+        }
+        else
+        {
+            Field field_with_null;
+            ASTLiteral null_literal(field_with_null);
+            expr_else = std::make_shared<ASTLiteral>(null_literal);
+        }
         args.push_back(expr_else);
 
         if (!s_end.ignore(pos, expected))

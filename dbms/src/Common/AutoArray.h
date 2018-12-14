@@ -1,12 +1,19 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdlib>
 
-#include <common/likely.h>
+#include <Common/Exception.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 /** An array of (almost) unchangable size:
   *  the size is specified in the constructor;
@@ -20,6 +27,7 @@ namespace DB
   * `sizeof` is equal to the size of one pointer.
   *
   * Not exception-safe.
+  *
   * Copying is supported via assign() method. Moving empties the original object.
   * That is, it is inconvenient to use this array in many cases.
   *
@@ -78,7 +86,7 @@ public:
         if (this == &src)
             return;
         setEmpty();
-        data = src.data;
+        data_ptr = src.data_ptr;
         src.setEmpty();
     }
 
@@ -87,7 +95,7 @@ public:
         if (this == &src)
             return *this;
         uninit();
-        data = src.data;
+        data_ptr = src.data_ptr;
         src.setEmpty();
 
         return *this;
@@ -147,6 +155,16 @@ public:
         return elem(i);
     }
 
+    T * data()
+    {
+        return elemPtr(0);
+    }
+
+    const T * data() const
+    {
+        return elemPtr(0);
+    }
+
     /** Get the piece of memory in which the element should be located.
       * The function is intended to initialize an element,
       *  which has not yet been initialized
@@ -154,17 +172,17 @@ public:
       */
     char * place(size_t i)
     {
-        return data + sizeof(T) * i;
+        return data_ptr + sizeof(T) * i;
     }
 
     using iterator = T *;
     using const_iterator = const T *;
 
-    iterator begin() { return &elem(0); }
-    iterator end() { return &elem(size()); }
+    iterator begin() { return elemPtr(0); }
+    iterator end() { return elemPtr(size()); }
 
-    const_iterator begin() const { return &elem(0); }
-    const_iterator end() const { return &elem(size()); }
+    const_iterator begin() const { return elemPtr(0); }
+    const_iterator end() const { return elemPtr(size()); }
 
     bool operator== (const AutoArray<T> & rhs) const
     {
@@ -207,47 +225,69 @@ public:
     }
 
 private:
-    char * data;
+    static constexpr size_t alignment = alignof(T);
+    /// Bytes allocated to store size of array before data. It is padded to have minimum size as alignment.
+    /// Padding is at left and the size is stored at right (just before the first data element).
+    static constexpr size_t prefix_size = std::max(sizeof(size_t), alignment);
+
+    char * data_ptr;
 
     size_t & m_size()
     {
-        return reinterpret_cast<size_t *>(data)[-1];
+        return reinterpret_cast<size_t *>(data_ptr)[-1];
     }
 
     size_t m_size() const
     {
-        return reinterpret_cast<const size_t *>(data)[-1];
+        return reinterpret_cast<const size_t *>(data_ptr)[-1];
+    }
+
+    T * elemPtr(size_t i)
+    {
+        return reinterpret_cast<T *>(data_ptr) + i;
+    }
+
+    const T * elemPtr(size_t i) const
+    {
+        return reinterpret_cast<const T *>(data_ptr) + i;
     }
 
     T & elem(size_t i)
     {
-        return reinterpret_cast<T *>(data)[i];
+        return *elemPtr(i);
     }
 
     const T & elem(size_t i) const
     {
-        return reinterpret_cast<const T *>(data)[i];
+        return *elemPtr(i);
     }
 
     void setEmpty()
     {
-        data = const_cast<char *>(reinterpret_cast<const char *>(&empty_auto_array_helper)) + sizeof(size_t);
+        data_ptr = const_cast<char *>(reinterpret_cast<const char *>(&empty_auto_array_helper)) + sizeof(size_t);
     }
 
-    void init(size_t size_, bool dont_init_elems)
+    void init(size_t new_size, bool dont_init_elems)
     {
-        if (!size_)
+        if (!new_size)
         {
             setEmpty();
             return;
         }
 
-        data = new char[size_ * sizeof(T) + sizeof(size_t)];
-        data += sizeof(size_t);
-        m_size() = size_;
+        void * new_data = nullptr;
+        int res = posix_memalign(&new_data, alignment, prefix_size + new_size * sizeof(T));
+        if (0 != res)
+            throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(new_size) + ".",
+                ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+
+        data_ptr = static_cast<char *>(new_data);
+        data_ptr += prefix_size;
+
+        m_size() = new_size;
 
         if (!dont_init_elems)
-            for (size_t i = 0; i < size_; ++i)
+            for (size_t i = 0; i < new_size; ++i)
                 new (place(i)) T();
     }
 
@@ -255,13 +295,13 @@ private:
     {
         size_t s = size();
 
-        if (likely(s))
+        if (s)
         {
             for (size_t i = 0; i < s; ++i)
                 elem(i).~T();
 
-            data -= sizeof(size_t);
-            delete[] data;
+            data_ptr -= prefix_size;
+            free(data_ptr);
         }
     }
 };

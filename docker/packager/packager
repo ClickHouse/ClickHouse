@@ -1,0 +1,113 @@
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
+import subprocess
+import os
+import argparse
+import logging
+import sys
+
+IMAGE_MAP = {
+    "deb": "yandex/clickhouse-deb-builder",
+    "binary": "yandex/clickhouse-binary-builder",
+}
+
+
+def check_image_exists_locally(image_name):
+    try:
+        output = subprocess.check_output("docker images -q {} 2> /dev/null".format(image_name), shell=True)
+        return output != ""
+    except subprocess.CalledProcessError as ex:
+        return False
+
+def pull_image(image_name):
+    try:
+        subprocess.check_call("docker pull {}".format(image_name), shell=True)
+        return True
+    except subprocess.CalledProcessError as ex:
+        logging.info("Cannot pull image {}".format(image_name))
+        return False
+
+def build_image(image_name, filepath):
+    subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
+
+def run_image_with_env(image_name, output, env_variables, ch_root):
+    env_part = " -e ".join(env_variables)
+    if env_part:
+        env_part = " -e " + env_part
+
+    if sys.stdout.isatty():
+        interactive = "-it"
+    else:
+        interactive = ""
+
+    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build {env} {interactive} {img_name}".format(
+        output_path=output,
+        ch_root=ch_root,
+        env=env_part,
+        img_name=image_name,
+        interactive=interactive
+    )
+
+    logging.info("Will build ClickHouse pkg with cmd: '{}'".format(cmd))
+
+    subprocess.check_call(cmd, shell=True)
+
+def parse_env_variables(build_type, compiler, sanitizer, package_type, cache, distcc_hosts, unbundled):
+    result = []
+    if package_type == "deb":
+        result.append("DEB_CC={}".format(compiler))
+        result.append("DEB_CXX={}".format(compiler.replace('gcc', 'g++').replace('clang', 'clang++')))
+    elif package_type == "binary":
+        result.append("CC={}".format(compiler))
+        result.append("CXX={}".format(compiler.replace('gcc', 'g++').replace('clang', 'clang++')))
+
+    if sanitizer:
+        result.append("SANITIZER={}".format(sanitizer))
+    if build_type:
+        result.append("BUILD_TYPE={}".format(build_type))
+
+    if cache:
+        result.append("CCACHE_PREFIX={}".format(cache))
+
+    if distcc_hosts:
+        hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + ["localhost/`nproc`"]
+        result.append('DISTCC_HOSTS="{}"'.format(" ".join(hosts_with_params)))
+    elif cache == "distcc":
+        result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
+
+    if unbundled:
+        result.append('CMAKE_FLAGS="-DUNBUNDLED=1 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 $CMAKE_FLAGS"')
+    return result
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    parser = argparse.ArgumentParser(description="ClickHouse building script via docker")
+    parser.add_argument("--package-type", choices=IMAGE_MAP.keys(), required=True)
+    parser.add_argument("--clickhouse-repo-path", default="../../")
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--build-type", choices=("debug", ""), default="")
+    parser.add_argument("--compiler", choices=("clang-6.0", "gcc-7", "gcc-8"), default="gcc-7")
+    parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
+    parser.add_argument("--unbundled", action="store_true")
+    parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
+    parser.add_argument("--distcc-hosts", nargs="+")
+    parser.add_argument("--force-build-image", action="store_true")
+
+    args = parser.parse_args()
+    if not os.path.isabs(args.output_dir):
+        args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
+
+    image_name = IMAGE_MAP[args.package_type]
+
+    if not os.path.isabs(args.clickhouse_repo_path):
+        ch_root = os.path.abspath(os.path.join(os.getcwd(), args.clickhouse_repo_path))
+    else:
+        ch_root = args.clickhouse_repo_path
+
+    dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
+    if not check_image_exists_locally(image_name) or args.force_build_image:
+        if not pull_image(image_name) or args.force_build_image:
+            build_image(image_name, dockerfile)
+    env_prepared = parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type, args.cache, args.distcc_hosts, args.unbundled)
+    run_image_with_env(image_name, args.output_dir, env_prepared, ch_root)
+    logging.info("Output placed into {}".format(args.output_dir))

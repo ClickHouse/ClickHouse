@@ -35,11 +35,4 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
     }
 }
 
-
-void ASTSelectWithUnionQuery::setDatabaseIfNeeded(const String & database_name)
-{
-    for (auto & child : list_of_selects->children)
-        typeid_cast<ASTSelectQuery &>(*child).setDatabaseIfNeeded(database_name);
-}
-
 }

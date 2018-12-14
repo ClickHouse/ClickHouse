@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_MARK;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
@@ -249,6 +250,8 @@ MergeTreeData::DataPart::Checksums checkDataPart(
 
         while (true)
         {
+            IDataType::DeserializeBinaryBulkSettings settings;
+
             /// Check that mark points to current position in file.
             bool marks_eof = false;
             name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
@@ -270,7 +273,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                             + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
                         throw;
                     }
-                }, {});
+                }, settings.path);
 
             ++mark_num;
 
@@ -278,18 +281,18 @@ MergeTreeData::DataPart::Checksums checkDataPart(
             /// NOTE Shared array sizes of Nested columns are read more than once. That's Ok.
 
             MutableColumnPtr tmp_column = name_type.type->createColumn();
-            name_type.type->deserializeBinaryBulkWithMultipleStreams(
-                *tmp_column,
-                [&](const IDataType::SubstreamPath & substream_path)
-                {
-                    String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
-                    auto stream_it = streams.find(file_name);
-                    if (stream_it == streams.end())
-                        throw Exception("Logical error: cannot find stream " + file_name);
-                    return &stream_it->second.uncompressed_hashing_buf;
-                },
-                index_granularity,
-                0, true, {});
+            settings.getter = [&](const IDataType::SubstreamPath & substream_path)
+            {
+                String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
+                auto stream_it = streams.find(file_name);
+                if (stream_it == streams.end())
+                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
+                return &stream_it->second.uncompressed_hashing_buf;
+            };
+
+            IDataType::DeserializeBinaryBulkStatePtr state;
+            name_type.type->deserializeBinaryBulkStatePrefix(settings, state);
+            name_type.type->deserializeBinaryBulkWithMultipleStreams(*tmp_column, index_granularity, settings, state);
 
             size_t read_size = tmp_column->size();
             column_size += read_size;
@@ -317,7 +320,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
                 String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                 auto stream_it = streams.find(file_name);
                 if (stream_it == streams.end())
-                    throw Exception("Logical error: cannot find stream " + file_name);
+                    throw Exception("Logical error: cannot find stream " + file_name, ErrorCodes::LOGICAL_ERROR);
 
                 stream_it->second.assertEnd();
                 stream_it->second.saveChecksums(checksums_data);

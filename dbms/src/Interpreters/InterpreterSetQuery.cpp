@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int READONLY;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -36,6 +37,7 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
 
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.readonly;
+    auto allow_ddl = settings.allow_ddl;
 
     for (const auto & change : ast.changes)
     {
@@ -43,6 +45,10 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
         /// Setting isn't checked if value wasn't changed.
         if (!settings.tryGet(change.name, value) || applyVisitor(FieldVisitorToString(), change.value) != value)
         {
+
+            if (!allow_ddl && change.name == "allow_ddl")
+                throw Exception("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+
             if (readonly == 1)
                 throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);
 

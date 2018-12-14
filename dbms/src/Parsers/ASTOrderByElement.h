@@ -27,16 +27,13 @@ public:
     {
     }
 
-    String getID() const override
-    {
-        return "OrderByElement";
-    }
+    String getID(char) const override { return "OrderByElement"; }
 
     ASTPtr clone() const override
     {
         auto clone = std::make_shared<ASTOrderByElement>(*this);
         clone->cloneChildren();
-        return std::move(clone);
+        return clone;
     }
 
 protected:

@@ -20,7 +20,7 @@ try
 
     std::cout << "create path" << std::endl;
     zk.create("/test", "old", zkutil::CreateMode::Persistent);
-    zkutil::Stat stat;
+    Coordination::Stat stat;
     zkutil::EventPtr watch = std::make_shared<Poco::Event>();
 
     std::cout << "get path" << std::endl;
@@ -38,13 +38,13 @@ try
 
     zk.remove("/test");
 
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest("/test", "multi1", CreateMode::Persistent));
     ops.emplace_back(zkutil::makeSetRequest("/test", "multi2", -1));
     ops.emplace_back(zkutil::makeRemoveRequest("/test", -1));
     std::cout << "multi" << std::endl;
-    zkutil::Responses res = zk.multi(ops);
-    std::cout << "path created: " << typeid_cast<const CreateResponse &>(*res[0]).path_created << std::endl;
+    Coordination::Responses res = zk.multi(ops);
+    std::cout << "path created: " << dynamic_cast<const Coordination::CreateResponse &>(*res[0]).path_created << std::endl;
 
     return 0;
 }

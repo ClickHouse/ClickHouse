@@ -1,0 +1,1 @@
+../../en/development/architecture.md

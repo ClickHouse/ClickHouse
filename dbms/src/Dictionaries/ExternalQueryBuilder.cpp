@@ -1,30 +1,40 @@
-#include <ext/range.h>
-#include <boost/range/join.hpp>
+#include "ExternalQueryBuilder.h"
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Dictionaries/writeParenthesisedString.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
+#include <boost/range/join.hpp>
+#include <ext/range.h>
+#include "DictionaryStructure.h"
+#include "writeParenthesisedString.h"
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+    extern const int LOGICAL_ERROR;
 }
 
 
 ExternalQueryBuilder::ExternalQueryBuilder(
-    const DictionaryStructure & dict_struct,
-    const std::string & db,
-    const std::string & table,
-    const std::string & where,
-    QuotingStyle quoting_style)
-    : dict_struct(dict_struct), db(db), table(table), where(where), quoting_style(quoting_style)
+    const DictionaryStructure & dict_struct_,
+    const std::string & db_,
+    const std::string & table_,
+    const std::string & where_,
+    IdentifierQuotingStyle quoting_style_)
+    : dict_struct(dict_struct_), db(db_), where(where_), quoting_style(quoting_style_)
 {
+    if (auto pos = table_.find('.'); pos != std::string::npos)
+    {
+        schema = table_.substr(0, pos);
+        table = table_.substr(pos + 1);
+    }
+    else
+    {
+        schema = "";
+        table = table_;
+    }
 }
 
 
@@ -32,15 +42,15 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 {
     switch (quoting_style)
     {
-        case None:
+        case IdentifierQuotingStyle::None:
             writeString(s, out);
             break;
 
-        case Backticks:
+        case IdentifierQuotingStyle::Backticks:
             writeBackQuotedString(s, out);
             break;
 
-        case DoubleQuotes:
+        case IdentifierQuotingStyle::DoubleQuotes:
             writeDoubleQuotedString(s, out);
             break;
     }
@@ -124,6 +134,11 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
         writeQuoted(db, out);
         writeChar('.', out);
     }
+    if (!schema.empty())
+    {
+        writeQuoted(schema, out);
+        writeChar('.', out);
+    }
     writeQuoted(table, out);
 
     if (!where.empty())
@@ -138,7 +153,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 }
 
 
-std::string ExternalQueryBuilder::composeUpdateQuery(const std::string &update_field, const std::string &time_point) const
+std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_field, const std::string & time_point) const
 {
     std::string out = composeLoadAllQuery();
     std::string update_query;
@@ -148,7 +163,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string &update_f
     else
         update_query = " WHERE " + update_field + " >= '" + time_point + "'";
 
-    return out.insert(out.size()-1, update_query); ///This is done to insert "update_query" before "out"'s semicolon
+    return out.insert(out.size() - 1, update_query); ///This is done to insert "update_query" before "out"'s semicolon
 }
 
 
@@ -187,6 +202,12 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
         writeQuoted(db, out);
         writeChar('.', out);
     }
+    if (!schema.empty())
+    {
+        writeQuoted(schema, out);
+        writeChar('.', out);
+    }
+
     writeQuoted(table, out);
 
     writeString(" WHERE ", out);
@@ -216,10 +237,8 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
 }
 
 
-std::string ExternalQueryBuilder::composeLoadKeysQuery(
-    const Columns & key_columns,
-    const std::vector<size_t> & requested_rows,
-    LoadKeysMethod method)
+std::string
+ExternalQueryBuilder::composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method)
 {
     if (!dict_struct.key)
         throw Exception{"Composite key required for method", ErrorCodes::UNSUPPORTED_METHOD};
@@ -250,6 +269,12 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
         writeQuoted(db, out);
         writeChar('.', out);
     }
+    if (!schema.empty())
+    {
+        writeQuoted(schema, out);
+        writeChar('.', out);
+    }
+
     writeQuoted(table, out);
 
     writeString(" WHERE ", out);

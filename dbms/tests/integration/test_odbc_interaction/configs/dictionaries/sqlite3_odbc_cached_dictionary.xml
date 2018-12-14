@@ -1,0 +1,46 @@
+<dictionaries>
+    <dictionary>
+        <name>sqlite3_odbc_cached</name>
+        <source>
+            <odbc>
+                <table>t3</table>
+                <connection_string>DSN=sqlite3_odbc</connection_string>
+            </odbc>
+        </source>
+
+
+        <layout>
+            <cache><size_in_cells>128</size_in_cells></cache>
+        </layout>
+
+        <lifetime>
+            <min>1</min>
+            <max>1</max>
+        </lifetime>
+
+        <structure>
+            <id>
+                <name>X</name>
+            </id>
+
+            <attribute>
+                <name>X</name>
+                <type>Int64</type>
+                <null_value>1</null_value>
+            </attribute>
+
+            <attribute>
+                <name>Y</name>
+                <type>Int64</type>
+                <null_value>1</null_value>
+            </attribute>
+
+            <attribute>
+                <name>Z</name>
+                <type>UInt8</type>
+                <null_value>1</null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+</dictionaries>

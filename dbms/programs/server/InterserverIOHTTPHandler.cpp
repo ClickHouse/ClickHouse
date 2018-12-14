@@ -1,9 +1,11 @@
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 
 #include <common/logger_useful.h>
 
 #include <Common/HTMLForm.h>
+#include <Common/setThreadName.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
@@ -17,10 +19,35 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+}
+
+std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(Poco::Net::HTTPServerRequest & request) const
+{
+    const auto & config = server.config();
+
+    if (config.has("interserver_http_credentials.user"))
+    {
+        if (!request.hasCredentials())
+            return {"Server requires HTTP Basic authentification, but client doesn't provide it", false};
+        String scheme, info;
+        request.getCredentials(scheme, info);
+
+        if (scheme != "Basic")
+            return {"Server requires HTTP Basic authentification but client provides another method", false};
+
+        String user = config.getString("interserver_http_credentials.user");
+        String password = config.getString("interserver_http_credentials.password", "");
+
+        Poco::Net::HTTPBasicCredentials credentials(info);
+        if (std::make_pair(user, password) != std::make_pair(credentials.getUsername(), credentials.getPassword()))
+            return {"Incorrect user or password in HTTP Basic authentification", false};
+    }
+    else if (request.hasCredentials())
+    {
+        return {"Client requires HTTP Basic authentification, but server doesn't provide it", false};
+    }
+    return {"", true};
 }
 
 void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
@@ -28,8 +55,6 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
     HTMLForm params(request);
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
-
-    /// NOTE: You can do authentication here if you need to.
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
@@ -59,14 +84,26 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
 void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
+    setThreadName("IntersrvHandler");
+
     /// In order to work keep-alive.
     if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
     try
     {
-        processQuery(request, response);
-        LOG_INFO(log, "Done processing query");
+        if (auto [msg, success] = checkAuthentication(request); success)
+        {
+            processQuery(request, response);
+            LOG_INFO(log, "Done processing query");
+        }
+        else
+        {
+            response.setStatusAndReason(Poco::Net::HTTPServerResponse::HTTP_UNAUTHORIZED);
+            if (!response.sent())
+                response.send() << msg << std::endl;
+            LOG_WARNING(log, "Query processing failed request: '" << request.getURI() << "' authentification failed");
+        }
     }
     catch (Exception & e)
     {

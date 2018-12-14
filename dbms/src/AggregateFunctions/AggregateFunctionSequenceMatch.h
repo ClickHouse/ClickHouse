@@ -6,7 +6,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
 #include <Common/PODArray.h>
-#include <Common/typeid_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <bitset>
@@ -19,7 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_SLOW;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
@@ -147,7 +146,7 @@ public:
 
         if (!sufficientArgs(arg_count))
             throw Exception{"Aggregate function " + derived().getName() + " requires at least 3 arguments.",
-                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+                ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         if (arg_count - 1 > AggregateFunctionSequenceMatchData::max_events)
             throw Exception{"Aggregate function " + derived().getName() + " supports up to " +
@@ -155,7 +154,7 @@ public:
                 ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION};
 
         const auto time_arg = arguments.front().get();
-        if (!typeid_cast<const DataTypeDateTime *>(time_arg))
+        if (!WhichDataType(time_arg).isDateTime())
             throw Exception{"Illegal type " + time_arg->getName() + " of first argument of aggregate function "
                     + derived().getName() + ", must be DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -163,7 +162,7 @@ public:
         for (const auto i : ext::range(1, arg_count))
         {
             const auto cond_arg = arguments[i].get();
-            if (!typeid_cast<const DataTypeUInt8 *>(cond_arg))
+            if (!isUInt8(cond_arg))
                 throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i + 1) +
                         " of aggregate function " + derived().getName() + ", must be UInt8",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

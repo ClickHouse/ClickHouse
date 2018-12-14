@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
+    extern const int UNKNOWN_JOIN_STRICTNESS;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
@@ -288,6 +289,53 @@ void SettingLoadBalancing::write(WriteBuffer & buf) const
 }
 
 
+JoinStrictness SettingJoinStrictness::getJoinStrictness(const String & s)
+{
+    if (s == "")       return JoinStrictness::Unspecified;
+    if (s == "ALL")    return JoinStrictness::ALL;
+    if (s == "ANY")    return JoinStrictness::ANY;
+
+    throw Exception("Unknown join strictness mode: '" + s + "', must be one of '', 'ALL', 'ANY'",
+        ErrorCodes::UNKNOWN_JOIN_STRICTNESS);
+}
+
+String SettingJoinStrictness::toString() const
+{
+    const char * strings[] = {"", "ALL", "ANY"};
+    if (value < JoinStrictness::Unspecified || value > JoinStrictness::ANY)
+        throw Exception("Unknown join strictness mode", ErrorCodes::UNKNOWN_JOIN_STRICTNESS);
+    return strings[static_cast<size_t>(value)];
+}
+
+void SettingJoinStrictness::set(JoinStrictness x)
+{
+    value = x;
+    changed = true;
+}
+
+void SettingJoinStrictness::set(const Field & x)
+{
+    set(safeGet<const String &>(x));
+}
+
+void SettingJoinStrictness::set(const String & x)
+{
+    set(getJoinStrictness(x));
+}
+
+void SettingJoinStrictness::set(ReadBuffer & buf)
+{
+    String x;
+    readBinary(x, buf);
+    set(x);
+}
+
+void SettingJoinStrictness::write(WriteBuffer & buf) const
+{
+    writeBinary(toString(), buf);
+}
+
+
 TotalsMode SettingTotalsMode::getTotalsMode(const String & s)
 {
     if (s == "before_having")          return TotalsMode::BEFORE_HAVING;
@@ -463,10 +511,10 @@ void SettingCompressionMethod::write(WriteBuffer & buf) const
 
 DistributedProductMode SettingDistributedProductMode::getDistributedProductMode(const String & s)
 {
-    if (s == "deny")   return DistributedProductMode::DENY;
-    if (s == "local")  return DistributedProductMode::LOCAL;
+    if (s == "deny") return DistributedProductMode::DENY;
+    if (s == "local") return DistributedProductMode::LOCAL;
     if (s == "global") return DistributedProductMode::GLOBAL;
-    if (s == "allow")  return DistributedProductMode::ALLOW;
+    if (s == "allow") return DistributedProductMode::ALLOW;
 
     throw Exception("Unknown distributed product mode: '" + s + "', must be one of 'deny', 'local', 'global', 'allow'",
         ErrorCodes::UNKNOWN_DISTRIBUTED_PRODUCT_MODE);
@@ -584,8 +632,8 @@ void SettingChar::write(WriteBuffer & buf) const
 
 SettingDateTimeInputFormat::Value SettingDateTimeInputFormat::getValue(const String & s)
 {
-    if (s == "basic")  return Value::Basic;
-    if (s == "best_effort")  return Value::BestEffort;
+    if (s == "basic") return Value::Basic;
+    if (s == "best_effort") return Value::BestEffort;
 
     throw Exception("Unknown DateTime input format: '" + s + "', must be one of 'basic', 'best_effort'", ErrorCodes::BAD_ARGUMENTS);
 }

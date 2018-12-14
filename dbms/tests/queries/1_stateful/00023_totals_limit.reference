@@ -1,0 +1,24 @@
+{
+	"meta":
+	[
+		{
+			"name": "ym:s:goalDimension",
+			"type": "UInt32"
+		},
+		{
+			"name": "uniqIf(UserID, and(notEquals(UserID, 0), equals(_uniq_Goals, 1)))",
+			"type": "UInt64"
+		}
+	],
+
+	"data":
+	[
+		[3176497, "3"]
+	],
+
+	"totals": [0,"3"],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 2
+}

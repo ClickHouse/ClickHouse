@@ -15,11 +15,12 @@
 
 #  Variant 3: Manual build:
 
+
 # pkg install -y curl sudo
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/build/build_freebsd.sh | sh
 
 #  install compiler and libs
-sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
+sudo pkg install devel/git devel/cmake devel/ninja shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
 
 #  install testing only stuff if you want:
 sudo pkg install lang/python devel/py-lxml devel/py-termcolor www/py-requests ftp/curl perl5
@@ -27,20 +28,23 @@ sudo pkg install lang/python devel/py-lxml devel/py-termcolor www/py-requests ft
 #  If you want ODBC support: Check UNIXODBC option:
 # make -C /usr/ports/devel/poco config reinstall
 
-#  Checkout ClickHouse sources
-git clone --recursive https://github.com/yandex/ClickHouse.git
+BASE_DIR=$(dirname $0) && [ -f "$BASE_DIR/../../CMakeLists.txt" ] && ROOT_DIR=$BASE_DIR/../.. && cd $ROOT_DIR
+
+if [ -z $ROOT_DIR ]; then
+    #  Checkout ClickHouse sources
+    git clone --recursive https://github.com/yandex/ClickHouse.git
+    cd ClickHouse
+fi
 
 #  Build!
-mkdir -p ClickHouse/build
-cd ClickHouse/build
+mkdir -p build
+cd build
 cmake .. -DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0
-# build with boost 1.64 from ports temporary broken
-
-make clickhouse-bundle -j $(nproc || sysctl -n hw.ncpu || echo 2)
-cd ../..
+cmake --build .
+cd ..
 
 #  Run server:
-# ClickHouse/build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
+# build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
 
 #  Run client:
-# ClickHouse/build/dbms/programs/clickhouse-client
+# build/dbms/programs/clickhouse-client

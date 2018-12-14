@@ -2,22 +2,21 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Dictionaries/ExternalResultDescription.h>
+#include "ExternalResultDescription.h"
 
 
 namespace Poco
 {
-    namespace MongoDB
-    {
-        class Connection;
-        class Cursor;
-    }
+namespace MongoDB
+{
+    class Connection;
+    class Cursor;
+}
 }
 
 
 namespace DB
 {
-
 /// Converts MongoDB Cursor to a stream of Blocks
 class MongoDBBlockInputStream final : public IProfilingBlockInputStream
 {
@@ -32,7 +31,7 @@ public:
 
     String getName() const override { return "MongoDB"; }
 
-    Block getHeader() const override { return description.sample_block; }
+    Block getHeader() const override { return description.sample_block.cloneEmpty(); }
 
 private:
     Block readImpl() override;

@@ -8,7 +8,7 @@ ASTPtr ASTAsterisk::clone() const
 {
     auto clone = std::make_shared<ASTAsterisk>(*this);
     clone->cloneChildren();
-    return std::move(clone);
+    return clone;
 }
 
 void ASTAsterisk::appendColumnName(WriteBuffer & ostr) const { ostr.write('*'); }

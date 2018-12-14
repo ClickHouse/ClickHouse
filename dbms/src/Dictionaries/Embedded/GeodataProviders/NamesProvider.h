@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
-
 #include <Common/FileUpdatesTracker.h>
+#include "INamesProvider.h"
 
 
 // Represents local file with list of regions ids / names
@@ -15,10 +14,9 @@ private:
 
 public:
     LanguageRegionsNamesDataSource(const std::string & path_, const std::string & language_)
-        : path(path_)
-        , updates_tracker(path_)
-        , language(language_)
-    {}
+        : path(path_), updates_tracker(path_), language(language_)
+    {
+    }
 
     bool isModified() const override;
 
@@ -43,8 +41,7 @@ private:
 public:
     RegionsNamesDataProvider(const std::string & directory_);
 
-    ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(
-        const std::string& language) const override;
+    ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(const std::string & language) const override;
 
 private:
     std::string getDataFilePath(const std::string & language) const;

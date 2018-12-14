@@ -139,4 +139,17 @@ SELECT corr(x_value, y_value) FROM (SELECT x_value, y_value FROM test.series LIM
 
 SELECT round(abs(corr(x_value, y_value) - covarPop(x_value, y_value) / (stddevPop(x_value) * stddevPop(y_value))), 6) FROM test.series;
 
+/* quantile AND quantileExact */
+SELECT '----quantile----';
+
+SELECT quantileExactIf(number, number > 0) FROM numbers(90);
+
+SELECT quantileExactIf(number, number > 100) FROM numbers(90);
+SELECT quantileExactIf(toFloat32(number) , number > 100) FROM numbers(90);
+SELECT quantileExactIf(toFloat64(number) , number > 100) FROM numbers(90);
+
+SELECT quantileIf(number, number > 100) FROM numbers(90);
+SELECT quantileIf(toFloat32(number) , number > 100) FROM numbers(90);
+SELECT quantileIf(toFloat64(number) , number > 100) FROM numbers(90);
+
 DROP TABLE test.series;

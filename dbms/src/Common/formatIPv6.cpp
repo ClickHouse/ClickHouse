@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal  than log(value, base)
+/// integer logarithm, return ceil(log(value, base)) (the smallest integer greater or equal than log(value, base)
 static constexpr UInt32 intLog(const UInt32 value, const UInt32 base, const bool carry)
 {
     return value >= base ? 1 + intLog(value / base, base, value % base || carry) : value % base > 1 || carry;
@@ -77,7 +77,10 @@ void formatIPv6(const unsigned char * src, char *& dst, UInt8 zeroed_tail_bytes_
         if (words[i] == 0)
         {
             if (cur.base == -1)
-                cur.base = i, cur.len = 1;
+            {
+                cur.base = i;
+                cur.len = 1;
+            }
             else
                 cur.len++;
         }

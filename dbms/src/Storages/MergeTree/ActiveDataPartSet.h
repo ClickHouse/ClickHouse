@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <mutex>
-#include <common/DateLUT.h>
 #include <Core/Types.h>
 #include <map>
 
