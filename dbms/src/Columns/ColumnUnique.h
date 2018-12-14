@@ -13,6 +13,9 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
+#include <common/unaligned.h>
+
+
 namespace DB
 {
 
@@ -331,7 +334,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
     }
 
     /// String
-    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    const size_t string_size = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size);
     new_pos = pos + string_size;
 
