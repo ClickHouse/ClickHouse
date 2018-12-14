@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=18.15.0
+ARG version=18.16.0
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
