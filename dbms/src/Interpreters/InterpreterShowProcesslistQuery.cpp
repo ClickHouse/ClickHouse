@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
 
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB

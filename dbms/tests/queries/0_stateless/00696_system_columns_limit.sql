@@ -1,0 +1,11 @@
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 0);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 1);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 2);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 3);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 4);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 5);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 6);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 7);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 8);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 9);
+SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 10);

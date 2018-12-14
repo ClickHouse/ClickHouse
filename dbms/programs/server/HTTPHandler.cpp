@@ -63,6 +63,8 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int UNEXPECTED_AST_STRUCTURE;
 
+    extern const int SYNTAX_ERROR;
+
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_FUNCTION;
     extern const int UNKNOWN_IDENTIFIER;
@@ -108,6 +110,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
              exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
         return HTTPResponse::HTTP_BAD_REQUEST;
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
@@ -213,9 +217,7 @@ void HTTPHandler::processQuery(
     Context context = server.context();
     context.setGlobalContext(server.context());
 
-    /// It will forcibly detach query even if unexpected error ocurred and detachQuery() was not called
-    /// Normal detaching is happen in BlockIO callbacks
-    CurrentThread::QueryScope query_scope_holder(context);
+    CurrentThread::QueryScope query_scope(context);
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
@@ -268,7 +270,6 @@ void HTTPHandler::processQuery(
     std::string query_id = params.get("query_id", "");
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
-    CurrentThread::attachQueryContext(context);
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.

@@ -27,7 +27,7 @@ template
 class HashSetTable : public HashTable<Key, TCell, Hash, Grower, Allocator>
 {
 public:
-    using Self = HashSetTable<Key, TCell, Hash, Grower, Allocator>;
+    using Self = HashSetTable;
     using Cell = TCell;
 
     void merge(const Self & rhs)

@@ -16,3 +16,5 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 
 ## bitShiftRight(a, b)
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/bit_functions/) <!--hide-->

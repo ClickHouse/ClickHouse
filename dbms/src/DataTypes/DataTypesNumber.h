@@ -15,10 +15,7 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool isUnsignedInteger() const override { return isInteger() && std::is_unsigned_v<T>; }
     bool canBeUsedInBooleanContext() const override { return true; }
-    bool isNumber() const override { return true; }
-    bool isInteger() const override { return std::is_integral_v<T>; }
     bool canBeInsideNullable() const override { return true; }
 };
 
@@ -32,5 +29,17 @@ using DataTypeInt32 = DataTypeNumber<Int32>;
 using DataTypeInt64 = DataTypeNumber<Int64>;
 using DataTypeFloat32 = DataTypeNumber<Float32>;
 using DataTypeFloat64 = DataTypeNumber<Float64>;
+
+template <typename DataType> constexpr bool IsDataTypeNumber = false;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<UInt8>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<UInt16>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<UInt32>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<UInt64>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<Int8>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<Int16>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<Int32>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<Int64>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<Float32>> = true;
+template <> constexpr bool IsDataTypeNumber<DataTypeNumber<Float64>> = true;
 
 }

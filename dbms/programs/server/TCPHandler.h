@@ -8,8 +8,6 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Client/TimeoutSetter.h>
@@ -91,7 +89,7 @@ public:
         , connection_context(server.context())
         , query_context(server.context())
     {
-        server_display_name =  server.config().getString("display_name", getFQDNOrHostName());
+        server_display_name = server.config().getString("display_name", getFQDNOrHostName());
     }
 
     void run();
@@ -146,6 +144,7 @@ private:
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
     void sendLogData(const Block & block);
+    void sendTableColumns(const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
     void sendLogs();

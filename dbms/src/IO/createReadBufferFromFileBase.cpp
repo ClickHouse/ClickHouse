@@ -35,7 +35,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(const std::
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferAIO);
         return std::make_unique<ReadBufferAIO>(filename_, buffer_size_, flags_, existing_memory_);
 #else
-        throw Exception("AIO is not implemented yet on MacOS X", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception("AIO is not implemented yet on non-Linux OS", ErrorCodes::NOT_IMPLEMENTED);
 #endif
     }
 }

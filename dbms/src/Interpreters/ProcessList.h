@@ -19,7 +19,6 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/ClientInfo.h>
-#include <Common/ThreadStatus.h>
 #include <DataStreams/BlockIO.h>
 
 
@@ -192,6 +191,8 @@ public:
 
     /// Get query in/out pointers from BlockIO
     bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
+
+    bool isKilled() const { return is_killed; }
 };
 
 
@@ -288,7 +289,7 @@ protected:
     QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
 
 public:
-    ProcessList(size_t max_size_ = 0) : max_size(max_size_) {}
+    ProcessList(size_t max_size_ = 0);
 
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
 

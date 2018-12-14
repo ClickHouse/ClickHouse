@@ -1,0 +1,7 @@
+a	1	LowCardinality(UInt32)
+a	1	UInt32
+a	1	LowCardinality(UInt32)
+a	1	LowCardinality(String)
+a	1	LowCardinality(UInt32)
+a	1	String
+a	1	LowCardinality(UInt32)

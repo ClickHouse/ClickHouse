@@ -10,11 +10,11 @@ LowCardinality(String)	123_	1
 LowCardinality(String)	123_dddd	5	
 -
 LowCardinality(Nullable(String))	123_a	3	\N
-LowCardinality(Nullable(String))		0	
+LowCardinality(Nullable(String))	\N	0	
 LowCardinality(Nullable(String))	123_bb	4	123_
 LowCardinality(Nullable(String))	123_	2	123_a
 LowCardinality(Nullable(String))	123_a	3	123_bb
-LowCardinality(Nullable(String))		0	123_ccc
+LowCardinality(Nullable(String))	\N	0	123_ccc
 LowCardinality(Nullable(String))	123_ccc	5	123_dddd
 LowCardinality(Nullable(String))	123_a	3	\N
 LowCardinality(Nullable(String))	123_bb	4	\N

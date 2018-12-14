@@ -10,7 +10,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
-#include <Common/typeid_cast.h>
 #include <ext/range.h>
 #include <bitset>
 
@@ -81,7 +80,7 @@ public:
         for (const auto i : ext::range(0, arguments.size()))
         {
             auto cond_arg = arguments[i].get();
-            if (!typeid_cast<const DataTypeUInt8 *>(cond_arg))
+            if (!isUInt8(cond_arg))
                 throw Exception{"Illegal type " + cond_arg->getName() + " of argument " + toString(i) + " of aggregate function "
                         + getName() + ", must be UInt8",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

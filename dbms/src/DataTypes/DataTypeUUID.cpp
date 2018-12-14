@@ -1,5 +1,8 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -10,7 +13,7 @@ void DataTypeUUID::serializeText(const IColumn & column, size_t row_num, WriteBu
     writeText(UUID(static_cast<const ColumnUInt128 &>(column).getData()[row_num]), ostr);
 }
 
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readText(x, istr);
@@ -20,11 +23,6 @@ static void deserializeText(IColumn & column, ReadBuffer & istr)
 void DataTypeUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeText(column, row_num, ostr, settings);
-}
-
-void DataTypeUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    deserializeText(column, istr);
 }
 
 void DataTypeUUID::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

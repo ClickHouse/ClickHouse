@@ -77,11 +77,12 @@ public:
     bool haveSubtypes() const override { return false; }
     bool isComparable() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool isFixedString() const override { return true; }
+    bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return n; }
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }

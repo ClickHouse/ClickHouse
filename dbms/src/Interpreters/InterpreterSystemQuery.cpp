@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
+#include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <common/ThreadPool.h>
@@ -148,6 +149,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_UNCOMPRESSED_CACHE:
             system_context.dropUncompressedCache();
             break;
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            system_context.dropCompiledExpressionCache();
+            break;
+#endif
         case Type::RELOAD_DICTIONARY:
             system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
             break;
@@ -198,11 +204,11 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
-        case Type::FLUSH_SYSTEM_TABLES:
+        case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -219,7 +225,7 @@ BlockIO InterpreterSystemQuery::execute()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
     auto database = system_context.getDatabase(database_name);
-    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
+    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
 
     /// Detach actions
@@ -232,7 +238,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+        auto table_lock = table->lockForAlter();
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);

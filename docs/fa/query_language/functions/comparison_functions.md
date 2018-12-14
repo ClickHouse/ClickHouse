@@ -1,0 +1,1 @@
+../../../en/query_language/functions/comparison_functions.md

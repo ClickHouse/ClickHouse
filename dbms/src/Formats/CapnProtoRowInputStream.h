@@ -34,19 +34,20 @@ public:
       */
     CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension &) override;
 
 private:
     // Build a traversal plan from a sorted list of fields
     void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
 
     /* Action for state machine for traversing nested structures. */
+    using BlockPositionList = std::vector<size_t>;
     struct Action
     {
         enum Type { POP, PUSH, READ };
         Type type;
         capnp::StructSchema::Field field = {};
-        size_t column = 0;
+        BlockPositionList columns = {};
     };
 
     // Wrapper for classes that could throw in destructor

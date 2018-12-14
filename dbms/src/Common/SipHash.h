@@ -15,6 +15,7 @@
 
 #include <common/Types.h>
 #include <common/unaligned.h>
+#include <string>
 #include <type_traits>
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -137,6 +138,11 @@ public:
     std::enable_if_t<std::/*has_unique_object_representations_v*/is_standard_layout_v<T>, void> update(const T & x)
     {
         update(reinterpret_cast<const char *>(&x), sizeof(x));
+    }
+
+    void update(const std::string & x)
+    {
+        update(x.data(), x.length());
     }
 
     /// Get the result in some form. This can only be done once!

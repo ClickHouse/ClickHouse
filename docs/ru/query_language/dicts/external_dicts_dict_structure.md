@@ -1,4 +1,3 @@
-<a name="dicts-external_dicts_dict_structure"></a>
 
 # Ключ и поля словаря
 
@@ -25,10 +24,9 @@
 
 В структуре описываются столбцы:
 
--   `<id>` - [ключевой столбец](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
--   `<attribute>` - [столбец данных](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Столбцов может быть много.
+-   `<id>` - [ключевой столбец](external_dicts_dict_structure.md).
+-   `<attribute>` - [столбец данных](external_dicts_dict_structure.md). Столбцов может быть много.
 
-<a name="dicts-external_dicts_dict_structure-key"></a>
 
 ## Ключ
 
@@ -60,12 +58,12 @@ ClickHouse поддерживает следующие виды ключей:
 
 ### Составной ключ
 
-Ключем может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
+Ключом может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
 
 !!! tip "Совет"
     Cоставной ключ может состоять из одного элемента. Это даёт возможность использовать в качестве ключа, например, строку.
 
-Структура ключа задаётся в элементе `<key>`. Поля ключа задаются в том же формате, что и [атрибуты](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes) словаря. Пример:
+Структура ключа задаётся в элементе `<key>`. Поля ключа задаются в том же формате, что и [атрибуты](external_dicts_dict_structure.md) словаря. Пример:
 
 ```xml
 <structure>
@@ -85,7 +83,6 @@ ClickHouse поддерживает следующие виды ключей:
 
 При запросе в функции `dictGet*` в качестве ключа передаётся кортеж. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-<a name="dicts-external_dicts_dict_structure-attributes"></a>
 
 ## Атрибуты
 
@@ -116,3 +113,5 @@ ClickHouse поддерживает следующие виды ключей:
 -   `injective` - Признак инъективности отображения `id -> attribute`. Если `true`, то можно оптимизировать `GROUP BY`. По умолчанию, `false`.
 -   `is_object_id` - Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.
 
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

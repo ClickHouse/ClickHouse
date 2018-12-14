@@ -24,12 +24,14 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -48,12 +50,14 @@
 
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
 
 
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -153,10 +157,10 @@ struct ContextShared
     public:
         size_t operator()(const Context::SessionKey & key) const
         {
-            size_t seed = 0;
-            boost::hash_combine(seed, key.first);
-            boost::hash_combine(seed, key.second);
-            return seed;
+            SipHash hash;
+            hash.update(key.first);
+            hash.update(key.second);
+            return hash.get64();
         }
     };
 
@@ -174,12 +178,17 @@ struct ContextShared
     ConfigurationPtr clusters_config;                        /// Soteres updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
+#endif
+
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> table -> exception_message
-    /// For the duration of the operation, an element is placed here, and an object is returned, which deletes the element in the destructor.
-    /// In case the element already exists, an exception is thrown. See class DDLGuard below.
+    /// database -> table -> (mutex, counter), counter: how many threads are running a query on the table at the same time
+    /// For the duration of the operation, an element is placed here, and an object is returned,
+    /// which deletes the element in the destructor when counter becomes zero.
+    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
     using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
@@ -190,6 +199,9 @@ struct ContextShared
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
     pcg64 rng{randomSeed()};
+
+    /// vector of xdbc-bridge commands, they will be killed when Context will be destroyed
+    std::vector<std::unique_ptr<ShellCommand>> bridge_commands;
 
     Context::ConfigReloadCallback config_reload_callback;
 
@@ -537,7 +549,7 @@ void Context::setConfig(const ConfigurationPtr & config)
     shared->config = config;
 }
 
-Poco::Util::AbstractConfiguration & Context::getConfigRef() const
+const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 {
     auto lock = getLock();
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
@@ -889,37 +901,30 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && /*lock*/, const String & elem, const String & message)
-    : map(map_), mutex(mutex_)
+DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+    : map(map_), guards_lock(std::move(guards_lock_))
 {
-    bool inserted;
-    std::tie(it, inserted) = map.emplace(elem, message);
-    if (!inserted)
-        throw Exception(it->second, ErrorCodes::DDL_GUARD_IS_ACTIVE);
+    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    ++it->second.counter;
+    guards_lock.unlock();
+    table_lock = std::unique_lock<std::mutex>(*it->second.mutex);
 }
 
 DDLGuard::~DDLGuard()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    map.erase(it);
+    guards_lock.lock();
+    --it->second.counter;
+    if (!it->second.counter)
+    {
+        table_lock.unlock();
+        map.erase(it);
+    }
 }
 
-std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table, const String & message) const
+std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
 {
     std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(shared->ddl_guards[database], shared->ddl_guards_mutex, std::move(lock), table, message);
-}
-
-
-std::unique_ptr<DDLGuard> Context::getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const
-{
-    auto lock = getLock();
-
-    Databases::const_iterator it = shared->databases.find(database);
-    if (shared->databases.end() != it && it->second->isTableExist(*this, table))
-        return {};
-
-    return getDDLGuard(database, table, message);
+    return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
 }
 
 
@@ -1426,6 +1431,15 @@ UInt16 Context::getTCPPort() const
     return config.getInt("tcp_port");
 }
 
+std::optional<UInt16> Context::getTCPPortSecure() const
+{
+    auto lock = getLock();
+
+    auto & config = getConfigRef();
+    if (config.has("tcp_port_secure"))
+        return config.getInt("tcp_port_secure");
+    return {};
+}
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
@@ -1523,94 +1537,49 @@ Compiler & Context::getCompiler()
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    system_logs = std::make_shared<SystemLogs>();
+
+    if (!global_context)
+        throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
+
+    system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
 }
 
 
-QueryLog * Context::getQueryLog(bool create_if_not_exists)
+QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!system_logs)
+    if (!system_logs || !system_logs->query_log)
         return nullptr;
-
-    if (!system_logs->query_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->query_log = createDefaultSystemLog<QueryLog>(*global_context, "system", "query_log", getConfigRef(), "query_log");
-    }
 
     return system_logs->query_log.get();
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
+QueryThreadLog * Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
-    if (!system_logs)
+    if (!system_logs || !system_logs->query_thread_log)
         return nullptr;
-
-    if (!system_logs->query_thread_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for query thread log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->query_thread_log = createDefaultSystemLog<QueryThreadLog>(
-                *global_context, "system", "query_thread_log", getConfigRef(), "query_thread_log");
-    }
 
     return system_logs->query_thread_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
+PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
-    if (!config.has("part_log"))
-        return nullptr;
-
     /// System logs are shutting down.
-    if (!system_logs)
+    if (!system_logs || !system_logs->part_log)
         return nullptr;
-
-    String database = config.getString("part_log.database", "system");
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (!part_database.empty() && part_database == database)
+    if (part_database == system_logs->part_log_database)
         return nullptr;
-
-    if (!system_logs->part_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->part_log = createDefaultSystemLog<PartLog>(*global_context, "system", "part_log", getConfigRef(), "part_log");
-    }
 
     return system_logs->part_log.get();
 }
@@ -1803,6 +1772,42 @@ void Context::setFormatSchemaPath(const String & path)
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
     return getQueryContext().sample_block_cache;
+}
+
+
+#if USE_EMBEDDED_COMPILER
+
+std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    return shared->compiled_expression_cache;
+}
+
+void Context::setCompiledExpressionCache(size_t cache_size)
+{
+
+    auto lock = getLock();
+
+    if (shared->compiled_expression_cache)
+        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
+}
+
+void Context::dropCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    if (shared->compiled_expression_cache)
+        shared->compiled_expression_cache->reset();
+}
+
+#endif
+
+
+void Context::addXDBCBridgeCommand(std::unique_ptr<ShellCommand> cmd)
+{
+    auto lock = getLock();
+    shared->bridge_commands.emplace_back(std::move(cmd));
 }
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()

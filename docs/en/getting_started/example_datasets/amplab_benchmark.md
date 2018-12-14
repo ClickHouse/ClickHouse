@@ -21,7 +21,7 @@ cd ..
 
 Run the following ClickHouse queries:
 
-```sql
+``` sql
 CREATE TABLE rankings_tiny
 (
     pageURL String,
@@ -96,7 +96,7 @@ for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | 
 
 Queries for obtaining data samples:
 
-```sql
+``` sql
 SELECT pageURL, pageRank FROM rankings_1node WHERE pageRank > 1000
 
 SELECT substring(sourceIP, 1, 8), sum(adRevenue) FROM uservisits_1node GROUP BY substring(sourceIP, 1, 8)
@@ -118,3 +118,6 @@ GROUP BY sourceIP
 ORDER BY totalRevenue DESC
 LIMIT 1
 ```
+
+
+[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

@@ -23,7 +23,7 @@
 
 **1.** Создадим на сервере таблицу `url_engine_table`:
 
-```sql
+``` sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
@@ -53,11 +53,11 @@ python3 server.py
 
 **3.** Запросим данные:
 
-```sql
+``` sql
 SELECT * FROM url_engine_table
 ```
 
-```text
+```
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │
@@ -72,3 +72,5 @@ SELECT * FROM url_engine_table
     - индексы;
     - репликация.
 
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/url/) <!--hide-->

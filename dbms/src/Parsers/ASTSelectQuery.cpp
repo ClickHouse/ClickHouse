@@ -4,7 +4,6 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/typeid_cast.h>
 
@@ -16,6 +15,19 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name)
+{
+    if (database_name.empty())
+        return ASTIdentifier::createSpecial(table_name);
+
+    ASTPtr database = ASTIdentifier::createSpecial(database_name);
+    ASTPtr table = ASTIdentifier::createSpecial(table_name);
+
+    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
+    database_and_table->children = {database, table};
+    return database_and_table;
 }
 
 
@@ -102,6 +114,12 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             ? group_expression_list->formatImpl(s, state, frame)
             : typeid_cast<const ASTExpressionList &>(*group_expression_list).formatImplMultiline(s, state, frame);
     }
+
+    if (group_by_with_rollup)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
+
+    if (group_by_with_cube)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
@@ -235,46 +253,6 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
 }
 
 
-ASTPtr ASTSelectQuery::database() const
-{
-    const ASTTableExpression * table_expression = getFirstTableExpression(*this);
-    if (!table_expression || !table_expression->database_and_table_name || table_expression->database_and_table_name->children.empty())
-        return {};
-
-    if (table_expression->database_and_table_name->children.size() != 2)
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-
-    return table_expression->database_and_table_name->children[0];
-}
-
-
-ASTPtr ASTSelectQuery::table() const
-{
-    const ASTTableExpression * table_expression = getFirstTableExpression(*this);
-    if (!table_expression)
-        return {};
-
-    if (table_expression->database_and_table_name)
-    {
-        if (table_expression->database_and_table_name->children.empty())
-            return table_expression->database_and_table_name;
-
-        if (table_expression->database_and_table_name->children.size() != 2)
-            throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-
-        return table_expression->database_and_table_name->children[1];
-    }
-
-    if (table_expression->table_function)
-        return table_expression->table_function;
-
-    if (table_expression->subquery)
-        return static_cast<const ASTSubquery *>(table_expression->subquery.get())->children.at(0);
-
-    throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
-}
-
-
 ASTPtr ASTSelectQuery::sample_size() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
@@ -331,31 +309,6 @@ const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 }
 
 
-void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
-{
-    ASTTableExpression * table_expression = getFirstTableExpression(*this);
-    if (!table_expression)
-        return;
-
-    if (!table_expression->database_and_table_name)
-        return;
-
-    if (table_expression->database_and_table_name->children.empty())
-    {
-        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
-        ASTPtr table = table_expression->database_and_table_name;
-
-        const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + old_name, ASTIdentifier::Table);
-        table_expression->database_and_table_name->children = {database, table};
-    }
-    else if (table_expression->database_and_table_name->children.size() != 2)
-    {
-        throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
@@ -373,19 +326,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
-
-    if (!database_name.empty())
-    {
-        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
-
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
-        table_expression->database_and_table_name->children = {database, table};
-    }
-    else
-    {
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
-    }
+    table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, table_name);
 }
 
 

@@ -19,3 +19,5 @@
 
 ## bitmaskToArray(num)
 Принимает целое число. Возвращает массив чисел типа UInt64, содержащий степени двойки, в сумме дающих исходное число; числа в массиве идут по возрастанию.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/encoding_functions/) <!--hide-->

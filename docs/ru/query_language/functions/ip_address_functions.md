@@ -11,7 +11,7 @@
 
 Пример:
 
-```sql
+``` sql
 SELECT
     IPv4NumToStringClassC(ClientIP) AS k,
     count() AS c
@@ -21,7 +21,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─k──────────────┬─────c─┐
 │ 83.149.9.xxx   │ 26238 │
 │ 217.118.81.xxx │ 26074 │
@@ -42,17 +42,17 @@ LIMIT 10
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
 IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. Примеры:
 
-```sql
+``` sql
 SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
-```text
+```
 ┌─addr─────────┐
 │ 2a02:6b8::11 │
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -63,7 +63,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─IPv6NumToString(ClientIP6)──────────────┬─────c─┐
 │ 2a02:2168:aaa:bbbb::2                   │ 24695 │
 │ 2a02:2698:abcd:abcd:abcd:abcd:8888:5555 │ 22408 │
@@ -78,7 +78,7 @@ LIMIT 10
 └─────────────────────────────────────────┴───────┘
 ```
 
-```sql
+``` sql
 SELECT
     IPv6NumToString(ClientIP6 AS k),
     count() AS c
@@ -89,7 +89,7 @@ ORDER BY c DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─IPv6NumToString(ClientIP6)─┬──────c─┐
 │ ::ffff:94.26.111.111       │ 747440 │
 │ ::ffff:37.143.222.4        │ 529483 │
@@ -107,3 +107,5 @@ LIMIT 10
 ## IPv6StringToNum(s)
 Функция, обратная к IPv6NumToString. Если IPv6 адрес в неправильном формате, то возвращает строку из нулевых байт.
 HEX может быть в любом регистре.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/ip_address_functions/) <!--hide-->

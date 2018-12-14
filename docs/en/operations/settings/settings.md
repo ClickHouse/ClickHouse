@@ -1,30 +1,34 @@
 # Settings
 
-<a name="settings-distributed_product_mode"></a>
 
 ## distributed_product_mode
 
-Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
+Changes the behavior of [distributed subqueries](../../query_language/select.md).
 
-ClickHouse applies the configuration if the subqueries on any level have a distributed table that exists on the local server and has more than one shard.
+ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
 Restrictions:
 
 - Only applied for IN and JOIN subqueries.
-- Used only if a distributed table is used in the FROM clause.
-- Not used for a table-valued [ remote](../../query_language/table_functions/remote.md#table_functions-remote) function.
+- Only if the FROM section uses a distributed table containing more than one shard.
+- If the subquery concerns a distributed table containing more than one shard,
+- Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
 
-The possible values ​​are:
+The possible values are:
 
-<a name="settings-settings-fallback_to_stale_replicas_for_distributed_queries"></a>
+- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
+- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
+- `allow`  — Allows the use of these types of subqueries.
+
 
 ## fallback_to_stale_replicas_for_distributed_queries
 
-Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
+Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../operations/table_engines/replication.md)".
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
-Used when performing ` SELECT`  from a distributed table that points to replicated tables.
+Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
 By default, 1 (enabled).
 
@@ -36,9 +40,8 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)".
+If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
 
-<a name="settings-settings-force_primary_key"></a>
 
 ## force_primary_key
 
@@ -46,13 +49,12 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)".
+If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md)".
 
-<a name="settings_settings_fsync_metadata"></a>
 
 ## fsync_metadata
 
-Enable or disable fsync when writing .sql files. By default, it is enabled.
+Enable or disable fsync when writing .sql files. Enabled by default.
 
 It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
 
@@ -66,7 +68,7 @@ Always pair it with `input_format_allow_errors_ratio`. To skip errors, both sett
 
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
 
-If `input_format_allow_errors_num`is exceeded, ClickHouse throws an exception.
+If `input_format_allow_errors_num` is exceeded, ClickHouse throws an exception.
 
 ## input_format_allow_errors_ratio
 
@@ -80,6 +82,21 @@ Always pair it with `input_format_allow_errors_num`. To skip errors, both settin
 If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
 
 If `input_format_allow_errors_ratio` is exceeded, ClickHouse throws an exception.
+
+
+## join_default_strictness
+
+Sets default strictness for [JOIN clause](../../query_language/select.md).
+
+**Possible values**
+
+- `ALL` — If the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
+- `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+- `Empty string` — If `ALL` or `ANY` not specified in query, ClickHouse throws exception.
+
+**Default value**
+
+`ALL`
 
 ## max_block_size
 
@@ -95,13 +112,12 @@ Used for the same purpose as `max_block_size`, but it sets the recommended block
 However, the block size cannot be more than `max_block_size` rows.
 Disabled by default (set to 0). It only works when reading from MergeTree engines.
 
-<a name="settings_settings-log_queries"></a>
 
 ## log_queries
 
-Setting up query the logging.
+Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md#server_settings-query_log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md) server configuration parameter.
 
 **Example**:
 
@@ -125,13 +141,13 @@ This is slightly more than `max_block_size`. The reason for this is because cert
 
 ## max_replica_delay_for_distributed_queries
 
-Disables lagging replicas for distributed queries. See "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
+Disables lagging replicas for distributed queries. See "[Replication](../../operations/table_engines/replication.md)".
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
 Default value: 0 (off).
 
-Used when performing ` SELECT`  from a distributed table that points to replicated tables.
+Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
 ## max_threads
 
@@ -158,7 +174,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) and
 
 ## min_compress_block_size
 
-For [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
+For [MergeTree](../../operations/table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than 'max_compress_block_size', is no less than this value and no less than the volume of data for one mark.
 
@@ -231,7 +247,6 @@ By default, 3.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section "Extreme values".
 
-<a name="settings-use_uncompressed_cache"></a>
 
 ## use_uncompressed_cache
 
@@ -255,17 +270,15 @@ Yandex.Metrica uses this parameter set to 1 for implementing suggestions for seg
 
 This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/). The value depends on the format.
 
-<a name="settings-settings_stream_flush_interval_ms"></a>
 
 ## stream_flush_interval_ms
 
-Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#settings-settings-max_insert_block_size) rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#max-insert-block-size) rows.
 
 The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
-<a name="settings-load_balancing"></a>
 
 ## load_balancing
 
@@ -343,4 +356,69 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 ## format_csv_delimiter
 
-The character to be considered as a delimiter in CSV data. By default, `,`.
+The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
+
+
+## join_use_nulls
+
+Affects the behavior of [JOIN](../../query_language/select.md).
+
+With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+
+
+## insert_quorum
+
+Enables quorum writes.
+
+  - If `insert_quorum < 2`, the quorum writes are disabled.
+  - If `insert_quorum >= 2`, the quorum writes are enabled.
+
+The default value is 0.
+
+**Quorum writes**
+
+`INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
+
+All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
+
+When reading the data written from the `insert_quorum`, you can use the[select_sequential_consistency](#select-sequential-consistency) option.
+
+**ClickHouse generates an exception**
+
+- If the number of available replicas at the time of the query is less than the `insert_quorum`.
+- At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+
+**See also the following parameters:**
+
+- [insert_quorum_timeout](#insert-quorum-timeout)
+- [select_sequential_consistency](#select-sequential-consistency)
+
+
+## insert_quorum_timeout
+
+Quorum write timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+
+By default, 60 seconds.
+
+**See also the following parameters:**
+
+- [insert_quorum](#insert-quorum)
+- [select_sequential_consistency](#select-sequential-consistency)
+
+
+## select_sequential_consistency
+
+Enables/disables sequential consistency for `SELECT` queries:
+
+- 0 — disabled. The default value is 0.
+- 1 — enabled.
+
+When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
+
+See also the following parameters:
+
+- [insert_quorum](#insert-quorum)
+- [insert_quorum_timeout](#insert-quorum-timeout)
+
+
+[Original article](https://clickhouse.yandex/docs/en/operations/settings/settings/) <!--hide-->

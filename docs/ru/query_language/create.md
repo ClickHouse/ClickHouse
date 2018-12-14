@@ -1,7 +1,7 @@
 ## CREATE DATABASE
 Создание базы данных db_name
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name
 ```
 
@@ -9,12 +9,11 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 Если написано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если база данных уже существует.
 
 
-<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 Запрос `CREATE TABLE` может иметь несколько форм.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -29,19 +28,21 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 Описание столбца, это `name type`, в простейшем случае. Пример: `RegionID UInt32`.
 Также могут быть указаны выражения для значений по умолчанию - смотрите ниже.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name AS [db2.]name2 [ENGINE = engine]
 ```
 
 Создаёт таблицу с такой же структурой, как другая таблица. Можно указать другой движок для таблицы. Если движок не указан, то будет выбран такой же движок, как у таблицы `db2.name2`.
 
-```sql
+``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 ```
 
 Создаёт таблицу со структурой, как результат запроса `SELECT`, с движком engine, и заполняет её данными из SELECT-а.
 
 Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
+
+После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков](../operations/table_engines/index.md#table_engines).
 
 ### Значения по умолчанию
 
@@ -97,7 +98,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 Запросы `CREATE`, `DROP`, `ALTER`, `RENAME` поддерживают возможность распределенного выполнения на кластере.
 Например, следующий запрос создает `Distributed`-таблицу `all_hits` на каждом хосте кластера `cluster`:
 
-```sql
+``` sql
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 
@@ -107,7 +108,7 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 ## CREATE VIEW
 
-```sql
+``` sql
 CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
 ```
 
@@ -121,19 +122,19 @@ CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO[db.]name] [ENGINE = eng
 
 Для примера, пусть вы создали представление:
 
-```sql
+``` sql
 CREATE VIEW view AS SELECT ...
 ```
 
 и написали запрос:
 
-```sql
+``` sql
 SELECT a, b, c FROM view
 ```
 
 Этот запрос полностью эквивалентен использованию подзапроса:
 
-```sql
+``` sql
 SELECT a, b, c FROM (SELECT ...)
 ```
 
@@ -153,3 +154,5 @@ SELECT a, b, c FROM (SELECT ...)
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/create/) <!--hide-->

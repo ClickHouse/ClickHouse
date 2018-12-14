@@ -22,6 +22,9 @@ namespace Nested
 
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
+
+    /// Check that sizes of arrays - elements of nested data structures - are equal.
+    void validateArraySizes(const Block & block);
 }
 
 }

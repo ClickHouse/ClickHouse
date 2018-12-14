@@ -55,6 +55,7 @@ public:
 
     std::string getName() const override { return std::string("Interval") + kindToString(); }
     const char * getFamilyName() const override { return "Interval"; }
+    TypeIndex getTypeId() const override { return TypeIndex::Interval; }
 
     bool equals(const IDataType & rhs) const override;
 

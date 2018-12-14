@@ -3,6 +3,7 @@
 #include <set>
 #include <memory>
 #include <ostream>
+#include <algorithm>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -66,7 +67,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID() const = 0;
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 
@@ -164,7 +165,7 @@ public:
             nl_or_ws = one_line ? ' ' : '\n';
         }
 
-        void writeIdentifier(const String & name, WriteBuffer & out) const;
+        void writeIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -217,6 +218,5 @@ private:
 
 /// Surrounds an identifier by back quotes if it is necessary.
 String backQuoteIfNeed(const String & x);
-
 
 }

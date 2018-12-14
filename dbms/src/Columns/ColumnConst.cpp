@@ -32,7 +32,7 @@ ColumnPtr ColumnConst::convertToFullColumn() const
 
 ColumnPtr ColumnConst::removeLowCardinality() const
 {
-    return ColumnConst::create(data->convertToFullColumnIfWithDictionary(), s);
+    return ColumnConst::create(data->convertToFullColumnIfLowCardinality(), s);
 }
 
 ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const

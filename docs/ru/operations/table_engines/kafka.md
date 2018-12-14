@@ -43,7 +43,7 @@ Kafka SETTINGS
 
 Примеры:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -85,7 +85,7 @@ Kafka SETTINGS
 
 Пример:
 
-```sql
+``` sql
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
@@ -105,7 +105,7 @@ Kafka SETTINGS
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../settings/settings.md#settings-settings_stream_flush_interval_ms) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
+Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../settings/settings.md) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
@@ -119,7 +119,7 @@ Kafka SETTINGS
 
 ## Конфигурация
 
-Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать - глобальный (`kafka`) и по топикам (`kafka_topic_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
+Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать - глобальный (`kafka`) и по топикам (`kafka_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
 
 ```xml
   <!--  Global configuration options for all tables of Kafka engine type -->
@@ -129,10 +129,12 @@ Kafka SETTINGS
   </kafka>
 
   <!-- Configuration specific for topic "logs" -->
-  <kafka_topic_logs>
+  <kafka_logs>
     <retry_backoff_ms>250</retry_backoff_ms>
     <fetch_min_bytes>100000</fetch_min_bytes>
-  </kafka_topic_logs>
+  </kafka_logs>
 ```
 
 В документе [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md) можно увидеть список возможных опций конфигурации. Используйте подчёркивания (`_`) вместо точек в конфигурации ClickHouse, например, `check.crcs=true` будет соответствовать `<check_crcs>true</check_crcs>`.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/kafka/) <!--hide-->

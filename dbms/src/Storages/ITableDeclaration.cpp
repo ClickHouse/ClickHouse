@@ -47,7 +47,7 @@ Block ITableDeclaration::getSampleBlock() const
 {
     Block res;
 
-    for (const auto & col : boost::join(getColumns().ordinary, getColumns().materialized))
+    for (const auto & col : getColumns().getAllPhysical())
         res.insert({ col.type->createColumn(), col.type, col.name });
 
     return res;

@@ -1,7 +1,6 @@
 #include "MainHandler.h"
 
 #include "validateODBCConnectionString.h"
-
 #include <memory>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -10,11 +9,12 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-#include <Common/HTMLForm.h>
+#include <Poco/Net/HTMLForm.h>
 #include <common/logger_useful.h>
 
 namespace DB

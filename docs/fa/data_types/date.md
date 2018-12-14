@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Date
 
@@ -7,3 +7,4 @@ Date، دو بایت به ازای هر تاریخ که به صورت عددی �
 Date بدون time zone ذخیره می شود.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/date/) <!--hide-->

@@ -9,11 +9,7 @@ namespace DB
 void ASTWithAlias::writeAlias(const String & name, const FormatSettings & settings) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_alias : "");
-
-    WriteBufferFromOStream wb(settings.ostr, 32);
-    settings.writeIdentifier(name, wb);
-    wb.next();
-
+    settings.writeIdentifier(name);
     settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
@@ -25,8 +21,7 @@ void ASTWithAlias::formatImpl(const FormatSettings & settings, FormatState & sta
         /// If we have previously output this node elsewhere in the query, now it is enough to output only the alias.
         if (!state.printed_asts_with_alias.emplace(frame.current_select, alias).second)
         {
-            WriteBufferFromOStream wb(settings.ostr, 32);
-            settings.writeIdentifier(alias, wb);
+            settings.writeIdentifier(alias);
             return;
         }
     }

@@ -29,8 +29,10 @@ namespace common
     template <>
     inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
     {
+        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
         res = x + y;
-        return (res - y) != x;
+        return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
 
     template <typename T>
@@ -60,8 +62,10 @@ namespace common
     template <>
     inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
     {
+        static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+        static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
         res = x - y;
-        return (res + y) != x;
+        return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
     }
 
     template <typename T>
@@ -92,6 +96,11 @@ namespace common
     inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
     {
         res = x * y;
-        return (res / y) != x;
+        if (!x || !y)
+            return false;
+
+        unsigned __int128 a = (x > 0) ? x : -x;
+        unsigned __int128 b = (y > 0) ? y : -y;
+        return (a * b) / b != a;
     }
 }

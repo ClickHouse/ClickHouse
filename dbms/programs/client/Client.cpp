@@ -18,7 +18,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -41,7 +41,9 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -58,15 +60,16 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Common/Config/configReadClient.h>
+#include <Storages/ColumnsDescription.h>
 
 #if USE_READLINE
-#include "Suggest.h"
+#include "Suggest.h" // Y_IGNORE
 #endif
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -85,9 +88,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
@@ -208,22 +208,7 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        std::string config_path;
-        if (config().has("config-file"))
-            config_path = config().getString("config-file");
-        else if (Poco::File("./clickhouse-client.xml").exists())
-            config_path = "./clickhouse-client.xml";
-        else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            config_path = home_path + "/.clickhouse-client/config.xml";
-        else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            config_path = "/etc/clickhouse-client/config.xml";
-
-        if (!config_path.empty())
-        {
-            ConfigProcessor config_processor(config_path);
-            auto loaded_config = config_processor.loadConfig();
-            config().add(loaded_config.configuration);
-        }
+        configReadClient(config(), home_path);
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
@@ -295,6 +280,8 @@ private:
 
     int mainImpl()
     {
+        UseSSL use_ssl;
+
         registerFunctions();
         registerAggregateFunctions();
 
@@ -526,7 +513,7 @@ private:
 
         if (max_client_network_bandwidth)
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
             connection->setThrottler(throttler);
         }
 
@@ -630,8 +617,14 @@ private:
                     {
                         std::cerr << std::endl
                             << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                            << std::endl;
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl
+                                      << e.getStackTrace().toString() << std::endl;
+
+                        std::cerr << std::endl;
+
                     }
 
                     /// Client-side exception during query execution can result in the loss of
@@ -889,11 +882,12 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
+            sendData(sample, columns_description);
             receiveEndOfQuery();
         }
     }
@@ -901,7 +895,7 @@ private:
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end);
+        ParserQuery parser(end, true);
         ASTPtr res;
 
         const auto ignore_error = config().getBool("ignore-error", false);
@@ -931,7 +925,7 @@ private:
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -942,19 +936,19 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, columns_description);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, columns_description);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description)
     {
         String current_format = insert_format;
 
@@ -965,6 +959,10 @@ private:
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
+
+        const auto & column_defaults = columns_description.defaults;
+        if (!column_defaults.empty())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
@@ -1103,7 +1101,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description)
     {
         while (true)
         {
@@ -1123,6 +1121,10 @@ private:
                 case Protocol::Server::Log:
                     onLogData(packet.block);
                     break;
+
+                case Protocol::Server::TableColumns:
+                    columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                    return receiveSampleBlock(out, columns_description);
 
                 default:
                     throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
@@ -1524,7 +1526,7 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         po::options_description main_description("Main options", line_length, min_description_length);

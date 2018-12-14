@@ -4,7 +4,7 @@
 [[ -n "$1" ]] && host="$1" || host="localhost"
 [[ -n "$2" ]] && min_timestamp="$2" || min_timestamp=$(( $(date +%s) - 60 ))
 [[ -n "$3" ]] && max_timestamp="$3" || max_timestamp=$(( $(date +%s) + 60 ))
-[[ -n "$4" ]] && iters_per_timestamp="$4" || iters_per_timestamp=5
+[[ -n "$4" ]] && client="$4" || client="clickhouse-client"
 
 timestamps=`seq $min_timestamp $max_timestamp`
 
@@ -18,7 +18,7 @@ function reliable_insert {
         fi
 
         #echo clickhouse-client --host $host -q "INSERT INTO simple VALUES (0, $ts, '$ts')"
-        res=`clickhouse-client --host $host -q "INSERT INTO simple VALUES (0, $ts, '$ts')" 2>&1`
+        res=`$client --host $host -q "INSERT INTO simple VALUES (0, $ts, '$ts')" 2>&1`
         rt=$?
         num_tries=$(($num_tries+1))
 

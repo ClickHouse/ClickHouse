@@ -34,9 +34,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     to_stage(to_stage_),
     subquery_depth(subquery_depth_)
 {
-    if (!context.hasQueryContext())
-        context.setQueryContext(context);
-
     const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
 
     size_t num_selects = ast.list_of_selects->children.size();
@@ -216,7 +213,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     }
     else
     {
-        result_stream = std::make_shared<UnionBlockInputStream<>>(nested_streams, nullptr, settings.max_threads);
+        result_stream = std::make_shared<UnionBlockInputStream>(nested_streams, nullptr, settings.max_threads);
         nested_streams.clear();
     }
 

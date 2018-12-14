@@ -8,7 +8,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+
 
 namespace DB
 {

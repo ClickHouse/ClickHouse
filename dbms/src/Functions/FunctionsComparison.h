@@ -38,6 +38,15 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_LARGE_STRING_SIZE;
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
+
 
 /** Comparison functions: ==, !=, <, >, <=, >=.
   * The comparison functions always return 0 or 1 (UInt8).
@@ -135,8 +144,8 @@ template <typename Op>
 struct StringComparisonImpl
 {
     static void NO_INLINE string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -165,8 +174,8 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -187,7 +196,7 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE string_vector_constant(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -211,16 +220,16 @@ struct StringComparisonImpl
     }
 
     static void fixed_string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
-        const ColumnString::Chars_t & a_data,
-        const ColumnString::Chars_t & b_data,
+        const ColumnString::Chars & a_data,
+        const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_data.size();
@@ -230,7 +239,7 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant_16(
-        const ColumnString::Chars_t & a_data,
+        const ColumnString::Chars & a_data,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -241,8 +250,8 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         /** Specialization if both sizes are 16.
@@ -266,7 +275,7 @@ struct StringComparisonImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -289,7 +298,7 @@ struct StringComparisonImpl
 
     static void constant_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a, c);
@@ -297,7 +306,7 @@ struct StringComparisonImpl
 
     static void constant_fixed_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a, c);
@@ -322,8 +331,8 @@ template <bool positive>
 struct StringEqualsImpl
 {
     static void NO_INLINE string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -335,8 +344,8 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = a_offsets.size();
@@ -348,7 +357,7 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE string_vector_constant(
-        const ColumnString::Chars_t & a_data, const ColumnString::Offsets & a_offsets,
+        const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -364,8 +373,8 @@ struct StringEqualsImpl
 
 #if __SSE2__
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
-        const ColumnString::Chars_t & a_data,
-        const ColumnString::Chars_t & b_data,
+        const ColumnString::Chars & a_data,
+        const ColumnString::Chars & b_data,
         PaddedPODArray<UInt8> & c)
     {
         size_t size = c.size();
@@ -388,7 +397,7 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant_16(
-        const ColumnString::Chars_t & a_data,
+        const ColumnString::Chars & a_data,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -412,8 +421,8 @@ struct StringEqualsImpl
 #endif
 
     static void NO_INLINE fixed_string_vector_fixed_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         /** Specialization if both sizes are 16.
@@ -434,7 +443,7 @@ struct StringEqualsImpl
     }
 
     static void NO_INLINE fixed_string_vector_constant(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const std::string & b,
         PaddedPODArray<UInt8> & c)
     {
@@ -455,8 +464,8 @@ struct StringEqualsImpl
     }
 
     static void fixed_string_vector_string_vector(
-        const ColumnString::Chars_t & a_data, ColumnString::Offset a_n,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & a_data, ColumnString::Offset a_n,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         string_vector_fixed_string_vector(b_data, b_offsets, a_data, a_n, c);
@@ -464,7 +473,7 @@ struct StringEqualsImpl
 
     static void constant_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, const ColumnString::Offsets & b_offsets,
+        const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
         string_vector_constant(b_data, b_offsets, a, c);
@@ -472,7 +481,7 @@ struct StringEqualsImpl
 
     static void constant_fixed_string_vector(
         const std::string & a,
-        const ColumnString::Chars_t & b_data, ColumnString::Offset b_n,
+        const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
         fixed_string_vector_constant(b_data, b_n, a, c);
@@ -725,7 +734,7 @@ private:
             return true;
         };
 
-        if (!callOnBasicTypes(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true, false>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -817,17 +826,9 @@ private:
         const IColumn * column_number = left_is_num ? col_left_untyped : col_right_untyped;
         const IDataType * number_type = left_is_num ? left_type.get() : right_type.get();
 
-        bool is_date = false;
-        bool is_date_time = false;
-        bool is_uuid = false;
-        bool is_enum8 = false;
-        bool is_enum16 = false;
+        WhichDataType which(number_type);
 
-        const auto legal_types = (is_date = checkAndGetDataType<DataTypeDate>(number_type))
-            || (is_date_time = checkAndGetDataType<DataTypeDateTime>(number_type))
-            || (is_uuid = checkAndGetDataType<DataTypeUUID>(number_type))
-            || (is_enum8 = checkAndGetDataType<DataTypeEnum8>(number_type))
-            || (is_enum16 = checkAndGetDataType<DataTypeEnum16>(number_type));
+        const bool legal_types = which.isDateOrDateTime() || which.isEnum() || which.isUUID();
 
         const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
@@ -835,27 +836,27 @@ private:
 
         StringRef string_value = column_string->getDataAt(0);
 
-        if (is_date)
+        if (which.isDate())
         {
             DayNum date;
             ReadBufferFromMemory in(string_value.data, string_value.size);
             readDateText(date, in);
             if (!in.eof())
-                throw Exception("String is too long for Date: " + string_value.toString());
+                throw Exception("String is too long for Date: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, UInt64(date));
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, date);
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
                 left_is_num ? parsed_const_date : col_right_untyped);
         }
-        else if (is_date_time)
+        else if (which.isDateTime())
         {
             time_t date_time;
             ReadBufferFromMemory in(string_value.data, string_value.size);
             readDateTimeText(date_time, in);
             if (!in.eof())
-                throw Exception("String is too long for DateTime: " + string_value.toString());
+                throw Exception("String is too long for DateTime: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
             ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(input_rows_count, UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
@@ -863,25 +864,25 @@ private:
                 left_is_num ? col_left_untyped : parsed_const_date_time,
                 left_is_num ? parsed_const_date_time : col_right_untyped);
         }
-        else if (is_uuid)
+        else if (which.isUUID())
         {
             UUID uuid;
             ReadBufferFromMemory in(string_value.data, string_value.size);
             readText(uuid, in);
             if (!in.eof())
-                throw Exception("String is too long for UUID: " + string_value.toString());
+                throw Exception("String is too long for UUID: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, UInt128(uuid));
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, uuid);
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
                 left_is_num ? parsed_const_uuid : col_right_untyped);
         }
 
-        else if (is_enum8)
+        else if (which.isEnum8())
             executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
                 number_type, left_is_num, input_rows_count);
-        else if (is_enum16)
+        else if (which.isEnum16())
             executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
                 number_type, left_is_num, input_rows_count);
 
@@ -1085,62 +1086,29 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        bool left_is_date = false;
-        bool left_is_date_time = false;
-        bool left_is_uuid = false;
-        bool left_is_enum8 = false;
-        bool left_is_enum16 = false;
-        bool left_is_string = false;
-        bool left_is_fixed_string = false;
-        const DataTypeTuple * left_tuple = nullptr;
+        WhichDataType left(arguments[0].get());
+        WhichDataType right(arguments[1].get());
 
-        false
-            || (left_is_date         = checkAndGetDataType<DataTypeDate>(arguments[0].get()))
-            || (left_is_date_time    = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
-            || (left_is_enum8        = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
-            || (left_is_uuid         = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
-            || (left_is_enum16       = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
-            || (left_is_string       = checkAndGetDataType<DataTypeString>(arguments[0].get()))
-            || (left_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get()))
-            || (left_tuple           = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
+        const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
+        const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
-        const bool left_is_enum = left_is_enum8 || left_is_enum16;
+        bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
+        bool has_date = left.isDate() || right.isDate();
 
-        bool right_is_date = false;
-        bool right_is_date_time = false;
-        bool right_is_uuid = false;
-        bool right_is_enum8 = false;
-        bool right_is_enum16 = false;
-        bool right_is_string = false;
-        bool right_is_fixed_string = false;
-        const DataTypeTuple * right_tuple = nullptr;
-
-        false
-            || (right_is_date = checkAndGetDataType<DataTypeDate>(arguments[1].get()))
-            || (right_is_date_time = checkAndGetDataType<DataTypeDateTime>(arguments[1].get()))
-            || (right_is_uuid = checkAndGetDataType<DataTypeUUID>(arguments[1].get()))
-            || (right_is_enum8 = checkAndGetDataType<DataTypeEnum8>(arguments[1].get()))
-            || (right_is_enum16 = checkAndGetDataType<DataTypeEnum16>(arguments[1].get()))
-            || (right_is_string = checkAndGetDataType<DataTypeString>(arguments[1].get()))
-            || (right_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[1].get()))
-            || (right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get()));
-
-        const bool right_is_enum = right_is_enum8 || right_is_enum16;
-
-        if (!((arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber())
-            || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
-            || (left_is_date && right_is_date)
-            || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
-            || (left_is_string && right_is_date)
-            || (left_is_date_time && right_is_date_time)
-            || (left_is_date_time && right_is_string)
-            || (left_is_string && right_is_date_time)
-            || (left_is_uuid && right_is_uuid)
-            || (left_is_uuid && right_is_string)
-            || (left_is_string && right_is_uuid)
-            || (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            || (left_is_enum && right_is_string)
-            || (left_is_string && right_is_enum)
+        if (!((both_represented_by_number && !has_date)   /// Do not allow compare date and number.
+            || (left.isStringOrFixedString() && right.isStringOrFixedString())
+            || (left.isDate() && right.isDate())
+            || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.
+            || (left.isString() && right.isDate())
+            || (left.isDateTime() && right.isDateTime())
+            || (left.isDateTime() && right.isString())
+            || (left.isString() && right.isDateTime())
+            || (left.isUUID() && right.isUUID())
+            || (left.isUUID() && right.isString())
+            || (left.isString() && right.isUUID())
+            || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
+            || (left.isEnum() && right.isString())
+            || (left.isString() && right.isEnum())
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
@@ -1183,7 +1151,7 @@ public:
 
         if (left_is_num && right_is_num)
         {
-            if (!( executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
+            if (!(executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt64>(block, result, col_left_untyped, col_right_untyped)
@@ -1203,9 +1171,9 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (isDecimal(*left_type) || isDecimal(*right_type))
+        else if (isDecimal(left_type) || isDecimal(right_type))
         {
-            if (!allowDecimalComparison(*left_type, *right_type))
+            if (!allowDecimalComparison(left_type, right_type))
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1237,7 +1205,7 @@ public:
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-        return types[0]->isValueRepresentedByNumber() && types[1]->isValueRepresentedByNumber();
+        return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override

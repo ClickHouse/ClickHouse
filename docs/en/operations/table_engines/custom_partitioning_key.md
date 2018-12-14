@@ -1,8 +1,5 @@
-<a name="table_engines-custom_partitioning_key"></a>
 
 # Custom Partitioning Key
-
-Starting with version 1.1.54310, you can create tables in the MergeTree family with any partitioning expression (not only partitioning by month).
 
 The partition key can be an expression from the table columns, or a tuple of such expressions (similar to the primary key). The partition key can be omitted. When creating a table, specify the partition key in the ENGINE description with the new syntax:
 
@@ -12,7 +9,7 @@ ENGINE [=] Name(...) [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTI
 
 For MergeTree tables, the partition expression is specified after `PARTITION BY`, the primary key after `ORDER BY`, the sampling key after `SAMPLE BY`, and `SETTINGS` can specify `index_granularity` (optional; the default value is 8192), as well as other settings from [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h). The other engine parameters are specified in parentheses after the engine name, as previously. Example:
 
-```sql
+``` sql
 ENGINE = ReplicatedCollapsingMergeTree('/clickhouse/tables/name', 'replica1', Sign)
     PARTITION BY (toMonday(StartDate), EventType)
     ORDER BY (CounterID, StartDate, intHash32(UserID))
@@ -27,7 +24,7 @@ After this table is created, merge will only work for data parts that have the s
 
 To specify a partition in ALTER PARTITION commands, specify the value of the partition expression (or a tuple). Constants and constant expressions are supported. Example:
 
-```sql
+``` sql
 ALTER TABLE table DROP PARTITION (toMonday(today()), 1)
 ```
 
@@ -37,7 +34,7 @@ Note: For old-style tables, the partition can be specified either as a number `2
 
 In the `system.parts` table, the `partition` column specifies the value of the partition expression to use in ALTER queries (if quotas are removed). The `name` column should specify the name of the data part that has a new format.
 
-Was: `20140317_20140323_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
+Old: `20140317_20140323_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
 
 Now: `201403_2_2_0`  (partition ID -  minimum block number - maximum block number - level).
 
@@ -45,3 +42,5 @@ The partition ID is its string identifier (human-readable, if possible) that is 
 
 For more examples, see the tests [`00502_custom_partitioning_local`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/yandex/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

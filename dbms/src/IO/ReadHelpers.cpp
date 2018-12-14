@@ -7,7 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <stdlib.h>
 #include <Common/memcpySmall.h>
 
@@ -71,10 +71,10 @@ UInt128 stringToUUID(const String & str)
     return parseFromString<UUID>(str);
 }
 
-static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
+void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out <<  "Cannot parse input: expected " << escape << s;
+    out << "Cannot parse input: expected " << escape << s;
 
     if (buf.eof())
         out << " at end of stream.";
@@ -120,15 +120,6 @@ void assertString(const char * s, ReadBuffer & buf)
         throwAtAssertionFailed(s, buf);
 }
 
-void assertChar(char symbol, ReadBuffer & buf)
-{
-    if (buf.eof() || *buf.position() != symbol)
-    {
-        char err[2] = {symbol, '\0'};
-        throwAtAssertionFailed(err, buf);
-    }
-    ++buf.position();
-}
 
 void assertEOF(ReadBuffer & buf)
 {
@@ -667,6 +658,7 @@ void readJSONString(String & s, ReadBuffer & buf)
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
 
 template <typename ReturnType>

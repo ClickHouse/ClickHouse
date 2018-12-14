@@ -14,8 +14,10 @@ DESTDIR = $(CURDIR)/debian/tmp
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
-#TODO: why it not working? (maybe works in debhelper 10+)
-ifndef THREADS_COUNT
+ifeq ($(CCACHE_PREFIX),distcc)
+    THREADS_COUNT=$(shell distcc -j)
+endif
+ifeq ($(THREADS_COUNT),)
     THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
 endif
 DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
@@ -47,7 +49,12 @@ else
 endif
 endif
 
-CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
+ifdef CXX
+    CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)`
+endif
+ifdef CC
+    CMAKE_FLAGS += -DCMAKE_C_COMPILER=`which $(CC)`
+endif
 
 ifndef DISABLE_NINJA
     NINJA=$(shell which ninja)
@@ -68,6 +75,10 @@ else
     THREADS_COUNT = 1
 endif
 
+ifneq ($(THREADS_COUNT),)
+    THREADS_COUNT:=-j$(THREADS_COUNT)
+endif
+
 %:
 	dh $@ $(DH_FLAGS) --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
@@ -76,7 +87,7 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
-	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT) $(MAKE_TARGET)
+	cd $(BUILDDIR) && $(MAKE) $(THREADS_COUNT) $(MAKE_TARGET)
 	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:

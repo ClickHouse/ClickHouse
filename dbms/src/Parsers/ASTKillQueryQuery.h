@@ -20,11 +20,14 @@ public:
         return clone;
     }
 
-    String getID() const override;
+    String getID(char) const override;
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &new_database) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override
+    {
+        return removeOnCluster<ASTKillQueryQuery>(clone());
+    }
 };
 
 }

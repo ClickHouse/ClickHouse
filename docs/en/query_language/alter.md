@@ -8,7 +8,7 @@ The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`a
 
 Changing the table structure.
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|MODIFY COLUMN ...
 ```
 
@@ -17,7 +17,7 @@ Each action is an operation on a column.
 
 The following actions are supported:
 
-```sql
+``` sql
 ADD COLUMN name [type] [default_expr] [AFTER name_after]
 ```
 
@@ -27,14 +27,14 @@ Adding a column just changes the table structure, without performing any actions
 
 This approach allows us to complete the ALTER query instantly, without increasing the volume of old data.
 
-```sql
+``` sql
 DROP COLUMN name
 ```
 
 Deletes the column with the name 'name'.
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
-```sql
+``` sql
 MODIFY COLUMN name [type] [default_expr]
 ```
 
@@ -54,8 +54,6 @@ There are several processing stages:
 Only the first stage takes time. If there is a failure at this stage, the data is not changed.
 If there is a failure during one of the successive stages, data can be restored manually. The exception is if the old files were deleted from the file system but the data for the new files did not get written to the disk and was lost.
 
-There is no support for changing the column type in arrays and nested data structures.
-
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or change a type with `DateTime`  to `UInt32`).
@@ -68,9 +66,30 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
+
+### Manipulations With Key Expressions
+
+The following command is supported:
+
+``` sql
+MODIFY ORDER BY new_expression
+```
+
+It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The command changes the
+[sorting key](../operations/table_engines/mergetree.md) of the table
+to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
+
+The command is lightweight in a sense that it only changes metadata. To keep the property that data part
+rows are ordered by the sorting key expression you cannot add expressions containing existing columns
+to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
+
+
 ### Manipulations With Partitions and Parts
 
-It only works for tables in the `MergeTree` family. The following operations are available:
+It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
+[replicated](../operations/table_engines/replication.md) tables). The following operations
+are available:
 
 - `DETACH PARTITION` – Move a partition to the 'detached' directory and forget it.
 - `DROP PARTITION` – Delete a partition.
@@ -86,7 +105,7 @@ A "part" in the table is part of the data from a single partition, sorted by the
 
 You can use the `system.parts` table to view the set of table parts and partitions:
 
-```sql
+``` sql
 SELECT * FROM system.parts WHERE active
 ```
 
@@ -123,7 +142,7 @@ For replicated tables, the set of parts can't be changed in any case.
 
 The `detached` directory contains parts that are not used by the server - detached from the table using the `ALTER ... DETACH` query. Parts that are damaged are also moved to this directory, instead of deleting them. You can add, delete, or modify the data in the 'detached' directory at any time – the server won't know about this until you make the `ALTER TABLE ... ATTACH` query.
 
-```sql
+``` sql
 ALTER TABLE [db.]table DETACH PARTITION 'name'
 ```
 
@@ -134,13 +153,13 @@ After the query is executed, you can do whatever you want with the data in the '
 
 The query is replicated – data will be moved to the 'detached' directory and forgotten on all replicas. The query can only be sent to a leader replica. To find out if a replica is a leader, perform SELECT to the 'system.replicas' system table. Alternatively, it is easier to make a query on all replicas, and all except one will throw an exception.
 
-```sql
+``` sql
 ALTER TABLE [db.]table DROP PARTITION 'name'
 ```
 
 The same as the `DETACH` operation. Deletes data from the table. Data parts will be tagged as inactive and will be completely deleted in approximately 10 minutes. The query is replicated – data will be deleted on all replicas.
 
-```sql
+``` sql
 ALTER TABLE [db.]table ATTACH PARTITION|PART 'name'
 ```
 
@@ -152,7 +171,7 @@ The query is replicated. Each replica checks whether there is data in the 'detac
 
 So you can put data in the 'detached' directory on one replica, and use the ALTER ... ATTACH query to add it to the table on all replicas.
 
-```sql
+``` sql
 ALTER TABLE [db.]table FREEZE PARTITION 'name'
 ```
 
@@ -187,16 +206,7 @@ To restore from a backup:
 In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
 
-### Backups and Replication
-
-Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
-
-For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
-
-Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data).
-For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in `/var/lib/clickhouse/shadow/`).
-
-```sql
+``` sql
 ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 ```
 
@@ -230,13 +240,19 @@ The functionality is in beta stage and is available starting with the 1.1.54388 
 
 Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 
-At the moment the `ALTER DELETE` command is available:
+Currently available commands:
 
-```sql
-ALTER TABLE [db.]table DELETE WHERE expr
+``` sql
+ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
-The expression `expr` must be of UInt8 type. The query deletes rows for which this expression evaluates to a non-zero value.
+The `filter_expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
+
+``` sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
+```
+
+The command is available starting with the 18.12.14 version. The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
 One query can contain several commands separated by commas.
 
@@ -266,3 +282,5 @@ The table contains information about mutations of MergeTree tables and their pro
 
 **is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/alter/) <!--hide-->

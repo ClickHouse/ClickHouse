@@ -37,7 +37,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -324,7 +323,7 @@ struct TaskTable
 struct TaskCluster
 {
     TaskCluster(const String & task_zookeeper_path_, const String & default_local_database_)
-        : task_zookeeper_path(task_zookeeper_path_),  default_local_database(default_local_database_) {}
+        : task_zookeeper_path(task_zookeeper_path_), default_local_database(default_local_database_) {}
 
     void loadTasks(const Poco::Util::AbstractConfiguration & config, const String & base_key = "");
 
@@ -411,8 +410,7 @@ BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
     return std::make_shared<SquashingBlockInputStream>(
         stream,
         std::numeric_limits<size_t>::max(),
-        std::numeric_limits<size_t>::max()
-    );
+        std::numeric_limits<size_t>::max());
 }
 
 Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
@@ -1513,7 +1511,7 @@ protected:
             String query;
             query += "SELECT " + fields + " FROM " + getDatabaseDotTable(from_table);
             /// TODO: Bad, it is better to rewrite with ASTLiteral(partition_key_field)
-            query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = " + task_partition.name + ")";
+            query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
             if (!task_table.where_condition_str.empty())
                 query += " AND (" + task_table.where_condition_str + ")";
             if (!limit.empty())

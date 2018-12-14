@@ -59,9 +59,9 @@ public:
     bool isComparable() const override { return true; }
     bool canBeComparedWithCollation() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool isString() const override { return true; }
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideLowCardinality() const override { return true; }
 };
 
 }

@@ -5,7 +5,6 @@
 
 namespace DB
 {
-
 /** Common part for implementation of MySQLBlockInputStream, MongoDBBlockInputStream and others.
   */
 struct ExternalResultDescription
@@ -24,13 +23,12 @@ struct ExternalResultDescription
         Float64,
         String,
         Date,
-        DateTime
+        DateTime,
+        UUID,
     };
 
     Block sample_block;
-    std::vector<ValueType> types;
-    std::vector<std::string> names;
-    Columns sample_columns;
+    std::vector<std::pair<ValueType, bool /* is_nullable */>> types;
 
     void init(const Block & sample_block_);
 };

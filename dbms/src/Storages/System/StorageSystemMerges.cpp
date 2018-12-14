@@ -16,6 +16,7 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"num_parts", std::make_shared<DataTypeUInt64>()},
         {"source_part_names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"result_part_name", std::make_shared<DataTypeString>()},
+        {"partition_id", std::make_shared<DataTypeString>()},
         {"total_size_bytes_compressed", std::make_shared<DataTypeUInt64>()},
         {"total_size_marks", std::make_shared<DataTypeUInt64>()},
         {"bytes_read_uncompressed", std::make_shared<DataTypeUInt64>()},
@@ -43,6 +44,7 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
             res_columns[i++]->insert(merge.num_parts);
             res_columns[i++]->insert(merge.source_part_names);
             res_columns[i++]->insert(merge.result_part_name);
+            res_columns[i++]->insert(merge.partition_id);
             res_columns[i++]->insert(merge.total_size_bytes_compressed);
             res_columns[i++]->insert(merge.total_size_marks);
             res_columns[i++]->insert(merge.bytes_read_uncompressed);

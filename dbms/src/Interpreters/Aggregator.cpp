@@ -24,6 +24,9 @@
 #include <common/demangle.h>
 #if __has_include(<Interpreters/config_compile.h>)
 #include <Interpreters/config_compile.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
 #endif
 
 
@@ -185,6 +188,9 @@ Aggregator::Aggregator(const Params & params_)
     }
 
     method_chosen = chooseAggregationMethod();
+    AggregationStateCache::Settings cache_settings;
+    cache_settings.max_threads = params.max_threads;
+    aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 }
 
 
@@ -393,18 +399,25 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     DataTypes types_removed_nullable;
     types_removed_nullable.reserve(params.keys.size());
     bool has_nullable_key = false;
+    bool has_low_cardinality = false;
 
     for (const auto & pos : params.keys)
     {
-        const auto & type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+        DataTypePtr type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+
+        if (type->lowCardinality())
+        {
+            has_low_cardinality = true;
+            type = removeLowCardinality(type);
+        }
 
         if (type->isNullable())
         {
             has_nullable_key = true;
-            types_removed_nullable.push_back(removeNullable(type));
+            type = removeNullable(type);
         }
-        else
-            types_removed_nullable.push_back(type);
+
+        types_removed_nullable.push_back(type);
     }
 
     /** Returns ordinary (not two-level) methods, because we start from them.
@@ -412,35 +425,25 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
       */
 
     size_t keys_bytes = 0;
-
-    size_t num_contiguous_keys = 0;
     size_t num_fixed_contiguous_keys = 0;
-    size_t num_string_keys = 0;
 
     key_sizes.resize(params.keys_size);
     for (size_t j = 0; j < params.keys_size; ++j)
     {
         if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
-            ++num_contiguous_keys;
-
             if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
                 ++num_fixed_contiguous_keys;
                 key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
                 keys_bytes += key_sizes[j];
             }
-
-            if (types_removed_nullable[j]->isString())
-            {
-                ++num_string_keys;
-            }
         }
     }
 
     if (has_nullable_key)
     {
-        if (params.keys_size == num_fixed_contiguous_keys)
+        if (params.keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
@@ -448,6 +451,27 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::nullable_keys128;
             if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
+        }
+
+        if (has_low_cardinality && params.keys_size == 1)
+        {
+            if (types_removed_nullable[0]->isValueRepresentedByNumber())
+            {
+                size_t size_of_field = types_removed_nullable[0]->getSizeOfValueInMemory();
+
+                if (size_of_field == 1)
+                    return AggregatedDataVariants::Type::low_cardinality_key8;
+                if (size_of_field == 2)
+                    return AggregatedDataVariants::Type::low_cardinality_key16;
+                if (size_of_field == 4)
+                    return AggregatedDataVariants::Type::low_cardinality_key32;
+                if (size_of_field == 8)
+                    return AggregatedDataVariants::Type::low_cardinality_key64;
+            }
+            else if (isString(types_removed_nullable[0]))
+                return AggregatedDataVariants::Type::low_cardinality_key_string;
+            else if (isFixedString(types_removed_nullable[0]))
+                return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
         }
 
         /// Fallback case.
@@ -460,6 +484,19 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     if (params.keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
     {
         size_t size_of_field = types_removed_nullable[0]->getSizeOfValueInMemory();
+
+        if (has_low_cardinality)
+        {
+            if (size_of_field == 1)
+                return AggregatedDataVariants::Type::low_cardinality_key8;
+            if (size_of_field == 2)
+                return AggregatedDataVariants::Type::low_cardinality_key16;
+            if (size_of_field == 4)
+                return AggregatedDataVariants::Type::low_cardinality_key32;
+            if (size_of_field == 8)
+                return AggregatedDataVariants::Type::low_cardinality_key64;
+        }
+
         if (size_of_field == 1)
             return AggregatedDataVariants::Type::key8;
         if (size_of_field == 2)
@@ -476,6 +513,14 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
     if (params.keys_size == num_fixed_contiguous_keys)
     {
+        if (has_low_cardinality)
+        {
+            if (keys_bytes <= 16)
+                return AggregatedDataVariants::Type::low_cardinality_keys128;
+            if (keys_bytes <= 32)
+                return AggregatedDataVariants::Type::low_cardinality_keys256;
+        }
+
         if (keys_bytes <= 16)
             return AggregatedDataVariants::Type::keys128;
         if (keys_bytes <= 32)
@@ -483,29 +528,23 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     }
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
-    if (params.keys_size == 1 && types_removed_nullable[0]->isString())
-        return AggregatedDataVariants::Type::key_string;
+    if (params.keys_size == 1 && isString(types_removed_nullable[0]))
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_string;
+        else
+            return AggregatedDataVariants::Type::key_string;
+    }
 
-    if (params.keys_size == 1 && types_removed_nullable[0]->isFixedString())
-        return AggregatedDataVariants::Type::key_fixed_string;
-
-    /** If it is possible to use 'concat' method due to one-to-one correspondense. Otherwise the method will be 'serialized'.
-      */
-    if (params.keys_size == num_contiguous_keys && num_fixed_contiguous_keys + 1 >= num_contiguous_keys)
-        return AggregatedDataVariants::Type::concat;
-
-    /** For case with multiple strings, we use 'concat' method despite the fact, that correspondense is not one-to-one.
-      * Concat will concatenate strings including its zero terminators.
-      * But if strings contains zero bytes in between, different keys may clash.
-      * For example, keys ('a\0b', 'c') and ('a', 'b\0c') will be aggregated as one key.
-      * This is documented behaviour. It may be avoided by just switching to 'serialized' method, which is less efficient.
-      */
-    if (params.keys_size == num_fixed_contiguous_keys + num_string_keys)
-        return AggregatedDataVariants::Type::concat;
+    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else
+            return AggregatedDataVariants::Type::key_fixed_string;
+    }
 
     return AggregatedDataVariants::Type::serialized;
-
-    /// NOTE AggregatedDataVariants::Type::hashed is not used. It's proven to be less efficient than 'serialized' in most cases.
 }
 
 
@@ -548,7 +587,10 @@ void NO_INLINE Aggregator::executeImpl(
     AggregateDataPtr overflow_row) const
 {
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, aggregation_state_cache);
+    else
+        state.init(key_columns);
 
     if (!no_more_keys)
         executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
@@ -573,17 +615,22 @@ void NO_INLINE Aggregator::executeImplCase(
     AggregateDataPtr overflow_row) const
 {
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
+    /// TODO for low cardinality optimization.
 
     /// For all rows.
-    typename Method::iterator it;
     typename Method::Key prev_key;
+    AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {
-        bool inserted;          /// Inserted a new key, or was this key already?
-        bool overflow = false;  /// The new key did not fit in the hash table because of no_more_keys.
+        bool inserted = false; /// Inserted a new key, or was this key already?
 
         /// Get the key to insert into the hash table.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        typename Method::Key key;
+        if constexpr (!Method::low_cardinality_optimization)
+            key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+
+        AggregateDataPtr * aggregate_data = nullptr;
+        typename Method::iterator it; /// Is not used if Method::low_cardinality_optimization
 
         if (!no_more_keys)  /// Insert.
         {
@@ -593,7 +640,6 @@ void NO_INLINE Aggregator::executeImplCase(
                 if (i != 0 && key == prev_key)
                 {
                     /// Add values to the aggregate functions.
-                    AggregateDataPtr value = Method::getAggregateData(it->second);
                     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
                         (*inst->func)(inst->that, value + inst->state_offset, inst->arguments, i, aggregates_pool);
 
@@ -604,19 +650,32 @@ void NO_INLINE Aggregator::executeImplCase(
                     prev_key = key;
             }
 
-            method.data.emplace(key, it, inserted);
+            if constexpr (Method::low_cardinality_optimization)
+                aggregate_data = state.emplaceKeyFromRow(method.data, i, inserted, params.keys_size, keys, *aggregates_pool);
+            else
+            {
+                method.data.emplace(key, it, inserted);
+                aggregate_data = &Method::getAggregateData(it->second);
+            }
         }
         else
         {
             /// Add only if the key already exists.
-            inserted = false;
-            it = method.data.find(key);
-            if (method.data.end() == it)
-                overflow = true;
+
+            if constexpr (Method::low_cardinality_optimization)
+                aggregate_data = state.findFromRow(method.data, i);
+            else
+            {
+                it = method.data.find(key);
+                if (method.data.end() != it)
+                    aggregate_data = &Method::getAggregateData(it->second);
+            }
         }
 
+        /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
+
         /// If the key does not fit, and the data does not need to be aggregated in a separate row, then there's nothing to do.
-        if (no_more_keys && overflow && !overflow_row)
+        if (!aggregate_data && !overflow_row)
         {
             method.onExistingKey(key, keys, *aggregates_pool);
             continue;
@@ -625,21 +684,23 @@ void NO_INLINE Aggregator::executeImplCase(
         /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
         if (inserted)
         {
-            AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-
             /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-            aggregate_data = nullptr;
+            *aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
+            if constexpr (!Method::low_cardinality_optimization)
+                method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
             createAggregateStates(place);
-            aggregate_data = place;
+            *aggregate_data = place;
+
+            if constexpr (Method::low_cardinality_optimization)
+                state.cacheAggregateData(i, place);
         }
         else
             method.onExistingKey(key, keys, *aggregates_pool);
 
-        AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+        value = aggregate_data ? *aggregate_data : overflow_row;
 
         /// Add values to the aggregate functions.
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
@@ -686,6 +747,21 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        result.init(method_chosen);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+
+        if (params.compiler)
+            compileIfPossible(result.type);
+    }
+
+    if (isCancelled())
+        return true;
+
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
 
@@ -704,6 +780,15 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
             materialized_columns.push_back(converted);
             key_columns[i] = materialized_columns.back().get();
         }
+
+        if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
+        {
+            if (!result.isLowCardinality())
+            {
+                materialized_columns.push_back(low_cardinality_column->convertToFullColumn());
+                key_columns[i] = materialized_columns.back().get();
+            }
+        }
     }
 
     AggregateFunctionInstructions aggregate_functions_instructions(params.aggregates_size + 1);
@@ -720,6 +805,12 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                 materialized_columns.push_back(converted);
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
+
+            if (auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(aggregate_columns[i][j]))
+            {
+                materialized_columns.push_back(col_low_cardinality->convertToFullColumn());
+                aggregate_columns[i][j] = materialized_columns.back().get();
+            }
         }
 
         aggregate_functions_instructions[i].that = aggregate_functions[i];
@@ -732,21 +823,6 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         return true;
 
     size_t rows = block.rows();
-
-    /// How to perform the aggregation?
-    if (result.empty())
-    {
-        result.init(method_chosen);
-        result.keys_size = params.keys_size;
-        result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
-
-        if (params.compiler)
-            compileIfPossible(result.type);
-    }
-
-    if (isCancelled())
-        return true;
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
@@ -1077,15 +1153,16 @@ void Aggregator::convertToBlockImpl(
     if (data.empty())
         return;
 
+    if (key_columns.size() != params.keys_size)
+        throw Exception{"Aggregate. Unexpected key columns size.", ErrorCodes::LOGICAL_ERROR};
+
     if (final)
         convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns);
     else
         convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns);
-
     /// In order to release memory early.
     data.clearAndShrink();
 }
-
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::convertToBlockImplFinal(
@@ -1094,9 +1171,22 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     MutableColumns & key_columns,
     MutableColumns & final_aggregate_columns) const
 {
+    if constexpr (Method::low_cardinality_optimization)
+    {
+        if (data.hasNullKeyData())
+        {
+            key_columns[0]->insert(Field()); /// Null
+
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_functions[i]->insertResultInto(
+                    data.getNullKeyData() + offsets_of_aggregate_states[i],
+                    *final_aggregate_columns[i]);
+        }
+    }
+
     for (const auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
+        method.insertKeyIntoColumns(value, key_columns, key_sizes);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->insertResultInto(
@@ -1114,10 +1204,20 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
     MutableColumns & key_columns,
     AggregateColumnsData & aggregate_columns) const
 {
+    if constexpr (Method::low_cardinality_optimization)
+    {
+        if (data.hasNullKeyData())
+        {
+            key_columns[0]->insert(Field()); /// Null
+
+            for (size_t i = 0; i < params.aggregates_size; ++i)
+                aggregate_columns[i]->push_back(data.getNullKeyData() + offsets_of_aggregate_states[i]);
+        }
+    }
 
     for (auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
+        method.insertKeyIntoColumns(value, key_columns, key_sizes);
 
         /// reserved, so push_back does not throw exceptions
         for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1295,7 +1395,8 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 {
     auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
     {
-        CurrentThread::attachToIfDetached(thread_group);
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1413,14 +1514,52 @@ BlocksList Aggregator::convertToBlocks(AggregatedDataVariants & data_variants, b
 
 
 template <typename Method, typename Table>
+void NO_INLINE Aggregator::mergeDataNullKey(
+    Table & table_dst,
+    Table & table_src,
+    Arena * arena) const
+{
+    if constexpr (Method::low_cardinality_optimization)
+    {
+        if (table_src.hasNullKeyData())
+        {
+            if (!table_dst.hasNullKeyData())
+            {
+                table_dst.hasNullKeyData() = true;
+                table_dst.getNullKeyData() = table_src.getNullKeyData();
+            }
+            else
+            {
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->merge(
+                            table_dst.getNullKeyData() + offsets_of_aggregate_states[i],
+                            table_src.getNullKeyData() + offsets_of_aggregate_states[i],
+                            arena);
+
+                for (size_t i = 0; i < params.aggregates_size; ++i)
+                    aggregate_functions[i]->destroy(
+                            table_src.getNullKeyData() + offsets_of_aggregate_states[i]);
+            }
+
+            table_src.hasNullKeyData() = false;
+            table_src.getNullKeyData() = nullptr;
+        }
+    }
+}
+
+
+template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst,
     Table & table_src,
     Arena * arena) const
 {
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    if constexpr (Method::low_cardinality_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
-        decltype(it) res_it;
+        typename Table::iterator res_it;
         bool inserted;
         table_dst.emplace(it->first, res_it, inserted, it.getHash());
 
@@ -1455,9 +1594,13 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
-    for (auto it = table_src.begin(); it != table_src.end(); ++it)
+    /// Note : will create data for NULL key if not exist
+    if constexpr (Method::low_cardinality_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
     {
-        decltype(it) res_it = table_dst.find(it->first, it.getHash());
+        typename Table::iterator res_it = table_dst.find(it->first, it.getHash());
 
         AggregateDataPtr res_data = table_dst.end() == res_it
             ? overflows
@@ -1485,6 +1628,10 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_src,
     Arena * arena) const
 {
+    /// Note : will create data for NULL key if not exist
+    if constexpr (Method::low_cardinality_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
     for (auto it = table_src.begin(); it != table_src.end(); ++it)
     {
         decltype(it) res_it = table_dst.find(it->first, it.getHash());
@@ -1748,7 +1895,8 @@ private:
         try
         {
             setThreadName("MergingAggregtd");
-            CurrentThread::attachToIfDetached(thread_group);
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
             /// TODO: add no_more_keys support maybe
@@ -1869,7 +2017,10 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.safeGetByPosition(params.keys_size + i).column).getData();
 
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, aggregation_state_cache);
+    else
+        state.init(key_columns);
 
     /// For all rows.
     StringRefs keys(params.keys_size);
@@ -1877,27 +2028,41 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     for (size_t i = 0; i < rows; ++i)
     {
         typename Table::iterator it;
+        AggregateDataPtr * aggregate_data = nullptr;
 
-        bool inserted;          /// Inserted a new key, or was this key already?
-        bool overflow = false;  /// The new key did not fit in the hash table because of no_more_keys.
+        bool inserted = false; /// Inserted a new key, or was this key already?
 
         /// Get the key to insert into the hash table.
-        auto key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        typename Method::Key key;
+        if constexpr (!Method::low_cardinality_optimization)
+            key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
         if (!no_more_keys)
         {
-            data.emplace(key, it, inserted);
+            if constexpr (Method::low_cardinality_optimization)
+                aggregate_data = state.emplaceKeyFromRow(data, i, inserted, params.keys_size, keys, *aggregates_pool);
+            else
+            {
+                data.emplace(key, it, inserted);
+                aggregate_data = &Method::getAggregateData(it->second);
+            }
         }
         else
         {
-            inserted = false;
-            it = data.find(key);
-            if (data.end() == it)
-                overflow = true;
+            if constexpr (Method::low_cardinality_optimization)
+                aggregate_data = state.findFromRow(data, i);
+            else
+            {
+                it = data.find(key);
+                if (data.end() != it)
+                    aggregate_data = &Method::getAggregateData(it->second);
+            }
         }
 
+        /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
+
         /// If the key does not fit, and the data does not need to be aggregated into a separate row, then there's nothing to do.
-        if (no_more_keys && overflow && !overflow_row)
+        if (!aggregate_data && !overflow_row)
         {
             method.onExistingKey(key, keys, *aggregates_pool);
             continue;
@@ -1906,19 +2071,22 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
         if (inserted)
         {
-            AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-            aggregate_data = nullptr;
+            *aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
+            if constexpr (!Method::low_cardinality_optimization)
+                method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
             createAggregateStates(place);
-            aggregate_data = place;
+            *aggregate_data = place;
+
+            if constexpr (Method::low_cardinality_optimization)
+                state.cacheAggregateData(i, place);
         }
         else
             method.onExistingKey(key, keys, *aggregates_pool);
 
-        AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+        AggregateDataPtr value = aggregate_data ? *aggregate_data : overflow_row;
 
         /// Merge state of aggregate functions.
         for (size_t j = 0; j < params.aggregates_size; ++j)
@@ -2010,7 +2178,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
-      * If there is at least one block with a bucket number greater than zero, then there was a two-level aggregation.
+      * If there is at least one block with a bucket number greater or equal than zero, then there was a two-level aggregation.
       */
     auto max_bucket = bucket_to_blocks.rbegin()->first;
     size_t has_two_level = max_bucket >= 0;
@@ -2050,7 +2218,8 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
-            CurrentThread::attachToIfDetached(thread_group);
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
@@ -2162,7 +2331,6 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         M(key_fixed_string) \
         M(keys128)          \
         M(keys256)          \
-        M(concat)           \
         M(serialized)       \
 
 #define M(NAME) \
@@ -2248,7 +2416,10 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     std::vector<Block> & destinations) const
 {
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, aggregation_state_cache);
+    else
+        state.init(key_columns);
 
     size_t rows = source.rows();
     size_t columns = source.columns();
@@ -2259,6 +2430,15 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     /// For every row.
     for (size_t i = 0; i < rows; ++i)
     {
+        if constexpr (Method::low_cardinality_optimization)
+        {
+            if (state.isNullAt(i))
+            {
+                selector[i] = 0;
+                continue;
+            }
+        }
+
         /// Obtain a key. Calculate bucket number from it.
         typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *pool);
 

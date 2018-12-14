@@ -15,3 +15,5 @@
 ## bitShiftLeft(a, b)
 
 ## bitShiftRight(a, b)
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/bit_functions/) <!--hide-->

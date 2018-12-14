@@ -51,12 +51,11 @@ BlockInputStreams StorageMySQL::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned)
 {
     check(column_names);
-    checkQueryProcessingStage(processed_stage, context);
     String query = transformQueryForExternalDatabase(
         *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 
@@ -101,7 +100,7 @@ public:
             }
             trans.commit();
         }
-        catch(...)
+        catch (...)
         {
             trans.rollback();
             throw;
@@ -113,7 +112,7 @@ public:
         WriteBufferFromOwnString sqlbuf;
         sqlbuf << (storage.replace_query ? "REPLACE" : "INSERT") << " INTO ";
         sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
-        sqlbuf << " ( " << dumpNamesWithBackQuote(block) << " ) VALUES ";
+        sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
         auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
         writer->write(block);

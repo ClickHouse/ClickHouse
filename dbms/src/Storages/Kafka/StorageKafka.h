@@ -6,6 +6,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
@@ -62,6 +63,7 @@ private:
 
         void subscribe(const Names & topics);
         void unsubscribe();
+        void close();
 
         struct rd_kafka_s * stream = nullptr;
     };
@@ -79,8 +81,10 @@ private:
     // in order to make various input stream parsers happy.
     char row_delimiter;
     const String schema_name;
-     /// Total number of consumers
+    /// Total number of consumers
     size_t num_consumers;
+    /// Maximum block size for insertion into this table
+    size_t max_block_size;
     /// Number of actually created consumers.
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
     /// In this case we still need to be able to shutdown() properly.
@@ -93,8 +97,7 @@ private:
     std::vector<ConsumerPtr> consumers; /// Available consumers
 
     // Stream thread
-    Poco::Event event_update;
-    std::thread stream_thread;
+    BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
     void consumerConfiguration(struct rd_kafka_conf_s * conf);
@@ -103,7 +106,8 @@ private:
     void pushConsumer(ConsumerPtr c);
 
     void streamThread();
-    void streamToViews();
+    bool streamToViews();
+    bool checkDependencies(const String & database_name, const String & table_name);
 
 protected:
     StorageKafka(
@@ -112,7 +116,8 @@ protected:
         Context & context_,
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, char row_delimiter_, const String & schema_name_, size_t num_consumers_);
+        const String & format_name_, char row_delimiter_, const String & schema_name_,
+        size_t num_consumers_, size_t max_block_size_);
 };
 
 }

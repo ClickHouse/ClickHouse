@@ -26,7 +26,7 @@ BlockIO InterpreterCheckQuery::execute()
     StoragePtr table = context.getTable(database_name, table_name);
 
     auto column = ColumnUInt8::create();
-    column->insert(UInt64(table->checkData()));
+    column->insertValue(UInt64(table->checkData()));
     result = Block{{ std::move(column), std::make_shared<DataTypeUInt8>(), "result" }};
 
     BlockIO res;

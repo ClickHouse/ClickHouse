@@ -18,3 +18,13 @@ Returns the string.
 
 Selects substrings of consecutive bytes from the ranges a-z and A-Z.Returns an array of substrings.
 
+**Example:**
+
+```
+SELECT alphaTokens('abca1abc')
+
+┌─alphaTokens('abca1abc')─┐
+│ ['abca','abc']          │
+└─────────────────────────┘
+```
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->

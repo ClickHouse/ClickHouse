@@ -21,7 +21,7 @@ You can use `turbostat` to view the CPU's actual clock rate under a load.
 Always use the `performance` scaling governor.  The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
+sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations
@@ -34,6 +34,11 @@ The restriction can also be set externally at the datacenter level. You can use 
 For small amounts of data (up to \~200 GB compressed), it is best to use as much memory as the volume of data.
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
 Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
+
+Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
+```
+echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
 
 ## Swap File
 
@@ -74,7 +79,7 @@ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1025 KB is sufficient for all RAID configurations.
+A block size of 1024 KB is sufficient for all RAID configurations.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
@@ -91,8 +96,7 @@ Most other file systems should also work fine. File systems with delayed allocat
 
 ## Linux Kernel
 
-Don't use an outdated Linux kernel. In 2015, 3.18.19 was new enough.
-Consider using the kernel build from Yandex:<https://github.com/yandex/smart> – it provides at least a 5% performance increase.
+Don't use an outdated Linux kernel.
 
 ## Network
 
@@ -107,6 +111,10 @@ You are probably already using ZooKeeper for other purposes. You can use the sam
 
 It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
+You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
+
+If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
+
 Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
 With the default settings, ZooKeeper is a time bomb:
@@ -114,10 +122,6 @@ With the default settings, ZooKeeper is a time bomb:
 > The ZooKeeper server won't delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
 
 This bomb must be defused.
-
-If you want to move data between different ZooKeeper clusters, never move it by hand-written script, because it will produce wrong data for sequential nodes. Never use "zkcopy" tool, by the same reason: https://github.com/ksprojects/zkcopy/issues/15
-
-If you want to split ZooKeeper cluster, proper way is to increase number of replicas and then reconfigure it as two independent clusters.
 
 The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
 
@@ -179,7 +183,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Java version:
 
-```text
+```
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -227,7 +231,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```text
+```
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]
@@ -256,3 +260,5 @@ script
 end script
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/tips/) <!--hide-->

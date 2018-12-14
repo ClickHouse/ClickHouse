@@ -40,10 +40,10 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const MergeTreeData & data,
     const Names & column_names,
     Logger * log)
-        : primary_key_columns{ext::collection_cast<std::unordered_set>(data.getPrimarySortColumns())},
+        : primary_key_columns{ext::collection_cast<std::unordered_set>(data.primary_key_columns)},
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
-        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, context, data.getColumns().getAllPhysical())},
+        block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
         prepared_sets(query_info.sets),
         log{log}
 {
@@ -384,7 +384,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
     else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (identifier_ptr->kind == ASTIdentifier::Column)
+        if (identifier_ptr->general())
             if (array_joined_names.count(identifier_ptr->name) ||
                 array_joined_names.count(Nested::extractTableName(identifier_ptr->name)))
                 return true;

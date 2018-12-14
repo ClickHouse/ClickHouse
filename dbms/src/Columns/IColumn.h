@@ -47,9 +47,9 @@ public:
       */
     virtual Ptr convertToFullColumnIfConst() const { return {}; }
 
-    /// If column isn't ColumnWithDictionary, return itself.
-    /// If column is ColumnWithDictionary, transforms is to full column.
-    virtual Ptr convertToFullColumnIfWithDictionary() const { return getPtr(); }
+    /// If column isn't ColumnLowCardinality, return itself.
+    /// If column is ColumnLowCardinality, transforms is to full column.
+    virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
@@ -84,7 +84,7 @@ public:
     }
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
-    /// If column stores floting point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
+    /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
     virtual UInt64 get64(size_t /*n*/) const
     {
@@ -92,7 +92,7 @@ public:
     }
 
     /** If column is numeric, return value of n-th element, casted to UInt64.
-      * For NULL values of Nullable column it is allowed to return arbitary value.
+      * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
     virtual UInt64 getUInt(size_t /*n*/) const
@@ -105,6 +105,7 @@ public:
         throw Exception("Method getInt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    virtual bool isDefaultAt(size_t n) const { return get64(n) == 0; }
     virtual bool isNullAt(size_t /*n*/) const { return false; }
 
     /** If column is numeric, return value of n-th element, casted to bool.
@@ -142,13 +143,6 @@ public:
     /// Parameter length could be ignored if column values have fixed size.
     virtual void insertData(const char * pos, size_t length) = 0;
 
-    /// Like getData, but has special behavior for columns that contain variable-length strings.
-    /// In this special case inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
-    virtual void insertDataWithTerminatingZero(const char * pos, size_t length)
-    {
-        insertData(pos, length);
-    }
-
     /// Appends "default value".
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
     /// For example, ColumnNullable(Nested) absolutely ignores values of nested column if it is marked as NULL.
@@ -174,7 +168,7 @@ public:
     virtual const char * deserializeAndInsertFromArena(const char * pos) = 0;
 
     /// Update state of hash function with value of n-th element.
-    /// On subsequent calls of this method for sequence of column values of arbitary types,
+    /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
 
@@ -333,7 +327,7 @@ public:
     /// Can be inside ColumnNullable.
     virtual bool canBeInsideNullable() const { return false; }
 
-    virtual bool withDictionary() const { return false; }
+    virtual bool lowCardinality() const { return false; }
 
 
     virtual ~IColumn() {}
@@ -376,7 +370,7 @@ protected:
 };
 
 using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr  = IColumn::MutablePtr;
+using MutableColumnPtr = IColumn::MutablePtr;
 using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 

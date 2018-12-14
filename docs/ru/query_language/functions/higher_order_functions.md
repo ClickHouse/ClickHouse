@@ -22,17 +22,17 @@
 
 Примеры:
 
-```sql
+``` sql
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-```text
+```
 ┌─res───────────┐
 │ ['abc World'] │
 └───────────────┘
 ```
 
-```sql
+``` sql
 SELECT
     arrayFilter(
         (i, x) -> x LIKE '%World%',
@@ -41,7 +41,7 @@ SELECT
     AS res
 ```
 
-```text
+```
 ┌─res─┐
 │ [2] │
 └─────┘
@@ -71,11 +71,11 @@ SELECT
 
 Пример:
 
-```sql
+``` sql
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-```text
+```
 ┌─res──────────┐
 │ [1, 2, 3, 4] │
 └──────────────┘
@@ -90,11 +90,11 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 Пример:
 
-```sql
+``` sql
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-```text
+```
 ┌─res────────────────┐
 │ ['world', 'hello'] │
 └────────────────────┘
@@ -103,3 +103,5 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ### arrayReverseSort(\[func,\] arr1, ...)
 
 Возвращает отсортированный в нисходящем порядке массив `arr1`. Если задана функция `func`, то порядок сортировки определяется результатом применения функции `func` на элементы массива (массивов).  
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/higher_order_functions/) <!--hide-->

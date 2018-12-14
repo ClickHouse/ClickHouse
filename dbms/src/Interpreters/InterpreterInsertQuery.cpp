@@ -10,7 +10,6 @@
 #include <DataStreams/SquashingBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
@@ -54,14 +53,20 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-    Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
 
+
+    Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
     /// If the query does not include information about columns
     if (!query.columns)
-        return table_sample_non_materialized;
+    {
+        /// Format Native ignores header and write blocks as is.
+        if (query.format == "Native")
+            return {};
+        else
+            return table_sample_non_materialized;
+    }
 
     Block table_sample = table->getSampleBlock();
-
     /// Form the block based on the column names from the query
     Block res;
     for (const auto & identifier : query.columns->children)
@@ -87,25 +92,26 @@ BlockIO InterpreterInsertQuery::execute()
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
-
-    NamesAndTypesList required_columns = table->getColumns().getAllPhysical();
+    auto table_lock = table->lockStructure(true);
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
 
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
-    out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), required_columns, table->getColumns().defaults, context);
 
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-    if (!(context.getSettingsRef().insert_distributed_sync && table->getName() == "Distributed"))
+    if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
     {
         out = std::make_shared<SquashingBlockOutputStream>(
-            out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+            out, table->getSampleBlock(), context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
+
+    /// Actually we don't know structure of input blocks from query/table,
+    /// because some clients break insertion protocol (columns != header)
+    out = std::make_shared<AddingDefaultBlockOutputStream>(
+        out, getSampleBlock(query, table), table->getSampleBlock(), table->getColumns().defaults, context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
@@ -151,6 +157,12 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
     }
 
     throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
+}
+
+std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
+{
+    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    return {query.database, query.table};
 }
 
 }

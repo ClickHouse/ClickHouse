@@ -1,8 +1,7 @@
 #include "HandlerFactory.h"
 #include "PingHandler.h"
 #include "ColumnInfoHandler.h"
-#include <Common/HTMLForm.h>
-
+#include <Poco/URI.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <common/logger_useful.h>
@@ -23,6 +22,12 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
         if (uri.getPath() == "/columns_info")
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
             return new ODBCColumnsInfoHandler(keep_alive_timeout, context);
+#else
+            return nullptr;
+#endif
+        else if (uri.getPath() == "/identifier_quote")
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+            return new IdentifierQuoteHandler(keep_alive_timeout, context);
 #else
             return nullptr;
 #endif

@@ -13,7 +13,7 @@
 
 
 OwnPatternFormatter::OwnPatternFormatter(const BaseDaemon * daemon_, OwnPatternFormatter::Options options_)
-        : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
+    : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
 
 
 void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text)
@@ -23,7 +23,7 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     const Poco::Message & msg = msg_ext.base;
 
     /// For syslog: tag must be before message and first whitespace.
-    if (options & ADD_LAYER_TAG && daemon)
+    if ((options & ADD_LAYER_TAG) && daemon)
     {
         auto layer = daemon->getLayer();
         if (layer)
@@ -49,12 +49,11 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeIntText(msg_ext.thread_number, wb);
     writeCString(" ] ", wb);
 
-    if (!msg_ext.query_id.empty())
-    {
-        writeCString("{", wb);
-        DB::writeString(msg_ext.query_id, wb);
-        writeCString("} ", wb);
-    }
+    /// We write query_id even in case when it is empty (no query context)
+    /// just to be convenient for various log parsers.
+    writeCString("{", wb);
+    DB::writeString(msg_ext.query_id, wb);
+    writeCString("} ", wb);
 
     writeCString("<", wb);
     DB::writeString(getPriorityName(static_cast<int>(msg.getPriority())), wb);
