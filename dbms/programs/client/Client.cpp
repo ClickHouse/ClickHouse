@@ -1,3 +1,6 @@
+#include "TestHint.h"
+#include "ConnectionParameters.h"
+
 #include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -11,16 +14,15 @@
 #include <optional>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <Poco/String.h>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
-#include <common/find_first_symbols.h>
-#include <common/SetTerminalEcho.h>
+#include <common/find_symbols.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
-#include <Common/ExternalTable.h>
 #include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
@@ -28,8 +30,10 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ExternalTable.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -37,7 +41,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -53,8 +60,16 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <ext/scope_guard.h>
+#include <Common/Config/configReadClient.h>
+#include <Storages/ColumnsDescription.h>
 
+#if USE_READLINE
+#include "Suggest.h" // Y_IGNORE
+#endif
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -68,15 +83,11 @@
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
@@ -85,6 +96,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
+    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int CANNOT_READLINE;
 }
 
 
@@ -106,6 +120,7 @@ private:
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
@@ -136,6 +151,11 @@ private:
     std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
 
+    /// The user could specify special file for server logs (stderr by default)
+    std::unique_ptr<WriteBuffer> out_logs_buf;
+    String server_logs_file;
+    BlockOutputStreamPtr logs_out_stream;
+
     String home_path;
 
     String current_profile;
@@ -156,6 +176,12 @@ private:
 
     /// If the last query resulted in exception.
     bool got_exception = false;
+    int expected_server_error = 0;
+    int expected_client_error = 0;
+    int actual_server_error = 0;
+    int actual_client_error = 0;
+
+    UInt64 server_revision = 0;
     String server_version;
     String server_display_name;
 
@@ -171,65 +197,6 @@ private:
     /// External tables info.
     std::list<ExternalTable> external_tables;
 
-
-    struct ConnectionParameters
-    {
-        String host;
-        UInt16 port;
-        String default_database;
-        String user;
-        String password;
-        Protocol::Secure security;
-        Protocol::Compression compression;
-        ConnectionTimeouts timeouts;
-
-        ConnectionParameters() {}
-
-        ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
-        {
-            bool is_secure = config.getBool("secure", false);
-            security = is_secure
-                ? Protocol::Secure::Enable
-                : Protocol::Secure::Disable;
-
-            host = config.getString("host", "localhost");
-            port = config.getInt("port",
-                config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
-                    is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
-
-            default_database = config.getString("database", "");
-            user = config.getString("user", "");
-
-            if (config.getBool("ask-password", false))
-            {
-                if (config.has("password"))
-                    throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
-
-                std::cout << "Password for user " << user << ": ";
-                SetTerminalEcho(false);
-
-                SCOPE_EXIT({
-                    SetTerminalEcho(true);
-                });
-                std::getline(std::cin, password);
-                std::cout << std::endl;
-            }
-            else
-            {
-                password = config.getString("password", "");
-            }
-
-            compression = config.getBool("compression", true)
-                ? Protocol::Compression::Enable
-                : Protocol::Compression::Disable;
-
-            timeouts = ConnectionTimeouts(
-                Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-                Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-                Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-        }
-    };
-
     ConnectionParameters connection_parameters;
 
 
@@ -241,22 +208,7 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        std::string config_path;
-        if (config().has("config-file"))
-            config_path = config().getString("config-file");
-        else if (Poco::File("./clickhouse-client.xml").exists())
-            config_path = "./clickhouse-client.xml";
-        else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            config_path = home_path + "/.clickhouse-client/config.xml";
-        else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            config_path = "/etc/clickhouse-client/config.xml";
-
-        if (!config_path.empty())
-        {
-            ConfigProcessor config_processor(config_path);
-            auto loaded_config = config_processor.loadConfig();
-            config().add(loaded_config.configuration);
-        }
+        configReadClient(config(), home_path);
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
@@ -305,20 +257,10 @@ private:
             /// If exception code isn't zero, we should return non-zero return code anyway.
             return e.code() ? e.code() : -1;
         }
-        catch (const Poco::Exception & e)
-        {
-            std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-            return ErrorCodes::POCO_EXCEPTION;
-        }
-        catch (const std::exception & e)
-        {
-            std::cerr << "std::exception: " << e.what() << std::endl;
-            return ErrorCodes::STD_EXCEPTION;
-        }
         catch (...)
         {
-            std::cerr << "Unknown exception" << std::endl;
-            return ErrorCodes::UNKNOWN_EXCEPTION;
+            std::cerr << getCurrentExceptionMessage(false) << std::endl;
+            return getCurrentExceptionCode();
         }
     }
 
@@ -336,9 +278,10 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-
     int mainImpl()
     {
+        UseSSL use_ssl;
+
         registerFunctions();
         registerAggregateFunctions();
 
@@ -366,12 +309,18 @@ private:
         format_max_block_size = config().getInt("format_max_block_size", context.getSettingsRef().max_block_size);
 
         insert_format = "Values";
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
+
+        /// Setting value from cmd arg overrides one from config
+        if (context.getSettingsRef().max_insert_block_size.changed)
+            insert_format_max_block_size = context.getSettingsRef().max_insert_block_size;
+        else
+            insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
 
         if (!is_interactive)
         {
             need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
+            ignore_error = config().getBool("ignore-error", false);
         }
 
         connect();
@@ -446,9 +395,25 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-            /// Turn tab completion off.
-            rl_bind_key('\t', rl_insert);
+#if USE_READLINE
+            if (server_revision >= Suggest::MIN_SERVER_REVISION
+                && !config().getBool("disable_suggestion", false))
+            {
+                /// Load suggestion data from the server.
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 
+                /// Added '.' to the default list. Because it is used to separate database and table.
+                rl_basic_word_break_characters = " \t\n\r\"\\'`@$><=;|&{(.";
+
+                /// Not append whitespace after single suggestion. Because whitespace after function name is meaningless.
+                rl_completion_append_character = '\0';
+
+                rl_completion_entry_function = Suggest::generator;
+            }
+            else
+                /// Turn tab completion off.
+                rl_bind_key('\t', rl_insert);
+#endif
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -469,10 +434,40 @@ private:
                     Poco::File(history_file).createFile();
             }
 
+#if USE_READLINE
+            /// Install Ctrl+C signal handler that will be used in interactive mode.
+
+            if (rl_initialize())
+                throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
+
+            auto clear_prompt_or_exit = [](int)
+            {
+                /// This is signal safe.
+                ssize_t res = write(STDOUT_FILENO, "\n", 1);
+
+                /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
+                /// (First press to Ctrl+C will try to cancel query by InterruptListener).
+                if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
+                {
+                    rl_replace_line("", 0);
+                    if (rl_forced_update_display())
+                        _exit(0);
+                }
+                else
+                {
+                    /// A little dirty, but we struggle to find better way to correctly
+                    /// force readline to exit after returning from the signal handler.
+                    _exit(0);
+                }
+            };
+
+            if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
+                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+#endif
+
             loop();
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
-
             return 0;
         }
         else
@@ -514,17 +509,17 @@ private:
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
-        UInt64 server_revision = 0;
+        UInt64 server_version_patch = 0;
 
         if (max_client_network_bandwidth)
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
-        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
+        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
         if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
         {
@@ -535,6 +530,7 @@ private:
         {
             std::cout << "Connected to " << server_name
                       << " server version " << server_version
+                      << " revision " << server_revision
                       << "." << std::endl << std::endl;
         }
     }
@@ -548,7 +544,7 @@ private:
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(STDIN_FILENO, &fds);
-        return select(1, &fds, 0, 0, &timeout) == 1;
+        return select(1, &fds, nullptr, nullptr, &timeout) == 1;
     }
 
     inline const String prompt() const
@@ -616,10 +612,20 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    std::cerr << std::endl
-                        << "Exception on client:" << std::endl
-                        << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                        << std::endl;
+                    actual_client_error = e.code();
+                    if (!actual_client_error || actual_client_error != expected_client_error)
+                    {
+                        std::cerr << std::endl
+                            << "Exception on client:" << std::endl
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl
+                                      << e.getStackTrace().toString() << std::endl;
+
+                        std::cerr << std::endl;
+
+                    }
 
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
@@ -657,7 +663,7 @@ private:
 
     bool process(const String & text)
     {
-        const auto ignore_error = config().getBool("ignore-error", false);
+        const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
             /// Several queries separated by ';'.
@@ -672,6 +678,7 @@ private:
             {
                 const char * pos = begin;
                 ASTPtr ast = parseQuery(pos, end, true);
+
                 if (!ast)
                 {
                     if (ignore_error)
@@ -687,7 +694,7 @@ private:
                     return true;
                 }
 
-                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
+                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
 
                 if (insert && insert->data)
                 {
@@ -701,6 +708,10 @@ private:
                 while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
+                TestHint test_hint(test_mode, query);
+                expected_client_error = test_hint.clientError();
+                expected_server_error = test_hint.serverError();
+
                 try
                 {
                     if (!processSingleQuery(query, ast) && !ignore_error)
@@ -708,9 +719,15 @@ private:
                 }
                 catch (...)
                 {
-                    std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
                     got_exception = true;
                 }
+
+                if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
+                    connection->forceConnected();
 
                 if (got_exception && !ignore_error)
                 {
@@ -865,19 +882,20 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
-            receivePacket();
+            sendData(sample, columns_description);
+            receiveEndOfQuery();
         }
     }
 
 
     ASTPtr parseQuery(const char * & pos, const char * end, bool allow_multi_statements)
     {
-        ParserQuery parser(end);
+        ParserQuery parser(end, true);
         ASTPtr res;
 
         const auto ignore_error = config().getBool("ignore-error", false);
@@ -907,7 +925,7 @@ private:
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -918,19 +936,19 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, columns_description);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, columns_description);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description)
     {
         String current_format = insert_format;
 
@@ -942,6 +960,10 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
+        const auto & column_defaults = columns_description.defaults;
+        if (!column_defaults.empty())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
         async_block_input->readPrefix();
@@ -951,6 +973,11 @@ private:
             Block block = async_block_input->read();
             connection->sendData(block);
             processed_rows += block.rows();
+
+            /// Check if server send Log packet
+            auto packet_type = connection->checkPacket();
+            if (packet_type && *packet_type == Protocol::Server::Log)
+                receiveAndProcessPacket();
 
             if (!block)
                 break;
@@ -963,18 +990,28 @@ private:
     /// Flush all buffers.
     void resetOutput()
     {
-        block_out_stream = nullptr;
+        block_out_stream.reset();
+        logs_out_stream.reset();
+
         if (pager_cmd)
         {
             pager_cmd->in.close();
             pager_cmd->wait();
         }
         pager_cmd = nullptr;
+
         if (out_file_buf)
         {
             out_file_buf->next();
             out_file_buf.reset();
         }
+
+        if (out_logs_buf)
+        {
+            out_logs_buf->next();
+            out_logs_buf.reset();
+        }
+
         std_out.next();
     }
 
@@ -1007,7 +1044,7 @@ private:
                     continue;    /// If there is no new data, continue checking whether the query was cancelled after a timeout.
             }
 
-            if (!receivePacket())
+            if (!receiveAndProcessPacket())
                 break;
         }
 
@@ -1018,7 +1055,7 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    bool receivePacket()
+    bool receiveAndProcessPacket()
     {
         Connection::Packet packet = connection->receivePacket();
 
@@ -1049,6 +1086,10 @@ private:
                 last_exception = std::move(packet.exception);
                 return false;
 
+            case Protocol::Server::Log:
+                onLogData(packet.block);
+                return true;
+
             case Protocol::Server::EndOfStream:
                 onEndOfStream();
                 return false;
@@ -1060,24 +1101,65 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description)
     {
-        Connection::Packet packet = connection->receivePacket();
-
-        switch (packet.type)
+        while (true)
         {
-            case Protocol::Server::Data:
-                out = packet.block;
-                return true;
+            Connection::Packet packet = connection->receivePacket();
 
-            case Protocol::Server::Exception:
-                onException(*packet.exception);
-                last_exception = std::move(packet.exception);
-                return false;
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    out = packet.block;
+                    return true;
 
-            default:
-                throw NetException("Unexpected packet from server (expected Data, got "
-                    + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                case Protocol::Server::Exception:
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
+                    return false;
+
+                case Protocol::Server::Log:
+                    onLogData(packet.block);
+                    break;
+
+                case Protocol::Server::TableColumns:
+                    columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                    return receiveSampleBlock(out, columns_description);
+
+                default:
+                    throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            }
+        }
+    }
+
+
+    /// Process Log packets, exit when recieve Exception or EndOfStream
+    bool receiveEndOfQuery()
+    {
+        while (true)
+        {
+            Connection::Packet packet = connection->receivePacket();
+
+            switch (packet.type)
+            {
+                case Protocol::Server::EndOfStream:
+                    onEndOfStream();
+                    return true;
+
+                case Protocol::Server::Exception:
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
+                    return false;
+
+                case Protocol::Server::Log:
+                    onLogData(packet.block);
+                    break;
+
+                default:
+                    throw NetException("Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            }
         }
     }
 
@@ -1133,6 +1215,38 @@ private:
     }
 
 
+    void initLogsOutputStream()
+    {
+        if (!logs_out_stream)
+        {
+            WriteBuffer * wb = out_logs_buf.get();
+
+            if (!out_logs_buf)
+            {
+                if (server_logs_file.empty())
+                {
+                    /// Use stderr by default
+                    out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
+                    wb = out_logs_buf.get();
+                }
+                else if (server_logs_file == "-")
+                {
+                    /// Use stdout if --server_logs_file=- specified
+                    wb = &std_out;
+                }
+                else
+                {
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    wb = out_logs_buf.get();
+                }
+            }
+
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
+            logs_out_stream->writePrefix();
+        }
+    }
+
+
     void onData(Block & block)
     {
         if (written_progress_chars)
@@ -1153,6 +1267,14 @@ private:
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
+    }
+
+
+    void onLogData(Block & block)
+    {
+        initLogsOutputStream();
+        logs_out_stream->write(block);
+        logs_out_stream->flush();
     }
 
 
@@ -1285,6 +1407,14 @@ private:
         resetOutput();
         got_exception = true;
 
+        actual_server_error = e.code();
+        if (expected_server_error)
+        {
+            if (actual_server_error == expected_server_error)
+                return;
+            std::cerr << "Expected error code: " << expected_server_error << " but got: " << actual_server_error << "." << std::endl;
+        }
+
         std::string text = e.displayText();
 
         auto embedded_stack_trace_pos = text.find("Stack trace");
@@ -1308,6 +1438,9 @@ private:
         if (block_out_stream)
             block_out_stream->writeSuffix();
 
+        if (logs_out_stream)
+            logs_out_stream->writeSuffix();
+
         resetOutput();
 
         if (is_interactive && !written_first_block)
@@ -1316,10 +1449,7 @@ private:
 
     void showClientVersion()
     {
-        std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-            << "." << DBMS_VERSION_MINOR
-            << "." << ClickHouseRevision::get()
-            << "." << std::endl;
+        std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
     }
 
 public:
@@ -1386,7 +1516,9 @@ public:
 
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
-        unsigned line_length = boost::program_options::options_description::m_default_line_length;
+        namespace po = boost::program_options;
+
+        unsigned line_length = po::options_description::m_default_line_length;
         unsigned min_description_length = line_length / 2;
         if (!stdin_is_not_tty)
         {
@@ -1394,58 +1526,71 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        boost::program_options::options_description main_description("Main options", line_length, min_description_length);
+        po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
-            ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
-            ("port", boost::program_options::value<int>()->default_value(9000), "server port")
-            ("secure,s", "secure")
-            ("user,u", boost::program_options::value<std::string>()->default_value("default"), "user")
-            ("password", boost::program_options::value<std::string>(), "password")
+            ("config-file,c", po::value<std::string>(), "config-file path")
+            ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
+            ("port", po::value<int>()->default_value(9000), "server port")
+            ("secure,s", "Use TLS connection")
+            ("user,u", po::value<std::string>()->default_value("default"), "user")
+            ("password", po::value<std::string>(), "password")
             ("ask-password", "ask-password")
-            ("query_id", boost::program_options::value<std::string>(), "query_id")
-            ("query,q", boost::program_options::value<std::string>(), "query")
-            ("database,d", boost::program_options::value<std::string>(), "database")
-            ("pager", boost::program_options::value<std::string>(), "pager")
+            ("query_id", po::value<std::string>(), "query_id")
+            ("query,q", po::value<std::string>(), "query")
+            ("database,d", po::value<std::string>(), "database")
+            ("pager", po::value<std::string>(), "pager")
+            ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+            ("suggestion_limit", po::value<int>()->default_value(10000),
+                "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("ignore-error", "Do not stop processing in multiquery mode")
-            ("format,f", boost::program_options::value<std::string>(), "default output format")
+            ("format,f", po::value<std::string>(), "default output format")
+            ("testmode,T", "enable test hints in comments")
+            ("ignore-error", "do not stop processing in multiquery mode")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
             ("stacktrace", "print stack traces of exceptions")
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
+            ("version-clean", "print version in machine-readable format and exit")
             ("echo", "in batch mode, print query before execution")
-            ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
-            ("compression", boost::program_options::value<bool>(), "enable or disable compression")
+            ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
+            ("compression", po::value<bool>(), "enable or disable compression")
+            ("log-level", po::value<std::string>(), "client log level")
+            ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;
 #undef DECLARE_SETTING
 
         /// Commandline options related to external tables.
-        boost::program_options::options_description external_description("External tables options");
+        po::options_description external_description("External tables options");
         external_description.add_options()
-            ("file", boost::program_options::value<std::string>(), "data file or - for stdin")
-            ("name", boost::program_options::value<std::string>()->default_value("_data"), "name of the table")
-            ("format", boost::program_options::value<std::string>()->default_value("TabSeparated"), "data format")
-            ("structure", boost::program_options::value<std::string>(), "structure")
-            ("types", boost::program_options::value<std::string>(), "types")
+            ("file", po::value<std::string>(), "data file or - for stdin")
+            ("name", po::value<std::string>()->default_value("_data"), "name of the table")
+            ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
+            ("structure", po::value<std::string>(), "structure")
+            ("types", po::value<std::string>(), "types")
         ;
 
         /// Parse main commandline options.
-        boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
+        po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
-        boost::program_options::variables_map options;
-        boost::program_options::store(parsed, options);
+        po::variables_map options;
+        po::store(parsed, options);
 
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
+            exit(0);
+        }
+
+        if (options.count("version-clean"))
+        {
+            std::cout << VERSION_STRING;
             exit(0);
         }
 
@@ -1458,14 +1603,17 @@ public:
             exit(0);
         }
 
+        if (options.count("log-level"))
+            Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+
         size_t number_of_external_tables_with_stdin_source = 0;
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
+            po::parsed_options parsed = po::command_line_parser(
                 external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
-            boost::program_options::variables_map external_options;
-            boost::program_options::store(parsed, external_options);
+            po::variables_map external_options;
+            po::store(parsed, external_options);
 
             try
             {
@@ -1509,7 +1657,7 @@ public:
             config().setInt("port", options["port"].as<int>());
         if (options.count("secure"))
             config().setBool("secure", true);
-        if (options.count("user"))
+        if (options.count("user") && !options["user"].defaulted())
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
             config().setString("password", options["password"].as<std::string>());
@@ -1519,6 +1667,8 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
+        if (options.count("testmode"))
+            config().setBool("testmode", true);
         if (options.count("ignore-error"))
             config().setBool("ignore-error", true);
         if (options.count("format"))
@@ -1537,11 +1687,16 @@ public:
             max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
+        if (options.count("server_logs_file"))
+            server_logs_file = options["server_logs_file"].as<std::string>();
+        if (options.count("disable_suggestion"))
+            config().setBool("disable_suggestion", true);
+        if (options.count("suggestion_limit"))
+            config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     }
 };
 
 }
-
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
@@ -1554,6 +1709,11 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return 1;
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
 

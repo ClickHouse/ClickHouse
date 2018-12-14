@@ -63,11 +63,10 @@ public:
       */
     virtual Block read() = 0;
 
-    /** Get information about the last block received.
-      */
-    virtual BlockExtraInfo getBlockExtraInfo() const
+    virtual const BlockMissingValues & getMissingValues() const
     {
-        throw Exception("Method getBlockExtraInfo is not supported by the data stream " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+        static const BlockMissingValues none;
+        return none;
     }
 
     /** Read something before starting all data or after the end of all data.
@@ -91,7 +90,7 @@ public:
 
     /** Must be called before read, readPrefix.
       */
-    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
+    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.

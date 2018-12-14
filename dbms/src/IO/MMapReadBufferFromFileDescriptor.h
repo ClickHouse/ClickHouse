@@ -14,7 +14,7 @@ namespace DB
 class MMapReadBufferFromFileDescriptor : public ReadBuffer
 {
 protected:
-    MMapReadBufferFromFileDescriptor() : ReadBuffer(nullptr, 0) {};
+    MMapReadBufferFromFileDescriptor() : ReadBuffer(nullptr, 0) {}
 
     void init(int fd_, size_t offset, size_t length_);
     void init(int fd_, size_t offset);

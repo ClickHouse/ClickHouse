@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 
 
 /// Maps 0..15 to 0..9A..F or 0..9a..f correspondingly.

@@ -6,7 +6,6 @@
 
 #include <Poco/String.h>
 
-
 namespace DB
 {
 
@@ -26,8 +25,13 @@ void FunctionFactory::registerFunction(const
         throw Exception("FunctionFactory: the function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
+    String function_name_lowercase = Poco::toLower(name);
+    if (isAlias(name) || isAlias(function_name_lowercase))
+        throw Exception("FunctionFactory: the function name '" + name + "' is already registered as alias",
+                        ErrorCodes::LOGICAL_ERROR);
+
     if (case_sensitiveness == CaseInsensitive
-        && !case_insensitive_functions.emplace(Poco::toLower(name), creator).second)
+        && !case_insensitive_functions.emplace(function_name_lowercase, creator).second)
         throw Exception("FunctionFactory: the case insensitive function name '" + name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 }
@@ -45,9 +49,11 @@ FunctionBuilderPtr FunctionFactory::get(
 
 
 FunctionBuilderPtr FunctionFactory::tryGet(
-    const std::string & name,
+    const std::string & name_param,
     const Context & context) const
 {
+    String name = getAliasToOrName(name_param);
+
     auto it = functions.find(name);
     if (functions.end() != it)
         return it->second(context);

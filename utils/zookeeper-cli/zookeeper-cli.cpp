@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromString.h>
 
 
-void printStat(const zkutil::Stat & s)
+void printStat(const Coordination::Stat & s)
 {
     std::cout << "Stat:\n";
     std::cout << "  czxid: " << s.czxid << '\n';
@@ -148,7 +148,7 @@ int main(int argc, char ** argv)
                     ss >> w;
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
-                    zkutil::Stat stat;
+                    Coordination::Stat stat;
                     bool e = zk.exists(path, &stat, event);
                     if (e)
                         printStat(stat);
@@ -163,7 +163,7 @@ int main(int argc, char ** argv)
                     ss >> w;
                     bool watch = w == "w";
                     zkutil::EventPtr event = watch ? std::make_shared<Poco::Event>() : nullptr;
-                    zkutil::Stat stat;
+                    Coordination::Stat stat;
                     std::string data = zk.get(path, &stat, event);
                     std::cout << "Data: " << data << std::endl;
                     printStat(stat);
@@ -187,7 +187,7 @@ int main(int argc, char ** argv)
                     if (!in.eof())
                         DB::readText(version, in);
 
-                    zkutil::Stat stat;
+                    Coordination::Stat stat;
                     zk.set(path, data, version, &stat);
                     printStat(stat);
                 }
@@ -206,13 +206,13 @@ int main(int argc, char ** argv)
                 }
 
             }
-            catch (const zkutil::KeeperException & e)
+            catch (const Coordination::Exception & e)
             {
                 std::cerr << "KeeperException: " << e.displayText() << std::endl;
             }
         }
     }
-    catch (const zkutil::KeeperException & e)
+    catch (const Coordination::Exception & e)
     {
         std::cerr << "KeeperException: " << e.displayText() << std::endl;
         return 1;

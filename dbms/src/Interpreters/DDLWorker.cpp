@@ -12,6 +12,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
 #include <Common/getFQDNOrHostName.h>
@@ -39,6 +40,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -88,7 +90,7 @@ struct HostID
         {
             return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
         }
-        catch (const Poco::Net::NetException & e)
+        catch (const Poco::Net::NetException &)
         {
             /// Avoid "Host not found" exceptions
             return false;
@@ -205,6 +207,7 @@ static bool isSupportedAlterType(int type)
         ASTAlterCommand::MODIFY_PRIMARY_KEY,
         ASTAlterCommand::DROP_PARTITION,
         ASTAlterCommand::DELETE,
+        ASTAlterCommand::UPDATE,
     };
 
     return supported_alter_types.count(type) != 0;
@@ -297,7 +300,13 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress(context.getTCPPort()))
+        auto maybe_secure_port = context.getTCPPortSecure();
+
+        /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
+        bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
+            || host.isLocalAddress(context.getTCPPort());
+
+        if (!is_local_port)
             continue;
 
         if (host_in_hostlist)
@@ -423,7 +432,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     }
 
     if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))
-        throw Exception("Recieved unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     task.cluster_name = task.query_on_cluster->cluster;
     task.cluster = context.tryGetCluster(task.cluster_name);
@@ -474,7 +483,8 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort()))
+            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort())
+                || (context.getTCPPortSecure() && isLocalAddress(address.getResolvedAddress(), *context.getTCPPortSecure())))
             {
                 if (found_via_resolving)
                 {
@@ -517,9 +527,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        Context local_context(context);
-        local_context.setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, local_context, nullptr);
+        current_context = std::make_unique<Context>(context);
+        current_context->setCurrentQueryId(""); // generate random query_id
+        executeQuery(istr, ostr, false, *current_context, nullptr);
     }
     catch (...)
     {
@@ -535,6 +545,20 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     return true;
 }
 
+void DDLWorker::attachToThreadGroup()
+{
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachToIfDetached(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
 
 void DDLWorker::processTask(DDLTask & task)
 {
@@ -545,19 +569,20 @@ void DDLWorker::processTask(DDLTask & task)
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
-    if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+
+    if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+    else if (code == Coordination::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path);
-        if (ZooKeeperImpl::ZooKeeper::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
-            throw zkutil::KeeperException(code, active_node_path);
+        if (Coordination::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+            throw Coordination::Exception(code, active_node_path);
     }
     else
-        throw zkutil::KeeperException(code, active_node_path);
+        throw Coordination::Exception(code, active_node_path);
 
     if (!task.was_executed)
     {
@@ -578,7 +603,7 @@ void DDLWorker::processTask(DDLTask & task)
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
             }
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception &)
         {
             throw;
         }
@@ -594,7 +619,7 @@ void DDLWorker::processTask(DDLTask & task)
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
     /// Delete active flag and create finish flag
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
@@ -734,7 +759,7 @@ void DDLWorker::cleanupQueue()
         String node_path = queue_dir + "/" + node_name;
         String lock_path = node_path + "/lock";
 
-        zkutil::Stat stat;
+        Coordination::Stat stat;
         String dummy;
 
         try
@@ -784,7 +809,7 @@ void DDLWorker::cleanupQueue()
                 }
 
                 /// Remove the lock node and its parent atomically
-                zkutil::Requests ops;
+                Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
                 ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
@@ -803,21 +828,21 @@ void DDLWorker::cleanupQueue()
 /// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path)
 {
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     {
-        zkutil::CreateRequest request;
+        Coordination::CreateRequest request;
         request.path = node_path + "/active";
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     {
-        zkutil::CreateRequest request;
+        Coordination::CreateRequest request;
         request.path = node_path + "/finished";
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
-    zkutil::Responses responses;
+    Coordination::Responses responses;
     int code = zookeeper->tryMulti(ops, responses);
-    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw zkutil::KeeperException(code);
+    if (code && code != Coordination::ZNODEEXISTS)
+        throw Coordination::Exception(code);
 }
 
 
@@ -862,10 +887,15 @@ void DDLWorker::run()
                 zookeeper->createAncestors(queue_dir + "/");
                 initialized = true;
             }
-            catch (const zkutil::KeeperException & e)
+            catch (const Coordination::Exception & e)
             {
-                if (!zkutil::isHardwareError(e.code))
-                    throw;
+                if (!Coordination::isHardwareError(e.code))
+                    throw;  /// A logical error.
+
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                /// Avoid busy loop when ZooKeeper is not available.
+                ::sleep(1);
             }
         }
         catch (...)
@@ -879,6 +909,8 @@ void DDLWorker::run()
     {
         try
         {
+            attachToThreadGroup();
+
             processTasks();
 
             LOG_DEBUG(log, "Waiting a watch");
@@ -890,9 +922,9 @@ void DDLWorker::run()
             /// TODO: it might delay the execution, move it to separate thread.
             cleanupQueue();
         }
-        catch (zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
-            if (zkutil::isHardwareError(e.code))
+            if (Coordination::isHardwareError(e.code))
             {
                 LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 
@@ -923,7 +955,7 @@ void DDLWorker::run()
         }
         catch (...)
         {
-            LOG_ERROR(log, "Unexpected error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+            tryLogCurrentException(log, "Unexpected error, will terminate:");
             return;
         }
     }
@@ -1036,16 +1068,16 @@ public:
                 Cluster::Address::fromString(host_id, host, port);
 
                 if (status.code != 0 && first_exception == nullptr)
-                    first_exception = std::make_unique<Exception>("There was an error on " + host + ": " + status.message, status.code);
+                    first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
 
                 ++num_hosts_finished;
 
                 columns[0]->insert(host);
-                columns[1]->insert(static_cast<UInt64>(port));
-                columns[2]->insert(static_cast<Int64>(status.code));
+                columns[1]->insert(port);
+                columns[2]->insert(status.code);
                 columns[3]->insert(status.message);
-                columns[4]->insert(static_cast<UInt64>(waiting_hosts.size() - num_hosts_finished));
-                columns[5]->insert(static_cast<UInt64>(current_active_hosts.size()));
+                columns[4]->insert(waiting_hosts.size() - num_hosts_finished);
+                columns[5]->insert(current_active_hosts.size());
             }
             res = sample.cloneWithColumns(std::move(columns));
         }
@@ -1066,8 +1098,8 @@ private:
     {
         Strings res;
         int code = zookeeper->tryGetChildren(node_path, res);
-        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            throw zkutil::KeeperException(code, node_path);
+        if (code && code != Coordination::ZNONODE)
+            throw Coordination::Exception(code, node_path);
         return res;
     }
 
@@ -1117,7 +1149,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, const NameSet & query_databases)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, NameSet && query_databases)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -1145,30 +1177,56 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 
-    DDLLogEntry entry;
-    entry.query = queryToString(query_ptr);
-    entry.initiator = ddl_worker.getCommonHostID();
-
     /// Check database access rights, assume that all servers have the same users config
-    NameSet databases_to_check_access_rights;
+    NameSet databases_to_access;
+    const String & current_database = context.getCurrentDatabase();
 
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
 
+    std::vector<HostID> hosts;
+    bool use_shard_default_db = false;
+    bool use_local_default_db = false;
     for (const auto & shard : shards)
     {
         for (const auto & addr : shard)
         {
-            entry.hosts.emplace_back(addr);
+            hosts.emplace_back(addr);
 
-            /// Expand empty database name to shards' default database name
+            /// Expand empty database name to shards' default (o current) database name
             for (const String & database : query_databases)
-                databases_to_check_access_rights.emplace(database.empty() ? addr.default_database : database);
+            {
+                if (database.empty())
+                {
+                    bool has_shard_default_db = !addr.default_database.empty();
+                    use_shard_default_db |= has_shard_default_db;
+                    use_local_default_db |= !has_shard_default_db;
+                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database);
+                }
+                else
+                    databases_to_access.emplace(database);
+            }
         }
     }
 
-    for (const String & database : databases_to_check_access_rights)
-        context.checkDatabaseAccessRights(database.empty() ? context.getCurrentDatabase() : database);
+    if (use_shard_default_db && use_local_default_db)
+        throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
 
+    if (databases_to_access.empty())
+        throw Exception("No databases to access in distributed DDL query", ErrorCodes::LOGICAL_ERROR);
+
+    for (const String & database : databases_to_access)
+        context.checkDatabaseAccessRights(database);
+
+    if (use_local_default_db)
+    {
+        AddDefaultDatabaseVisitor visitor(current_database);
+        visitor.visitDDL(query_ptr);
+    }
+
+    DDLLogEntry entry;
+    entry.hosts = std::move(hosts);
+    entry.query = queryToString(query_ptr);
+    entry.initiator = ddl_worker.getCommonHostID();
     String node_path = ddl_worker.enqueueQuery(entry);
 
     BlockIO io;

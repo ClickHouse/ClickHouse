@@ -69,7 +69,7 @@ namespace ZeroTraits
 
     template <>
     inline void set<CompactStringRef>(CompactStringRef & x) { x.data_mixed = nullptr; }
-};
+}
 
 template <>
 struct DefaultHash<CompactStringRef>

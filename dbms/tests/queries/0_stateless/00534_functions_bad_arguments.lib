@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+function test_variant {
+    perl -E "say \$_ for map {chomp; (qq{$1})} qx{$CLICKHOUSE_CLIENT -q 'SELECT name FROM system.functions ORDER BY name;'}" | $CLICKHOUSE_CLIENT --calculate_text_stack_trace=0 -n --ignore-error >/dev/null 2>&1
+    $CLICKHOUSE_CLIENT -q "SELECT 'Still alive'"
+}

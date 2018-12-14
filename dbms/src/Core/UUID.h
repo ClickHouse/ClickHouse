@@ -6,6 +6,6 @@
 namespace DB
 {
 
-STRONG_TYPEDEF(UInt128, UUID);
+STRONG_TYPEDEF(UInt128, UUID)
 
 }

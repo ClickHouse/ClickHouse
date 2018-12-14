@@ -83,6 +83,16 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Se
     return entries;
 }
 
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyForTableFunction(const Settings * settings, PoolMode pool_mode)
+{
+    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    {
+        return tryGetEntry(pool, fail_message, settings);
+    };
+
+    return getManyImpl(settings, pool_mode, try_get_entry);
+}
+
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyChecked(
         const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check)
 {
@@ -90,6 +100,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     {
         return tryGetEntry(pool, fail_message, settings, &table_to_check);
     };
+
     return getManyImpl(settings, pool_mode, try_get_entry);
 }
 
@@ -142,12 +153,9 @@ ConnectionPoolWithFailover::tryGetEntry(
     {
         result.entry = pool.get(settings, /* force_connected = */ false);
 
-        String server_name;
-        UInt64 server_version_major;
-        UInt64 server_version_minor;
-        UInt64 server_revision;
+        UInt64 server_revision = 0;
         if (table_to_check)
-            result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+            server_revision = result.entry->getServerRevision();
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
@@ -195,7 +203,7 @@ ConnectionPoolWithFailover::tryGetEntry(
             LOG_TRACE(
                     log, "Server " << result.entry->getDescription() << " has unacceptable replica delay "
                     << "for table " << table_to_check->database << "." << table_to_check->table
-                    << ": "  << delay);
+                    << ": " << delay);
             ProfileEvents::increment(ProfileEvents::DistributedConnectionStaleReplica);
         }
     }
@@ -214,6 +222,6 @@ ConnectionPoolWithFailover::tryGetEntry(
         }
     }
     return result;
-};
+}
 
 }

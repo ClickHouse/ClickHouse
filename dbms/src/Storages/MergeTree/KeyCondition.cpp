@@ -1,12 +1,9 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -14,6 +11,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -250,14 +248,14 @@ bool FieldWithInfinity::operator==(const FieldWithInfinity & other) const
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
+    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}.getConstActions();
+    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
 
     expr_for_constant_folding->execute(result);
 
@@ -268,7 +266,6 @@ Block KeyCondition::getBlockWithConstants(
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
-    const NamesAndTypesList & all_columns,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_)
     : key_expr(key_expr_), prepared_sets(query_info.sets)
@@ -283,7 +280,7 @@ KeyCondition::KeyCondition(
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
-    Block block_with_constants = getBlockWithConstants(query_info.query, context, all_columns);
+    Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
@@ -429,17 +426,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         const auto & action = a.argument_names;
         if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
         {
-            if (!a.function->hasInformationAboutMonotonicity())
+            if (!a.function_base->hasInformationAboutMonotonicity())
                 return false;
 
             // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             // Apply the next transformation step
             DataTypePtr new_type;
-            applyFunction(a.function, out_type, out_value, new_type, out_value);
+            applyFunction(a.function_base, out_type, out_value, new_type, out_value);
             if (!new_type)
                 return false;
 
@@ -666,7 +663,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             key_arg_pos = 1;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            &&  canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+            && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
         {
             key_arg_pos = 1;
             is_constant_transformed = true;
@@ -712,7 +709,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (key_expr_type->isNumber() && const_type->isNumber()); /// Numbers are accurately compared without cast.
+            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);

@@ -27,6 +27,12 @@ template <bool exact, bool for_tuple>
 struct UniqVariadicHash;
 
 
+/// If some arguments are not contiguous, we cannot use simple hash function,
+///  because it requires method IColumn::getDataAt to work.
+/// Note that we treat single tuple argument in the same way as multiple arguments.
+bool isAllArgumentsContiguousInMemory(const DataTypes & argument_types);
+
+
 template <>
 struct UniqVariadicHash<false, false>
 {

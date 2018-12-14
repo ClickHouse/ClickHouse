@@ -25,7 +25,7 @@ try
 
     return 0;
 }
-catch (const Exception & e)
+catch (const Exception &)
 {
     std::cerr << getCurrentExceptionMessage(true) << std::endl;
     return 1;

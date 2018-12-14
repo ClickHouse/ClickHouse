@@ -19,6 +19,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -53,8 +54,9 @@ int main(int argc, char ** argv)
             {"s2", std::make_shared<DataTypeString>()}
         };
 
-        ExpressionAnalyzer analyzer(ast, context, {}, columns);
-        ExpressionActionsChain chain;
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, columns);
+        ExpressionAnalyzer analyzer(ast, syntax_result, context);
+        ExpressionActionsChain chain(context);
         analyzer.appendSelect(chain, false);
         analyzer.appendProjectResult(chain);
         chain.finalize();

@@ -15,6 +15,7 @@
 #include <Interpreters/createBlockSelector.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
@@ -23,6 +24,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -32,6 +34,7 @@
 #include <future>
 #include <condition_variable>
 #include <mutex>
+
 
 
 namespace CurrentMetrics
@@ -52,6 +55,7 @@ namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
+    extern const int CANNOT_LINK;
 }
 
 
@@ -191,9 +195,13 @@ void DistributedBlockOutputStream::waitForJobs()
 
 ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
-    auto memory_tracker = current_memory_tracker;
-    return [this, memory_tracker, &job, &current_block]()
+    auto thread_group = CurrentThread::getGroup();
+    return [this, thread_group, &job, &current_block]()
     {
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
+        setThreadName("DistrOutStrProc");
+
         ++job.blocks_started;
 
         SCOPE_EXIT({
@@ -203,12 +211,6 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             job.elapsed_time_ms += elapsed_time_for_block_ms;
             job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
-
-        if (!current_memory_tracker)
-        {
-            current_memory_tracker = memory_tracker;
-            setThreadName("DistrOutStrProc");
-        }
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
         size_t num_shards = cluster->getShardsInfo().size();
@@ -405,9 +407,13 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & sou
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
     const auto & slot_to_shard = cluster->getSlotToShard();
 
+// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard);
+        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
+    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
+        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
+            return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -557,7 +563,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path);
+            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path, ErrorCodes::CANNOT_LINK);
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads

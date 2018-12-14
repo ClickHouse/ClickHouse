@@ -17,3 +17,5 @@ SELECT ifNull(nullIf(toString(number), '1'), nullIf(toString(-number), '-3')) AS
 SELECT ifNull(NULL, 1) AS res, toTypeName(res);
 SELECT ifNull(1, NULL) AS res, toTypeName(res);
 SELECT ifNull(NULL, NULL) AS res, toTypeName(res);
+
+SELECT IFNULL(NULLIF(toString(number), '1'), NULLIF(toString(-number), '-3')) AS res, toTypeName(res) FROM system.numbers LIMIT 5;

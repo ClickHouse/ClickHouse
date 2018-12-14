@@ -65,6 +65,7 @@ public:
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
+    UInt64 client_version_patch = 0;
     unsigned client_revision = 0;
 
     /// For http

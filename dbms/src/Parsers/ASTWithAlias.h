@@ -32,6 +32,8 @@ public:
 
 protected:
     virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;
+
+    void writeAlias(const String & name, const FormatSettings & settings) const;
 };
 
 /// helper for setting aliases and chaining result to other functions
@@ -39,7 +41,7 @@ inline ASTPtr setAlias(ASTPtr ast, const String & alias)
 {
     ast->setAlias(alias);
     return ast;
-};
+}
 
 
 }

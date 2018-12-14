@@ -1,15 +1,4 @@
-# en:
+* Настройка `enable_optimize_predicate_expression` выключена по-умолчанию.
 
-## Improvements:
-* Added Nullable support for runningDifference function. [#2590](https://github.com/yandex/ClickHouse/issues/2590)
-
-## Bug fiexs:
-* Fixed switching to default databses in case of client reconection. [#2580](https://github.com/yandex/ClickHouse/issues/2580)
-
-# ru:
-
-## Улучшения:
-* Добавлена поддержка Nullable для функции runningDifference. [#2590](https://github.com/yandex/ClickHouse/issues/2590)
-
-## Исправление ошибок:
-* Исправлено переключение на дефолтную базу данных при переподключении клиента. [#2580](https://github.com/yandex/ClickHouse/issues/2580)
+### Улучшения:
+* Файлы *-preprocessed.xml записываются в директорию с данными (/var/lib/clickhouse/preprocessed_configs). Для /etc/clickhouse-server больше не нужен +w для пользователя clickhouse. Для удобства создан симлинк /var/lib/clickhouse/preprocessed_configs -> /etc/clickhouse-server/preprocessed

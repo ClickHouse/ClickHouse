@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/config.h>
 #include <Parsers/IAST.h>
 
 
@@ -18,6 +19,9 @@ public:
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
+#if USE_EMBEDDED_COMPILER
+        DROP_COMPILED_EXPRESSION_CACHE,
+#endif
         STOP_LISTEN_QUERIES,
         START_LISTEN_QUERIES,
         RESTART_REPLICAS,
@@ -35,6 +39,7 @@ public:
         START_REPLICATEDS_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
+        FLUSH_LOGS,
         END
     };
 
@@ -46,7 +51,7 @@ public:
     String target_database;
     String target_table;
 
-    String getID() const override { return "SYSTEM query"; }
+    String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
 

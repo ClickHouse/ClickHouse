@@ -19,13 +19,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -55,7 +55,7 @@ void Connection::connect()
             disconnect();
 
         LOG_TRACE(log_wrapper.get(), "Connecting. Database: " << (default_database.empty() ? "(not specified)" : default_database) << ". User: " << user
-        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed") );
+        << (static_cast<bool>(secure) ? ". Secure" : "") << (static_cast<bool>(compression) ? "" : ". Uncompressed"));
 
         if (static_cast<bool>(secure))
         {
@@ -76,6 +76,17 @@ void Connection::connect()
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
+        if (timeouts.tcp_keep_alive_timeout.totalSeconds())
+        {
+            socket->setKeepAlive(true);
+            socket->setOption(IPPROTO_TCP,
+#if defined(TCP_KEEPALIVE)
+                TCP_KEEPALIVE
+#else
+                TCP_KEEPIDLE  // __APPLE__
+#endif
+                , timeouts.tcp_keep_alive_timeout);
+        }
 
         in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
         out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
@@ -88,7 +99,7 @@ void Connection::connect()
         LOG_TRACE(log_wrapper.get(), "Connected to " << server_name
             << " server version " << server_version_major
             << "." << server_version_minor
-            << "." << server_revision
+            << "." << server_version_patch
             << ".");
     }
     catch (Poco::Net::NetException & e)
@@ -96,14 +107,14 @@ void Connection::connect()
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::NETWORK_ERROR);
     }
     catch (Poco::TimeoutException & e)
     {
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(e.displayText(), "(" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -113,6 +124,7 @@ void Connection::disconnect()
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
     in = nullptr;
+    last_input_packet_type.reset();
     out = nullptr; // can write to socket
     if (socket)
         socket->close();
@@ -149,6 +161,7 @@ void Connection::sendHello()
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(ClickHouseRevision::get(), *out);
     writeStringBinary(default_database, *out);
     writeStringBinary(user, *out);
@@ -173,13 +186,13 @@ void Connection::receiveHello()
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-        {
             readStringBinary(server_timezone, *in);
-        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-        {
             readStringBinary(server_display_name, *in);
-        }
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+            readVarUInt(server_version_patch, *in);
+        else
+            server_version_patch = server_revision;
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -216,7 +229,7 @@ UInt16 Connection::getPort() const
     return port;
 }
 
-void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
+void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision)
 {
     if (!connected)
         connect();
@@ -224,7 +237,16 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     name = server_name;
     version_major = server_version_major;
     version_minor = server_version_minor;
+    version_patch = server_version_patch;
     revision = server_revision;
+}
+
+UInt64 Connection::getServerRevision()
+{
+    if (!connected)
+        connect();
+
+    return server_revision;
 }
 
 const String & Connection::getServerTimezone()
@@ -345,7 +367,7 @@ void Connection::sendQuery(
     {
         ClientInfo client_info_to_send;
 
-        if (!client_info)
+        if (!client_info || client_info->empty())
         {
             /// No client info passed - means this query initiated by me.
             client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
@@ -376,6 +398,7 @@ void Connection::sendQuery(
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
     block_in.reset();
+    block_logs_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
@@ -503,20 +526,50 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
-bool Connection::hasReadBufferPendingData() const
+bool Connection::hasReadPendingData() const
 {
-    return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+
+std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
+{
+    if (last_input_packet_type.has_value())
+        return last_input_packet_type;
+
+    if (hasReadPendingData() || poll(timeout_microseconds))
+    {
+        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        UInt64 packet_type;
+        readVarUInt(packet_type, *in);
+
+        last_input_packet_type.emplace(packet_type);
+        return last_input_packet_type;
+    }
+
+    return {};
 }
 
 
 Connection::Packet Connection::receivePacket()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving packet");
-
     try
     {
         Packet res;
-        readVarUInt(res.type, *in);
+
+        /// Have we already read packet type?
+        if (last_input_packet_type)
+        {
+            res.type = *last_input_packet_type;
+            last_input_packet_type.reset();
+        }
+        else
+        {
+            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+            readVarUInt(res.type, *in);
+        }
+
+        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
         switch (res.type)
         {
@@ -546,6 +599,14 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveData();
                 return res;
 
+            case Protocol::Server::Log:
+                res.block = receiveLogData();
+                return res;
+
+            case Protocol::Server::TableColumns:
+                res.multistring_message = receiveMultistringMessage(res.type);
+                return res;
+
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -573,14 +634,26 @@ Block Connection::receiveData()
     //LOG_TRACE(log_wrapper.get(), "Receiving data");
 
     initBlockInput();
+    return receiveDataImpl(block_in);
+}
 
+
+Block Connection::receiveLogData()
+{
+    initBlockLogsInput();
+    return receiveDataImpl(block_logs_in);
+}
+
+
+Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
+{
     String external_table_name;
     readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = block_in->read();
+    Block res = stream->read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
@@ -589,16 +662,35 @@ Block Connection::receiveData()
 }
 
 
+void Connection::initInputBuffers()
+{
+
+}
+
+
 void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (compression == Protocol::Compression::Enable)
-            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-        else
-            maybe_compressed_in = in;
+        if (!maybe_compressed_in)
+        {
+            if (compression == Protocol::Compression::Enable)
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+            else
+                maybe_compressed_in = in;
+        }
 
         block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
+    }
+}
+
+
+void Connection::initBlockLogsInput()
+{
+    if (!block_logs_in)
+    {
+        /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
+        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
     }
 }
 
@@ -607,7 +699,7 @@ void Connection::setDescription()
 {
     auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
-    auto ip_address =  resolved_address.host().toString();
+    auto ip_address = resolved_address.host().toString();
 
     if (host != ip_address)
         description += ", " + ip_address;
@@ -621,6 +713,16 @@ std::unique_ptr<Exception> Connection::receiveException()
     Exception e;
     readException(e, *in, "Received from " + getDescription());
     return std::unique_ptr<Exception>{ e.clone() };
+}
+
+
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type)
+{
+    size_t num = Protocol::Server::stringsInMessage(msg_type);
+    std::vector<String> out(num);
+    for (size_t i = 0; i < num; ++i)
+        readStringBinary(out[i], *in);
+    return out;
 }
 
 
@@ -641,14 +743,6 @@ BlockStreamProfileInfo Connection::receiveProfileInfo()
     return profile_info;
 }
 
-void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
-{
-    info.is_valid = true;
-    info.host = host;
-    info.resolved_address = getResolvedAddress().toString();
-    info.port = port;
-    info.user = user;
-}
 
 void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected) const
 {

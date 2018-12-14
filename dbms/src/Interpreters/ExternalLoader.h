@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <tuple>
 #include <Interpreters/IExternalLoadable.h>
@@ -90,7 +91,7 @@ public:
     using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
 
     /// Objects will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalLoader(const Configuration & config,
+    ExternalLoader(const Configuration & config_main,
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
                    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
@@ -146,9 +147,11 @@ private:
     /// Both for loadable_objects and failed_loadable_objects.
     std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
+    std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
+
     pcg64 rnd_engine{randomSeed()};
 
-    const Configuration & config;
+    const Configuration & config_main;
     const ExternalLoaderUpdateSettings & update_settings;
     const ExternalLoaderConfigSettings & config_settings;
 
@@ -166,8 +169,8 @@ private:
     /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
     /// If loadable_name is not empty, load only loadable object with name loadable_name
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
-    void reloadFromConfigFile(const std::string & config_path, bool throw_on_error, bool force_reload,
-                              const std::string & loadable_name);
+    void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
+                                const bool force_reload, const std::string & loadable_name);
 
     /// Check config files and update expired loadable objects
     void reloadAndUpdate(bool throw_on_error = false);

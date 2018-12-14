@@ -66,6 +66,21 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
     return nullptr;
 }
 
+static inline bool canBeNativeType(const IDataType & type)
+{
+    if (auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return canBeNativeType(*nullable->getNestedType());
+
+    return typeIsEither<DataTypeInt8, DataTypeUInt8>(type)
+        || typeIsEither<DataTypeInt16, DataTypeUInt16, DataTypeDate>(type)
+        || typeIsEither<DataTypeInt32, DataTypeUInt32, DataTypeDateTime>(type)
+        || typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeInterval>(type)
+        || typeIsEither<DataTypeUUID>(type)
+        || typeIsEither<DataTypeFloat32>(type)
+        || typeIsEither<DataTypeFloat64>(type)
+        || typeid_cast<const DataTypeFixedString *>(&type);
+}
+
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
 {
     return toNativeType(builder, *type);

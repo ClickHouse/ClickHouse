@@ -1,44 +1,44 @@
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include "ComplexKeyCacheDictionary.h"
 #include <Common/Arena.h>
 #include <Common/BitHelpers.h>
-#include <Common/randomSeed.h>
-#include <Common/Stopwatch.h>
-#include <Common/ProfilingScopedRWLock.h>
-#include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <ext/range.h>
+#include <Common/ProfileEvents.h>
+#include <Common/ProfilingScopedRWLock.h>
+#include <Common/Stopwatch.h>
+#include <Common/randomSeed.h>
 #include <ext/map.h>
+#include <ext/range.h>
+#include "DictionaryBlockInputStream.h"
+#include "DictionaryFactory.h"
 
 
 namespace ProfileEvents
 {
-
-    extern const Event DictCacheKeysRequested;
-    extern const Event DictCacheKeysRequestedMiss;
-    extern const Event DictCacheKeysRequestedFound;
-    extern const Event DictCacheKeysExpired;
-    extern const Event DictCacheKeysNotFound;
-    extern const Event DictCacheKeysHit;
-    extern const Event DictCacheRequestTimeNs;
-    extern const Event DictCacheLockWriteNs;
-    extern const Event DictCacheLockReadNs;
+extern const Event DictCacheKeysRequested;
+extern const Event DictCacheKeysRequestedMiss;
+extern const Event DictCacheKeysRequestedFound;
+extern const Event DictCacheKeysExpired;
+extern const Event DictCacheKeysNotFound;
+extern const Event DictCacheKeysHit;
+extern const Event DictCacheRequestTimeNs;
+extern const Event DictCacheLockWriteNs;
+extern const Event DictCacheLockReadNs;
 }
 
 namespace CurrentMetrics
 {
-    extern const Metric DictCacheRequests;
+extern const Metric DictCacheRequests;
 }
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int TOO_SMALL_BUFFER_SIZE;
 }
 
 
@@ -50,13 +50,19 @@ inline UInt64 ComplexKeyCacheDictionary::getCellIdx(const StringRef key) const
 }
 
 
-ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime,
+ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
+    const std::string & name,
+    const DictionaryStructure & dict_struct,
+    DictionarySourcePtr source_ptr,
+    const DictionaryLifetime dict_lifetime,
     const size_t size)
-    : name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-    size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))},
-    size_overlap_mask{this->size - 1},
-    rnd_engine(randomSeed())
+    : name{name}
+    , dict_struct(dict_struct)
+    , source_ptr{std::move(source_ptr)}
+    , dict_lifetime(dict_lifetime)
+    , size{roundUpToPowerOfTwoOrZero(std::max(size, size_t(max_collision_length)))}
+    , size_overlap_mask{this->size - 1}
+    , rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with ComplexKeyCacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
@@ -66,47 +72,56 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, c
 
 ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other)
     : ComplexKeyCacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{}
+{
+}
 
 void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-    ColumnString * out) const
+    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const
 {
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                        ErrorCodes::TYPE_MISMATCH};
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
-    getItemsString(attribute, key_columns, out, [&] (const size_t) { return null_value; });
+    getItemsString(attribute, key_columns, out, [&](const size_t) { return null_value; });
 }
 
 void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-    const ColumnString * const def, ColumnString * const out) const
+    const std::string & attribute_name,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const ColumnString * const def,
+    ColumnString * const out) const
 {
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                        ErrorCodes::TYPE_MISMATCH};
 
-    getItemsString(attribute, key_columns, out, [&] (const size_t row) { return def->getDataAt(row); });
+    getItemsString(attribute, key_columns, out, [&](const size_t row) { return def->getDataAt(row); });
 }
 
 void ComplexKeyCacheDictionary::getString(
-    const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types,
-    const String & def, ColumnString * const out) const
+    const std::string & attribute_name,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const String & def,
+    ColumnString * const out) const
 {
     dict_struct.validateKeyTypes(key_types);
 
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
+                        ErrorCodes::TYPE_MISMATCH};
 
-    getItemsString(attribute, key_columns, out, [&] (const size_t) { return StringRef{def}; });
+    getItemsString(attribute, key_columns, out, [&](const size_t) { return StringRef{def}; });
 }
 
 /// returns cell_idx (always valid for replacing), 'cell is valid' flag, 'cell is outdated' flag,
@@ -116,7 +131,8 @@ void ComplexKeyCacheDictionary::getString(
 /// true  true    impossible
 ///
 /// todo: split this func to two: find_for_get and find_for_set
-ComplexKeyCacheDictionary::FindResult ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
+ComplexKeyCacheDictionary::FindResult
+ComplexKeyCacheDictionary::findCellIdx(const StringRef & key, const CellMetadata::time_point_t now, const size_t hash) const
 {
     auto pos = hash;
     auto oldest_id = pos;
@@ -209,17 +225,20 @@ void ComplexKeyCacheDictionary::has(const Columns & key_columns, const DataTypes
         return;
 
     std::vector<size_t> required_rows(outdated_keys.size());
-    std::transform(std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows),
-        [] (auto & pair) { return pair.second.front(); });
+    std::transform(
+        std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.second.front(); });
 
     /// request new values
-    update(key_columns, keys_array, required_rows,
-        [&] (const StringRef key, const auto)
+    update(
+        key_columns,
+        keys_array,
+        required_rows,
+        [&](const StringRef key, const auto)
         {
             for (const auto out_idx : outdated_keys[key])
                 out[out_idx] = true;
         },
-        [&] (const StringRef key, const auto)
+        [&](const StringRef key, const auto)
         {
             for (const auto out_idx : outdated_keys[key])
                 out[out_idx] = false;
@@ -240,7 +259,8 @@ void ComplexKeyCacheDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(), ErrorCodes::TYPE_MISMATCH};
+            throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
+                            ErrorCodes::TYPE_MISMATCH};
     }
 }
 
@@ -271,8 +291,7 @@ void ComplexKeyCacheDictionary::freeKey(const StringRef key) const
 
 template <typename Pool>
 StringRef ComplexKeyCacheDictionary::placeKeysInPool(
-    const size_t row, const Columns & key_columns, StringRefs & keys,
-    const std::vector<DictionaryAttribute> & key_attributes, Pool & pool)
+    const size_t row, const Columns & key_columns, StringRefs & keys, const std::vector<DictionaryAttribute> & key_attributes, Pool & pool)
 {
     const auto keys_size = key_columns.size();
     size_t sum_keys_size{};
@@ -311,22 +330,27 @@ StringRef ComplexKeyCacheDictionary::placeKeysInPool(
         }
     }
 
-    return { place, sum_keys_size };
+    return {place, sum_keys_size};
 }
 
 /// Explicit instantiations.
 
 template StringRef ComplexKeyCacheDictionary::placeKeysInPool<Arena>(
-    const size_t row, const Columns & key_columns, StringRefs & keys,
-    const std::vector<DictionaryAttribute> & key_attributes, Arena & pool);
+    const size_t row,
+    const Columns & key_columns,
+    StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes,
+    Arena & pool);
 
 template StringRef ComplexKeyCacheDictionary::placeKeysInPool<ArenaWithFreeLists>(
-    const size_t row, const Columns & key_columns, StringRefs & keys,
-    const std::vector<DictionaryAttribute> & key_attributes, ArenaWithFreeLists & pool);
+    const size_t row,
+    const Columns & key_columns,
+    StringRefs & keys,
+    const std::vector<DictionaryAttribute> & key_attributes,
+    ArenaWithFreeLists & pool);
 
 
-StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
-    const size_t row, const Columns & key_columns) const
+StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(const size_t row, const Columns & key_columns) const
 {
     const auto res = fixed_size_keys_pool->alloc();
     auto place = res;
@@ -338,14 +362,14 @@ StringRef ComplexKeyCacheDictionary::placeKeysInFixedSizePool(
         place += key.size;
     }
 
-    return { res, key_size };
+    return {res, key_size};
 }
 
 StringRef ComplexKeyCacheDictionary::copyIntoArena(StringRef src, Arena & arena)
 {
     char * allocated = arena.alloc(src.size);
     memcpy(allocated, src.data, src.size);
-    return { allocated, src.size };
+    return {allocated, src.size};
 }
 
 StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
@@ -353,13 +377,14 @@ StringRef ComplexKeyCacheDictionary::copyKey(const StringRef key) const
     const auto res = key_size_is_fixed ? fixed_size_keys_pool->alloc() : keys_pool->alloc(key.size);
     memcpy(res, key.data, key.size);
 
-    return { res, key.size };
+    return {res, key.size};
 }
 
 bool ComplexKeyCacheDictionary::isEmptyCell(const UInt64 idx) const
 {
-    return (cells[idx].key == StringRef{} && (idx != zero_cell_idx
-        || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
+    return (
+        cells[idx].key == StringRef{}
+        && (idx != zero_cell_idx || cells[idx].data == ext::safe_bit_cast<CellMetadata::time_point_urep_t>(CellMetadata::time_point_t())));
 }
 
 BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
@@ -369,13 +394,39 @@ BlockInputStreamPtr ComplexKeyCacheDictionary::getBlockInputStream(const Names &
         const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
         for (auto idx : ext::range(0, cells.size()))
-            if (!isEmptyCell(idx)
-                && !cells[idx].isDefault())
+            if (!isEmptyCell(idx) && !cells[idx].isDefault())
                 keys.push_back(cells[idx].key);
     }
 
     using BlockInputStreamType = DictionaryBlockInputStream<ComplexKeyCacheDictionary, UInt64>;
     return std::make_shared<BlockInputStreamType>(shared_from_this(), max_block_size, keys, column_names);
 }
+
+void registerDictionaryComplexKeyCache(DictionaryFactory & factory)
+{
+    auto create_layout = [=](const std::string & name,
+                             const DictionaryStructure & dict_struct,
+                             const Poco::Util::AbstractConfiguration & config,
+                             const std::string & config_prefix,
+                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+    {
+        if (!dict_struct.key)
+            throw Exception{"'key' is required for dictionary of layout 'complex_key_hashed'", ErrorCodes::BAD_ARGUMENTS};
+        const auto & layout_prefix = config_prefix + ".layout";
+        const auto size = config.getInt(layout_prefix + ".complex_key_cache.size_in_cells");
+        if (size == 0)
+            throw Exception{name + ": dictionary of layout 'cache' cannot have 0 cells", ErrorCodes::TOO_SMALL_BUFFER_SIZE};
+
+        const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
+        if (require_nonempty)
+            throw Exception{name + ": dictionary of layout 'cache' cannot have 'require_nonempty' attribute set",
+                            ErrorCodes::BAD_ARGUMENTS};
+
+        const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
+        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, size);
+    };
+    factory.registerLayout("complex_key_cache", create_layout);
+}
+
 
 }

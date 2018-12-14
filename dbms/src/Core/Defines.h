@@ -1,9 +1,5 @@
 #pragma once
 
-#define DBMS_NAME "ClickHouse"
-#define DBMS_VERSION_MAJOR 1
-#define DBMS_VERSION_MINOR 1
-
 #define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000
 #define DBMS_DEFAULT_SECURE_PORT 9440
@@ -49,6 +45,15 @@
 #define DBMS_MIN_REVISION_WITH_TABLES_STATUS 54226
 #define DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE 54337
 #define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
+#define DBMS_MIN_REVISION_WITH_VERSION_PATCH 54401
+#define DBMS_MIN_REVISION_WITH_SERVER_LOGS 54406
+/// Minimum revision with exactly the same set of aggregation methods and rules to select them.
+/// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
+/// (keys will be placed in different buckets and result will not be fully aggregated).
+#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54408
+#define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
+
+#define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
@@ -60,6 +65,11 @@
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
+/// Maximum namber of http-connections between two endpoints
+/// the number is unmotivated
+#define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
+
+#define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 

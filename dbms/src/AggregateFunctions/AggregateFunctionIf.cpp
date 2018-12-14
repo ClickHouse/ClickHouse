@@ -21,7 +21,7 @@ public:
             throw Exception("Incorrect number of arguments for aggregate function with " + getName() + " suffix",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!typeid_cast<const DataTypeUInt8 *>(arguments.back().get()))
+        if (!isUInt8(arguments.back()))
             throw Exception("Illegal type " + arguments.back()->getName() + " of last argument for aggregate function with " + getName() + " suffix",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

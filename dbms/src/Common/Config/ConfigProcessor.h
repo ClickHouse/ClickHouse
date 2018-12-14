@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+#include <memory>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>
@@ -22,7 +23,11 @@
 namespace zkutil
 {
     class ZooKeeperNodeCache;
+    using EventPtr = std::shared_ptr<Poco::Event>;
 }
+
+namespace DB
+{
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
@@ -58,7 +63,8 @@ public:
     /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
-        zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr);
+        zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
+        const zkutil::EventPtr & zk_changed_event = nullptr);
 
 
     /// loadConfig* functions apply processConfig and create Poco::Util::XMLConfiguration.
@@ -72,6 +78,7 @@ public:
         bool has_zk_includes;
         bool loaded_from_preprocessed;
         XMLDocumentPtr preprocessed_xml;
+        std::string config_path;
     };
 
     /// If allow_zk_includes is true, expect that the configuration XML can contain from_zk nodes.
@@ -83,9 +90,15 @@ public:
     /// processing, load the configuration from the preprocessed file.
     LoadedConfig loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed = false);
 
-    void savePreprocessedConfig(const LoadedConfig & loaded_config);
+    /// Save preprocessed config to specified directory.
+    /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
+    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
+
+    /// Set path of main config.xml . It will be cutted from all configs placed to preprocessed_configs/
+    void setConfigPath(const std::string & config_path);
 
 public:
     using Files = std::vector<std::string>;
@@ -95,9 +108,11 @@ public:
     /// Is the file named as result of config preprocessing, not as original files.
     static bool isPreprocessedFile(const std::string & config_path);
 
+    static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
+
 private:
     const std::string path;
-    const std::string preprocessed_path;
+    std::string preprocessed_path;
 
     bool throw_on_bad_incl;
 
@@ -123,5 +138,8 @@ private:
             XMLDocumentPtr include_from,
             Poco::XML::Node * node,
             zkutil::ZooKeeperNodeCache * zk_node_cache,
+            const zkutil::EventPtr & zk_changed_event,
             std::unordered_set<std::string> & contributing_zk_paths);
 };
+
+}

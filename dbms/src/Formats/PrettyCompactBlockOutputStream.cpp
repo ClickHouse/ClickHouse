@@ -152,7 +152,7 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory)
         const FormatSettings & format_settings)
     {
         BlockOutputStreamPtr impl = std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, format_settings);
-        auto res = std::make_shared<SquashingBlockOutputStream>(impl, format_settings.pretty.max_rows, 0);
+        auto res = std::make_shared<SquashingBlockOutputStream>(impl, impl->getHeader(), format_settings.pretty.max_rows, 0);
         res->disableFlush();
         return res;
     });

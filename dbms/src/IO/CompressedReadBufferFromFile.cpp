@@ -23,7 +23,7 @@ bool CompressedReadBufferFromFile::nextImpl()
         return false;
 
     memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-    working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+    working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
     decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
 
@@ -101,7 +101,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
             size_compressed = new_size_compressed;
             bytes += offset();
             memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-            working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
+            working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             pos = working_buffer.begin();
 
             decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);

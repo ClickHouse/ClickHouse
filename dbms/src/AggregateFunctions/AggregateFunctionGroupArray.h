@@ -91,7 +91,7 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
+        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
@@ -108,7 +108,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(&value[0]), size * sizeof(value[0]));
+        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -155,7 +155,7 @@ struct GroupArrayListNodeBase
     /// Clones existing node (does not modify next field)
     Node * clone(Arena * arena)
     {
-        return reinterpret_cast<Node *>(const_cast<char *>(arena->insert(reinterpret_cast<char *>(this), sizeof(Node) + size)));
+        return reinterpret_cast<Node *>(const_cast<char *>(arena->alignedInsert(reinterpret_cast<char *>(this), sizeof(Node) + size, alignof(Node))));
     }
 
     /// Write node to buffer
@@ -171,7 +171,7 @@ struct GroupArrayListNodeBase
         UInt64 size;
         readVarUInt(size, buf);
 
-        Node * node = reinterpret_cast<Node *>(arena->alloc(sizeof(Node) + size));
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
         buf.read(node->data(), size);
         return node;
@@ -187,7 +187,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
     {
         StringRef string = static_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alloc(sizeof(Node) + string.size));
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
         node->next = nullptr;
         node->size = string.size;
         memcpy(node->data(), string.data, string.size);
@@ -207,7 +207,7 @@ struct GroupArrayListNodeGeneral : public GroupArrayListNodeBase<GroupArrayListN
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        const char * begin = arena->alloc(sizeof(Node));
+        const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
         StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));

@@ -23,12 +23,12 @@ public:
       */
     ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension &) override;
 
 private:
     ReadBuffer & istr;
     Block header;
-    const Context & context;
+    std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
 };
 

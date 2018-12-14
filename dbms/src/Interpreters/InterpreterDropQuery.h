@@ -13,7 +13,9 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
 
-/** Allow to either drop table with all its data (DROP), or remove information about table (just forget) from server (DETACH).
+/** Allow to either drop table with all its data (DROP),
+  * or remove information about table (just forget) from server (DETACH),
+  * or just clear all data in table (TRUNCATE).
   */
 class InterpreterDropQuery : public IInterpreter
 {

@@ -4,6 +4,9 @@
 #include <optional>
 
 
+namespace DB
+{
+
 /** Creates a local (at the same mount point) backup (snapshot) directory.
   *
   * In the specified destination directory, it creates a hard links on all source-directory files
@@ -19,3 +22,4 @@
   */
 void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, std::optional<size_t> max_level = {});
 
+}

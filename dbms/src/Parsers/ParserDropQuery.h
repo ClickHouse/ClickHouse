@@ -20,7 +20,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
     bool parseDropQuery(Pos & pos, ASTPtr & node, Expected & expected);
-    bool parseDetachQuery(Pos  & pos, ASTPtr & node, Expected & expected);
+    bool parseDetachQuery(Pos & pos, ASTPtr & node, Expected & expected);
     bool parseTruncateQuery(Pos & pos, ASTPtr & node, Expected & expected);
 };
 

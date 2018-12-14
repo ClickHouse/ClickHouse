@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
@@ -23,7 +24,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -106,7 +107,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -116,12 +117,7 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
-    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
-    void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -138,7 +134,9 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
+
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -191,12 +189,22 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getPartitionKeyAST() const override { return data.partition_by_ast; }
+    ASTPtr getSortingKeyAST() const override { return data.getSortingKeyAST(); }
+    ASTPtr getPrimaryKeyAST() const override { return data.getPrimaryKeyAST(); }
+    ASTPtr getSamplingKeyAST() const override { return data.getSamplingExpression(); }
+
+    Names getColumnsRequiredForPartitionKey() const override { return data.getColumnsRequiredForPartitionKey(); }
+    Names getColumnsRequiredForSortingKey() const override { return data.getColumnsRequiredForSortingKey(); }
+    Names getColumnsRequiredForPrimaryKey() const override { return data.getColumnsRequiredForPrimaryKey(); }
+    Names getColumnsRequiredForSampling() const override { return data.getColumnsRequiredForSampling(); }
+    Names getColumnsRequiredForFinal() const override { return data.getColumnsRequiredForSortingKey(); }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
-    friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -233,10 +241,16 @@ private:
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
-    /** Version node /columns in ZooKeeper corresponding to the current data.columns.
+    /** Version of the /columns node in ZooKeeper corresponding to the current data.columns.
       * Read and modify along with the data.columns - under TableStructureLock.
       */
     int columns_version = -1;
+
+    /// Version of the /metadata node in ZooKeeper.
+    int metadata_version = -1;
+
+    /// Used to delay setting table structure till startup() in case of an offline ALTER.
+    std::function<void()> set_table_structure_at_startup;
 
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
@@ -264,8 +278,10 @@ private:
     Poco::Event startup_event;
 
     /// Do I need to complete background threads (except restarting_thread)?
-    std::atomic<bool> shutdown_called {false};
-    Poco::Event shutdown_event;
+    std::atomic<bool> partial_shutdown_called {false};
+
+    /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
+    Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
@@ -283,24 +299,23 @@ private:
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
+    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
+    std::mutex merge_selecting_mutex;
 
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
 
-    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
-    std::mutex merge_selecting_mutex;
-
     /// A thread that removes old parts, log entries, and blocks.
-    std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
-
-    /// A thread that processes reconnection to ZooKeeper when the session expires.
-    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
+    ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     /// A thread monitoring changes to the column list in ZooKeeper and updating the parts in accordance with these changes.
-    std::unique_ptr<ReplicatedMergeTreeAlterThread> alter_thread;
+    ReplicatedMergeTreeAlterThread alter_thread;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
+
+    /// A thread that processes reconnection to ZooKeeper when the session expires.
+    ReplicatedMergeTreeRestartingThread restarting_thread;
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
@@ -321,8 +336,13 @@ private:
 
     /** Verify that the list of columns and table settings match those specified in ZK (/metadata).
       * If not, throw an exception.
+      * Must be called before startup().
       */
     void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
+
+    /// A part of ALTER: apply metadata changes only (data parts are altered separately).
+    /// Must be called under IStorage::lockStructureForAlter() lock.
+    void setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff);
 
     /** Check that the set of parts corresponds to that in ZK (/replicas/me/parts/).
       * If any parts described in ZK are not locally, throw an exception.
@@ -338,7 +358,7 @@ private:
       * Call under TableStructureLock.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
-                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
@@ -347,12 +367,12 @@ private:
                                                                const MergeTreeData::DataPartPtr & part);
 
     void getCommitPartOps(
-        zkutil::Requests & ops,
+        Coordination::Requests & ops,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -396,6 +416,14 @@ private:
     void queueUpdatingTask();
 
     void mutationsUpdatingTask();
+
+    /** Clone data from another replica.
+      * If replica can not be cloned throw Exception.
+      */
+    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Clone replica if it is lost.
+    void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
     /** Performs actions from the queue.
       */
@@ -498,6 +526,13 @@ private:
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
+    // Partition helpers
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context);
+    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context);
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -508,11 +543,11 @@ protected:
         const String & path_, const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
         Context & context_,
-        const ASTPtr & primary_expr_ast_,
-        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
-        const ASTPtr & partition_expr_ast_,
-        const ASTPtr & sampling_expression_,
+        const ASTPtr & partition_by_ast_,
+        const ASTPtr & order_by_ast_,
+        const ASTPtr & primary_key_ast_,
+        const ASTPtr & sample_by_ast_,
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);

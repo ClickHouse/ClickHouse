@@ -25,13 +25,15 @@ public:
         const FormatSettings & settings);
 
     void readPrefix() override { row_input->readPrefix(); }
-    void readSuffix() override { row_input->readSuffix(); }
+    void readSuffix() override;
 
     String getName() const override { return "BlockInputStreamFromRowInputStream"; }
 
     RowInputStreamPtr & getRowInput() { return row_input; }
 
     Block getHeader() const override { return sample; }
+
+    const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 protected:
     Block readImpl() override;
@@ -40,6 +42,7 @@ private:
     RowInputStreamPtr row_input;
     Block sample;
     size_t max_block_size;
+    BlockMissingValues block_missing_values;
 
     UInt64 allow_errors_num;
     Float64 allow_errors_ratio;

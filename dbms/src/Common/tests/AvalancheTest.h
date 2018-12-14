@@ -85,7 +85,7 @@ void calcBias(pfHash hash, std::vector<int> & counts, int reps, Rand & r)
 
         hash(&K, keybytes, 0, &A);
 
-        int * cursor = &counts[0];
+        int * cursor = counts.data();
 
         for (int iBit = 0; iBit < keybits; iBit++)
         {
@@ -210,13 +210,13 @@ void BicTest3(pfHash hash, const int reps, bool verbose = true)
             for (int keybit = 0; keybit < keybits; keybit++)
             {
                 int * page = &bins[keybit * pagesize];
-                int * bins = &page[(out1 * hashbits + out2) * 4];
+                int * bins_in_page = &page[(out1 * hashbits + out2) * 4];
 
                 double bias = 0;
 
                 for (int b = 0; b < 4; b++)
                 {
-                    double b2 = static_cast<double>(bins[b]) / static_cast<double>(reps / 2);
+                    double b2 = static_cast<double>(bins_in_page[b]) / static_cast<double>(reps / 2);
                     b2 = fabs(b2 * 2 - 1);
 
                     if (b2 > bias)

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -13,25 +15,17 @@ class Context;
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorage
+class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorageSystemOneBlock<StorageSystemClusters>
 {
 public:
     std::string getName() const override { return "SystemClusters"; }
-    std::string getTableName() const override { return name; }
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-private:
-    const std::string name;
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    StorageSystemClusters(const std::string & name_);
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

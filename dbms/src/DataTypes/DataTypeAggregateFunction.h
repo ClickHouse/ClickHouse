@@ -30,8 +30,8 @@ public:
     AggregateFunctionPtr getFunction() const { return function; }
 
     std::string getName() const override;
-
     const char * getFamilyName() const override { return "AggregateFunction"; }
+    TypeIndex getTypeId() const override { return TypeIndex::AggregateFunction; }
 
     bool canBeInsideNullable() const override { return false; }
 

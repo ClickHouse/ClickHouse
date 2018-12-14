@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <list>
+#include <set>
 #include <map>
 #include <initializer_list>
 
@@ -19,7 +20,7 @@ namespace DB
   * This is unit of data processing.
   * Also contains metadata - data types of columns and their names
   *  (either original names from a table, or generated names during temporary calculations).
-  * Allows to insert, remove columns in arbitary position, to change order of columns.
+  * Allows to insert, remove columns in arbitrary position, to change order of columns.
   */
 
 class Context;
@@ -51,6 +52,8 @@ public:
     void insertUnique(ColumnWithTypeAndName && elem);
     /// remove the column at the specified position
     void erase(size_t position);
+    /// remove the columns at the specified positions
+    void erase(const std::set<size_t> & positions);
     /// remove the column with the specified name
     void erase(const String & name);
 
@@ -109,12 +112,13 @@ public:
     Columns getColumns() const;
     void setColumns(const Columns & columns);
     Block cloneWithColumns(const Columns & columns) const;
+    Block cloneWithoutColumns() const;
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
-    MutableColumns mutateColumns() const;
+    MutableColumns mutateColumns();
 
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);
@@ -149,23 +153,5 @@ void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const 
 
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
-
-
-/** Additional data to the blocks. They are only needed for a query
-  * DESCRIBE TABLE with Distributed tables.
-  */
-struct BlockExtraInfo
-{
-    BlockExtraInfo() {}
-    operator bool() const { return is_valid; }
-    bool operator!() const { return !is_valid; }
-
-    std::string host;
-    std::string resolved_address;
-    std::string user;
-    UInt16 port = 0;
-
-    bool is_valid = false;
-};
 
 }

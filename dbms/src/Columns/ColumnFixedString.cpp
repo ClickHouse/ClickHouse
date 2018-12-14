@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -35,7 +36,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
         new_col.chars.resize(size * n);
 
         size_t count = std::min(this->size(), size);
-        memcpy(&(new_col.chars[0]), &chars[0], count * n * sizeof(chars[0]));
+        memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
 
         if (size > count)
             memset(&(new_col.chars[count * n]), '\0', (size - count) * n);
@@ -164,9 +165,9 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     if (result_size_hint)
         res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
-    const UInt8 * filt_pos = &filt[0];
+    const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;
-    const UInt8 * data_pos = &chars[0];
+    const UInt8 * data_pos = chars.data();
 
 #if __SSE2__
     /** A slightly more optimized version.
@@ -227,7 +228,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         data_pos += n;
     }
 
-    return std::move(res);
+    return res;
 }
 
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
@@ -247,7 +248,7 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
 
     auto res = ColumnFixedString::create(n);
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
 
     res_chars.resize(n * limit);
 
@@ -255,7 +256,33 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
     for (size_t i = 0; i < limit; ++i, offset += n)
         memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[perm[i] * n], n);
 
-    return std::move(res);
+    return res;
+}
+
+
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+
+template <typename Type>
+ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    if (limit == 0)
+        return ColumnFixedString::create(n);
+
+    auto res = ColumnFixedString::create(n);
+
+    Chars & res_chars = res->chars;
+
+    res_chars.resize(n * limit);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < limit; ++i, offset += n)
+        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
+
+    return res;
 }
 
 ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
@@ -267,9 +294,9 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
     auto res = ColumnFixedString::create(n);
 
     if (0 == col_size)
-        return std::move(res);
+        return res;
 
-    Chars_t & res_chars = res->chars;
+    Chars & res_chars = res->chars;
     res_chars.resize(n * offsets.back());
 
     Offset curr_offset = 0;
@@ -277,7 +304,7 @@ ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
         for (size_t next_offset = offsets[i]; curr_offset < next_offset; ++curr_offset)
             memcpySmallAllowReadWriteOverflow15(&res->chars[curr_offset * n], &chars[i * n], n);
 
-    return std::move(res);
+    return res;
 }
 
 void ColumnFixedString::gather(ColumnGathererStream & gatherer)

@@ -58,7 +58,7 @@ def started_cluster():
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
                         config_dir="configs",
-                        macroses={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
+                        macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                         with_zookeeper=True)
 
         cluster.start()

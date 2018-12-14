@@ -19,14 +19,7 @@ void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-
-template <typename T>
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+void DataTypeNumberBase<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
 
@@ -37,26 +30,6 @@ static void deserializeText(IColumn & column, ReadBuffer & istr)
 
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
-
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    deserializeText<T>(column, istr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    deserializeText<T>(column, istr);
-}
-
 
 template <typename T>
 static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
@@ -161,12 +134,6 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-template <typename T>
 void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     FieldType x;
@@ -177,14 +144,14 @@ void DataTypeNumberBase<T>::deserializeTextCSV(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeNumberBase<T>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type();
+    return NearestFieldType<FieldType>();
 }
 
 template <typename T>
 void DataTypeNumberBase<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
+    typename ColumnVector<T>::value_type x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -193,7 +160,7 @@ void DataTypeNumberBase<T>::deserializeBinary(Field & field, ReadBuffer & istr) 
 {
     typename ColumnVector<T>::value_type x;
     readBinary(x, istr);
-    field = typename NearestFieldType<FieldType>::Type(x);
+    field = NearestFieldType<FieldType>(x);
 }
 
 template <typename T>
@@ -220,7 +187,8 @@ void DataTypeNumberBase<T>::serializeBinaryBulk(const IColumn & column, WriteBuf
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
+    if (limit)
+        ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
 }
 
 template <typename T>

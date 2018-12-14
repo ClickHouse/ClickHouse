@@ -1,8 +1,9 @@
 #pragma once
 
 #include <thread>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Core/Types.h>
 #include <common/logger_useful.h>
 
@@ -23,10 +24,15 @@ class ReplicatedMergeTreeAlterThread
 public:
     ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_);
 
+    void start() { task->activateAndSchedule(); }
+
+    void stop() { task->deactivate(); }
+
 private:
     void run();
 
     StorageReplicatedMergeTree & storage;
+    zkutil::ZooKeeperNodeCache zk_node_cache;
     String log_name;
     Logger * log;
     BackgroundSchedulePool::TaskHolder task;

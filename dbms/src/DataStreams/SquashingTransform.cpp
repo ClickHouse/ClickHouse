@@ -10,37 +10,38 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows, size_t min_bl
 }
 
 
-SquashingTransform::Result SquashingTransform::add(Block && block)
+SquashingTransform::Result SquashingTransform::add(MutableColumns && columns)
 {
-    if (!block)
-        return Result(std::move(accumulated_block));
+    /// End of input stream.
+    if (columns.empty())
+        return Result(std::move(accumulated_columns));
 
     /// Just read block is alredy enough.
-    if (isEnoughSize(block.rows(), block.bytes()))
+    if (isEnoughSize(columns))
     {
         /// If no accumulated data, return just read block.
-        if (!accumulated_block)
-            return Result(std::move(block));
+        if (accumulated_columns.empty())
+            return Result(std::move(columns));
 
-        /// Return accumulated data (may be it has small size) and place new block to accumulated data.
-        accumulated_block.swap(block);
-        return Result(std::move(block));
+        /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
+        columns.swap(accumulated_columns);
+        return Result(std::move(columns));
     }
 
     /// Accumulated block is already enough.
-    if (accumulated_block && isEnoughSize(accumulated_block.rows(), accumulated_block.bytes()))
+    if (!accumulated_columns.empty() && isEnoughSize(accumulated_columns))
     {
         /// Return accumulated data and place new block to accumulated data.
-        accumulated_block.swap(block);
-        return Result(std::move(block));
+        columns.swap(accumulated_columns);
+        return Result(std::move(columns));
     }
 
-    append(std::move(block));
+    append(std::move(columns));
 
-    if (isEnoughSize(accumulated_block.rows(), accumulated_block.bytes()))
+    if (isEnoughSize(accumulated_columns))
     {
-        Block res;
-        res.swap(accumulated_block);
+        MutableColumns res;
+        res.swap(accumulated_columns);
         return Result(std::move(res));
     }
 
@@ -49,23 +50,35 @@ SquashingTransform::Result SquashingTransform::add(Block && block)
 }
 
 
-void SquashingTransform::append(Block && block)
+void SquashingTransform::append(MutableColumns && columns)
 {
-    if (!accumulated_block)
+    if (accumulated_columns.empty())
     {
-        accumulated_block = std::move(block);
+        accumulated_columns = std::move(columns);
         return;
     }
 
-    size_t columns = block.columns();
-    size_t rows = block.rows();
+    for (size_t i = 0, size = columns.size(); i < size; ++i)
+        accumulated_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+}
 
-    for (size_t i = 0; i < columns; ++i)
+
+bool SquashingTransform::isEnoughSize(const MutableColumns & columns)
+{
+    size_t rows = 0;
+    size_t bytes = 0;
+
+    for (const auto & column : columns)
     {
-        MutableColumnPtr mutable_column = (*std::move(accumulated_block.getByPosition(i).column)).mutate();
-        mutable_column->insertRangeFrom(*block.getByPosition(i).column, 0, rows);
-        accumulated_block.getByPosition(i).column = std::move(mutable_column);
+        if (!rows)
+            rows = column->size();
+        else if (rows != column->size())
+            throw Exception("Sizes of columns doesn't match", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+        bytes += column->byteSize();
     }
+
+    return isEnoughSize(rows, bytes);
 }
 
 

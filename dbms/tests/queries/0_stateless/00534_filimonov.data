@@ -428,5 +428,7 @@ SELECT COVAR_SAMPArray([CAST( 0  AS Int8)],arrayPopBack([CAST( 0  AS Int8)]));
 SELECT medianTimingWeightedArray([CAST( 0  AS Int8)],arrayPopBack([CAST( 0  AS Int8)]));
 SELECT quantilesDeterministicArray([CAST( 0  AS Int8)],arrayPopBack([CAST( 0  AS Int32)]));
 
-SELECT maxIntersections([], [])
-SELECT sumMap([], [])
+SELECT maxIntersections([], []);
+SELECT sumMap([], []);
+
+SELECT countArray();

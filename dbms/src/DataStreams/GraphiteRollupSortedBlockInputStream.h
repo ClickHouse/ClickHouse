@@ -8,6 +8,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/AlignedBuffer.h>
 
 
 namespace DB
@@ -186,7 +187,7 @@ private:
     time_t current_time_rounded = 0;
 
     const Graphite::Pattern * current_pattern = nullptr;
-    std::vector<char> place_for_aggregate_state;
+    AlignedBuffer place_for_aggregate_state;
     bool aggregate_state_created = false; /// Invariant: if true then current_pattern is not NULL.
 
     const Graphite::Pattern * selectPatternForPath(StringRef path) const;

@@ -20,6 +20,7 @@ namespace ErrorCodes
 }
 
 class QuotaForIntervals;
+class QueryStatus;
 class ProcessListElement;
 class IProfilingBlockInputStream;
 
@@ -103,7 +104,7 @@ public:
       * Based on this information, the quota and some restrictions will be checked.
       * This information will also be available in the SHOW PROCESSLIST request.
       */
-    void setProcessListElement(ProcessListElement * elem);
+    void setProcessListElement(QueryStatus * elem);
 
     /** Set the approximate total number of rows to read.
       */
@@ -178,7 +179,9 @@ protected:
     std::atomic<bool> is_cancelled{false};
     std::atomic<bool> is_killed{false};
     ProgressCallback progress_callback;
-    ProcessListElement * process_list_elem = nullptr;
+    QueryStatus * process_list_elem = nullptr;
+    /// According to total_stopwatch in microseconds
+    UInt64 last_profile_events_update_time = 0;
 
     /// Additional information that can be generated during the work process.
 

@@ -3,13 +3,13 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-# При POST можно делать что угодно.
+# POST permits everything.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?query=SELECT+name,value,changed+FROM+system.settings+WHERE+name+IN+('readonly','max_rows_to_read')&max_rows_to_read=10000&default_format=PrettySpaceNoEscapes" -d' '
 
-# При GET выставляется readonly = 2.
+# GET implies readonly = 2.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?query=SELECT+name,value,changed+FROM+system.settings+WHERE+name+IN+('readonly','max_rows_to_read')&max_rows_to_read=10000&default_format=PrettySpaceNoEscapes"
 
-# Можно самому усилить readonly и при этом изменить какие-то ещё настройки.
+# It is possible to simultaneously set more strict variant of readonly and specify some other settings.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?query=SELECT+name,value,changed+FROM+system.settings+WHERE+name+IN+('readonly','max_rows_to_read')&readonly=1&max_rows_to_read=10000&default_format=PrettySpaceNoEscapes" -d' '
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?query=SELECT+name,value,changed+FROM+system.settings+WHERE+name+IN+('readonly','max_rows_to_read')&readonly=2&max_rows_to_read=10000&default_format=PrettySpaceNoEscapes" -d' '
 

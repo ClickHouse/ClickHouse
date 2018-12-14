@@ -14,6 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_DIFFERS_TOO_MUCH;
+}
+
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
 
 
@@ -35,8 +40,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
     need_stop = false;
-    task->activate();
-    task->schedule();
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
@@ -198,7 +202,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
+        auto table_lock = storage.lockStructure(false);
 
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))
@@ -214,7 +218,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 auto zk_columns = NamesAndTypesList::parse(
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/columns"));
                 if (part->columns != zk_columns)
-                    throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
+                    throw Exception("Columns of local part " + part_name + " are different from ZooKeeper", ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
 
                 checkDataPart(
                     storage.data.getFullPath() + part_name,
@@ -231,7 +235,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
                 /// TODO Better to check error code.
 
@@ -342,11 +346,11 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         task->schedule();
     }
-    catch (const zkutil::KeeperException & e)
+    catch (const Coordination::Exception & e)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        if (e.code == Coordination::ZSESSIONEXPIRED)
             return;
 
         task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);

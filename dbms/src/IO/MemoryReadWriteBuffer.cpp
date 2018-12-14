@@ -33,7 +33,7 @@ public:
         return setChunk();
     }
 
-    ~ReadBufferFromMemoryWriteBuffer()
+    ~ReadBufferFromMemoryWriteBuffer() override
     {
         for (const auto & range : chunk_list)
             free(range.begin(), range.size());

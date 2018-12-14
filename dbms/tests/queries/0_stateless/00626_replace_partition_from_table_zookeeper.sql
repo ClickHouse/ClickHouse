@@ -55,7 +55,7 @@ SELECT count(), sum(d) FROM test.dst_r2;
 
 INSERT INTO test_block_numbers SELECT max(max_block_number) AS m FROM system.parts WHERE database='test' AND  table='dst_r1' AND active AND name LIKE '1_%';
 SELECT (max(m) - min(m) > 1) AS new_block_is_generated FROM test_block_numbers;
-DROP TABLE test_block_numbers;
+DROP TEMPORARY TABLE test_block_numbers;
 
 
 SELECT 'ATTACH FROM';

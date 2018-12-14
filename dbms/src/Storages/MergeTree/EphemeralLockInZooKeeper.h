@@ -21,7 +21,7 @@ class EphemeralLockInZooKeeper : public boost::noncopyable
 {
 public:
     EphemeralLockInZooKeeper(
-        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Requests * precheck_ops = nullptr);
+        const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, Coordination::Requests * precheck_ops = nullptr);
 
     EphemeralLockInZooKeeper() = default;
 
@@ -61,7 +61,7 @@ public:
     void unlock();
 
     /// Adds actions equivalent to `unlock()` to the list.
-    void getUnlockOps(zkutil::Requests & ops);
+    void getUnlockOps(Coordination::Requests & ops);
 
     /// Do not delete nodes in destructor. You may call this method after 'getUnlockOps' and successful execution of these ops,
     ///  because the nodes will be already deleted.

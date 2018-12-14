@@ -3,10 +3,12 @@
 #include <set>
 #include <memory>
 #include <ostream>
+#include <algorithm>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Parsers/StringRange.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 
 
 class SipHash;
@@ -65,7 +67,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID() const = 0;
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 
@@ -150,16 +152,20 @@ public:
     struct FormatSettings
     {
         std::ostream & ostr;
-        bool hilite;
+        bool hilite = false;
         bool one_line;
+        bool always_quote_identifiers = false;
+        IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
         char nl_or_ws;
 
-        FormatSettings(std::ostream & ostr_, bool hilite_, bool one_line_)
-            : ostr(ostr_), hilite(hilite_), one_line(one_line_)
+        FormatSettings(std::ostream & ostr_, bool one_line_)
+            : ostr(ostr_), one_line(one_line_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
+
+        void writeIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -194,8 +200,6 @@ public:
             ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
     }
 
-    void writeAlias(const String & name, std::ostream & s, bool hilite) const;
-
     void cloneChildren();
 
 public:
@@ -214,6 +218,5 @@ private:
 
 /// Surrounds an identifier by back quotes if it is necessary.
 String backQuoteIfNeed(const String & x);
-
 
 }

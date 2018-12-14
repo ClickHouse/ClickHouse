@@ -54,7 +54,7 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, elem);
 }
 
@@ -68,20 +68,20 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, std::move(elem));
 }
 
 
 void Block::insert(const ColumnWithTypeAndName & elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(elem);
 }
 
 void Block::insert(ColumnWithTypeAndName && elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(std::move(elem));
 }
 
@@ -96,6 +96,13 @@ void Block::insertUnique(ColumnWithTypeAndName && elem)
 {
     if (index_by_name.end() == index_by_name.find(elem.name))
         insert(std::move(elem));
+}
+
+
+void Block::erase(const std::set<size_t> & positions)
+{
+    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
+        erase(*it);
 }
 
 
@@ -317,7 +324,7 @@ Columns Block::getColumns() const
 }
 
 
-MutableColumns Block::mutateColumns() const
+MutableColumns Block::mutateColumns()
 {
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
@@ -363,6 +370,18 @@ Block Block::cloneWithColumns(const Columns & columns) const
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ columns[i], data[i].type, data[i].name });
+
+    return res;
+}
+
+
+Block Block::cloneWithoutColumns() const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ nullptr, data[i].type, data[i].name });
 
     return res;
 }

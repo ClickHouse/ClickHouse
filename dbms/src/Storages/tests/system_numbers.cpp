@@ -26,7 +26,7 @@ try
 
     WriteBufferFromOStream out_buf(std::cout);
 
-    QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
 
     auto context = Context::createGlobal();
     LimitBlockInputStream input(table->read(column_names, {}, context, stage, 10, 1)[0], 10, 96);

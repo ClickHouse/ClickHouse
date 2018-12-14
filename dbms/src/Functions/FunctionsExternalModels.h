@@ -1,7 +1,7 @@
 #pragma once
 #include <Functions/IFunction.h>
 
-namespace  DB
+namespace DB
 {
 
 class ExternalModels;
@@ -23,7 +23,7 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
 

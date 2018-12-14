@@ -2,6 +2,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_DATA_PASSED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -28,15 +30,20 @@ DataTypePtr FieldToDataType::operator() (const Null &) const
 
 DataTypePtr FieldToDataType::operator() (const UInt64 & x) const
 {
-    if (x <= std::numeric_limits<UInt8>::max())  return std::make_shared<DataTypeUInt8>();
+    if (x <= std::numeric_limits<UInt8>::max()) return std::make_shared<DataTypeUInt8>();
     if (x <= std::numeric_limits<UInt16>::max()) return std::make_shared<DataTypeUInt16>();
     if (x <= std::numeric_limits<UInt32>::max()) return std::make_shared<DataTypeUInt32>();
     return std::make_shared<DataTypeUInt64>();
 }
 
+DataTypePtr FieldToDataType::operator() (const UInt128 &) const
+{
+    throw Exception("There are no UInt128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 DataTypePtr FieldToDataType::operator() (const Int64 & x) const
 {
-    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())   return std::make_shared<DataTypeInt8>();
+    if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
     if (x <= std::numeric_limits<Int16>::max() && x >= std::numeric_limits<Int16>::min()) return std::make_shared<DataTypeInt16>();
     if (x <= std::numeric_limits<Int32>::max() && x >= std::numeric_limits<Int32>::min()) return std::make_shared<DataTypeInt32>();
     return std::make_shared<DataTypeInt64>();
@@ -50,6 +57,24 @@ DataTypePtr FieldToDataType::operator() (const Float64 &) const
 DataTypePtr FieldToDataType::operator() (const String &) const
 {
     return std::make_shared<DataTypeString>();
+}
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal32> & x) const
+{
+    using Type = DataTypeDecimal<Decimal32>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal64> & x) const
+{
+    using Type = DataTypeDecimal<Decimal64>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal128> & x) const
+{
+    using Type = DataTypeDecimal<Decimal128>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
 }
 
 

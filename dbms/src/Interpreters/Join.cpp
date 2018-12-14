@@ -15,6 +15,7 @@
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 namespace DB
@@ -30,10 +31,9 @@ namespace ErrorCodes
 }
 
 
-Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
-    const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+    ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
     : kind(kind_), strictness(strictness_),
-    key_names_left(key_names_left_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
     log(&Logger::get("Join")),
@@ -258,10 +258,12 @@ void Join::setSampleBlock(const Block & block)
 
     size_t keys_size = key_names_right.size();
     ColumnRawPtrs key_columns(keys_size);
+    Columns materialized_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_right[i]).column.get();
+        materialized_columns[i] = recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column);
+        key_columns[i] = materialized_columns[i].get();
 
         /// We will join only keys, where all components are not NULL.
         if (key_columns[i]->isColumnNullable())
@@ -280,7 +282,10 @@ void Join::setSampleBlock(const Block & block)
         const auto & name = sample_block_with_columns_to_add.getByPosition(pos).name;
         if (key_names_right.end() != std::find(key_names_right.begin(), key_names_right.end(), name))
         {
-            sample_block_with_keys.insert(sample_block_with_columns_to_add.getByPosition(pos));
+            auto & col = sample_block_with_columns_to_add.getByPosition(pos);
+            col.column = recursiveRemoveLowCardinality(col.column);
+            col.type = recursiveRemoveLowCardinality(col.type);
+            sample_block_with_keys.insert(col);
             sample_block_with_columns_to_add.erase(pos);
         }
         else
@@ -427,11 +432,13 @@ bool Join::insertFromBlock(const Block & block)
 
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
+    materialized_columns.reserve(keys_size);
 
     /// Memoize key columns to work.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_right[i]).column.get();
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column));
+        key_columns[i] = materialized_columns.back().get();
 
         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
@@ -523,16 +530,20 @@ namespace
     struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
+            size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
             const std::vector<size_t> & right_indexes)
         {
+            (*filter)[i] = 1;
+
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertFrom(*it->second.block->getByPosition(right_indexes[j]).column.get(), it->second.row_num);
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
+            size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
         {
+            (*filter)[i] = 0;
+
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertDefault();
         }
@@ -562,9 +573,11 @@ namespace
     struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
+            size_t i, IColumn::Filter * filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
             const std::vector<size_t> & right_indexes)
         {
+            (*filter)[i] = 1;
+
             size_t rows_joined = 0;
             for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr; current = current->next)
             {
@@ -579,8 +592,10 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets)
+            size_t i, IColumn::Filter * filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets)
         {
+            (*filter)[i] = 0;
+
             if (KIND == ASTTableJoin::Kind::Inner)
             {
                 (*offsets)[i] = current_offset;
@@ -653,18 +668,25 @@ namespace
 
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-void Join::joinBlockImpl(Block & block, const Maps & maps) const
+void Join::joinBlockImpl(
+    Block & block,
+    const Names & key_names_left,
+    const NameSet & needed_key_names_right,
+    const Block & block_with_columns_to_add,
+    const Maps & maps) const
 {
     size_t keys_size = key_names_left.size();
     ColumnRawPtrs key_columns(keys_size);
 
     /// Rare case, when keys are constant. To avoid code bloat, simply materialize them.
     Columns materialized_columns;
+    materialized_columns.reserve(keys_size);
 
     /// Memoize key columns to work with.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_left[i]).column.get();
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column));
+        key_columns[i] = materialized_columns.back().get();
 
         if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
         {
@@ -715,6 +737,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     MutableColumns added_columns;
     added_columns.reserve(num_columns_to_add);
 
+    std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>> added_type_name;
+    added_type_name.reserve(num_columns_to_add);
+
     std::vector<size_t> right_indexes;
     right_indexes.reserve(num_columns_to_add);
 
@@ -722,22 +747,22 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     {
         const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
 
-        /// Don't insert column if it's in left block.
-        if (!block.has(src_column.name))
+        /// Don't insert column if it's in left block or not explicitly required.
+        if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
         {
             added_columns.push_back(src_column.column->cloneEmpty());
             added_columns.back()->reserve(src_column.column->size());
+            added_type_name.emplace_back(src_column.type, src_column.name);
             right_indexes.push_back(num_columns_to_skip + i);
         }
     }
 
     size_t rows = block.rows();
 
-    /// Used with ANY INNER JOIN
     std::unique_ptr<IColumn::Filter> filter;
 
-    if ((kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any)
-        filter = std::make_unique<IColumn::Filter>(rows);
+    bool filter_left_keys = (kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any;
+    filter = std::make_unique<IColumn::Filter>(rows);
 
     /// Used with ALL ... JOIN
     IColumn::Offset current_offset = 0;
@@ -761,21 +786,54 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
             throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 
-    for (size_t i = 0; i < num_columns_to_add; ++i)
-    {
-        const ColumnWithTypeAndName & sample_col = sample_block_with_columns_to_add.getByPosition(i);
-        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), sample_col.type, sample_col.name));
-    }
+    const auto added_columns_size = added_columns.size();
+    for (size_t i = 0; i < added_columns_size; ++i)
+        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
 
     /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
-    if (filter)
+    if (filter_left_keys)
         for (size_t i = 0; i < existing_columns; ++i)
             block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(*filter, -1);
 
+    ColumnUInt64::Ptr mapping;
+
+    /// Add join key columns from right block if they has different name.
+    for (size_t i = 0; i < key_names_right.size(); ++i)
+    {
+        auto & right_name = key_names_right[i];
+        auto & left_name = key_names_left[i];
+
+        if (needed_key_names_right.count(right_name) && !block.has(right_name))
+        {
+            const auto & col = block.getByName(left_name);
+            auto column = col.column;
+            if (!filter_left_keys)
+            {
+                if (!mapping)
+                {
+                    auto mut_mapping = ColumnUInt64::create(column->size());
+                    auto & data = mut_mapping->getData();
+                    size_t size = column->size();
+                    for (size_t j = 0; j < size; ++j)
+                        data[j] = (*filter)[j] ? j : size;
+
+                    mapping = std::move(mut_mapping);
+                }
+
+                auto mut_column = (*std::move(column)).mutate();
+                mut_column->insertDefault();
+                column = mut_column->index(*mapping, 0);
+            }
+            block.insert({column, col.type, right_name});
+        }
+    }
+
     /// If ALL ... JOIN - we replicate all the columns except the new ones.
     if (offsets_to_replicate)
+    {
         for (size_t i = 0; i < existing_columns; ++i)
             block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
+    }
 }
 
 
@@ -829,7 +887,7 @@ void Join::joinBlockImplCross(Block & block) const
 }
 
 
-void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right) const
+void Join::checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const
 {
     size_t keys_size = key_names_left.size();
 
@@ -837,8 +895,8 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
     {
         /// Compare up to Nullability.
 
-        DataTypePtr left_type = removeNullable(block_left.getByName(key_names_left[i]).type);
-        DataTypePtr right_type = removeNullable(block_right.getByName(key_names_right[i]).type);
+        DataTypePtr left_type = removeNullable(recursiveRemoveLowCardinality(block_left.getByName(key_names_left[i]).type));
+        DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
@@ -849,30 +907,90 @@ void Join::checkTypesOfKeys(const Block & block_left, const Block & block_right)
 }
 
 
-void Join::joinBlock(Block & block) const
+static void checkTypeOfKey(const Block & block_left, const Block & block_right)
+{
+    auto & [c1, left_type_origin, left_name] = block_left.safeGetByPosition(0);
+    auto & [c2, right_type_origin, right_name] = block_right.safeGetByPosition(0);
+    auto left_type = removeNullable(left_type_origin);
+    auto right_type = removeNullable(right_type_origin);
+
+    if (!left_type->equals(*right_type))
+        throw Exception("Type mismatch of columns to joinGet by: "
+            + left_name + " " + left_type->getName() + " at left, "
+            + right_name + " " + right_type->getName() + " at right",
+            ErrorCodes::TYPE_MISMATCH);
+}
+
+
+DataTypePtr Join::joinGetReturnType(const String & column_name) const
+{
+    std::shared_lock lock(rwlock);
+
+    if (!sample_block_with_columns_to_add.has(column_name))
+        throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
+    return sample_block_with_columns_to_add.getByName(column_name).type;
+}
+
+
+template <typename Maps>
+void Join::joinGetImpl(Block & block, const String & column_name, const Maps & maps) const
+{
+    joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
+        block, {block.getByPosition(0).name}, {}, {sample_block_with_columns_to_add.getByName(column_name)}, maps);
+}
+
+
+// TODO: support composite key
+// TODO: return multible columns as named tuple
+// TODO: return array of values when strictness == ASTTableJoin::Strictness::All
+void Join::joinGet(Block & block, const String & column_name) const
+{
+    std::shared_lock lock(rwlock);
+
+    if (key_names_right.size() != 1)
+        throw Exception("joinGet only supports StorageJoin containing exactly one key", ErrorCodes::LOGICAL_ERROR);
+
+    checkTypeOfKey(block, sample_block_with_keys);
+
+    if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
+        joinGetImpl(block, column_name, maps_any);
+    else
+        throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
+}
+
+
+void Join::joinBlock(Block & block, const Names & key_names_left, const NameSet & needed_key_names_right) const
 {
 //    std::cerr << "joinBlock: " << block.dumpStructure() << "\n";
 
     std::shared_lock lock(rwlock);
 
-    checkTypesOfKeys(block, sample_block_with_keys);
+    checkTypesOfKeys(block, key_names_left, sample_block_with_keys);
 
     if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
-        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(block, maps_any);
+        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_any);
     else if (kind == ASTTableJoin::Kind::Inner && strictness == ASTTableJoin::Strictness::Any)
-        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any>(block, maps_any);
+        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_any);
     else if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::All)
-        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All>(block, maps_all);
+        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_all);
     else if (kind == ASTTableJoin::Kind::Inner && strictness == ASTTableJoin::Strictness::All)
-        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All>(block, maps_all);
+        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_all);
     else if (kind == ASTTableJoin::Kind::Full && strictness == ASTTableJoin::Strictness::Any)
-        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(block, maps_any_full);
+        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_any_full);
     else if (kind == ASTTableJoin::Kind::Right && strictness == ASTTableJoin::Strictness::Any)
-        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any>(block, maps_any_full);
+        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_any_full);
     else if (kind == ASTTableJoin::Kind::Full && strictness == ASTTableJoin::Strictness::All)
-        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All>(block, maps_all_full);
+        joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_all_full);
     else if (kind == ASTTableJoin::Kind::Right && strictness == ASTTableJoin::Strictness::All)
-        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All>(block, maps_all_full);
+        joinBlockImpl<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All>(
+            block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, maps_all_full);
     else if (kind == ASTTableJoin::Kind::Cross)
         joinBlockImplCross(block);
     else
@@ -914,7 +1032,7 @@ struct AdderNonJoined;
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 {
-    static void add(const Mapped & mapped,
+    static void add(const Mapped & mapped, size_t & rows_added,
         size_t num_columns_left, MutableColumns & columns_left,
         size_t num_columns_right, MutableColumns & columns_right)
     {
@@ -923,13 +1041,15 @@ struct AdderNonJoined<ASTTableJoin::Strictness::Any, Mapped>
 
         for (size_t j = 0; j < num_columns_right; ++j)
             columns_right[j]->insertFrom(*mapped.block->getByPosition(j).column.get(), mapped.row_num);
+
+        ++rows_added;
     }
 };
 
 template <typename Mapped>
 struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 {
-    static void add(const Mapped & mapped,
+    static void add(const Mapped & mapped, size_t & rows_added,
         size_t num_columns_left, MutableColumns & columns_left,
         size_t num_columns_right, MutableColumns & columns_right)
     {
@@ -940,6 +1060,8 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 
             for (size_t j = 0; j < num_columns_right; ++j)
                 columns_right[j]->insertFrom(*current->block->getByPosition(j).column.get(), current->row_num);
+
+            ++rows_added;
         }
     }
 };
@@ -949,14 +1071,14 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 class NonJoinedBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, size_t max_block_size_)
+    NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, const Names & key_names_left, size_t max_block_size_)
         : parent(parent_), max_block_size(max_block_size_)
     {
         /** left_sample_block contains keys and "left" columns.
           * result_sample_block - keys, "left" columns, and "right" columns.
           */
 
-        size_t num_keys = parent.key_names_left.size();
+        size_t num_keys = key_names_left.size();
         size_t num_columns_left = left_sample_block.columns() - num_keys;
         size_t num_columns_right = parent.sample_block_with_columns_to_add.columns();
 
@@ -973,7 +1095,7 @@ public:
         column_indices_keys_and_right.reserve(num_keys + num_columns_right);
         std::vector<bool> is_key_column_in_left_block(num_keys + num_columns_left, false);
 
-        for (const std::string & key : parent.key_names_left)
+        for (const std::string & key : key_names_left)
         {
             size_t key_pos = left_sample_block.getPositionByName(key);
             is_key_column_in_left_block[key_pos] = true;
@@ -1109,10 +1231,9 @@ private:
             if (it->second.getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, num_columns_left, columns_left, num_columns_right, columns_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, num_columns_left, columns_left, num_columns_right, columns_right);
 
-            ++rows_added;
-            if (rows_added == max_block_size)
+            if (rows_added >= max_block_size)
             {
                 ++it;
                 break;
@@ -1124,9 +1245,9 @@ private:
 };
 
 
-BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, size_t max_block_size) const
+BlockInputStreamPtr Join::createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left, size_t max_block_size) const
 {
-    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, max_block_size);
+    return std::make_shared<NonJoinedBlockInputStream>(*this, left_sample_block, key_names_left, max_block_size);
 }
 
 
