@@ -37,7 +37,7 @@ void ODBCDriver2BlockOutputStream::write(const Block & block)
     {
         for (size_t j = 0; j < columns; ++j)
         {
-            text_value.resize(0);
+            text_value.clear();
             const ColumnWithTypeAndName & col = block.getByPosition(j);
 
             if (col.column->isNullAt(i))
@@ -65,10 +65,11 @@ void ODBCDriver2BlockOutputStream::writeTotals()
 {
     const size_t totals_columns = totals.columns();
     String text_value;
-    if (totals){
+    if (totals)
+    {
         for (size_t i = 0; i < totals_columns; ++i)
         {
-            text_value.resize(0);
+            text_value.clear();
             const ColumnWithTypeAndName & column = totals.safeGetByPosition(i);
 
             if (column.column->isNullAt(i))
