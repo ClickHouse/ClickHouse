@@ -22,6 +22,7 @@ from mkdocs.commands import build as mkdocs_build
 
 from concatenate import concatenate
 import mdx_clickhouse
+import test
 
 @contextlib.contextmanager
 def temp_dir():
@@ -182,6 +183,20 @@ def build_single_page_version(lang, args, cfg):
                 create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
                 logging.debug(' '.join(create_pdf_command))
                 subprocess.check_call(' '.join(create_pdf_command), shell=True)
+
+                with temp_dir() as test_dir:
+                    cfg.load_dict({
+                        'docs_dir': docs_temp_lang,
+                        'site_dir': test_dir,
+                        'extra': {
+                            'single_page': False
+                        },
+                        'nav': [
+                            {cfg.data.get('site_name'): 'single.md'}
+                        ]
+                    })
+                    mkdocs_build.build(cfg)
+                    test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
 
 
 def build_redirects(args):
