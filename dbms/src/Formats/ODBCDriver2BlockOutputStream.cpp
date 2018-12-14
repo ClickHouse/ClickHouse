@@ -37,7 +37,7 @@ void ODBCDriver2BlockOutputStream::write(const Block & block)
     {
         for (size_t j = 0; j < columns; ++j)
         {
-            text_value.resize(0);
+            text_value.clear();
             const ColumnWithTypeAndName & col = block.getByPosition(j);
 
             if (col.column->isNullAt(i))
@@ -49,6 +49,38 @@ void ODBCDriver2BlockOutputStream::write(const Block & block)
                 {
                     WriteBufferFromString text_out(text_value);
                     col.type->serializeText(*col.column, i, text_out, format_settings);
+                }
+                writeODBCString(out, text_value);
+            }
+        }
+    }
+}
+
+void ODBCDriver2BlockOutputStream::writeSuffix()
+{
+    writeTotals();
+}
+
+void ODBCDriver2BlockOutputStream::writeTotals()
+{
+    const size_t totals_columns = totals.columns();
+    String text_value;
+    if (totals)
+    {
+        for (size_t i = 0; i < totals_columns; ++i)
+        {
+            text_value.clear();
+            const ColumnWithTypeAndName & column = totals.safeGetByPosition(i);
+
+            if (column.column->isNullAt(i))
+            {
+                writeIntBinary(Int32(-1), out);
+            }
+            else
+            {
+                {
+                    WriteBufferFromString text_out(text_value);
+                    column.type->serializeText(*column.column, i, text_out, format_settings);
                 }
                 writeODBCString(out, text_value);
             }

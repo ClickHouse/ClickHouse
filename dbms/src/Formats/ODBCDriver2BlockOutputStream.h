@@ -28,17 +28,24 @@ public:
     }
     void write(const Block & block) override;
     void writePrefix() override;
+    void writeSuffix() override;
 
     void flush() override;
     std::string getContentType() const override
     {
         return "application/octet-stream";
     }
+    void setTotals(const Block & totals_) override { totals = totals_; }
 
 private:
     WriteBuffer & out;
     const Block header;
     const FormatSettings format_settings;
+protected:
+    void writeTotals();
+    Block totals;
 };
+
+
 
 }
