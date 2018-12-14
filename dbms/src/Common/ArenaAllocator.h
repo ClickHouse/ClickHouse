@@ -107,7 +107,7 @@ using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD,
 
 
 template <size_t N = 64, typename Base = ArenaAllocator>
-class ArenaAllocatorWithStackMemoty : public Base
+class ArenaAllocatorWithStackMemory : public Base
 {
     char stack_memory[N];
 
