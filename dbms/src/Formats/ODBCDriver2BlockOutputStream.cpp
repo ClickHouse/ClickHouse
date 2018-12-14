@@ -56,6 +56,37 @@ void ODBCDriver2BlockOutputStream::write(const Block & block)
     }
 }
 
+void ODBCDriver2BlockOutputStream::writeSuffix()
+{
+    writeTotals();
+}
+
+void ODBCDriver2BlockOutputStream::writeTotals()
+{
+    const size_t totals_columns = totals.columns();
+    String text_value;
+    if (totals){
+        for (size_t i = 0; i < totals_columns; ++i)
+        {
+            text_value.resize(0);
+            const ColumnWithTypeAndName & column = totals.safeGetByPosition(i);
+
+            if (column.column->isNullAt(i))
+            {
+                writeIntBinary(Int32(-1), out);
+            }
+            else
+            {
+                {
+                    WriteBufferFromString text_out(text_value);
+                    column.type->serializeText(*column.column, i, text_out, format_settings);
+                }
+                writeODBCString(out, text_value);
+            }
+        }
+    }
+}
+
 void ODBCDriver2BlockOutputStream::writePrefix()
 {
     const size_t columns = header.columns();
