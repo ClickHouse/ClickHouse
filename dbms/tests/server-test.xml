@@ -62,8 +62,8 @@
             </shard>
             <shard>
                 <replica>
-                    <host>127.0.0.255</host>
-                    <port>59000</port>
+                    <host>localhost</host>
+                    <port>1</port>
                 </replica>
             </shard>
         </test_unavailable_shard>
