@@ -392,7 +392,7 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 {
     /// Handles all possible TRIM/LTRIM/RTRIM call variants
 
-    std::string func_name = "replaceRegexpOne";
+    std::string func_name;
     bool trim_left = false;
     bool trim_right = false;
     bool char_override = false;
@@ -507,6 +507,7 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
                     std::make_shared<ASTLiteral>("]*$")
                 };
             }
+            func_name = "replaceRegexpOne";
         }
 
         pattern_func_node->name = "concat";
@@ -519,25 +520,27 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     {
         if (trim_left && trim_right)
         {
-            pattern_node = std::make_shared<ASTLiteral>("^ *| *$");
-            func_name = "replaceRegexpAll";
+            func_name = "trimBoth";
         }
         else
         {
             if (trim_left)
             {
-                pattern_node = std::make_shared<ASTLiteral>("^ *");
+                func_name = "trimLeft";
             }
             else
             {
                 /// trim_right == false not possible
-                pattern_node = std::make_shared<ASTLiteral>(" *$");
+                func_name = "trimRight";
             }
         }
     }
 
     auto expr_list_args = std::make_shared<ASTExpressionList>();
-    expr_list_args->children = {expr_node, pattern_node, std::make_shared<ASTLiteral>("")};
+    if (char_override)
+        expr_list_args->children = {expr_node, pattern_node, std::make_shared<ASTLiteral>("")};
+    else
+        expr_list_args->children = {expr_node};
 
     auto func_node = std::make_shared<ASTFunction>();
     func_node->name = func_name;
