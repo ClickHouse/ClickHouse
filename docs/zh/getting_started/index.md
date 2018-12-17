@@ -52,7 +52,7 @@ ClickHouse包含访问控制配置，它们位于`users.xml`文件中(与'config
 ```text
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
-    ```
+```
 
 在服务器中为数据创建如下目录：
 

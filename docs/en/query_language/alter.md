@@ -66,7 +66,6 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-<a name="query_language-queries-alter-key_alters"></a>
 
 ### Manipulations With Key Expressions
 
@@ -78,12 +77,13 @@ MODIFY ORDER BY new_expression
 
 It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
 [replicated](../operations/table_engines/replication.md) tables). The command changes the
-[sorting key](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) of the table
+[sorting key](../operations/table_engines/mergetree.md) of the table
 to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part
 rows are ordered by the sorting key expression you cannot add expressions containing existing columns
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
+
 
 ### Manipulations With Partitions and Parts
 
@@ -205,15 +205,6 @@ To restore from a backup:
 
 In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
-
-### Backups and Replication
-
-Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
-
-For protection from device failures, you must use replication. For more information about replication, see the section "Data replication".
-
-Backups protect against human error (accidentally deleting data, deleting the wrong data or in the wrong cluster, or corrupting data).
-For high-volume databases, it can be difficult to copy backups to remote servers. In such cases, to protect from human error, you can keep a backup on the same server (it will reside in `/var/lib/clickhouse/shadow/`).
 
 ``` sql
 ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'

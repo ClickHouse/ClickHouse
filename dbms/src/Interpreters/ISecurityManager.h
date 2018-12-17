@@ -15,7 +15,7 @@ class ISecurityManager
 public:
     using UserPtr = std::shared_ptr<const User>;
 
-    virtual void loadFromConfig(Poco::Util::AbstractConfiguration & config) = 0;
+    virtual void loadFromConfig(const Poco::Util::AbstractConfiguration & config) = 0;
 
     /// Find user and make authorize checks
     virtual UserPtr authorizeAndGetUser(

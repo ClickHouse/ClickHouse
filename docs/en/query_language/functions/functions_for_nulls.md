@@ -2,7 +2,7 @@
 
 ## isNull
 
-Checks whether the argument is [NULL](../syntax.md#null-literal).
+Checks whether the argument is [NULL](../syntax.md#null).
 
 ```
 isNull(x)
@@ -46,7 +46,7 @@ WHERE isNull(y)
 
 ## isNotNull
 
-Checks whether the argument is [NULL](../syntax.md#null-literal).
+Checks whether the argument is [NULL](../syntax.md#null).
 
 ```
 isNotNull(x)
@@ -207,7 +207,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull
 
-Results in a value of type [Nullable](../../data_types/nullable.md#data_type-nullable) for a non- `Nullable`, if the value is not `NULL`.
+Results in a value of type [Nullable](../../data_types/nullable.md)i for a non- `Nullable`, if the value is not `NULL`.
 
 ```
 assumeNotNull(x)

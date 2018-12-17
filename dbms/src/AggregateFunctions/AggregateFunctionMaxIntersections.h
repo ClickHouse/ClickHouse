@@ -38,7 +38,7 @@ struct MaxIntersectionsData
     using Value = std::pair<T, Int64>;
 
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedArenaAllocator<4096>;
+    using Allocator = MixedAlignedArenaAllocator<alignof(Value), 4096>;
     using Array = PODArray<Value, 32, Allocator>;
 
     Array value;
