@@ -214,15 +214,15 @@ const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
 class OstreamOutputStream : public parquet::OutputStream
 {
 public:
-    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { };
-    virtual ~OstreamOutputStream() { };
+    explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { }
+    virtual ~OstreamOutputStream() { }
     virtual void Close() { }
-    virtual int64_t Tell() { return total_length; };
+    virtual int64_t Tell() { return total_length; }
     virtual void Write(const uint8_t * data, int64_t length)
     {
         ostr.write(reinterpret_cast<const char *>(data), length);
         total_length += length;
-    };
+    }
 
 private:
     WriteBuffer & ostr;
