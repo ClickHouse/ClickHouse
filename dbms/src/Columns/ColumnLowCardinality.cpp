@@ -163,7 +163,7 @@ void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, si
     auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
     if (!low_cardinality_src)
-        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("Expected ColumnLowCardinality, got " + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
@@ -209,13 +209,6 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertData(pos, length));
-    idx.check(getDictionary().size());
-}
-
-void ColumnLowCardinality::insertDataWithTerminatingZero(const char * pos, size_t length)
-{
-    compactIfSharedDictionary();
-    idx.insertPosition(dictionary.getColumnUnique().uniqueInsertDataWithTerminatingZero(pos, length));
     idx.check(getDictionary().size());
 }
 

@@ -13,12 +13,13 @@ Jinja2==2.10
 livereload==2.5.1
 Markdown==2.6.11
 MarkupSafe==1.0
-mkdocs==1.0
+mkdocs==1.0.4
 Pygments==2.2.0
+python-slugify==1.2.6
 pytz==2017.3
 PyYAML==3.12
 recommonmark==0.4.0
-requests==2.18.4
+requests==2.21.0
 singledispatch==3.4.0.3
 six==1.11.0
 snowballstemmer==1.2.1
@@ -26,4 +27,5 @@ Sphinx==1.6.5
 sphinxcontrib-websupport==1.0.1
 tornado==5.1
 typing==3.6.2
-urllib3==1.22
+Unidecode==1.0.23
+urllib3==1.23

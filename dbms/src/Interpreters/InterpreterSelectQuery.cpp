@@ -606,6 +606,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
                     else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
+                    if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.has_having)
+                        executeHaving(pipeline, expressions.before_having);
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -625,10 +627,15 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
                 }
 
-                if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                else if (query.group_by_with_cube && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::CUBE);
+                if ((query.group_by_with_rollup || query.group_by_with_cube) && !aggregate_final)
+                {
+                    if (query.group_by_with_rollup)
+                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                    else if (query.group_by_with_cube)
+                        executeRollupOrCube(pipeline, Modificator::CUBE);
+                    if (expressions.has_having)
+                        executeHaving(pipeline, expressions.before_having);
+                }
             }
 
             if (expressions.has_order_by)
@@ -743,9 +750,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
 
             /// We will create an expression to return all the requested columns, with the calculation of the required ALIAS columns.
-            auto required_columns_expr_list = std::make_shared<ASTExpressionList>();
+            ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
             /// Separate expression for columns used in prewhere.
-            auto required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
+            ASTPtr required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
 
             for (const auto & column : required_columns)
             {
@@ -823,8 +830,10 @@ void InterpreterSelectQuery::executeFetchColumns(
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
+                auto source_columns = storage->getColumns().getAllPhysical();
+                auto analyzed_result = SyntaxAnalyzer(context, {}).analyze(required_prewhere_columns_expr_list, source_columns);
                 prewhere_info->alias_actions =
-                    ExpressionAnalyzer(required_prewhere_columns_expr_list, syntax_analyzer_result, context)
+                    ExpressionAnalyzer(required_prewhere_columns_expr_list, analyzed_result, context)
                     .getActions(true, false);
 
                 /// Add columns required by alias actions.
@@ -1481,3 +1490,4 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
+

@@ -1,28 +1,32 @@
 #pragma once
 
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-#include "DictionaryStructure.h"
+#include <atomic>
+#include <variant>
+#include <vector>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/Arena.h>
 #include <ext/range.h>
 #include <ext/size.h>
-#include <atomic>
-#include <vector>
-#include <variant>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 
 
 namespace DB
 {
-
 using BlockPtr = std::shared_ptr<Block>;
 
 class FlatDictionary final : public IDictionary
 {
 public:
-    FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty, BlockPtr saved_block = nullptr);
+    FlatDictionary(
+        const std::string & name,
+        const DictionaryStructure & dict_struct,
+        DictionarySourcePtr source_ptr,
+        const DictionaryLifetime dict_lifetime,
+        bool require_nonempty,
+        BlockPtr saved_block = nullptr);
 
     FlatDictionary(const FlatDictionary & other);
 
@@ -52,10 +56,7 @@ public:
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
-    {
-        return creation_time;
-    }
+    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
@@ -66,14 +67,15 @@ public:
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
 
-    void isInVectorVector(const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
+    void isInVectorVector(
+        const PaddedPODArray<Key> & child_ids, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
     void isInVectorConstant(const PaddedPODArray<Key> & child_ids, const Key ancestor_id, PaddedPODArray<UInt8> & out) const override;
     void isInConstantVector(const Key child_id, const PaddedPODArray<Key> & ancestor_ids, PaddedPODArray<UInt8> & out) const override;
 
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 
-#define DECLARE(TYPE)\
+#define DECLARE(TYPE) \
     void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -93,9 +95,11 @@ public:
 
     void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const;
 
-#define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const PaddedPODArray<Key> & ids, \
+        const PaddedPODArray<TYPE> & def, \
         ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
@@ -113,14 +117,12 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def,
-        ColumnString * const out) const;
+    void
+    getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out)
+        const;
 
-#define DECLARE(TYPE)\
-    void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def,\
-        ResultArrayType<TYPE> & out) const;
+#define DECLARE(TYPE) \
+    void get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -137,34 +139,53 @@ public:
     DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def,
-        ColumnString * const out) const;
+    void getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const;
 
     void has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const override;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
-    template <typename Value> using ContainerType = PaddedPODArray<Value>;
+    template <typename Value>
+    using ContainerType = PaddedPODArray<Value>;
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
         std::variant<
-            UInt8, UInt16, UInt32, UInt64,
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
             UInt128,
-            Int8, Int16, Int32, Int64,
-            Decimal32, Decimal64, Decimal128,
-            Float32, Float64,
-            StringRef> null_values;
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            StringRef>
+            null_values;
         std::variant<
-            ContainerType<UInt8>, ContainerType<UInt16>, ContainerType<UInt32>, ContainerType<UInt64>,
+            ContainerType<UInt8>,
+            ContainerType<UInt16>,
+            ContainerType<UInt32>,
+            ContainerType<UInt64>,
             ContainerType<UInt128>,
-            ContainerType<Int8>, ContainerType<Int16>, ContainerType<Int32>, ContainerType<Int64>,
-            ContainerType<Decimal32>, ContainerType<Decimal64>, ContainerType<Decimal128>,
-            ContainerType<Float32>, ContainerType<Float64>,
-            ContainerType<StringRef>> arrays;
+            ContainerType<Int8>,
+            ContainerType<Int16>,
+            ContainerType<Int32>,
+            ContainerType<Int64>,
+            ContainerType<Decimal32>,
+            ContainerType<Decimal64>,
+            ContainerType<Decimal128>,
+            ContainerType<Float32>,
+            ContainerType<Float64>,
+            ContainerType<StringRef>>
+            arrays;
         std::unique_ptr<Arena> string_arena;
     };
 
@@ -185,17 +206,11 @@ private:
 
     template <typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsNumber(
-        const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ValueSetter && set_value,
-        DefaultGetter && get_default) const;
+        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename AttributeType, typename OutputType, typename ValueSetter, typename DefaultGetter>
     void getItemsImpl(
-        const Attribute & attribute,
-        const PaddedPODArray<Key> & ids,
-        ValueSetter && set_value,
-        DefaultGetter && get_default) const;
+        const Attribute & attribute, const PaddedPODArray<Key> & ids, ValueSetter && set_value, DefaultGetter && get_default) const;
 
     template <typename T>
     void resize(Attribute & attribute, const Key id);
@@ -211,10 +226,7 @@ private:
     void has(const Attribute & attribute, const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> & out) const;
 
     template <typename ChildType, typename AncestorType>
-    void isInImpl(
-        const ChildType & child_ids,
-        const AncestorType & ancestor_ids,
-        PaddedPODArray<UInt8> & out) const;
+    void isInImpl(const ChildType & child_ids, const AncestorType & ancestor_ids, PaddedPODArray<UInt8> & out) const;
 
     PaddedPODArray<Key> getIds() const;
 

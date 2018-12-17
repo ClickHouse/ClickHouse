@@ -167,7 +167,7 @@ struct MergeTreeSettings
 #undef DECLARE
 
 public:
-    void loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     /// NOTE: will rewrite the AST to add immutable settings.
     void loadFromQuery(ASTStorage & storage_def);

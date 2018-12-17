@@ -353,8 +353,8 @@ ASTPtr MergeTreeData::extractKeyExpressionList(const ASTPtr & node)
 
     if (expr_func && expr_func->name == "tuple")
     {
-        /// Primary key is specified in tuple.
-        return expr_func->children.at(0);
+        /// Primary key is specified in tuple, extract its arguments.
+        return expr_func->arguments->clone();
     }
     else
     {
@@ -410,6 +410,25 @@ void MergeTreeData::initPartitionKey()
             {
                 /// There is more than one Date column in partition key and we don't know which one to choose.
                 minmax_idx_date_column_pos = -1;
+            }
+        }
+    }
+    if (!encountered_date_column)
+    {
+        for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+        {
+            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_column_types[i].get()))
+            {
+                if (!encountered_date_column)
+                {
+                    minmax_idx_time_column_pos = i;
+                    encountered_date_column = true;
+                }
+                else
+                {
+                    /// There is more than one DateTime column in partition key and we don't know which one to choose.
+                   minmax_idx_time_column_pos = -1;
+                }
             }
         }
     }
@@ -1451,7 +1470,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 file.remove();
         }
 
-        mutable_part.bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(path);
+        mutable_part.bytes_on_disk = new_checksums.getTotalSizeOnDisk();
 
         /// TODO: we can skip resetting caches when the column is added.
         data_part->storage.context.dropCaches();
@@ -2274,7 +2293,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
         MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
-        if (!input_stream.read(columns))
+        RowReadExtension unused;
+        if (!input_stream.read(columns, unused))
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);

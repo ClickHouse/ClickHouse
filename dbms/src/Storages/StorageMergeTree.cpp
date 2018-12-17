@@ -424,7 +424,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
-            size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
