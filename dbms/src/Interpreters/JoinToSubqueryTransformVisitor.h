@@ -39,12 +39,10 @@ private:
     ///         TablesInSelectQueryElement [source1]
     ///         TablesInSelectQueryElement [source2]
     ///
-    /// + WITH nameCoalesce(source1, __join1), nameCoalesce(source2, __join2)
-    ///
     static void visit(ASTSelectQuery & select, ASTPtr & ast, Data & data);
 
     /// @return combined TablesInSelectQueryElement or nullptr if cannot rewrite
-    static ASTPtr replaceJoin(ASTPtr left, ASTPtr right, ASTPtr with, const String & subquery_alias);
+    static ASTPtr replaceJoin(ASTSelectQuery & select, ASTPtr left, ASTPtr right, const String & subquery_alias);
 };
 
 using JoinToSubqueryTransformVisitor = InDepthNodeVisitor<JoinToSubqueryTransformMatcher, true>;

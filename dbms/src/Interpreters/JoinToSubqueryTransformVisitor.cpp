@@ -1,4 +1,5 @@
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
+#include <Interpreters/SemanticSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,31 +18,24 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
 }
 
-/// Attaches 'with' section to the first visited ASTSelectQuery
-struct AppendWithSectionVisitorData
+/// Attach additional semantic info to generated select.
+struct AppendSemanticVisitorData
 {
     using TypeToVisit = ASTSelectQuery;
 
-    const ASTPtr & with;
+    const SemanticPtr & semantic;
     bool done = false;
 
     void visit(ASTSelectQuery & select, ASTPtr &)
     {
-        if (done || !with)
+        if (done || !semantic)
             return;
-
-        if (select.with_expression_list)
-        {
-            for (auto & expr : with->children)
-                select.with_expression_list->children.push_back(expr->clone());
-        }
-        else
-            select.with_expression_list = with->clone();
+        select.semantic = semantic->clone();
         done = true;
     }
 };
 
-/// Replaces one table element with pair
+/// Replaces one table element with pair.
 struct RewriteTablesVisitorData
 {
     using TypeToVisit = ASTTablesInSelectQuery;
@@ -61,8 +55,7 @@ struct RewriteTablesVisitorData
     }
 };
 
-
-static String getTableNameOrAlias(const ASTPtr & table_element)
+static void appendTableNameAndAlias(std::vector<String> & hidden, const ASTPtr & table_element)
 {
     auto element = static_cast<const ASTTablesInSelectQueryElement *>(table_element.get());
     if (!element || element->children.empty())
@@ -72,34 +65,14 @@ static String getTableNameOrAlias(const ASTPtr & table_element)
     if (!table_expression || table_expression->children.empty())
         throw Exception("Expected TableExpression with at least one child", ErrorCodes::LOGICAL_ERROR);
 
-    String result = table_expression->children[0]->tryGetAlias();
-    if (!result.empty())
-        return result;
+    String alias = table_expression->children[0]->tryGetAlias();
+    if (!alias.empty())
+        hidden.push_back(alias);
 
     auto identifier = static_cast<const ASTIdentifier *>(table_expression->children[0].get());
-    if (!identifier)
+    if (!identifier && alias.empty())
         throw Exception("Expected Identifier or subquery with alias", ErrorCodes::LOGICAL_ERROR);
-    return identifier->name;
-}
-
-static void addHiddenNames(ASTPtr & with_expression_list, const std::vector<String> & hidden_names, const String & new_name)
-{
-    if (!with_expression_list)
-        with_expression_list = std::make_shared<ASTExpressionList>();
-
-    ParserExpression parser;
-    for (auto & name : hidden_names)
-    {
-        if (name.empty())
-            continue;
-
-        String str_expression = "nameCoalesce(" + name + "," + new_name + ")";
-        ASTPtr expr = parseQuery(parser, str_expression, 0);
-        if (!expr)
-            throw Exception("Cannot parse expression", ErrorCodes::LOGICAL_ERROR);
-
-        with_expression_list->children.push_back(expr);
-    }
+    hidden.push_back(identifier->name);
 }
 
 
@@ -131,14 +104,17 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     for (size_t i = 1; i < num_tables - 1; ++i)
     {
         ASTPtr right = tables->children[i];
-        std::vector<String> hidden_names = {getTableNameOrAlias(left), getTableNameOrAlias(right)};
+        std::vector<String> hidden_names;
+        appendTableNameAndAlias(hidden_names, left);
+        appendTableNameAndAlias(hidden_names, right);
+
         String subquery_name = alias_prefix + toString(i);
 
-        left = replaceJoin(left, right, select.with_expression_list, subquery_name);
+        left = replaceJoin(select, left, right, subquery_name);
         if (!left)
             return;
 
-        addHiddenNames(select.with_expression_list, hidden_names, subquery_name);
+        SemanticSelectQuery::hideNames(select, hidden_names, subquery_name);
     }
 
     select.tables = std::make_shared<ASTTablesInSelectQuery>();
@@ -149,11 +125,11 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     data.done = true;
 }
 
-ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_right, ASTPtr with, const String & subquery_alias)
+ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTSelectQuery & select, ASTPtr ast_left, ASTPtr ast_right, const String & subquery_alias)
 {
     using RewriteMatcher = LinkedMatcher<
         OneTypeMatcher<RewriteTablesVisitorData>,
-        OneTypeMatcher<AppendWithSectionVisitorData>>;
+        OneTypeMatcher<AppendSemanticVisitorData>>;
     using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 
     auto left = static_cast<const ASTTablesInSelectQueryElement *>(ast_left.get());
@@ -175,7 +151,7 @@ ASTPtr JoinToSubqueryTransformMatcher::replaceJoin(ASTPtr ast_left, ASTPtr ast_r
         throw Exception("Cannot parse rewrite query", ErrorCodes::LOGICAL_ERROR);
 
     RewriteVisitor::Data visitor_data =
-        std::make_pair<RewriteTablesVisitorData, AppendWithSectionVisitorData>({ast_left, ast_right}, {with});
+        std::make_pair<RewriteTablesVisitorData, AppendSemanticVisitorData>({ast_left, ast_right}, {select.semantic});
     RewriteVisitor(visitor_data).visit(res);
     return res;
 }
