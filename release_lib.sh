@@ -96,7 +96,7 @@ function gen_revision_author {
 
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
             gen_dockerfiles "$VERSION_STRING"
-            . dbms/src/Storages/System/StorageSystemContributors.sh ||:
+            dbms/src/Storages/System/StorageSystemContributors.sh ||:
             git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/src/Storages/System/StorageSystemContributors.generated.cpp
             git push
 
