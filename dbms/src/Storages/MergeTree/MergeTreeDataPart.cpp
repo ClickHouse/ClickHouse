@@ -494,8 +494,6 @@ void MergeTreeDataPart::loadIndex()
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
-
-    bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
@@ -529,16 +527,25 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 void MergeTreeDataPart::loadChecksums(bool require)
 {
     String path = getFullPath() + "checksums.txt";
-    if (!Poco::File(path).exists())
+    Poco::File checksums_file(path);
+    if (checksums_file.exists())
+    {
+        ReadBufferFromFile file = openForReading(path);
+        if (checksums.read(file))
+        {
+            assertEOF(file);
+            bytes_on_disk = checksums.getTotalSizeOnDisk();
+        }
+        else
+            bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
+    }
+    else
     {
         if (require)
             throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        return;
+        bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
     }
-    ReadBufferFromFile file = openForReading(path);
-    if (checksums.read(file))
-        assertEOF(file);
 }
 
 void MergeTreeDataPart::loadRowsCount()
