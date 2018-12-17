@@ -45,6 +45,9 @@ namespace DB
   * Because sometimes we have many small objects, that share same allocator with same parameters,
   *  and we must avoid larger object size due to storing the same parameters in each object.
   * This is required for states of aggregate functions.
+  *
+  * TODO Pass alignment to Allocator.
+  * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0>
 class PODArray : private boost::noncopyable, private TAllocator    /// empty base optimization

@@ -61,8 +61,6 @@
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 
-#define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS 7500
-
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 /// Maximum namber of http-connections between two endpoints

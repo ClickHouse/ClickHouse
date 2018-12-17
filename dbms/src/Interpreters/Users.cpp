@@ -252,7 +252,7 @@ bool AddressPatterns::contains(const Poco::Net::IPAddress & addr) const
     return false;
 }
 
-void AddressPatterns::addFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+void AddressPatterns::addFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
@@ -276,7 +276,7 @@ void AddressPatterns::addFromConfig(const String & config_elem, Poco::Util::Abst
 }
 
 
-User::User(const String & name_, const String & config_elem, Poco::Util::AbstractConfiguration & config)
+User::User(const String & name_, const String & config_elem, const Poco::Util::AbstractConfiguration & config)
     : name(name_)
 {
     bool has_password = config.has(config_elem + ".password");

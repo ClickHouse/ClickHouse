@@ -178,7 +178,8 @@ struct AggregationMethodOneNumber
           */
         void init(ColumnRawPtrs & key_columns)
         {
-            vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+            /// We may interpret ColumnInt32 as ColumnUInt32. This breaks strict aliasing but compiler doesn't see it.
+            vec = &reinterpret_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
         }
 
         /// Get the key from the key columns for insertion into the hash table.
