@@ -39,6 +39,7 @@ You can also download and install packages manually from here: <https://repo.yan
 Yandex does not run ClickHouse on `rpm` based Linux distributions and `rpm` packages are not as thoroughly tested. So use them at your own risk, but there are many other companies that do successfully run them in production without any major issues.
 
 For CentOS, RHEL or Fedora there are the following options:
+
 * Packages from <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64/> are generated from official `deb` packages by Yandex and have byte-identical binaries.
 * Packages from <https://github.com/Altinity/clickhouse-rpm-install> are built by independent company Altinity, but are used widely without any complaints.
 * Or you can use Docker (see below).

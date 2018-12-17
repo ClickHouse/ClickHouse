@@ -9,7 +9,7 @@ namespace DB
 class ASTAsterisk : public IAST
 {
 public:
-    String getID() const override { return "Asterisk"; }
+    String getID(char) const override { return "Asterisk"; }
     ASTPtr clone() const override;
     void appendColumnName(WriteBuffer & ostr) const override;
 

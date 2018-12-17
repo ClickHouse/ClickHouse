@@ -1,6 +1,8 @@
 # 第三方开发的可视化界面
 
-## Tabix
+## 开源
+
+### Tabix
 
 ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
@@ -15,7 +17,7 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 [Tabix 文档](https://tabix.io/doc/).
 
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) 是一个交互式 UI/IDE 工具，可以运行在 OSX, Linux and Windows 平台中。
 
@@ -36,5 +38,39 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
+### LightHouse
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->
+[LightHouse](https://github.com/VKCOM/lighthouse)是ClickHouse的轻量级Web界面。
+
+特征：
+
+ - 包含过滤和元数据的表列表。
+ - 带有过滤和排序的表格预览。
+ - 只读查询执行。
+
+## 商业
+
+### DBeaver
+
+[DBeaver](https://dbeaver.io/)具有ClickHouse支持的通用桌面数据库客户端。
+
+特征：
+
+ - 使用语法高亮显示查询开发。
+ - 表格预览。
+ - 自动完成。
+
+### DataGrip
+
+[DataGrip](https://www.jetbrains.com/datagrip/)是JetBrains的数据库IDE，专门支持ClickHouse。 它还嵌入到其他基于IntelliJ的工具中：PyCharm，IntelliJ IDEA，GoLand，PhpStorm等。
+
+特征：
+
+ - 非常快速的代码完成。
+ - ClickHouse语法高亮显示。
+ - 支持ClickHouse特有的功能，例如嵌套列，表引擎。
+ - 数据编辑器。
+ - 重构。
+ - 搜索和导航。
+
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/gui/) <!--hide-->

@@ -48,7 +48,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
-`SAMPLE` has the `format SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
+`SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
 
 In the first case, the query will be executed on 'k' percent of data. For example, `SAMPLE 0.1` runs the query on 10% of data.
 In the second case, the query will be executed on a sample of no more than 'n' rows. For example, `SAMPLE 10000000` runs the query on a maximum of 10,000,000 rows.
@@ -80,7 +80,6 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
-<a name="select-array-join"></a>
 
 ### ARRAY JOIN Clause
 
@@ -334,14 +333,13 @@ The query can only specify a single ARRAY JOIN clause.
 
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
-<a name="query-language-join"></a>
 
 ### JOIN Clause
 
 Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
 !!! info "Note"
-    Not related to [ARRAY JOIN](#select-array-join).
+    Not related to [ARRAY JOIN](#array-join).
 
 
 ``` sql
@@ -351,7 +349,7 @@ FROM <left_subquery>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md#table-engine-join) engine – an array prepared for joining.
+The table names can be specified instead of `<left_subquery>` and `<right_subquery>`. This is equivalent to the `SELECT * FROM table` subquery, except in a special case when the table has the [Join](../operations/table_engines/join.md) engine – an array prepared for joining.
 
 **Supported types of `JOIN`**
 
@@ -368,7 +366,7 @@ You may skip the `OUTER` keyword it is implied by default.
 If `ALL` is specified and the right table has several matching rows, the data will be multiplied by the number of these rows. It is a normal `JOIN` behavior from standard SQL.
 If `ANY` is specified and the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
 
-You can set the default value of strictness with session configuration parameter [join_default_strictness](../operations/settings/settings.md#session-setting-join_default_strictness).
+You can set the default value of strictness with session configuration parameter [join_default_strictness](../operations/settings/settings.md).
 
 **`GLOBAL` distribution**
 
@@ -376,7 +374,7 @@ When using a normal `JOIN`, the query is sent to remote servers. Subqueries are 
 
 When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#queries-distributed-subqueries).
+Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#distributed-subqueries).
 
 **Usage Recommendations**
 
@@ -437,24 +435,24 @@ Only one `JOIN` can be specified in a query (on a single level). To run multiple
 Each time a query is run with the same `JOIN`, the subquery is run again – the result is not cached. To avoid this, use the special 'Join' table engine, which is a prepared array for joining that is always in RAM. For more information, see the section "Table engines, Join".
 
 In some cases, it is more efficient to use `IN` instead of `JOIN`.
-Among the various types of `JOIN`, the most efficient is ANY `LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
+Among the various types of `JOIN`, the most efficient is `ANY LEFT JOIN`, then `ANY INNER JOIN`. The least efficient are `ALL LEFT JOIN` and `ALL INNER JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md#dicts-external_dicts).
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of `JOIN`. For more information, see the section [External dictionaries](dicts/external_dicts.md).
 
-<a name="query_language-queries-where"></a>
+#### NULL processing
+
+The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md) setting. With `join_use_nulls=1`, `JOIN` works like in standard SQL.
+
+If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md) are not joined.
+
 
 ### WHERE Clause
-
-The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1,`  `JOIN` works like in standard SQL.
-
-If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
 
 If indexes are supported by the database table engine, the expression is evaluated on the ability to use indexes.
 
-<a name="query_language-queries-prewhere"></a>
 
 ### PREWHERE Clause
 
@@ -513,7 +511,7 @@ A constant can't be specified as arguments for aggregate functions. Example: sum
 
 #### NULL processing
 
-For grouping, ClickHouse interprets [NULL](syntax.md#null-literal) as a value, and `NULL=NULL`.
+For grouping, ClickHouse interprets [NULL](syntax.md) as a value, and `NULL=NULL`.
 
 Here's an example to show what this means.
 
@@ -613,7 +611,6 @@ Allows filtering the result received after GROUP BY, similar to the WHERE clause
 WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY), while HAVING is performed after it.
 If aggregation is not performed, HAVING can't be used.
 
-<a name="query_language-queries-order_by"></a>
 
 ### ORDER BY Clause
 
@@ -696,6 +693,8 @@ The result will be the same as if GROUP BY were specified across all the fields 
 
 DISTINCT is not supported if SELECT has at least one array column.
 
+`DISTINCT` works with [NULL](syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
+
 ### LIMIT Clause
 
 LIMIT m allows you to select the first 'm' rows from the result.
@@ -704,8 +703,6 @@ LIMIT n, m allows you to select the first 'm' rows from the result after skippin
 'n' and 'm' must be non-negative integers.
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
-
-`DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ### UNION ALL Clause
 
@@ -749,7 +746,6 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
-<a name="query_language-in_operators"></a>
 
 ### IN Operators
 
@@ -817,7 +813,7 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 #### NULL processing
 
-During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 
 Here is an example with the `t_null` table:
 
@@ -848,14 +844,13 @@ FROM t_null
 └───────────────────────┘
 ```
 
-<a name="queries-distributed-subqueries"></a>
 
 #### Distributed Subqueries
 
-There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / ` OIN`  and `IN GLOBAL`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
+There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / `JOIN`  and `GLOBAL IN`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
 !!! attention
-    Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode` setting.
+    Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md) `distributed_product_mode` setting.
 
 When using the regular IN, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 

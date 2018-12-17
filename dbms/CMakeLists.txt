@@ -264,6 +264,11 @@ target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
+if (USE_HDFS)
+    target_link_libraries (dbms PRIVATE ${HDFS3_LIBRARY})
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+endif()
+
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
@@ -285,6 +290,11 @@ target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE
 
 add_subdirectory (programs)
 add_subdirectory (tests)
+
+if (GLIBC_COMPATIBILITY AND NOT CLICKHOUSE_SPLIT_BINARY)
+    MESSAGE(STATUS "Some symbols from glibc will be replaced for compatibility")
+    target_link_libraries(dbms PUBLIC glibc-compatibility)
+endif()
 
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

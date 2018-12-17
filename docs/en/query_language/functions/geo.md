@@ -77,8 +77,8 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Input values**
 
-- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md#data_type-tuple) —  A  tuple of two numbers.
-- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data_types/array.md#data_type-array). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
+- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md) —  A  tuple of two numbers.
+- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data_types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
 - The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
 
 **Returned values**

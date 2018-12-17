@@ -1,17 +1,16 @@
-#include <ext/range.h>
 #include "ExternalResultDescription.h"
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
