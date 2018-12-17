@@ -5,6 +5,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+#include <common/unaligned.h>
+
 
 namespace DB
 {
@@ -176,7 +178,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 {
-    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    const size_t string_size = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size);
 
     const size_t old_size = chars.size();
