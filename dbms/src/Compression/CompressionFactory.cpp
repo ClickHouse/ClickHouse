@@ -66,6 +66,9 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments) const
 {
+    if (family_name == "MULTIPLE")
+        throw Exception("Codec MULTIPLE cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
+
     const auto family_and_creator = family_name_with_codec.find(family_name);
 
     if (family_and_creator == family_name_with_codec.end())
@@ -101,6 +104,7 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(const String & fami
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
+void registerCodecMultiple(CompressionCodecFactory & factory);
 //void registerCodecDelta(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -109,6 +113,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecLZ4(*this);
     registerCodecNone(*this);
     registerCodecZSTD(*this);
+    registerCodecMultiple(*this);
 //    registerCodecDelta(*this);
 }
 

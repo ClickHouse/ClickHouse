@@ -8,7 +8,8 @@ namespace DB
 class CompressionCodecMultiple final : public ICompressionCodec
 {
 public:
-    CompressionCodecMultiple(Codecs codecs);
+    CompressionCodecMultiple() = default;
+    explicit CompressionCodecMultiple(Codecs codecs);
 
     char getMethodByte() override;
 
