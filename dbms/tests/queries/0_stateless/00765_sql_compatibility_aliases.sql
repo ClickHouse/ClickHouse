@@ -16,6 +16,7 @@ select left('foo', 2);
 select LEFT('foo', 123);
 select RIGHT('bar', 1);
 select right('bar', 123);
+select ltrim('') || rtrim('') || trim('');
 select ltrim('   foo');
 select RTRIM('   foo   ');
 select trim(TRAILING 'x' FROM 'xxfooxx');

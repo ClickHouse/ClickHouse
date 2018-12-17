@@ -20,6 +20,7 @@
         <substitution>
            <name>func</name>
            <values>
+               <value>value</value>
                <value>trimLeft(value)</value>
                <value>trimRight(value)</value>
                <value>trimBoth(value)</value>
