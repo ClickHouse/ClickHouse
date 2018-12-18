@@ -115,6 +115,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionSubtractHours(factory);
     registerFunctionSubtractDays(factory);
     registerFunctionSubtractWeeks(factory);
+    registerFunctionSubtractMonths(factory);
     registerFunctionSubtractQuarters(factory);
     registerFunctionSubtractYears(factory);
     registerFunctionDateDiff(factory);
