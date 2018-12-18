@@ -18,9 +18,9 @@ import os
 
 
 def concatenate(lang, docs_path, single_page_file):
-
     proj_config = os.path.join(docs_path, 'toc_%s.yml' % lang)
     lang_path = os.path.join(docs_path, lang)
+    az_re = re.compile(r'[a-z]')
 
     with open(proj_config) as cfg_file:
         files_to_concatenate = []
@@ -45,13 +45,18 @@ def concatenate(lang, docs_path, single_page_file):
             anchors.add(parts[-2] + '/')
             anchors.add('/'.join(parts[1:]))
 
-            for part in parts[0:-2]:
+            for part in parts[0:-2] if len(parts) > 2 else parts:
                 for prefix in prefixes:
-                    anchors.add(prefix + tmp_path)
+                    anchor = prefix + tmp_path
+                    if anchor:
+                        anchors.add(anchor)
+                        anchors.add('../' + anchor)
+                        anchors.add('../../' + anchor)
                 tmp_path = tmp_path.replace(part, '..')
 
             for anchor in anchors:
-                single_page_file.write('<a name="%s"></a>\n' % anchor)
+                if re.search(az_re, anchor):
+                    single_page_file.write('<a name="%s"></a>\n' % anchor)
 
             single_page_file.write('\n\n')
 
