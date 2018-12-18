@@ -3,8 +3,11 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
+
+#include <Poco/Util/MapConfiguration.h>
 
 #include <numeric>
 #include <unordered_map>
@@ -20,6 +23,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST;
 }
 
 namespace
@@ -387,16 +391,72 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     return res_attributes;
 }
 
+using Poco::AutoPtr;
+using namespace Poco::Util;
+void addSourceFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
+{
+    (void)conf;
+    // TODO: тут может быть жесть
+    String prefix = "source." + create.dictionary_source->source->name;
+}
+
+
+void addLayoutFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
+{
+    String prefix = "layout." + create.dictionary_source->layout->name;
+    if (create.dictionary_source->layout->name == "cache") // TODO: may be factory here would be more appropriate
+    {
+        prefix += ".size_in_cells";
+        const IAST & args = *create.dictionary_source->layout->arguments;
+        conf->setUInt64(prefix, typeid_cast<ASTLiteral &>(*args.children.at(0)).value.get<UInt64>());
+        return;
+    }
+
+    conf->setString(prefix, "");
+}
+
+
+void addLifetimeFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
+{
+    const String prefix = "lifetime";
+    const IAST & args = *create.dictionary_source->lifetime->arguments;
+    if (args.children.size() == 0 || args.children.size() > 2)
+        throw Exception("Lifetime section should include either max time, or min,max times", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
+
+    UInt64 min_time = 0;
+    UInt64 max_time = 0;
+    if (args.children.size() == 2)
+    {
+        min_time = typeid_cast<ASTLiteral &>(*args.children.at(0)).value.get<UInt64>();
+    }
+
+    size_t index = args.children.size() - 1;
+    max_time = typeid_cast<ASTLiteral &>(*args.children.at(index)).value.get<UInt64>();
+
+    conf->setUInt64(prefix + ".min", min_time);
+    conf->setUInt64(prefix + ".max", max_time);
+}
+
+
+void addStructureFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
+{
+    // TODO: тут тоже может быть жесть
+    (void)conf;
+    (void)create;
+}
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(const ASTCreateQuery & create)
 {
-    Poco::AutoPtr<Poco::Util::AbstractConfiguration> configuration = new Poco::Util::LayeredConfiguration();
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> conf = new Poco::Util::MapConfiguration();
     if (create.dictionary.empty())
-        return configuration;
+        return conf;
 
-    configuration->setString("name", create.dictionary);
-    // TODO: implement here
-    return configuration;
+    conf->setString("name", create.dictionary);
+    addSourceFieldsFromAST(conf, create);
+    addLayoutFieldsFromAST(conf, create);
+    addStructureFieldsFromAST(conf, create);
+    addLifetimeFieldsFromAST(conf, create);
+    return conf;
 }
 
 }

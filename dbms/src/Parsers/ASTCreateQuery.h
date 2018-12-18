@@ -92,9 +92,8 @@ public:
     ASTFunction * replica = nullptr;
     String database;
     String table;
-    UInt64 min_lifetime;
-    UInt64 max_lifetime;
-    String layout;
+    ASTFunction * lifetime;
+    ASTFunction * layout;
     IAST * primary_key;
 
     String getID() const override;
