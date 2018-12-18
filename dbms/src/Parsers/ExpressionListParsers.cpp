@@ -621,6 +621,8 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
         function_name = "toIntervalWeek";
     else if (ParserKeyword("MONTH").ignore(pos, expected))
         function_name = "toIntervalMonth";
+    else if (ParserKeyword("QUARTER").ignore(pos, expected))
+        function_name = "toIntervalQuarter";
     else if (ParserKeyword("YEAR").ignore(pos, expected))
         function_name = "toIntervalYear";
     else
