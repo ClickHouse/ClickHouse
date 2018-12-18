@@ -37,9 +37,9 @@ DROP TABLE IF EXISTS test.compression_codec_multiple;
 
 CREATE TABLE test.compression_codec_multiple (
     id UInt64 CODEC(LZ4, ZSTD, NONE),
-    data String CODEC(ZSTD, NONE, LZ4, LZ4),
+    data String CODEC(ZSTD(2), NONE, LZ4, LZ4),
     ddd Date CODEC(NONE, NONE, NONE, LZ4, ZSTD),
-    somenum Float64 CODEC(LZ4, LZ4, ZSTD, ZSTD, ZSTD)
+    somenum Float64 CODEC(LZ4, LZ4, ZSTD(2), ZSTD(3), ZSTD(1))
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 INSERT INTO test.compression_codec_multiple VALUES (1, 'world', toDate('2018-10-05'), 1.1), (2, 'hello', toDate('2018-10-01'), 2.2), (3, 'buy', toDate('2018-10-11'), 3.3);
