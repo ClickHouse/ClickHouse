@@ -1,6 +1,5 @@
 # Серверные настройки
 
-<a name="server_settings-builtin_dictionaries_reload_interval"></a>
 
 ## builtin_dictionaries_reload_interval
 
@@ -16,7 +15,6 @@ ClickHouse перезагружает встроенные словари с з�
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-<a name="server_settings-compression"></a>
 
 ## compression
 
@@ -58,7 +56,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </compression>
 ```
 
-<a name="server_settings-default_database"></a>
 
 ## default_database
 
@@ -72,13 +69,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_database>default</default_database>
 ```
 
-<a name="server_settings-default_profile"></a>
 
 ## default_profile
 
 Профиль настроек по умолчанию.
 
-Профили настроек находятся в файле, указанном в параметре [user_config](#server_settings-users_config).
+Профили настроек находятся в файле, указанном в параметре `user_config`.
 
 **Пример**
 
@@ -86,7 +82,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <default_profile>default</default_profile>
 ```
 
-<a name="server_settings-dictionaries_config"></a>
 
 ## dictionaries_config
 
@@ -97,7 +92,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 -   Указывается абсолютным или относительно конфигурационного файла сервера.
 -   Может содержать wildcard-ы \* и ?.
 
-Смотрите также "[Внешние словари](../../query_language/dicts/external_dicts.md#dicts-external_dicts)".
+Смотрите также "[Внешние словари](../../query_language/dicts/external_dicts.md)".
 
 **Пример**
 
@@ -105,7 +100,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-<a name="server_settings-dictionaries_lazy_load"></a>
 
 ## dictionaries_lazy_load
 
@@ -123,7 +117,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-<a name="server_settings-format_schema_path"></a>
 
 ## format_schema_path
 
@@ -137,7 +130,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-<a name="server_settings-graphite"></a>
 
 ## graphite
 
@@ -171,13 +163,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </graphite>
 ```
 
-<a name="server_settings-graphite_rollup"></a>
 
 ## graphite_rollup
 
 Настройка прореживания данных для Graphite.
 
-Подробнее читайте в разделе [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
+Подробнее читайте в разделе [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md).
 
 **Пример**
 
@@ -201,13 +192,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </graphite_rollup_example>
 ```
 
-<a name="server_settings-http_port"></a>
 
 ## http_port/https_port
 
 Порт для обращений к серверу по протоколу HTTP(s).
 
-Если указан `https_port`, то требуется конфигурирование [openSSL](#server_settings-openSSL).
+Если указан `https_port`, то требуется конфигурирование [openSSL](#openssl).
 
 Если указан `http_port`, то настройка openSSL игнорируется, даже если она задана.
 
@@ -217,7 +207,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <https>0000</https>
 ```
 
-<a name="server_settings-http_server_default_response"></a>
 
 ## http_server_default_response
 
@@ -247,7 +236,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <include_from>/etc/metrica.xml</include_from>
 ```
 
-<a name="server_settings-interserver_http_port"></a>
 
 ## interserver_http_port
 
@@ -259,7 +247,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <interserver_http_port>9009</interserver_http_port>
 ```
 
-<a name="server_settings-interserver_http_host"></a>
 
 ## interserver_http_host
 
@@ -275,7 +262,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-<a name="server_settings-keep_alive_timeout"></a>
 
 ## keep_alive_timeout
 
@@ -287,7 +273,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <keep_alive_timeout>10</keep_alive_timeout>
 ```
 
-<a name="server_settings-listen_host"></a>
 
 ## listen_host
 
@@ -300,7 +285,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <listen_host>127.0.0.1</listen_host>
 ```
 
-<a name="server_settings-logger"></a>
 
 ## logger
 
@@ -349,7 +333,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - format - формат сообщений. Возможные значения - ``bsd`` и ``syslog``
 
 
-<a name="server_settings-macros"></a>
 
 ## macros
 
@@ -357,7 +340,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 Можно не указывать, если реплицируемых таблицы не используются.
 
-Подробнее смотрите в разделе "[Создание реплицируемых таблиц](../../operations/table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
+Подробнее смотрите в разделе "[Создание реплицируемых таблиц](../../operations/table_engines/replication.md)".
 
 **Пример**
 
@@ -365,11 +348,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <macros incl="macros" optional="true" />
 ```
 
-<a name="server_settings-mark_cache_size"></a>
 
 ## mark_cache_size
 
-Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Приблизительный размер (в байтах) кеша "засечек", используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
 Кеш общий для сервера, память выделяется по мере необходимости. Кеш не может быть меньше, чем 5368709120.
 
@@ -379,7 +361,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <mark_cache_size>5368709120</mark_cache_size>
 ```
 
-<a name="server_settings-max_concurrent_queries"></a>
 
 ## max_concurrent_queries
 
@@ -391,7 +372,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_concurrent_queries>100</max_concurrent_queries>
 ```
 
-<a name="server_settings-max_connections"></a>
 
 ## max_connections
 
@@ -403,7 +383,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_connections>4096</max_connections>
 ```
 
-<a name="server_settings-max_open_files"></a>
 
 ## max_open_files
 
@@ -419,13 +398,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_open_files>262144</max_open_files>
 ```
 
-<a name="server_settings-max_table_size_to_drop"></a>
 
 ## max_table_size_to_drop
 
 Ограничение на удаление таблиц.
 
-Если размер таблицы семейства [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
+Если размер таблицы семейства [MergeTree](../../operations/table_engines/mergetree.md) превышает `max_table_size_to_drop` (в байтах), то ее нельзя удалить запросом DROP.
 
 Если таблицу все же необходимо удалить, не перезапуская при этом сервер ClickHouse, то необходимо создать файл `<clickhouse-path>/flags/force_drop_table` и выполнить запрос DROP.
 
@@ -439,11 +417,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-<a name="server_settings-merge_tree"></a>
 
 ## merge_tree
 
-Тонкая настройка таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Тонкая настройка таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
 Подробнее смотрите в заголовочном файле MergeTreeSettings.h.
 
@@ -455,7 +432,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </merge_tree>
 ```
 
-<a name="server_settings-openSSL"></a>
 
 ## openSSL
 
@@ -516,11 +492,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </openSSL>
 ```
 
-<a name="server_settings-part_log"></a>
 
 ## part_log
 
-Логгирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
+Логгирование событий, связанных с данными типа [MergeTree](../../operations/table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
 Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
 
@@ -541,7 +516,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
-- partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md).
 - flush_interval_milliseconds - Период сброса данных из буфера в памяти в таблицу.
 
 
@@ -556,7 +531,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </part_log>
 ```
 
-<a name="server_settings-path"></a>
 
 ## path
 
@@ -571,11 +545,10 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <path>/var/lib/clickhouse/</path>
 ```
 
-<a name="server_settings-query_log"></a>
 
 ## query_log
 
-Настройка логгирования запросов, принятых с настройкой [log_queries=1](../settings/settings.md#settings_settings-log_queries).
+Настройка логгирования запросов, принятых с настройкой [log_queries=1](../settings/settings.md).
 
 Запросы логгируются не в отдельный файл, а в таблицу ClickHouse.
 
@@ -583,7 +556,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 - database - Имя базы данных.
 - table - Имя таблицы.
-- partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by - Устанавливает [произвольный ключ партиционирования](../../operations/table_engines/custom_partitioning_key.md).
 - flush_interval_milliseconds - Период сброса данных из буфера в памяти в таблицу.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
@@ -599,13 +572,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-<a name="server_settings-remote_servers"></a>
 
 ## remote_servers
 
 Конфигурация кластеров, которые использует движок таблиц Distributed.
 
-Пример настройки смотрите в разделе "[Движки таблиц/Distributed](../../operations/table_engines/distributed.md#table_engines-distributed)".
+Пример настройки смотрите в разделе "[Движки таблиц/Distributed](../../operations/table_engines/distributed.md)".
 
 **Пример**
 
@@ -616,7 +588,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 Значение атрибута `incl` смотрите в разделе "[Конфигурационные файлы](../configuration_files.md#configuration_files)".
 
 
-<a name="server_settings-timezone"></a>
 
 ## timezone
 
@@ -632,7 +603,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <timezone>Europe/Moscow</timezone>
 ```
 
-<a name="server_settings-tcp_port"></a>
 
 ## tcp_port
 
@@ -644,7 +614,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tcp_port>9000</tcp_port>
 ```
 
-<a name="server_settings-tmp_path"></a>
 
 ## tmp_path
 
@@ -659,13 +628,12 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-<a name="server_settings-uncompressed_cache_size"></a>
 
 ## uncompressed_cache_size
 
-Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
+Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
-Кеш единый для сервера. Память выделяется по-требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache).
+Кеш единый для сервера. Память выделяется по-требованию. Кеш используется в том случае, если включена опция [use_uncompressed_cache](../settings/settings.md).
 
 Несжатый кеш выгодно использовать для очень коротких запросов в отдельных случаях.
 
@@ -677,7 +645,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## user_files_path
 
-Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../query_language/table_functions/file.md#table_functions-file).
+Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../query_language/table_functions/file.md).
 
 **Пример**
 
@@ -685,7 +653,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
-<a name="server_settings-users_config"></a>
 
 ## users_config
 
@@ -702,7 +669,6 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <users_config>users.xml</users_config>
 ```
 
-<a name="server_settings-zookeeper"></a>
 
 ## zookeeper
 
@@ -712,7 +678,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 Параметр можно не указывать, если реплицированные таблицы не используются.
 
-Подробно читайте в разделе "[Репликация](../../operations/table_engines/replication.md#table_engines-replication)".
+Подробно читайте в разделе "[Репликация](../../operations/table_engines/replication.md)".
 
 **Пример**
 

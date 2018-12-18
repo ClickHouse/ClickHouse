@@ -39,6 +39,26 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - مانیتورینگ کافکا و جداول replicate (بزودی);
 - و بسیاری از ویژگی های دیگر برای شما.
 
+### LightHouse
+
+[LightHouse](https://github.com/VKCOM/lighthouse) رابط کاربری سبک وزن برای ClickHouse است.
+
+امکانات:
+
+- لیست جدول با فیلتر کردن و ابرداده.
+- پیش نمایش جدول با فیلتر کردن و مرتب سازی.
+- اعداد نمایش داده شده فقط خواندنی
+
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) یک مشتری خط فرمان برای ClickHouse است که در پایتون 3 نوشته شده است.
+
+امکانات:
+- تکمیل خودکار
+- نحو برجسته برای نمایش داده ها و خروجی داده ها.
+- پشتیبانی از Pager برای خروجی داده.
+- دستورات پست سفارشی مانند PostgreSQL.
+
 ## تجاری
 
 ### DBeaver
@@ -65,4 +85,4 @@ interface تحت وب برای ClickHouse در پروژه [Tabix](https://github
 - جستجو و ناوبری
 
 </div>
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party_gui/) <!--hide-->
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/third-party/gui/) <!--hide-->

@@ -13,6 +13,9 @@
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
+#include <common/unaligned.h>
+
+
 namespace DB
 {
 
@@ -44,7 +47,6 @@ public:
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
-    size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
@@ -100,6 +102,7 @@ private:
 
     ColumnPtr column_holder;
     bool is_nullable;
+    size_t size_of_value_if_fixed = 0;
     ReverseIndex<UInt64, ColumnType> index;
 
     /// For DataTypeNullable, stores null map.
@@ -151,6 +154,7 @@ template <typename ColumnType>
 ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
     : column_holder(other.column_holder)
     , is_nullable(other.is_nullable)
+    , size_of_value_if_fixed (other.size_of_value_if_fixed)
     , index(numSpecialValues(is_nullable), 0)
 {
     index.setColumn(getRawColumnPtr());
@@ -166,6 +170,9 @@ ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
     index.setColumn(getRawColumnPtr());
     createNullMask();
+
+    if (column_holder->valuesHaveFixedSize())
+        size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
 }
 
 template <typename ColumnType>
@@ -181,6 +188,9 @@ ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nulla
 
     index.setColumn(getRawColumnPtr());
     createNullMask();
+
+    if (column_holder->valuesHaveFixedSize())
+        size_of_value_if_fixed = column_holder->sizeOfValueIfFixed();
 }
 
 template <typename ColumnType>
@@ -243,20 +253,11 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     if (x.getType() == Field::Types::Null)
         return getNullValueIndex();
 
-    auto column = getRawColumnPtr();
-    auto prev_size = static_cast<UInt64>(column->size());
+    if (size_of_value_if_fixed)
+        return uniqueInsertData(&x.get<char>(), size_of_value_if_fixed);
 
-    if ((*column)[getNestedTypeDefaultValueIndex()] == x)
-        return getNestedTypeDefaultValueIndex();
-
-    column->insert(x);
-    auto pos = index.insert(prev_size);
-    if (pos != prev_size)
-        column->popBack(1);
-
-    updateNullMask();
-
-    return pos;
+    auto & val = x.get<String>();
+    return uniqueInsertData(val.data(), val.size());
 }
 
 template <typename ColumnType>
@@ -280,48 +281,11 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
     if (column->getDataAt(getNestedTypeDefaultValueIndex()) == StringRef(pos, length))
         return getNestedTypeDefaultValueIndex();
 
-    UInt64 size = column->size();
-    UInt64 insertion_point = index.getInsertionPoint(StringRef(pos, length));
-
-    if (insertion_point == size)
-    {
-        column->insertData(pos, length);
-        index.insertFromLastRow();
-    }
+    auto insertion_point = index.insert(StringRef(pos, length));
 
     updateNullMask();
 
     return insertion_point;
-}
-
-template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueInsertDataWithTerminatingZero(const char * pos, size_t length)
-{
-    if (std::is_same<ColumnType, ColumnString>::value)
-        return uniqueInsertData(pos, length - 1);
-
-    if (column_holder->valuesHaveFixedSize())
-        return uniqueInsertData(pos, length);
-
-    /// Don't know if data actually has terminating zero. So, insert it firstly.
-
-    auto column = getRawColumnPtr();
-    size_t prev_size = column->size();
-    column->insertDataWithTerminatingZero(pos, length);
-
-    if (column->compareAt(getNestedTypeDefaultValueIndex(), prev_size, *column, 1) == 0)
-    {
-        column->popBack(1);
-        return getNestedTypeDefaultValueIndex();
-    }
-
-    auto position = index.insert(prev_size);
-    if (position != prev_size)
-        column->popBack(1);
-
-    updateNullMask();
-
-    return static_cast<size_t>(position);
 }
 
 template <typename ColumnType>
@@ -362,23 +326,20 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
         }
     }
 
-    auto column = getRawColumnPtr();
-    size_t prev_size = column->size();
-    new_pos = column->deserializeAndInsertFromArena(pos);
-
-    if (column->compareAt(getNestedTypeDefaultValueIndex(), prev_size, *column, 1) == 0)
+    /// Numbers, FixedString
+    if (size_of_value_if_fixed)
     {
-        column->popBack(1);
-        return getNestedTypeDefaultValueIndex();
+        new_pos = pos + size_of_value_if_fixed;
+        return uniqueInsertData(pos, size_of_value_if_fixed);
     }
 
-    auto index_pos = index.insert(prev_size);
-    if (index_pos != prev_size)
-        column->popBack(1);
+    /// String
+    const size_t string_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(string_size);
+    new_pos = pos + string_size;
 
-    updateNullMask();
-
-    return static_cast<size_t>(index_pos);
+    /// -1 because of terminating zero
+    return uniqueInsertData(pos, string_size - 1);
 }
 
 template <typename ColumnType>
@@ -482,20 +443,14 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
-    auto check_inserted_position = [&next_position](UInt64 inserted_position)
+    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> & cur_index) -> MutableColumnPtr
     {
-        if (inserted_position != next_position)
-            throw Exception("Inserted position " + toString(inserted_position)
-                            + " is not equal with expected " + toString(next_position), ErrorCodes::LOGICAL_ERROR);
-    };
+        auto inserted_pos = cur_index.insert(ref);
+        positions[num_added_rows] = inserted_pos;
+        if (inserted_pos == next_position)
+            return update_position(next_position);
 
-    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> * cur_index)
-    {
-        positions[num_added_rows] = next_position;
-        cur_index->getColumn()->insertData(ref.data, ref.size);
-        auto inserted_pos = cur_index->insertFromLastRow();
-        check_inserted_position(inserted_pos);
-        return update_position(next_position);
+        return nullptr;
     };
 
     for (; num_added_rows < length; ++num_added_rows)
@@ -509,29 +464,21 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
         else
         {
             auto ref = src_column->getDataAt(row);
-            auto cur_index = &index;
-            bool inserted = false;
+            MutableColumnPtr res = nullptr;
 
-            while (!inserted)
+            if (secondary_index && next_position >= max_dictionary_size)
             {
-                auto insertion_point = cur_index->getInsertionPoint(ref);
-
-                if (insertion_point == cur_index->lastInsertionPoint())
-                {
-                    if (secondary_index && cur_index != secondary_index && next_position >= max_dictionary_size)
-                    {
-                        cur_index = secondary_index;
-                        continue;
-                    }
-
-                    if (auto res = insert_key(ref, cur_index))
-                        return res;
-                }
+                auto insertion_point = index.getInsertionPoint(ref);
+                if (insertion_point == index.lastInsertionPoint())
+                    res = insert_key(ref, *secondary_index);
                 else
-                   positions[num_added_rows] = insertion_point;
-
-                inserted = true;
+                    positions[num_added_rows] = insertion_point;
             }
+            else
+                res = insert_key(ref, index);
+
+            if (res)
+                return res;
         }
     }
 

@@ -29,6 +29,7 @@ nav:
     - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
     - 'یکپارچگی': 'interfaces/third-party/integrations.md'
     - 'رابط های بصری': 'interfaces/third-party/gui.md'
+    - 'پروکسی': 'interfaces/third-party/proxy.md'
 
 - 'Data types':
   - 'Introduction': 'data_types/index.md'
@@ -128,6 +129,7 @@ nav:
       - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
       - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
       - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
+      - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
       - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
     - 'For small data':
       - 'TinyLog': 'operations/table_engines/tinylog.md'

@@ -1,6 +1,6 @@
-#if (OS_LINUX)
-option (USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
-#endif ()
+if(NOT ARCH_32)
+    option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
+endif()
 
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 
