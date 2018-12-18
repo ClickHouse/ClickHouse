@@ -1,4 +1,3 @@
-<a name="table_engines-graphitemergetree"></a>
 
 # GraphiteMergeTree
 
@@ -8,13 +7,13 @@ Graphite хранит в ClickHouse полные данные, а получат
 
 -   Без прореживания.
 
-    Используется движок [MergeTree](mergetree.md#table_engines-mergetree).
+    Используется движок [MergeTree](mergetree.md).
 
 -   С прореживанием.
 
     Используется движок `GraphiteMergeTree`.
 
-Движок наследует свойства MergeTree. Настройки прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера .
+Движок наследует свойства MergeTree. Настройки прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md) в конфигурации сервера .
 
 ## Использование движка
 

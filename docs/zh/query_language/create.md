@@ -9,7 +9,6 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 数据库其实只是用于存放表的一个目录。
 如果查询中存在`IF NOT EXISTS`，则当数据库已经存在时，该查询不会返回任何错误。
 
-<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 

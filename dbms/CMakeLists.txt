@@ -291,6 +291,11 @@ target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE
 add_subdirectory (programs)
 add_subdirectory (tests)
 
+if (GLIBC_COMPATIBILITY AND NOT CLICKHOUSE_SPLIT_BINARY)
+    MESSAGE(STATUS "Some symbols from glibc will be replaced for compatibility")
+    target_link_libraries(dbms PUBLIC glibc-compatibility)
+endif()
+
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories

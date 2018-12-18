@@ -1,4 +1,3 @@
-<a name="aggregate_functions_reference"></a>
 
 # Function reference
 
@@ -35,7 +34,7 @@ anyHeavy(column)
 
 **Example**
 
-Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select any frequently occurring value in the `AirlineID` column.
+Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select any frequently occurring value in the `AirlineID` column.
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
@@ -213,7 +212,6 @@ SELECT argMin(user, salary) FROM salary
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
-<a name="agg_function-sum"></a>
 
 ## sum(x)
 
@@ -226,7 +224,6 @@ Computes the sum of the numbers, using the same data type for the result as for 
 
 Only works for numbers.
 
-<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -322,7 +319,6 @@ For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
 
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
-<a name="agg_functions_groupArrayInsertAt"></a>
 
 ## groupArrayInsertAt(x)
 
@@ -462,7 +458,7 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 **Example**
 
-Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
+Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res

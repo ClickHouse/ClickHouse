@@ -95,7 +95,7 @@ Only a small set of symbols are escaped. You can easily stumble onto a string va
 
 Arrays are written as a list of comma-separated values in square brackets. Number items in the array are fomratted as normally, but dates, dates with times, and strings are written in single quotes with the same escaping rules as above.
 
-[NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
+[NULL](../query_language/syntax.md) is formatted as `\N`.
 
 <a name="tabseparatedraw"></a>
 
@@ -141,7 +141,7 @@ SearchPhrase=curtain designs        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-[NULL](../query_language/syntax.md#null-literal) is formatted as `\N`.
+[NULL](../query_language/syntax.md) is formatted as `\N`.
 
 ``` sql
 SELECT * FROM t_null FORMAT TSKV
@@ -267,7 +267,7 @@ If the query contains GROUP BY, rows_before_limit_at_least is the exact number o
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-ClickHouse supports [NULL](../query_language/syntax.md#null-literal), which is displayed as `null`  in the JSON output.
+ClickHouse supports [NULL](../query_language/syntax.md), which is displayed as `null`  in the JSON output.
 
 See also the JSONEachRow format.
 
@@ -361,7 +361,7 @@ Outputs data as Unicode-art tables, also using ANSI-escape sequences for setting
 A full grid of the table is drawn, and each row occupies two lines in the terminal.
 Each result block is output as a separate table. This is necessary so that blocks can be output without buffering results (buffering would be necessary in order to pre-calculate the visible width of all the values).
 
-[NULL](../query_language/syntax.md#null-literal) is output as `ᴺᵁᴸᴸ`.
+[NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 ``` sql
 SELECT * FROM t_null
@@ -457,11 +457,11 @@ FixedString is represented simply as a sequence of bytes.
 
 Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by successive elements of the array.
 
-For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md#data_type-nullable) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
+For [NULL](../query_language/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../data_types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
 
 ## Values
 
-Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md#null-literal) is represented as `NULL`.
+Prints every row in brackets. Rows are separated by commas. There is no comma after the last row. The values inside the brackets are also comma-separated. Numbers are output in decimal format without quotes. Arrays are output in square brackets. Strings, dates, and dates with times are output in quotes. Escaping rules and parsing are similar to the [TabSeparated](#tabseparated) format. During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). [NULL](../query_language/syntax.md) is represented as `NULL`.
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
@@ -473,7 +473,7 @@ This is the format that is used in `INSERT INTO t VALUES ...`, but you can also 
 
 Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows, if each row consists of a large number of columns.
 
-[NULL](../query_language/syntax.md#null-literal) is output as `ᴺᵁᴸᴸ`.
+[NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 Example:
 
@@ -618,7 +618,7 @@ struct Message {
 }
 ```
 
-Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) in the server configuration.
+Schema files are in the file that is located in the directory specified in [ format_schema_path](../operations/server_settings/settings.md) in the server configuration.
 
 Deserialization is effective and usually doesn't increase the system load.
 
