@@ -698,6 +698,70 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
+bool ParserDateDiffExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    const char * interval_name = nullptr;
+    ASTPtr left_node;
+    ASTPtr right_node;
+
+    if (!(ParserKeyword("DATEDIFF").ignore(pos, expected) || ParserKeyword("DATE_DIFF").ignore(pos, expected)))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+
+    if (ParserKeyword("SECOND").ignore(pos, expected))
+        interval_name = "second";
+    else if (ParserKeyword("MINUTE").ignore(pos, expected))
+        interval_name = "minute";
+    else if (ParserKeyword("HOUR").ignore(pos, expected))
+        interval_name = "hour";
+    else if (ParserKeyword("DAY").ignore(pos, expected))
+        interval_name = "day";
+    else if (ParserKeyword("WEEK").ignore(pos, expected))
+        interval_name = "week";
+    else if (ParserKeyword("MONTH").ignore(pos, expected))
+        interval_name = "month";
+    else if (ParserKeyword("QUARTER").ignore(pos, expected))
+        interval_name = "quarter";
+    else if (ParserKeyword("YEAR").ignore(pos, expected))
+        interval_name = "year";
+    else
+        return false;
+
+    if (pos->type != TokenType::Comma)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, left_node, expected))
+        return false;
+
+    if (pos->type != TokenType::Comma)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, right_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children = {std::make_shared<ASTLiteral>(interval_name), left_node, right_node};
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = "dateDiff";
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    node = std::move(func_node);
+
+    return true;
+}
+
 
 bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -999,6 +1063,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserLiteral().parse(pos, node, expected)
         || ParserCastExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
+        || ParserDateDiffExpression().parse(pos, node, expected)
         || ParserSubstringExpression().parse(pos, node, expected)
         || ParserTrimExpression().parse(pos, node, expected)
         || ParserLeftExpression().parse(pos, node, expected)

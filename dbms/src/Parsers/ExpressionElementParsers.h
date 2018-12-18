@@ -131,6 +131,12 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserDateDiffExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "DATE_DIFF expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /** NULL literal.
   */
