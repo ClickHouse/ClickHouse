@@ -926,7 +926,7 @@ This release contains bug fixes for the previous release 1.1.54310:
 ### New features:
 
 * Custom partitioning key for the MergeTree family of table engines.
-* [ Kafka](https://clickhouse.yandex/docs/en/single/index.html#document-table_engines/kafka)  table engine.
+* [Kafka](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/)  table engine.
 * Added support for loading [CatBoost](https://catboost.yandex/)  models and applying them to data stored in ClickHouse.
 * Added support for time zones with non-integer offsets from UTC.
 * Added support for arithmetic operations with time intervals.
