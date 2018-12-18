@@ -58,10 +58,6 @@ struct ExpressionAnalyzerData
 
     bool has_global_subqueries = false;
 
-    /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
-    /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
-    NameToNameMap array_join_result_to_source;
-
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
 
