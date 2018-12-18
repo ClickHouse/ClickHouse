@@ -711,22 +711,21 @@ bool ParserDateDiffExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
     ++pos;
 
-
-    if (ParserKeyword("SECOND").ignore(pos, expected))
+    if (ParserKeyword("SECOND").ignore(pos, expected) || ParserKeyword("SS").ignore(pos, expected) || ParserKeyword("S").ignore(pos, expected))
         interval_name = "second";
-    else if (ParserKeyword("MINUTE").ignore(pos, expected))
+    else if (ParserKeyword("MINUTE").ignore(pos, expected) || ParserKeyword("MI").ignore(pos, expected) || ParserKeyword("N").ignore(pos, expected))
         interval_name = "minute";
-    else if (ParserKeyword("HOUR").ignore(pos, expected))
+    else if (ParserKeyword("HOUR").ignore(pos, expected) || ParserKeyword("HH").ignore(pos, expected))
         interval_name = "hour";
-    else if (ParserKeyword("DAY").ignore(pos, expected))
+    else if (ParserKeyword("DAY").ignore(pos, expected) || ParserKeyword("DD").ignore(pos, expected) || ParserKeyword("D").ignore(pos, expected))
         interval_name = "day";
-    else if (ParserKeyword("WEEK").ignore(pos, expected))
+    else if (ParserKeyword("WEEK").ignore(pos, expected) || ParserKeyword("WK").ignore(pos, expected) || ParserKeyword("WW").ignore(pos, expected))
         interval_name = "week";
-    else if (ParserKeyword("MONTH").ignore(pos, expected))
+    else if (ParserKeyword("MONTH").ignore(pos, expected) || ParserKeyword("MM").ignore(pos, expected) || ParserKeyword("M").ignore(pos, expected))
         interval_name = "month";
-    else if (ParserKeyword("QUARTER").ignore(pos, expected))
+    else if (ParserKeyword("QUARTER").ignore(pos, expected) || ParserKeyword("QQ").ignore(pos, expected) || ParserKeyword("Q").ignore(pos, expected))
         interval_name = "quarter";
-    else if (ParserKeyword("YEAR").ignore(pos, expected))
+    else if (ParserKeyword("YEAR").ignore(pos, expected) || ParserKeyword("YYYY").ignore(pos, expected) || ParserKeyword("YY").ignore(pos, expected))
         interval_name = "year";
     else
         return false;
