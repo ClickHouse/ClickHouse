@@ -8,6 +8,8 @@
 
 namespace DB
 {
+
+
 namespace ErrorCodes
 {
 extern const int UNKNOWN_CODEC;
