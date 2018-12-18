@@ -7,6 +7,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -17,6 +18,7 @@ namespace ErrorCodes
     extern const int CANNOT_COMPRESS;
     extern const int CANNOT_DECOMPRESS;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
+    extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 char CompressionCodecZSTD::getMethodByte()
@@ -47,7 +49,6 @@ size_t CompressionCodecZSTD::compress(char * source, size_t source_size, char * 
 size_t CompressionCodecZSTD::decompress(char * source, size_t source_size, char * dest, size_t size_decompressed)
 {
     size_t res = ZSTD_decompress(dest, size_decompressed, source, source_size);
-//        compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed_without_checksum - COMPRESSED_BLOCK_HEADER_SIZE);
 
     if (ZSTD_isError(res))
         throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
@@ -74,6 +75,8 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
             const auto children = arguments->children;
             const ASTLiteral * literal = static_cast<const ASTLiteral *>(children[0].get());
             level = literal->value.safeGet<UInt64>();
+            if (level > ZSTD_maxCLevel())
+                throw Exception("ZSTD codec can't have level more that " + toString(ZSTD_maxCLevel()) + ", given " + toString(level), ErrorCodes::ILLEGAL_CODEC_PARAMETER);
         }
 
         return std::make_shared<CompressionCodecZSTD>(level);
