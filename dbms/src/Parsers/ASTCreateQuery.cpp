@@ -18,12 +18,15 @@ ASTPtr ASTSource::clone() const
 
     if (source)
         res->set(res->source, source->clone());
+
     if (primary_key)
         res->set(res->primary_key, primary_key->clone());
 
-    res->min_lifetime = min_lifetime;
-    res->max_lifetime = max_lifetime;
-    res->layout = layout;
+    if (lifetime)
+        res->set(res->lifetime, lifetime.clone());
+
+    if (layout)
+        res->set(res->layout, layout->clone());
 
     return res;
 }
