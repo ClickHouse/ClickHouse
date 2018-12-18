@@ -1470,7 +1470,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 file.remove();
         }
 
-        mutable_part.bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(path);
+        mutable_part.bytes_on_disk = new_checksums.getTotalSizeOnDisk();
 
         /// TODO: we can skip resetting caches when the column is added.
         data_part->storage.context.dropCaches();
