@@ -55,6 +55,19 @@ struct RewriteTablesVisitorData
     }
 };
 
+static bool needRewrite(ASTSelectQuery & select)
+{
+    auto tables = static_cast<const ASTTablesInSelectQuery *>(select.tables.get());
+    if (!tables)
+        return false;
+
+    size_t num_tables = tables->children.size();
+    if (num_tables <= 2)
+        return false;
+
+    return true;
+}
+
 static void appendTableNameAndAlias(std::vector<String> & hidden, const ASTPtr & table_element)
 {
     auto element = static_cast<const ASTTablesInSelectQueryElement *>(table_element.get());
@@ -86,19 +99,15 @@ std::vector<ASTPtr *> JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data &
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     static String alias_prefix = "__join"; /// FIXME
-    static const size_t max_joins = 64; /// TODO: settings.max_subquery_depth
+
+    if (!needRewrite(select))
+        return;
 
     auto tables = static_cast<const ASTTablesInSelectQuery *>(select.tables.get());
     if (!tables)
         throw Exception("TablesInSelectQuery expected", ErrorCodes::LOGICAL_ERROR);
 
     size_t num_tables = tables->children.size();
-    if (num_tables <= 2)
-        return;
-
-    if (num_tables > max_joins)
-        throw Exception("Too much joins", ErrorCodes::TOO_DEEP_AST);
-
     ASTPtr left = tables->children[0];
 
     for (size_t i = 1; i < num_tables - 1; ++i)
