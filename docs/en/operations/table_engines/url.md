@@ -3,7 +3,7 @@
 # URL(URL, Format)
 
 Manages data on a remote HTTP/HTTPS server. This engine is similar
-to the [`File`](./file.md#) engine.
+to the [File](./file.md) engine.
 
 ## Using the engine in the ClickHouse server
 
