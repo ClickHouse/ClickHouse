@@ -13,19 +13,15 @@
             <max>5</max>
         </lifetime>
         <layout>
-            <hashed />
+            <complex_key_hashed />
         </layout>
 
         <structure>
-            <id>
-                <name>column1</name>
-            </id>
-
-            <attribute>
+            <key>
                 <name>column1</name>
                 <type>Int64</type>
                 <null_value>1</null_value>
-            </attribute>
+            </key>
 
             <attribute>
                 <name>column2</name>

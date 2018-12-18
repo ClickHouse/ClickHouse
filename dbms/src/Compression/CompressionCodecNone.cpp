@@ -22,7 +22,7 @@ size_t CompressionCodecNone::compress(char * source, size_t source_size, char * 
     return source_size;
 }
 
-size_t CompressionCodecNone::decompress(char *source, size_t /*source_size*/, char *dest, size_t size_decompressed)
+size_t CompressionCodecNone::decompress(char * source, size_t /*source_size*/, char * dest, size_t size_decompressed)
 {
     memcpy(dest, source, size_decompressed);
     return size_decompressed;
