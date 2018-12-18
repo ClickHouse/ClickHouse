@@ -12,7 +12,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnWithDictionary.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 template <>

@@ -48,7 +48,7 @@ inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAdd
 
 /// Implementation of Cluster::Address class
 
-Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     UInt16 clickhouse_port = static_cast<UInt16>(config.getInt("tcp_port", 0));
 
@@ -125,7 +125,7 @@ String Cluster::Address::toStringFull() const
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
     updateClusters(config, settings, config_name);
 }
@@ -147,7 +147,7 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
 }
 
 
-void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_name, config_keys);
@@ -156,7 +156,12 @@ void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const 
 
     impl.clear();
     for (const auto & key : config_keys)
+    {
+        if (key.find('.') != String::npos)
+            throw Exception("Cluster names with dots are not supported: `" + key + "`", ErrorCodes::SYNTAX_ERROR);
+
         impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+    }
 }
 
 Clusters::Impl Clusters::getContainer() const
@@ -169,7 +174,7 @@ Clusters::Impl Clusters::getContainer() const
 
 /// Implementation of `Cluster` class
 
-Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
+Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(cluster_name, config_keys);

@@ -28,7 +28,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
+        name_widths[i] = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
         if (name_widths[i] > max_name_width)
             max_name_width = name_widths[i];
@@ -43,7 +43,10 @@ VerticalRowOutputStream::VerticalRowOutputStream(
     }
 
     for (size_t i = 0; i < columns; ++i)
-        names_and_paddings[i].resize(max_name_width + strlen(": "), ' ');
+    {
+        size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
+        names_and_paddings[i].resize(new_size, ' ');
+    }
 }
 
 

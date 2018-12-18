@@ -29,12 +29,12 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &) const override
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionExpression>(shared_from_this());
     }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/, bool) override
     {
         Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -104,7 +104,7 @@ public:
 
         return_type = std::make_shared<DataTypeFunction>(argument_types, function_return_type);
 
-        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) +  ") -> "
+        name = "Capture[" + toString(captured_types) + "](" + toString(argument_types) + ") -> "
                + function_return_type->getName();
     }
 
@@ -113,12 +113,12 @@ public:
     const DataTypes & getArgumentTypes() const override { return captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &) const override
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionCapture>(shared_from_this());
     }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool) override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());

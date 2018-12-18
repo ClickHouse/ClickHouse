@@ -13,3 +13,5 @@ By default, the client switches to the timezone of the server when it connects. 
 
 So when working with a textual date (for example, when saving text dumps), keep in mind that there may be ambiguity during changes for daylight savings time, and there may be problems matching data if the time zone changed.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/datetime/) <!--hide-->

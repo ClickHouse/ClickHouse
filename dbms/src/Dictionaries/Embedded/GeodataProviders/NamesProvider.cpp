@@ -1,7 +1,7 @@
-#include <Dictionaries/Embedded/GeodataProviders/NamesProvider.h>
-#include <Dictionaries/Embedded/GeodataProviders/NamesFormatReader.h>
+#include "NamesProvider.h"
 
 #include <IO/ReadBufferFromFile.h>
+#include "NamesFormatReader.h"
 
 
 bool LanguageRegionsNamesDataSource::isModified() const
@@ -32,12 +32,11 @@ std::string LanguageRegionsNamesDataSource::getSourceName() const
 }
 
 
-RegionsNamesDataProvider::RegionsNamesDataProvider(const std::string & directory_)
-    : directory(directory_)
-{}
+RegionsNamesDataProvider::RegionsNamesDataProvider(const std::string & directory_) : directory(directory_)
+{
+}
 
-ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsNamesSource(
-    const std::string & language) const
+ILanguageRegionsNamesDataSourcePtr RegionsNamesDataProvider::getLanguageRegionsNamesSource(const std::string & language) const
 {
     const auto data_file = getDataFilePath(language);
     return std::make_unique<LanguageRegionsNamesDataSource>(data_file, language);

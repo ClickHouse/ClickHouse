@@ -53,7 +53,7 @@ public:
         else
         {
             /// Since no element is nullable, return a constant one.
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), UInt64(1));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(elem.column->size(), 1u);
         }
     }
 };

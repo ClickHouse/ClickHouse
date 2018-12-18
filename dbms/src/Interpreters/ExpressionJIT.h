@@ -30,7 +30,7 @@ public:
 
     bool isCompilable() const override { return true; }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return subexpressions.at(name)(builder, values); }
+    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override;
 
     String getName() const override { return name; }
 
@@ -40,7 +40,7 @@ public:
 
     const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
 
-    PreparedFunctionPtr prepare(const Block &) const override;
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override;
 
     bool isDeterministic() const override;
 

@@ -41,6 +41,11 @@ ASTPtr ASTAlterCommand::clone() const
         res->primary_key = primary_key->clone();
         res->children.push_back(res->primary_key);
     }
+    if (order_by)
+    {
+        res->order_by = order_by->clone();
+        res->children.push_back(res->order_by);
+    }
     if (partition)
     {
         res->partition = partition->clone();
@@ -101,9 +106,12 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PRIMARY KEY " << (settings.hilite ? hilite_none : "");
-        settings.ostr << "(";
         primary_key->formatImpl(settings, state, frame);
-        settings.ostr << ")";
+    }
+    else if (type == ASTAlterCommand::MODIFY_ORDER_BY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY ORDER BY " << (settings.hilite ? hilite_none : "");
+        order_by->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
@@ -142,6 +150,16 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE PARTITION " << (settings.hilite ? hilite_none : "");
         partition->formatImpl(settings, state, frame);
+
+        if (!with_name.empty())
+        {
+            settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << "WITH NAME" << (settings.hilite ? hilite_none : "")
+                          << " " << std::quoted(with_name, '\'');
+        }
+    }
+    else if (type == ASTAlterCommand::FREEZE_ALL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FREEZE";
 
         if (!with_name.empty())
         {
@@ -225,6 +243,13 @@ void ASTAlterCommand::formatImpl(
 
         values->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::COMMENT_COLUMN)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "COMMENT COLUMN " << (settings.hilite ? hilite_none : "");
+        column->formatImpl(settings, state, frame);
+        settings.ostr << " " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
+    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -255,9 +280,9 @@ void ASTAlterCommandList::formatImpl(const FormatSettings & settings, FormatStat
 
 
 /** Get the text that identifies this element. */
-String ASTAlterQuery::getID() const
+String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery_" + database + "_" + table;
+    return "AlterQuery" + (delim + database) + delim + table;
 }
 
 ASTPtr ASTAlterQuery::clone() const
@@ -269,18 +294,6 @@ ASTPtr ASTAlterQuery::clone() const
         res->set(res->command_list, command_list->clone());
 
     return res;
-}
-
-ASTPtr ASTAlterQuery::getRewrittenASTWithoutOnCluster(const std::string & new_database) const
-{
-    auto query_ptr = clone();
-    auto & query = static_cast<ASTAlterQuery &>(*query_ptr);
-
-    query.cluster.clear();
-    if (query.database.empty())
-        query.database = new_database;
-
-    return query_ptr;
 }
 
 void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

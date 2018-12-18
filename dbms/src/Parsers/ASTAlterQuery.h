@@ -12,7 +12,7 @@ limitations under the License. */
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -28,6 +28,7 @@ namespace DB
  *      DROP FROM PARAMETER param_name value,
  *      MODIFY PARAMETER param_name value
  *      DROP PARTITION partition,
+ *      COMMENT_COLUMN col_name 'comment',
  * ALTER CHANNEL [dn.]name_type
  *      ADD live_view,...
  *      DROP live_view,...
@@ -45,13 +46,16 @@ public:
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
+        COMMENT_COLUMN,
         MODIFY_PRIMARY_KEY,
+        MODIFY_ORDER_BY,
 
         DROP_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
+        FREEZE_ALL,
 
         DELETE,
         UPDATE,
@@ -87,6 +91,10 @@ public:
      */
     ASTPtr primary_key;
 
+    /** For MODIFY ORDER BY
+     */
+    ASTPtr order_by;
+
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
      */
@@ -106,6 +114,9 @@ public:
      *  IN ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live view is tored here
      */
     ASTPtr values;
+
+    /// A column comment
+    ASTPtr comment;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -127,7 +138,7 @@ public:
     /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
     bool replace = true;
 
-    String getID() const override { return "AlterCommand_" + std::to_string(static_cast<int>(type)); }
+    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 
     ASTPtr clone() const override;
 
@@ -146,7 +157,7 @@ public:
         children.push_back(command);
     }
 
-    String getID() const override { return "AlterCommandList"; }
+    String getID(char) const override { return "AlterCommandList"; }
 
     ASTPtr clone() const override;
 
@@ -154,20 +165,21 @@ protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-class ASTAlterQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    String database;
-    String table;
     bool is_channel{false}; /// true for ALTER CHANNEL
 
     ASTAlterCommandList * command_list = nullptr;
 
-    String getID() const override;
+    String getID(char) const override;
 
     ASTPtr clone() const override;
 
-    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
+    {
+        return removeOnCluster<ASTAlterQuery>(clone(), new_database);
+    }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

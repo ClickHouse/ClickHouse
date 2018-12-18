@@ -8,7 +8,7 @@
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -43,7 +43,7 @@ CREATE TABLE test.visits
 
 </div>
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -52,7 +52,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+```
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -75,7 +75,7 @@ LIMIT 10
 
 </div>
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -85,7 +85,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+```
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │
@@ -111,3 +111,4 @@ LIMIT 10
 دستور ALTER برای عناصر داخل nested بسیار محدود است.
 
 </div>
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/nested_data_structures/nested/) <!--hide-->

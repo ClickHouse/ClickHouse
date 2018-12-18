@@ -1,4 +1,3 @@
-SET allow_experimental_decimal_type = 1;
 SET send_logs_level = 'none';
 
 CREATE DATABASE IF NOT EXISTS test;
@@ -111,5 +110,67 @@ SELECT toDecimal64(123456789.123456789, 9) AS x, countEqual([x+1, x, x], x), cou
 SELECT toDecimal64(-123456789.123456789, 9) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x+0);
 SELECT toDecimal128(0.123456789123456789, 18) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x-0);
 SELECT toDecimal128(-0.1234567891123456789, 18) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x+0);
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.0', 4) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.0', 4) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12.345', 7) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12.345', 7) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toUInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toUInt64(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt64(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt64(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345', 0) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345', 0) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal32('32.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
+
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal32('32.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
+
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 5) FROM system.numbers LIMIT 2;
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 5) FROM system.numbers LIMIT 2;
+
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal32('32.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal64('64.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
+
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal32('32.2', 1) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal64('64.2', 2) FROM system.numbers LIMIT 2; -- { serverError 48 }
+SELECT number % 2 ? toDecimal128('128.1', 5) : toDecimal128('128.2', 3) FROM system.numbers LIMIT 2; -- { serverError 48 }
 
 DROP TABLE IF EXISTS test.decimal;

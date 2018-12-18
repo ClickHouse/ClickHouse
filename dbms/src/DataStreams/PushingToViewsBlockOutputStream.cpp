@@ -13,6 +13,10 @@ limitations under the License. */
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageLiveView.h>
@@ -36,7 +40,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructure(true, __PRETTY_FUNCTION__));
+    addTableLock(storage->lockStructure(true));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -59,6 +63,9 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         {
             auto dependent_table = context.getTable(database_table.first, database_table.second);
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
+
+            if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
+                addTableLock(inner_table->lockStructure(true));
 
             auto query = materialized_view.getInnerQuery();
             BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
@@ -109,35 +116,32 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             throw Exception("Unknown dependent table", ErrorCodes::UNKNOWN_STORAGE);
     }
 
+    const Settings & settings = context.getSettingsRef();
+
     /// Insert data into materialized views only after successful insert into main table
-    for (auto & view : materialized_views)
+    if (settings.parallel_view_processing && views.size() > 1)
     {
-        try
+        // Push to views concurrently if enabled, and more than one view is attached
+        ThreadPool pool(std::min(size_t(settings.max_threads), views.size()));
+        for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
-            BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(view.query, *views_context, from);
-            BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            /// Squashing is needed here because the materialized view query can generate a lot of blocks
-            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-            /// and two-level aggregation is triggered).
-            in = std::make_shared<SquashingBlockInputStream>(
-                in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-
-            in->readPrefix();
-
-            while (Block result_block = in->read())
+            auto thread_group = CurrentThread::getGroup();
+            pool.schedule([=]
             {
-                Nested::validateArraySizes(result_block);
-                view.out->write(result_block);
-            }
-
-            in->readSuffix();
+                setThreadName("PushingToViewsBlockOutputStream");
+                if (thread_group)
+                    CurrentThread::attachToIfDetached(thread_group);
+                process(block, view_num);
+            });
         }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while pushing to view " + view.database + "." + view.table);
-            throw;
-        }
+        // Wait for concurrent view processing
+        pool.wait();
+    }
+    else
+    {
+        // Process sequentially
+        for (size_t view_num = 0; view_num < views.size(); ++view_num)
+            process(block, view_num);
     }
 
 
@@ -300,6 +304,38 @@ void PushingToViewsBlockOutputStream::flush()
 
     for (auto & view : views)
         view.out->flush();
+}
+
+void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_num)
+{
+    auto & view = views[view_num];
+
+    try
+    {
+        BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
+        InterpreterSelectQuery select(view.query, *views_context, from);
+        BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+        /// Squashing is needed here because the materialized view query can generate a lot of blocks
+        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+        /// and two-level aggregation is triggered).
+        in = std::make_shared<SquashingBlockInputStream>(
+            in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+
+        in->readPrefix();
+
+        while (Block result_block = in->read())
+        {
+            Nested::validateArraySizes(result_block);
+            view.out->write(result_block);
+        }
+
+        in->readSuffix();
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("while pushing to view " + backQuoteIfNeed(view.database) + "." + backQuoteIfNeed(view.table));
+        throw;
+    }
 }
 
 }

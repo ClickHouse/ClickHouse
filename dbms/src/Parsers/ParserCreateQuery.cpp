@@ -116,6 +116,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_engine("ENGINE");
     ParserToken s_eq(TokenType::Equals);
     ParserKeyword s_partition_by("PARTITION BY");
+    ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
     ParserKeyword s_settings("SETTINGS");
@@ -126,6 +127,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr engine;
     ASTPtr partition_by;
+    ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
     ASTPtr settings;
@@ -143,6 +145,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!partition_by && s_partition_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, partition_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!primary_key && s_primary_key.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, primary_key, expected))
                 continue;
             else
                 return false;
@@ -176,6 +186,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, engine);
     storage->set(storage->partition_by, partition_by);
+    storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->settings, settings);
@@ -315,7 +326,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                storage_p.parse(pos, storage, expected);
+                if (!storage)
+                    storage_p.parse(pos, storage, expected);
             }
         }
     }
@@ -480,7 +492,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_live_view = is_live_view;
     query->is_live_channel = is_live_channel;
     query->is_populate = is_populate;
-    query->is_temporary = is_temporary;
+    query->temporary = is_temporary;
 
     if (database)
         query->database = typeid_cast<ASTIdentifier &>(*database).name;

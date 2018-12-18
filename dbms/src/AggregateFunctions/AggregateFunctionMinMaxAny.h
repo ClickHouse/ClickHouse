@@ -607,7 +607,7 @@ struct AggregateFunctionAnyLastData : Data
 
 /** Implement 'heavy hitters' algorithm.
   * Selects most frequent value if its frequency is more than 50% in each thread of execution.
-  * Otherwise, selects some arbitary value.
+  * Otherwise, selects some arbitrary value.
   * http://www.cs.umd.edu/~samir/498/karp.pdf
   */
 template <typename Data>

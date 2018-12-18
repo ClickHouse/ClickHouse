@@ -22,3 +22,5 @@
     -   При использовании HTTP API передавайте cgi-параметры (`URL?setting_1=value&setting_2=value...`).
 
 Настройки, которые можно задать только в конфигурационном файле сервера, в разделе не рассматриваются.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/settings/) <!--hide-->

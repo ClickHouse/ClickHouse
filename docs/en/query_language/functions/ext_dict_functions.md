@@ -2,7 +2,7 @@
 
 # Functions for working with external dictionaries
 
-For information on connecting and configuring external dictionaries, see "[External dictionaries](../dicts/external_dicts.md#dicts-external_dicts)".
+For information on connecting and configuring external dictionaries, see "[External dictionaries](../dicts/external_dicts.md)".
 
 ## dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64
 
@@ -45,3 +45,5 @@ The same as the `dictGetT` functions, but the default value is taken from the fu
 
 - Check whether the dictionary has the key. Returns a UInt8 value equal to 0 if there is no key and 1 if there is a key.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

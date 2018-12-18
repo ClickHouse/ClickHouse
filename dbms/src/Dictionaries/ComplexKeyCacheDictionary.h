@@ -3,22 +3,23 @@
 #include <atomic>
 #include <chrono>
 #include <map>
-#include <tuple>
-#include <vector>
 #include <shared_mutex>
+#include <variant>
+#include <vector>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
+#include <pcg_random.hpp>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/SmallObjectPool.h>
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
 #include <common/StringRef.h>
 #include <ext/bit_cast.h>
 #include <ext/map.h>
 #include <ext/scope_guard.h>
-#include <pcg_random.hpp>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
 
 
 namespace ProfileEvents
@@ -39,7 +40,8 @@ namespace DB
 class ComplexKeyCacheDictionary final : public IDictionaryBase
 {
 public:
-    ComplexKeyCacheDictionary(const std::string & name,
+    ComplexKeyCacheDictionary(
+        const std::string & name,
         const DictionaryStructure & dict_struct,
         DictionarySourcePtr source_ptr,
         const DictionaryLifetime dict_lifetime,
@@ -47,25 +49,13 @@ public:
 
     ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other);
 
-    std::string getKeyDescription() const
-    {
-        return key_description;
-    }
+    std::string getKeyDescription() const { return key_description; }
 
-    std::exception_ptr getCreationException() const override
-    {
-        return {};
-    }
+    std::exception_ptr getCreationException() const override { return {}; }
 
-    std::string getName() const override
-    {
-        return name;
-    }
+    std::string getName() const override { return name; }
 
-    std::string getTypeName() const override
-    {
-        return "ComplexKeyCache";
-    }
+    std::string getTypeName() const override { return "ComplexKeyCache"; }
 
     size_t getBytesAllocated() const override
     {
@@ -73,66 +63,42 @@ public:
             + (string_arena ? string_arena->size() : 0);
     }
 
-    size_t getQueryCount() const override
-    {
-        return query_count.load(std::memory_order_relaxed);
-    }
+    size_t getQueryCount() const override { return query_count.load(std::memory_order_relaxed); }
 
     double getHitRate() const override
     {
         return static_cast<double>(hit_count.load(std::memory_order_acquire)) / query_count.load(std::memory_order_relaxed);
     }
 
-    size_t getElementCount() const override
-    {
-        return element_count.load(std::memory_order_relaxed);
-    }
+    size_t getElementCount() const override { return element_count.load(std::memory_order_relaxed); }
 
-    double getLoadFactor() const override
-    {
-        return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size;
-    }
+    double getLoadFactor() const override { return static_cast<double>(element_count.load(std::memory_order_relaxed)) / size; }
 
-    bool isCached() const override
-    {
-        return true;
-    }
+    bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override
-    {
-        return std::make_unique<ComplexKeyCacheDictionary>(*this);
-    }
+    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<ComplexKeyCacheDictionary>(*this); }
 
-    const IDictionarySource * getSource() const override
-    {
-        return source_ptr.get();
-    }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
-    const DictionaryLifetime & getLifetime() const override
-    {
-        return dict_lifetime;
-    }
+    const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
-    const DictionaryStructure & getStructure() const override
-    {
-        return dict_struct;
-    }
+    const DictionaryStructure & getStructure() const override { return dict_struct; }
 
-    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override
-    {
-        return creation_time;
-    }
+    std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
 
     bool isInjective(const std::string & attribute_name) const override
     {
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
 /// In all functions below, key_columns must be full (non-constant) columns.
 /// See the requirement in IDataType.h for text-serialization functions.
 #define DECLARE(TYPE) \
-    void get##TYPE(   \
-        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, PaddedPODArray<TYPE> & out) const;
+    void get##TYPE( \
+        const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -144,16 +110,20 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
     void getString(const std::string & attribute_name, const Columns & key_columns, const DataTypes & key_types, ColumnString * out) const;
 
-#define DECLARE(TYPE)                                  \
-    void get##TYPE(const std::string & attribute_name, \
-        const Columns & key_columns,                   \
-        const DataTypes & key_types,                   \
-        const PaddedPODArray<TYPE> & def,              \
-        PaddedPODArray<TYPE> & out) const;
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const PaddedPODArray<TYPE> & def, \
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -165,20 +135,25 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(const std::string & attribute_name,
+    void getString(
+        const std::string & attribute_name,
         const Columns & key_columns,
         const DataTypes & key_types,
         const ColumnString * const def,
         ColumnString * const out) const;
 
-#define DECLARE(TYPE)                                  \
-    void get##TYPE(const std::string & attribute_name, \
-        const Columns & key_columns,                   \
-        const DataTypes & key_types,                   \
-        const TYPE def,                                \
-        PaddedPODArray<TYPE> & out) const;
+#define DECLARE(TYPE) \
+    void get##TYPE( \
+        const std::string & attribute_name, \
+        const Columns & key_columns, \
+        const DataTypes & key_types, \
+        const TYPE def, \
+        ResultArrayType<TYPE> & out) const;
     DECLARE(UInt8)
     DECLARE(UInt16)
     DECLARE(UInt32)
@@ -190,9 +165,13 @@ public:
     DECLARE(Int64)
     DECLARE(Float32)
     DECLARE(Float64)
+    DECLARE(Decimal32)
+    DECLARE(Decimal64)
+    DECLARE(Decimal128)
 #undef DECLARE
 
-    void getString(const std::string & attribute_name,
+    void getString(
+        const std::string & attribute_name,
         const Columns & key_columns,
         const DataTypes & key_types,
         const String & def,
@@ -225,30 +204,35 @@ private:
         time_point_urep_t data;
 
         /// Sets expiration time, resets `is_default` flag to false
-        time_point_t expiresAt() const
-        {
-            return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK);
-        }
-        void setExpiresAt(const time_point_t & t)
-        {
-            data = ext::safe_bit_cast<time_point_urep_t>(t);
-        }
+        time_point_t expiresAt() const { return ext::safe_bit_cast<time_point_t>(data & EXPIRES_AT_MASK); }
+        void setExpiresAt(const time_point_t & t) { data = ext::safe_bit_cast<time_point_urep_t>(t); }
 
-        bool isDefault() const
-        {
-            return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK;
-        }
-        void setDefault()
-        {
-            data |= IS_DEFAULT_MASK;
-        }
+        bool isDefault() const { return (data & IS_DEFAULT_MASK) == IS_DEFAULT_MASK; }
+        void setDefault() { data |= IS_DEFAULT_MASK; }
     };
 
     struct Attribute final
     {
         AttributeUnderlyingType type;
-        std::tuple<UInt8, UInt16, UInt32, UInt64, UInt128, Int8, Int16, Int32, Int64, Float32, Float64, String> null_values;
-        std::tuple<ContainerPtrType<UInt8>,
+        std::variant<
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+            UInt128,
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            Decimal32,
+            Decimal64,
+            Decimal128,
+            Float32,
+            Float64,
+            String>
+            null_values;
+        std::variant<
+            ContainerPtrType<UInt8>,
             ContainerPtrType<UInt16>,
             ContainerPtrType<UInt32>,
             ContainerPtrType<UInt64>,
@@ -257,6 +241,9 @@ private:
             ContainerPtrType<Int16>,
             ContainerPtrType<Int32>,
             ContainerPtrType<Int64>,
+            ContainerPtrType<Decimal32>,
+            ContainerPtrType<Decimal64>,
+            ContainerPtrType<Decimal128>,
             ContainerPtrType<Float32>,
             ContainerPtrType<Float64>,
             ContainerPtrType<StringRef>>
@@ -268,13 +255,13 @@ private:
     Attribute createAttributeWithType(const AttributeUnderlyingType type, const Field & null_value);
 
     template <typename OutputType, typename DefaultGetter>
-    void getItemsNumber(
-        Attribute & attribute, const Columns & key_columns, PaddedPODArray<OutputType> & out, DefaultGetter && get_default) const
+    void
+    getItemsNumber(Attribute & attribute, const Columns & key_columns, PaddedPODArray<OutputType> & out, DefaultGetter && get_default) const
     {
         if (false)
         {
         }
-#define DISPATCH(TYPE)                                        \
+#define DISPATCH(TYPE) \
     else if (attribute.type == AttributeUnderlyingType::TYPE) \
         getItemsNumberImpl<TYPE, OutputType>(attribute, key_columns, out, std::forward<DefaultGetter>(get_default));
         DISPATCH(UInt8)
@@ -288,6 +275,9 @@ private:
         DISPATCH(Int64)
         DISPATCH(Float32)
         DISPATCH(Float64)
+        DISPATCH(Decimal32)
+        DISPATCH(Decimal64)
+        DISPATCH(Decimal128)
 #undef DISPATCH
         else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
     }
@@ -354,7 +344,8 @@ private:
             std::begin(outdated_keys), std::end(outdated_keys), std::begin(required_rows), [](auto & pair) { return pair.second.front(); });
 
         /// request new values
-        update(key_columns,
+        update(
+            key_columns,
             keys_array,
             required_rows,
             [&](const StringRef key, const size_t cell_idx)
@@ -479,7 +470,8 @@ private:
                 return pair.second.front();
             });
 
-            update(key_columns,
+            update(
+                key_columns,
                 keys_array,
                 required_rows,
                 [&](const StringRef key, const size_t cell_idx)
@@ -513,7 +505,8 @@ private:
     }
 
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
-    void update(const Columns & in_key_columns,
+    void update(
+        const Columns & in_key_columns,
         const PODArray<StringRef> & in_keys,
         const std::vector<size_t> & in_requested_rows,
         PresentKeyHandler && on_cell_updated,
@@ -543,8 +536,10 @@ private:
                 const auto key_columns = ext::map<Columns>(
                     ext::range(0, keys_size), [&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx).column; });
 
-                const auto attribute_columns = ext::map<Columns>(ext::range(0, attributes_size),
-                    [&](const size_t attribute_idx) { return block.safeGetByPosition(keys_size + attribute_idx).column; });
+                const auto attribute_columns = ext::map<Columns>(ext::range(0, attributes_size), [&](const size_t attribute_idx)
+                {
+                    return block.safeGetByPosition(keys_size + attribute_idx).column;
+                });
 
                 const auto rows_num = block.rows();
 
@@ -675,7 +670,8 @@ private:
     void freeKey(const StringRef key) const;
 
     template <typename Arena>
-    static StringRef placeKeysInPool(const size_t row,
+    static StringRef placeKeysInPool(
+        const size_t row,
         const Columns & key_columns,
         StringRefs & keys,
         const std::vector<DictionaryAttribute> & key_attributes,

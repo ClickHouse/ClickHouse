@@ -34,7 +34,7 @@ DROP TABLE test.null;"
 
 heavy_cpu_query="SELECT ignore(sum(sipHash64(hex(sipHash64(hex(sipHash64(hex(number)))))))) FROM (SELECT * FROM system.numbers_mt LIMIT 1000000)"
 $CLICKHOUSE_CLIENT $settings --max_threads=1 -q "$heavy_cpu_query"
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH SYSTEM TABLES"
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT $settings -q "
 WITH
     any(query_duration_ms*1000) AS duration,
@@ -53,7 +53,7 @@ SELECT
 # Check ProfileEvents in query_thread_log
 
 $CLICKHOUSE_CLIENT $settings --max_threads=3 -q "$heavy_cpu_query"
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH SYSTEM TABLES"
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
 query_id=`$CLICKHOUSE_CLIENT $settings -q "SELECT query_id FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query='$heavy_cpu_query' ORDER BY event_time DESC LIMIT 1"`
 query_elapsed=`$CLICKHOUSE_CLIENT $settings -q "SELECT query_duration_ms*1000 FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query_id='$query_id' ORDER BY event_time DESC LIMIT 1"`
 threads=`$CLICKHOUSE_CLIENT $settings -q "SELECT length(thread_numbers) FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query_id='$query_id' ORDER BY event_time DESC LIMIT 1"`

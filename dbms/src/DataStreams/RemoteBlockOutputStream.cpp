@@ -33,9 +33,6 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const
         if (Protocol::Server::Data == packet.type)
         {
             header = packet.block;
-
-            if (!header)
-                throw Exception("Logical error: empty block received as table structure", ErrorCodes::LOGICAL_ERROR);
             break;
         }
         else if (Protocol::Server::Exception == packet.type)
@@ -58,7 +55,8 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const
 
 void RemoteBlockOutputStream::write(const Block & block)
 {
-    assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
+    if (header)
+        assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
 
     try
     {

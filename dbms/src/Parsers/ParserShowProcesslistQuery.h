@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IParserBase.h>
-#include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTShowProcesslistQuery.h>

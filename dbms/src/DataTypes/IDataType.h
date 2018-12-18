@@ -304,7 +304,7 @@ public:
     virtual bool shouldAlignRightInPrettyFormats() const { return false; }
 
     /** Does formatted value in any text format can contain anything but valid UTF8 sequences.
-      * Example: String (because it can contain arbitary bytes).
+      * Example: String (because it can contain arbitrary bytes).
       * Counterexamples: numbers, Date, DateTime.
       * For Enum, it depends.
       */
@@ -396,8 +396,10 @@ public:
       */
     virtual bool canBeInsideNullable() const { return false; }
 
-    virtual bool withDictionary() const { return false; }
+    virtual bool lowCardinality() const { return false; }
 
+    /// Strings, Numbers, Date, DateTime, Nullable
+    virtual bool canBeInsideLowCardinality() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
@@ -410,6 +412,11 @@ public:
 struct WhichDataType
 {
     TypeIndex idx;
+
+    /// For late initialization.
+    WhichDataType()
+        : idx(TypeIndex::Nothing)
+    {}
 
     WhichDataType(const IDataType & data_type)
         : idx(data_type.getTypeId())
@@ -505,6 +512,13 @@ inline bool isNumber(const T & data_type)
 {
     WhichDataType which(data_type);
     return which.isInt() || which.isUInt() || which.isFloat();
+}
+
+template <typename T>
+inline bool isColumnedAsNumber(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isInt() || which.isUInt() || which.isFloat() || which.isDateOrDateTime() || which.isUUID();
 }
 
 template <typename T>

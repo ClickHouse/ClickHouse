@@ -1,25 +1,20 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-
-#include <Common/FileUpdatesTracker.h>
+#include "IHierarchiesProvider.h"
 
 #include <unordered_map>
+#include <Common/FileUpdatesTracker.h>
 
 
 // Represents local file with regions hierarchy dump
-class RegionsHierarchyDataSource
-    : public IRegionsHierarchyDataSource
+class RegionsHierarchyDataSource : public IRegionsHierarchyDataSource
 {
 private:
     std::string path;
     FileUpdatesTracker updates_tracker;
 
 public:
-    RegionsHierarchyDataSource(const std::string & path_)
-        : path(path_)
-        , updates_tracker(path_)
-    {}
+    RegionsHierarchyDataSource(const std::string & path_) : path(path_), updates_tracker(path_) {}
 
     bool isModified() const override;
 
@@ -28,8 +23,7 @@ public:
 
 
 // Provides access to directory with multiple data source files: one file per regions hierarchy
-class RegionsHierarchiesDataProvider
-    : public IRegionsHierarchiesDataProvider
+class RegionsHierarchiesDataProvider : public IRegionsHierarchiesDataProvider
 {
 private:
     // path to file with default regions hierarchy
@@ -56,4 +50,3 @@ public:
 private:
     void discoverFilesWithCustomHierarchies();
 };
-

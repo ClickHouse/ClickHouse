@@ -1,4 +1,3 @@
-<a name="dicts-external_dicts_dict_lifetime"></a>
 
 # Dictionary Updates
 
@@ -33,16 +32,16 @@ Example of settings:
 </dictionary>
 ```
 
-When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [ source](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources):
+When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [ source](external_dicts_dict_sources.md):
 
-> - For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
+- For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
 - For MyISAM tables, the time of modification is checked using a `SHOW TABLE STATUS` query.
 - Dictionaries from other sources are updated every time by default.
 
-For MySQL (InnoDB) and ODBC sources, you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
+For MySQL (InnoDB), ODBC and ClickHouse sources, you can set up a query that will update the dictionaries only if they really changed, rather than each time. To do this, follow these steps:
 
-> - The dictionary table must have a field that always changes when the source data is updated.
-- The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources).
+- The dictionary table must have a field that always changes when the source data is updated.
+- The settings of the source must specify a query that retrieves the changing field. The ClickHouse server interprets the query result as a row, and if this row has changed relative to its previous state, the dictionary is updated. Specify the query in the `<invalidate_query>` field in the settings for the [source](external_dicts_dict_sources.md).
 
 Example of settings:
 
@@ -57,3 +56,5 @@ Example of settings:
 </dictionary>
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

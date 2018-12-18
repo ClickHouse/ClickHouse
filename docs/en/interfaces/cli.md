@@ -113,3 +113,5 @@ Example of a config file:
 </config>
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/interfaces/cli/) <!--hide-->

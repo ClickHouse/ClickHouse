@@ -373,7 +373,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
 
     /** We will read from src_arena.
       * There is no limit for reading - it is assumed, that we can read all that we need after src_arena pointer.
-      * Buf ReadBufferFromMemory requires some bound. We will use arbitary big enough number, that will not overflow pointer.
+      * Buf ReadBufferFromMemory requires some bound. We will use arbitrary big enough number, that will not overflow pointer.
       * NOTE Technically, this is not compatible with C++ standard,
       *  as we cannot legally compare pointers after last element + 1 of some valid memory region.
       *  Probably this will not work under UBSan.

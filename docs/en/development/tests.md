@@ -249,3 +249,5 @@ In Travis CI due to limit on time and computational power we can afford only sub
 In Jenkins we run functional tests for each commit and for each pull request from trusted users; the same under ASan; we also run quorum tests, dictionary tests, Metrica B2B tests. We use Jenkins to prepare and publish releases. Worth to note that we are not happy with Jenkins at all.
 
 One of our goals is to provide reliable testing infrastructure that will be available to community.
+
+[Original article](https://clickhouse.yandex/docs/en/development/tests/) <!--hide-->

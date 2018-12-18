@@ -65,8 +65,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "STOP REPLICATION QUEUES";
         case Type::START_REPLICATION_QUEUES:
             return "START REPLICATION QUEUES";
-        case Type::FLUSH_SYSTEM_TABLES:
-            return "FLUSH SYSTEM TABLES";
+        case Type::FLUSH_LOGS:
+            return "FLUSH LOGS";
         default:
             throw Exception("Unknown SYSTEM query command", ErrorCodes::BAD_TYPE_OF_FIELD);
     }

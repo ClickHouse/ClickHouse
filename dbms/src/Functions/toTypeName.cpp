@@ -24,7 +24,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

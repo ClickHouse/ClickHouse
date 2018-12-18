@@ -17,7 +17,7 @@ class Context;
   * You could also specify a limit (how many numbers to give).
   * If multithreaded is specified, numbers will be generated in several streams
   *  (and result could be out of order). If both multithreaded and limit are specified,
-  *  the table could give you not exactly 1..limit range, but some arbitary 'limit' numbers.
+  *  the table could give you not exactly 1..limit range, but some arbitrary 'limit' numbers.
   */
 class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {

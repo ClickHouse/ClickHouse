@@ -1,4 +1,3 @@
-<a name="utils-clickhouse-local"></a>
 
 # clickhouse-local
 
@@ -66,3 +65,5 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/utils/clickhouse-local/) <!--hide-->

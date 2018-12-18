@@ -19,7 +19,7 @@ namespace DB
 class ColumnString final : public COWPtrHelper<IColumn, ColumnString>
 {
 public:
-    using Chars_t = PaddedPODArray<UInt8>;
+    using Chars = PaddedPODArray<UInt8>;
 
 private:
     friend class COWPtrHelper<IColumn, ColumnString>;
@@ -29,7 +29,7 @@ private:
 
     /// Bytes of strings, placed contiguously.
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
-    Chars_t chars;
+    Chars chars;
 
     size_t ALWAYS_INLINE offsetAt(size_t i) const { return i == 0 ? 0 : offsets[i - 1]; }
 
@@ -158,7 +158,8 @@ public:
         offsets.push_back(new_size);
     }
 
-    void insertDataWithTerminatingZero(const char * pos, size_t length) override
+    /// Like getData, but inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
+    void insertDataWithTerminatingZero(const char * pos, size_t length)
     {
         const size_t old_size = chars.size();
         const size_t new_size = old_size + length;
@@ -245,8 +246,8 @@ public:
     bool canBeInsideNullable() const override { return true; }
 
 
-    Chars_t & getChars() { return chars; }
-    const Chars_t & getChars() const { return chars; }
+    Chars & getChars() { return chars; }
+    const Chars & getChars() const { return chars; }
 
     Offsets & getOffsets() { return offsets; }
     const Offsets & getOffsets() const { return offsets; }

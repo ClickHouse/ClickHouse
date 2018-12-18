@@ -29,3 +29,5 @@ Note. Up until version 1.1.54134, signed and unsigned numbers were compared the 
 
 ## greaterOrEquals, `>= operator`
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/comparison_functions/) <!--hide-->

@@ -30,6 +30,8 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
+#include <Storages/ColumnDefault.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include "TCPHandler.h"
 
@@ -122,6 +124,9 @@ void TCPHandler::runImpl()
 
     while (1)
     {
+        /// Restore context of request.
+        query_context = connection_context;
+
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
         while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
             ;
@@ -146,9 +151,6 @@ void TCPHandler::runImpl()
 
         try
         {
-            /// Restore context of request.
-            query_context = connection_context;
-
             /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
             SCOPE_EXIT({state.timeout_setter.reset();});
 
@@ -182,7 +184,7 @@ void TCPHandler::runImpl()
                 /// Reset the input stream, as we received an empty block while receiving external table data.
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
-                state.maybe_compressed_in.reset();  /// For more accurate accounting by MemoryTracker.
+                state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
             });
 
             /// Processing Query
@@ -200,8 +202,10 @@ void TCPHandler::runImpl()
             else
                 processOrdinaryQuery();
 
-            sendLogs();
+            /// Do it before sending end of stream, to have a chance to show log message in client.
+            query_scope->logPeakMemoryUsage();
 
+            sendLogs();
             sendEndOfStream();
 
             query_scope.reset();
@@ -358,8 +362,27 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       */
     state.io.out->writePrefix();
 
+    /// Send ColumnsDescription for insertion table
+    if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    {
+        const auto & db_and_table = query_context.getInsertionTable();
+        if (auto * columns = ColumnsDescription::loadFromContext(query_context, db_and_table.first, db_and_table.second))
+            sendTableColumns(*columns);
+    }
+
     /// Send block to the client - table structure.
     Block block = state.io.out->getHeader();
+
+    /// Support insert from old clients without low cardinality type.
+    if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+    {
+        for (auto & col : block)
+        {
+            col.type = recursiveRemoveLowCardinality(col.type);
+            col.column = recursiveRemoveLowCardinality(col.column);
+        }
+    }
+
     sendData(block);
 
     readData(global_settings);
@@ -376,6 +399,17 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
+
+            /// Send data to old clients without low cardinality type.
+            if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+            {
+                for (auto & column : header)
+                {
+                    column.column = recursiveRemoveLowCardinality(column.column);
+                    column.type = recursiveRemoveLowCardinality(column.type);
+                }
+            }
+
             if (header)
                 sendData(header);
         }
@@ -717,7 +751,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
                 storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}});
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
@@ -742,8 +776,13 @@ void TCPHandler::initBlockInput()
         else
             state.maybe_compressed_in = in;
 
+        Block header;
+        if (state.io.out)
+            header = state.io.out->getHeader();
+
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
+            header,
             client_revision);
     }
 }
@@ -842,6 +881,16 @@ void TCPHandler::sendLogData(const Block & block)
     out->next();
 }
 
+void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
+{
+    writeVarUInt(Protocol::Server::TableColumns, *out);
+
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *out);
+    writeStringBinary(columns.toString(), *out);
+
+    out->next();
+}
 
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {

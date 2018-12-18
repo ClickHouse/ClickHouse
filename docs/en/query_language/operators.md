@@ -53,7 +53,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Operators for Working With Data Sets
 
-*See the section "IN operators".*
+*See the section [IN operators](select.md#in-operators).*
 
 `a IN ...` – The `in(a, b) function`
 
@@ -87,15 +87,19 @@ The conditional operator calculates the values of b and c, then checks whether c
 
 ## Conditional Expression
 
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
-    ELSE c
+    [ELSE c]
 END
 ```
 
-If "x" is specified, then transform(x, \[a, ...\], \[b, ...\], c). Otherwise – multiIf(a, b, ..., c).
+If `x` is specified, then `transform(x, [a, ...], [b, ...], c)` function is used. Otherwise – `multiIf(a, b, ..., c)`.
+
+If there is no `ELSE c` clause in the expression, the default value is `NULL`.
+
+The `transform` function does not work with `NULL`.
 
 ## Concatenation Operator
 
@@ -130,7 +134,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
 ### IS NULL
 
-- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NULL` operator returns:
+- For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
     - `1`, if the value is `NULL`.
     - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
@@ -149,11 +153,10 @@ WHERE isNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-<a name="operator-is-not-null"></a>
 
 ### IS NOT NULL
 
-- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NOT NULL` operator returns:
+- For [Nullable](../data_types/nullable.md) type values, the `IS NOT NULL` operator returns:
     - `0`, if the value is `NULL`.
     - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.
@@ -171,3 +174,5 @@ WHERE isNotNull(y)
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/operators/) <!--hide-->

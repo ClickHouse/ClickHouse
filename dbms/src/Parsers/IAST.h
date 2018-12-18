@@ -3,6 +3,7 @@
 #include <set>
 #include <memory>
 #include <ostream>
+#include <algorithm>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -66,7 +67,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID() const = 0;
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 
@@ -217,6 +218,5 @@ private:
 
 /// Surrounds an identifier by back quotes if it is necessary.
 String backQuoteIfNeed(const String & x);
-
 
 }

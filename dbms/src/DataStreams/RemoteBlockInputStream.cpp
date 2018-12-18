@@ -45,7 +45,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(
     create_multiplexed_connections = [this, connections, throttler]() mutable
     {
         return std::make_unique<MultiplexedConnections>(
-                std::move(connections), context.getSettingsRef(), throttler, append_extra_info);
+            std::move(connections), context.getSettingsRef(), throttler);
     };
 }
 
@@ -74,7 +74,7 @@ RemoteBlockInputStream::RemoteBlockInputStream(
             connections = pool->getMany(&current_settings, pool_mode);
 
         return std::make_unique<MultiplexedConnections>(
-                std::move(connections), current_settings, throttler, append_extra_info);
+            std::move(connections), current_settings, throttler);
     };
 }
 
@@ -86,11 +86,6 @@ RemoteBlockInputStream::~RemoteBlockInputStream()
       */
     if (established || isQueryPending())
         multiplexed_connections->disconnect();
-}
-
-void RemoteBlockInputStream::appendExtraInfo()
-{
-    append_extra_info = true;
 }
 
 void RemoteBlockInputStream::readPrefix()

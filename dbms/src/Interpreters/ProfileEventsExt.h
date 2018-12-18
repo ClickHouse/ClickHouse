@@ -6,7 +6,7 @@
 namespace ProfileEvents
 {
 
-/// Dumps profile events to two column Array(String) and Array(UInt64)
+/// Dumps profile events to two columns Array(String) and Array(UInt64)
 void dumpToArrayColumns(const Counters & counters, DB::IColumn * column_names, DB::IColumn * column_value, bool nonzero_only = true);
 
 }

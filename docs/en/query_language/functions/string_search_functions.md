@@ -18,7 +18,8 @@ For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 
-Checks whether the string matches the 'pattern' regular expression. A re2 regular expression.
+Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax)  of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
+
 Returns 0 if it doesn't match, or 1 if it matches.
 
 Note that the backslash symbol (`\`) is used for escaping in the regular expression. The same symbol is used for escaping in string literals. So in order to escape the symbol in a regular expression, you must write two backslashes (\\) in a string literal.
@@ -52,3 +53,5 @@ For other regular expressions, the code is the same as for the 'match' function.
 
 The same thing as 'like', but negative.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_search_functions/) <!--hide-->

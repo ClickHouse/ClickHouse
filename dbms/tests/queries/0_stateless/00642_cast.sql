@@ -15,6 +15,8 @@ SELECT cast(1 AS Enum8(
 SELECT CAST(1, 'Enum8(\'hello\' = 1,\n\t\'world\' = 2)');
 SELECT cast(1, 'Enum8(\'hello\' = 1,\n\t\'world\' = 2)');
 
+SELECT toTimeZone(CAST(1 AS TIMESTAMP), 'UTC');
+
 DROP TABLE IF EXISTS test.cast;
 CREATE TABLE test.cast
 (

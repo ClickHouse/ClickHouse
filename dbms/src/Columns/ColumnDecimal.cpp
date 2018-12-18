@@ -1,15 +1,15 @@
-//#include <cstring>
-#include <cmath>
-
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
+
+#include <common/unaligned.h>
 
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <DataStreams/ColumnGathererStream.h>
+
 
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
@@ -20,10 +20,11 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 template <typename T>
-int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int ) const
+int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int) const
 {
     auto other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
@@ -43,8 +44,16 @@ StringRef ColumnDecimal<T>::serializeValueIntoArena(size_t n, Arena & arena, cha
 template <typename T>
 const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(*reinterpret_cast<const T *>(pos));
+    data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
+}
+
+template <typename T>
+UInt64 ColumnDecimal<T>::get64(size_t n) const
+{
+    if constexpr (sizeof(T) > sizeof(UInt64))
+        throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+    return static_cast<typename T::NativeType>(data[n]);
 }
 
 template <typename T>
@@ -109,6 +118,14 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
     }
 
     return std::move(res);
+}
+
+template <typename T>
+void ColumnDecimal<T>::insertData(const char * src, size_t /*length*/)
+{
+    T tmp;
+    memcpy(&tmp, src, sizeof(T));
+    data.emplace_back(tmp);
 }
 
 template <typename T>
@@ -199,8 +216,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.size() == 0)
     {
-        min = typename NearestFieldType<T>::Type(0, scale);
-        max = typename NearestFieldType<T>::Type(0, scale);
+        min = NearestFieldType<T>(0, scale);
+        max = NearestFieldType<T>(0, scale);
         return;
     }
 
@@ -215,8 +232,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min, scale);
-    max = typename NearestFieldType<T>::Type(cur_max, scale);
+    min = NearestFieldType<T>(cur_min, scale);
+    max = NearestFieldType<T>(cur_max, scale);
 }
 
 template class ColumnDecimal<Decimal32>;

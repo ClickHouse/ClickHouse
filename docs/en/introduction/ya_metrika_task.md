@@ -46,3 +46,5 @@ OLAPServer worked well for non-aggregated data, but it had many restrictions tha
 
 To remove the limitations of OLAPServer and solve the problem of working with non-aggregated data for all reports, we developed the ClickHouse DBMS.
 
+
+[Original article](https://clickhouse.yandex/docs/en/introduction/ya_metrika_task/) <!--hide-->

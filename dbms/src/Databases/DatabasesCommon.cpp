@@ -163,7 +163,7 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     {
         shutdown();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }

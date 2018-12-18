@@ -63,3 +63,5 @@ Another example is the `hostName` function, which returns the name of the server
 
 If a function in a query is performed on the requestor server, but you need to perform it on remote servers, you can wrap it in an 'any' aggregate function or add it to a key in `GROUP BY`.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/) <!--hide-->

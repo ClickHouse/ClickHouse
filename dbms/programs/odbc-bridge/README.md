@@ -5,8 +5,8 @@ was possible segfaults or another faults in ODBC implementations, which can
 crash whole clickhouse-server process.
 
 This tool works via HTTP, not via pipes, shared memory, or TCP because:
-- It's simplier to implement
-- It's simplier to debug
+- It's simpler to implement
+- It's simpler to debug
 - jdbc-bridge can be implemented in the same way
 
 ## Usage

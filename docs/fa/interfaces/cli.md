@@ -120,3 +120,5 @@ command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بد
 </config>
 ```
 
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/interfaces/cli/) <!--hide-->

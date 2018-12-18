@@ -116,9 +116,12 @@ struct VarMomentsDecimal
 
     Float64 getPopulation(UInt32 scale) const
     {
+        if (m0 == 0)
+            return std::numeric_limits<Float64>::infinity();
+
         NativeType tmp;
         if (common::mulOverflow(m1, m1, tmp) ||
-            common::subOverflow(m2, NativeType(tmp/m0), tmp))
+            common::subOverflow(m2, NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / m0, scale);
     }
@@ -126,11 +129,13 @@ struct VarMomentsDecimal
     Float64 getSample(UInt32 scale) const
     {
         if (m0 == 0)
-            return std::numeric_limits<T>::quiet_NaN();
+            return std::numeric_limits<Float64>::quiet_NaN();
+        if (m0 == 1)
+            return std::numeric_limits<Float64>::infinity();
 
         NativeType tmp;
         if (common::mulOverflow(m1, m1, tmp) ||
-            common::subOverflow(m2, NativeType(tmp/m0), tmp))
+            common::subOverflow(m2, NativeType(tmp / m0), tmp))
             throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
         return convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(tmp / (m0 - 1), scale);
     }

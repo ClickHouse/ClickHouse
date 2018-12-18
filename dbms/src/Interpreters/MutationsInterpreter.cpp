@@ -1,4 +1,5 @@
 #include <Interpreters/MutationsInterpreter.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -98,23 +99,21 @@ static NameSet getKeyColumns(const StoragePtr & storage)
 
     NameSet key_columns;
 
-    if (merge_tree_data->partition_expr)
-        for (const String & col : merge_tree_data->partition_expr->getRequiredColumns())
+    if (merge_tree_data->partition_key_expr)
+        for (const String & col : merge_tree_data->partition_key_expr->getRequiredColumns())
             key_columns.insert(col);
 
-    auto primary_expr = merge_tree_data->getPrimaryExpression();
-    if (primary_expr)
-        for (const String & col : primary_expr->getRequiredColumns())
+    auto sorting_key_expr = merge_tree_data->sorting_key_expr;
+    if (sorting_key_expr)
+        for (const String & col : sorting_key_expr->getRequiredColumns())
             key_columns.insert(col);
-    /// We don't process sampling_expression separately because it must be among the primary key columns.
-
-    auto secondary_sort_expr = merge_tree_data->getSecondarySortExpression();
-    if (secondary_sort_expr)
-        for (const String & col : secondary_sort_expr->getRequiredColumns())
-            key_columns.insert(col);
+    /// We don't process sample_by_ast separately because it must be among the primary key columns.
 
     if (!merge_tree_data->merging_params.sign_column.empty())
         key_columns.insert(merge_tree_data->merging_params.sign_column);
+
+    if (!merge_tree_data->merging_params.version_column.empty())
+        key_columns.insert(merge_tree_data->merging_params.version_column);
 
     return key_columns;
 }
@@ -195,7 +194,9 @@ void MutationsInterpreter::prepare(bool dry_run)
             const ColumnDefault & col_default = kv.second;
             if (col_default.kind == ColumnDefaultKind::Materialized)
             {
-                ExpressionAnalyzer analyzer(col_default.expression->clone(), context, nullptr, all_columns);
+                auto query = col_default.expression->clone();
+                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                ExpressionAnalyzer analyzer(query, syntax_result, context);
                 for (const String & dependency : analyzer.getRequiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
@@ -301,7 +302,8 @@ void MutationsInterpreter::prepare(bool dry_run)
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, context, nullptr, all_columns);
+        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(all_asts, all_columns);
+        stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 

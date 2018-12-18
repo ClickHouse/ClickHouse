@@ -17,14 +17,16 @@
 
 Пример:
 
-```sql
+``` sql
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-```text
+```
 ┌─dst─┬─\'Hello\'─┬─src─────┐
 │   1 │ Hello     │ [1,2,3] │
 │   2 │ Hello     │ [1,2,3] │
 │   3 │ Hello     │ [1,2,3] │
 └─────┴───────────┴─────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/array_join/) <!--hide-->

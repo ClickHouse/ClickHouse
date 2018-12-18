@@ -1,6 +1,6 @@
 ## How ClickHouse documentation is generated?
 
-ClickHouse documentation is built using [build.py](build.py) script that uses [mkdocs](https://www.mkdocs.org) library and it's dependencies to separately build all version of documentations (two languages in either single and multi page mode) as static HTMLs. The results are then put in correct directory structure.
+ClickHouse documentation is built using [build.py](build.py) script that uses [mkdocs](https://www.mkdocs.org) library and it's dependencies to separately build all version of documentations (all languages in either single and multi page mode) as static HTMLs. The results are then put in correct directory structure. It can also generate PDF version.
 
 Finally [the infrustructure](../website) that builds ClickHouse [official website](https://clickhouse.yandex) just puts that directory structure into the same Docker container together with rest of website and deploys it to Yandex private cloud.
 
@@ -16,7 +16,7 @@ Usually those have some way to preview how Markdown will look like, which allows
 
 It'll take some effort to go through, but the result will be very close to production documentation.
 
-For the first time you'll need to set up virtualenv:
+For the first time you'll need to install [wkhtmltopdf](https://wkhtmltopdf.org/) and set up virtualenv:
 
 ``` bash
 $ cd ClickHouse/docs/tools

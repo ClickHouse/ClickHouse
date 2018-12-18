@@ -70,7 +70,8 @@ namespace Protocol
             Extremes = 8,             /// A block with minimums and maximums (compressed or not).
             TablesStatusResponse = 9, /// A response to TablesStatus request.
             Log = 10,                 /// System logs of the query execution
-            Heartbeat = 11,           /// Heartbeat
+            TableColumns = 11,        /// Columns' description for default values calculation
+            Heartbeat = 12,           /// Heartbeat
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -79,10 +80,23 @@ namespace Protocol
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes", "TablesStatusResponse", "Log", "Heartbeat" };
-            return packet < 12
+            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals",
+                "Extremes", "TablesStatusResponse", "Log", "TableColumns", "Heartbeat" };
+            return packet < 13
                 ? data[packet]
                 : "Unknown packet";
+        }
+
+        inline size_t stringsInMessage(UInt64 msg_type)
+        {
+            switch (msg_type)
+            {
+                case TableColumns:
+                    return 2;
+                default:
+                    break;
+            }
+            return 0;
         }
     }
 
@@ -104,8 +118,8 @@ namespace Protocol
 
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping", "TablesStatusRequest" };
-            return packet < 6
+            static const char * data[] = { "Hello", "Query", "Data", "Cancel", "Ping", "TablesStatusRequest", "KeepAlive" };
+            return packet < 7
                 ? data[packet]
                 : "Unknown packet";
         }

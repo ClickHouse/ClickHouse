@@ -71,12 +71,27 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
 }
 
 template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
+static IAggregateFunction * createWithNumericBasedType(const IDataType & argument_type, TArgs && ... args)
+{
+    IAggregateFunction * f = createWithNumericType<AggregateFunctionTemplate>(argument_type, std::forward<TArgs>(args)...);
+    if (f)
+        return f;
+
+    /// expects that DataTypeDate based on UInt16, DataTypeDateTime based on UInt32 and UUID based on UInt128
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTemplate<UInt32>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UUID) return new AggregateFunctionTemplate<UInt128>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-    if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32>(argument_type, std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64>(argument_type, std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(argument_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 

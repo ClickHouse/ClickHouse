@@ -72,7 +72,7 @@ SELECT visibleWidth(NULL)
 
 Пример:
 
-```sql
+``` sql
 SELECT
     toHour(EventTime) AS h,
     count() AS c,
@@ -82,7 +82,7 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-```text
+```
 ┌──h─┬──────c─┬─bar────────────────┐
 │  0 │ 292907 │ █████████▋         │
 │  1 │ 180563 │ ██████             │
@@ -111,7 +111,6 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-<a name="other_functions-transform"></a>
 
 ## transform
 Преобразовать значение согласно явно указанному отображению одних элементов на другие.
@@ -141,7 +140,7 @@ ORDER BY h ASC
 
 Пример:
 
-```sql
+``` sql
 SELECT
     transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
@@ -151,7 +150,7 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-```text
+```
 ┌─title─────┬──────c─┐
 │ Yandex    │ 498635 │
 │ Google    │ 229872 │
@@ -170,7 +169,7 @@ ORDER BY c DESC
 
 Пример:
 
-```sql
+``` sql
 SELECT
     transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
@@ -180,7 +179,7 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-```text
+```
 ┌─s──────────────┬───────c─┐
 │                │ 2906259 │
 │ www.yandex     │  867767 │
@@ -199,13 +198,13 @@ LIMIT 10
 
 Пример:
 
-```sql
+``` sql
 SELECT
     arrayJoin([1, 1024, 1024*1024, 192851925]) AS filesize_bytes,
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-```text
+```
 ┌─filesize_bytes─┬─filesize───┐
 │              1 │ 1.00 B     │
 │           1024 │ 1.00 KiB   │
@@ -238,7 +237,7 @@ SELECT
 
 Пример:
 
-```sql
+``` sql
 SELECT
     EventID,
     EventTime,
@@ -255,7 +254,7 @@ FROM
 )
 ```
 
-```text
+```
 ┌─EventID─┬───────────EventTime─┬─delta─┐
 │    1106 │ 2016-11-24 00:00:04 │     0 │
 │    1107 │ 2016-11-24 00:00:05 │     1 │
@@ -276,7 +275,7 @@ FROM
 
 ## getSizeOfEnumType
 
-Возвращает количество полей в [Enum](../../data_types/enum.md#data_type-enum).
+Возвращает количество полей в [Enum](../../data_types/enum.md).
 
 ```
 getSizeOfEnumType(value)
@@ -386,7 +385,7 @@ defaultValueOfArgumentType(expression)
 
 - `0` для чисел;
 - Пустая строка для строк;
-- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md#data_type-nullable).
+- `ᴺᵁᴸᴸ` для [Nullable](../../data_types/nullable.md).
 
 **Пример**
 
@@ -426,7 +425,7 @@ SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
 **Пример**
 
-Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+Рассмотрим таблицу с тестовыми данными [ontime](../../getting_started/example_datasets/ontime.md).
 
 ```
 SELECT count() FROM ontime
@@ -540,3 +539,5 @@ SELECT replicate(1, ['a', 'b', 'c'])
 │ [1,1,1]                       │
 └───────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/other_functions/) <!--hide-->

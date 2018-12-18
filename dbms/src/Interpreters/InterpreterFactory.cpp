@@ -14,6 +14,7 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
 
@@ -21,6 +22,7 @@
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -148,6 +150,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (typeid_cast<ASTDescribeQuery *>(query.get()))
     {
         return std::make_unique<InterpreterDescribeQuery>(query, context);
+    }
+    else if (typeid_cast<ASTExplainQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterExplainQuery>(query, context);
     }
     else if (typeid_cast<ASTShowProcesslistQuery *>(query.get()))
     {
