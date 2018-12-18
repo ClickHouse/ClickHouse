@@ -74,7 +74,7 @@ To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.m
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#user-config).
+Settings profiles are located in the file specified in the parameter `user_config`.
 
 **Example**
 
