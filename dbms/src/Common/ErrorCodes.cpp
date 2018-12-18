@@ -404,6 +404,7 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP = 427;
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 428;
     extern const int UNKNOWN_CODEC = 429;
+    extern const int ILLEGAL_CODEC_PARAMETER = 430;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

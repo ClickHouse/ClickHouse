@@ -20,16 +20,19 @@ DROP TABLE IF EXISTS test.compression_codec;
 
 DROP TABLE IF EXISTS test.bad_codec;
 DROP TABLE IF EXISTS test.params_when_no_params;
+DROP TABLE IF EXISTS test.params_zstd;
 DROP TABLE IF EXISTS test.too_many_params;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification;
 
 CREATE TABLE test.bad_codec(id UInt64 CODEC(adssadads)) ENGINE = MergeTree() order by tuple(); -- { serverError 429 }
 CREATE TABLE test.too_many_params(id UInt64 CODEC(ZSTD(2,3,4,5))) ENGINE = MergeTree() order by tuple(); -- { serverError 428 }
 CREATE TABLE test.params_when_no_params(id UInt64 CODEC(LZ4(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 378 }
+CREATE TABLE test.params_zstd(id UInt64 CODEC(ZSTD(33))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 430 }
 CREATE TABLE test.codec_multiple_direct_specification(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 429 }
 
 DROP TABLE IF EXISTS test.bad_codec;
 DROP TABLE IF EXISTS test.params_when_no_params;
+DROP TABLE IF EXISTS test.params_zstd;
 DROP TABLE IF EXISTS test.too_many_params;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification;
 
@@ -39,7 +42,7 @@ CREATE TABLE test.compression_codec_multiple (
     id UInt64 CODEC(LZ4, ZSTD, NONE),
     data String CODEC(ZSTD(2), NONE, LZ4, LZ4),
     ddd Date CODEC(NONE, NONE, NONE, LZ4, ZSTD),
-    somenum Float64 CODEC(LZ4, LZ4, ZSTD(2), ZSTD(3), ZSTD(1))
+    somenum Float64 CODEC(LZ4, LZ4, ZSTD(2), ZSTD(3), ZSTD)
 ) ENGINE = MergeTree() ORDER BY tuple();
 
 INSERT INTO test.compression_codec_multiple VALUES (1, 'world', toDate('2018-10-05'), 1.1), (2, 'hello', toDate('2018-10-01'), 2.2), (3, 'buy', toDate('2018-10-11'), 3.3);
