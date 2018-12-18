@@ -2160,7 +2160,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
-            size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
                 data.settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
 
             if (max_source_parts_size > 0)
