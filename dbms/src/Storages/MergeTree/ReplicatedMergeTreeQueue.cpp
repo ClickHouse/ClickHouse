@@ -900,7 +900,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * But if all threads are free (maximal size of merge is allowed) then execute any merge,
           *  (because it may be ordered by OPTIMIZE or early with differrent settings).
           */
-        size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
         if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
             && sum_parts_size_in_bytes > max_source_parts_size)
         {
