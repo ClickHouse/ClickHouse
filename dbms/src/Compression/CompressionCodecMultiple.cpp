@@ -89,7 +89,7 @@ size_t CompressionCodecMultiple::compress(char * source, size_t source_size, cha
         unalignedStore(&compressed_buf[0], compressed_size_32);
         unalignedStore(&compressed_buf[4], uncompressed_size_32);
         //std::cerr << "(compress) COMPRESSED BUF:\n";
-        //for(size_t i =  header_for_size_store; i < size_compressed; ++i)
+        //for(size_t i =  0; i < size_compressed; ++i)
         //    std::cerr << std::hex << +compressed_buf[i] << " ";
         //std::cerr << std::dec << std::endl;
 
@@ -116,6 +116,7 @@ size_t CompressionCodecMultiple::decompress(char * source, size_t source_size, c
     if (source[0] != getMethodByte())
         throw Exception("Incorrect compression method for codec multiple, given " + toString(source[0]) + ", expected " + toString(getMethodByte()),
             ErrorCodes::UNKNOWN_CODEC);
+
     UInt8 compression_methods_size = source[1];
     //std::cerr << std::dec;
     //std::cerr << "(decompress) Source size:" << source_size << std::endl;
@@ -139,15 +140,15 @@ size_t CompressionCodecMultiple::decompress(char * source, size_t source_size, c
         //String name;
         //codec->getCodecDesc(name);
         //std::cerr << std::hex << "(decompress) Compression method byte:" << +compression_method << " name:" << name << std::endl;
-        UInt32 compressed_size = static_cast<UInt32>(compressed_buf[0]);
-        UInt32 uncompressed_size = static_cast<UInt32>(compressed_buf[4]);
+        UInt32 compressed_size = unalignedLoad<UInt32>(&compressed_buf[0]);
+        UInt32 uncompressed_size = unalignedLoad<UInt32>(&compressed_buf[4]);
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) + ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
         uncompressed_buf.resize(uncompressed_size);
         //std::cerr << std::dec << "(decompress) expected compressed size:" << compressed_size << std::endl;
         //std::cerr << std::dec << "(decompress) expected uncompressed size:" << uncompressed_size << std::endl;
         //std::cerr << "COMPRESSED BUF:\n";
-        //for(size_t i =  header_for_size_store; i < compressed_size; ++i)
+        //for(size_t i =  0; i < compressed_size; ++i)
         //    std::cerr<< std::hex << +compressed_buf[i] << " ";
         //std::cerr << std::dec << std::endl;
 
