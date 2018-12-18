@@ -212,13 +212,6 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.check(getDictionary().size());
 }
 
-void ColumnLowCardinality::insertDataWithTerminatingZero(const char * pos, size_t length)
-{
-    compactIfSharedDictionary();
-    idx.insertPosition(dictionary.getColumnUnique().uniqueInsertDataWithTerminatingZero(pos, length));
-    idx.check(getDictionary().size());
-}
-
 StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);

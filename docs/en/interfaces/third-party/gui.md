@@ -38,6 +38,26 @@ The following features are planned for development:
 - Cluster management.
 - Monitoring replicated and Kafka tables.
 
+### LightHouse
+
+[LightHouse](https://github.com/VKCOM/lighthouse) is a lightweight web interface for ClickHouse.
+
+Features:
+
+- Table list with filtering and metadata.
+- Table preview with filtering and sorting.
+- Read-only queries execution.
+
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command line client for ClickHouse, written in Python 3.
+
+Features:
+- Autocompletion.
+- Syntax highlighting for the queries and data output.
+- Pager support for the data output.
+- Custom PostgreSQL-like commands.
+
 ## Commercial
 
 ### DBeaver
@@ -63,4 +83,4 @@ Features:
 - Refactorings.
 - Search and Navigation.
 
-[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party_gui/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/en/interfaces/third-party/gui/) <!--hide-->

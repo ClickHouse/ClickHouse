@@ -29,6 +29,7 @@ nav:
     - 'کتابخانه های مشتری': 'interfaces/third-party/client_libraries.md'
     - 'یکپارچگی': 'interfaces/third-party/integrations.md'
     - 'رابط های بصری': 'interfaces/third-party/gui.md'
+    - 'پروکسی': 'interfaces/third-party/proxy.md'
 
 - 'Data types':
   - 'Introduction': 'data_types/index.md'

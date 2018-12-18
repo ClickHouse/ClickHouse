@@ -1,4 +1,3 @@
-<a name="type_conversion_functions"></a>
 
 # Type conversion functions
 
@@ -14,7 +13,7 @@
 
 ## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S)
 
-Converts `value` to [Decimal](../../data_types/decimal.md#data_type-decimal) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
+Converts `value` to [Decimal](../../data_types/decimal.md) of precision `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
 ## toString
 
@@ -100,7 +99,6 @@ These functions accept a string and interpret the bytes placed at the beginning 
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
-<a name="type_conversion_function-cast"></a>
 
 ## CAST(x, t)
 
@@ -125,7 +123,7 @@ SELECT
 
 Conversion to FixedString(N) only works for arguments of type String or FixedString(N).
 
-Type conversion to [Nullable](../../data_types/nullable.md#data_type-nullable) and back is supported. Example:
+Type conversion to [Nullable](../../data_types/nullable.md) and back is supported. Example:
 
 ```
 SELECT toTypeName(x) FROM t_null
