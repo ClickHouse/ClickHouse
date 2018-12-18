@@ -71,7 +71,7 @@ public:
       */
     bool selectAllPartsToMergeWithinPartition(
         FuturePart & future_part,
-        size_t & available_disk_space,
+        UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
