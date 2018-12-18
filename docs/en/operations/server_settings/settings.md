@@ -74,7 +74,7 @@ To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.m
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#user-config).
+Settings profiles are located in the file specified in the parameter `user_config`.
 
 **Example**
 
@@ -196,7 +196,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL]() must be configured.
+If `https_port` is specified, [openSSL](#openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
