@@ -42,6 +42,7 @@ def concatenate(lang, docs_path, single_page_file):
             prefixes = ['', '../', '../../', '../../../']
             parts = tmp_path.split('/')
             single_page_file.write('<a name="%s/"></a>\n' % parts[-2])
+            single_page_file.write('<a name="%s"></a>\n' % '/'.join(parts[1:]))
             single_page_file.write('\n\n')
 
             for part in parts[0:-2]:
