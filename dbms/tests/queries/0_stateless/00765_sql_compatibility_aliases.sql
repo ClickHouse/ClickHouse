@@ -23,3 +23,4 @@ select trim(TRAILING 'x' FROM 'xxfooxx');
 select Trim(LEADING 'ab' FROM 'abbafooabba');
 select TRIM(both 'ab' FROM 'abbafooabbafooabba');
 select trim(LEADING '*[]{}|\\' FROM '\\|[[[}}}*foo*');
+select DATE_DIFF(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
