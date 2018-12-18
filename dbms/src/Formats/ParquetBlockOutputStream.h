@@ -32,10 +32,15 @@ private:
 
     static void fillArrowArrayWithDateColumnData(
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);
+
+    template <typename ColumnType>
     static void fillArrowArrayWithStringColumnData(
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);
-    static void fillArrowArrayWithFixedStringColumnData(
+
+/*    static void fillArrowArrayWithStringColumnData(
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);
+    static void fillArrowArrayWithFixedStringColumnData(
+        ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);*/
     template <typename NumericType, typename ArrowBuilderType>
     static void fillArrowArrayWithNumericColumnData(
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);

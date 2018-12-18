@@ -2,7 +2,6 @@
 
 #include <string>
 #include <DataStreams/IBlockOutputStream.h>
-#include <Formats/FormatSettings.h>
 #include <Core/Block.h>
 
 
@@ -10,7 +9,7 @@ namespace DB
 {
 
 class WriteBuffer;
-
+class FormatSettings;
 
 /** A data format designed to simplify the implementation of the ODBC driver.
   * ODBC driver is designed to be build for different platforms without dependencies from the main code,

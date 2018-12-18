@@ -91,7 +91,34 @@ void ParquetBlockOutputStream::fillArrowArrayWithNumericColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
-//TODO join string + fixed string via template
+template <typename ColumnType>
+void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
+    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+{
+    const auto & internal_column = static_cast<const ColumnType &>(*write_column);
+    arrow::StringBuilder string_builder;
+    arrow::Status append_status;
+
+    for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
+    {
+        if (null_bytemap && (*null_bytemap)[string_i])
+        {
+            append_status = string_builder.AppendNull();
+        }
+        else
+        {
+            StringRef string_ref = internal_column.getDataAt(string_i);
+            append_status = string_builder.Append(string_ref.data, string_ref.size);
+        }
+
+        checkAppendStatus(append_status, write_column->getName());
+    }
+
+    arrow::Status finish_status = string_builder.Finish(&arrow_array);
+    checkFinishStatus(finish_status, write_column->getName());
+}
+
+/*
 void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
@@ -143,6 +170,7 @@ void ParquetBlockOutputStream::fillArrowArrayWithFixedStringColumnData(
     arrow::Status finish_status = string_builder.Finish(&arrow_array);
     checkFinishStatus(finish_status, write_column->getName());
 }
+*/
 
 void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
@@ -276,11 +304,13 @@ void ParquetBlockOutputStream::write(const Block & block)
         // TODO: use typeid_cast
         if ("String" == column_nested_type_name)
         {
-            fillArrowArrayWithStringColumnData(nested_column, arrow_array, null_bytemap);
+            //fillArrowArrayWithStringColumnData(nested_column, arrow_array, null_bytemap);
+            fillArrowArrayWithStringColumnData<ColumnString>(nested_column, arrow_array, null_bytemap);
         }
         else if ("FixedString" == column_nested_type_name)
         {
-            fillArrowArrayWithFixedStringColumnData(nested_column, arrow_array, null_bytemap);
+            //fillArrowArrayWithFixedStringColumnData(nested_column, arrow_array, null_bytemap);
+            fillArrowArrayWithStringColumnData<ColumnFixedString>(nested_column, arrow_array, null_bytemap);
         }
         else if ("Date" == column_nested_type_name || "DateTime" == column_nested_type_name)
         {
