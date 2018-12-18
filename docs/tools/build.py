@@ -197,6 +197,8 @@ def build_single_page_version(lang, args, cfg):
                     })
                     mkdocs_build.build(cfg)
                     test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
+                    if args.save_raw_single_page:
+                        shutil.copytree(test_dir, args.save_raw_single_page)
 
 
 def build_redirects(args):
@@ -227,6 +229,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--skip-single-page', action='store_true')
+    arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
