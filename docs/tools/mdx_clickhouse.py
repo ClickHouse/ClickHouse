@@ -29,7 +29,7 @@ class ClickHouseLinkMixin(object):
                 if '#' in href:
                     el.set('href', '#' + href.split('#', 1)[1])
                 else:
-                    el.set('href', '#' + href.replace('.md', '/'))
+                    el.set('href', '#' + href.replace('/index.md', '/').replace('.md', '/'))
         return el
 
 

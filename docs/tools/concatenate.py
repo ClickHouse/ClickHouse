@@ -38,17 +38,22 @@ def concatenate(lang, docs_path, single_page_file):
 
     for path in files_to_concatenate:
         with open(os.path.join(lang_path, path)) as f:
-            tmp_path = path.replace('.md', '/')
+            anchors = set()
+            tmp_path = path.replace('/index.md', '/').replace('.md', '/')
             prefixes = ['', '../', '../../', '../../../']
             parts = tmp_path.split('/')
-            single_page_file.write('<a name="%s/"></a>\n' % parts[-2])
-            single_page_file.write('<a name="%s"></a>\n' % '/'.join(parts[1:]))
-            single_page_file.write('\n\n')
+            anchors.add(parts[-2] + '/')
+            anchors.add('/'.join(parts[1:]))
 
             for part in parts[0:-2]:
                 for prefix in prefixes:
-                    single_page_file.write('<a name="%s"></a>\n' % (prefix + tmp_path))
+                    anchors.add(prefix + tmp_path)
                 tmp_path = tmp_path.replace(part, '..')
+
+            for anchor in anchors:
+                single_page_file.write('<a name="%s"></a>\n' % anchor)
+
+            single_page_file.write('\n\n')
 
             for l in f:
                 if l.startswith('#'):
