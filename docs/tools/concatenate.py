@@ -48,7 +48,7 @@ def concatenate(lang, docs_path, single_page_file):
                 for prefix in prefixes:
                     single_page_file.write('<a name="%s"></a>\n' % (prefix + tmp_path))
                 tmp_path = tmp_path.replace(part, '..')
-                
+
             for l in f:
                 if l.startswith('#'):
                     l = '#' + l
