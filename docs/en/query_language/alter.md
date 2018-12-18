@@ -66,7 +66,6 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-<a name="query_language-queries-alter-key_alters"></a>
 
 ### Manipulations With Key Expressions
 
@@ -78,14 +77,13 @@ MODIFY ORDER BY new_expression
 
 It only works for tables in the [`MergeTree`](../operations/table_engines/mergetree.md) family (including
 [replicated](../operations/table_engines/replication.md) tables). The command changes the
-[sorting key](../operations/table_engines/mergetree.md#table_engines-mergetree-sorting_key) of the table
+[sorting key](../operations/table_engines/mergetree.md) of the table
 to `new_expression` (an expression or a tuple of expressions). Primary key remains the same.
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part
 rows are ordered by the sorting key expression you cannot add expressions containing existing columns
 to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query).
 
-<a name="query_language-manipulation-with-partitions-and-parts"></a>
 
 ### Manipulations With Partitions and Parts
 

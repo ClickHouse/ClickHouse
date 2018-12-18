@@ -29,6 +29,7 @@ nav:
     - 'Client Libraries': 'interfaces/third-party/client_libraries.md'
     - 'Integrations': 'interfaces/third-party/integrations.md'
     - 'Visual Interfaces': 'interfaces/third-party/gui.md'
+    - 'Proxies': 'interfaces/third-party/proxy.md'
 
 - 'Data Types':
   - 'Introduction': 'data_types/index.md'

@@ -177,6 +177,18 @@ def test_postgres_odbc_hached_dictionary_with_schema(started_cluster):
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))") == "hello\n"
     assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))") == "world\n"
 
+def test_postgres_odbc_hached_dictionary_no_tty_pipe_overflow(started_cluster):
+    conn = get_postgres_conn()
+    cursor = conn.cursor()
+    cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
+    for i in xrange(100):
+        try:
+            node1.query("system reload dictionary postgres_odbc_hashed", timeout=5)
+        except Exception as ex:
+            assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
+
+    assert node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(3))") == "xxx\n"
+
 def test_bridge_dies_with_parent(started_cluster):
     node1.query("select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))")
     def get_pid(cmd):
