@@ -606,6 +606,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
                     else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
+                    if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.has_having)
+                        executeHaving(pipeline, expressions.before_having);
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -625,10 +627,15 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
                 }
 
-                if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                else if (query.group_by_with_cube && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::CUBE);
+                if ((query.group_by_with_rollup || query.group_by_with_cube) && !aggregate_final)
+                {
+                    if (query.group_by_with_rollup)
+                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                    else if (query.group_by_with_cube)
+                        executeRollupOrCube(pipeline, Modificator::CUBE);
+                    if (expressions.has_having)
+                        executeHaving(pipeline, expressions.before_having);
+                }
             }
 
             if (expressions.has_order_by)
@@ -1483,3 +1490,4 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
+
