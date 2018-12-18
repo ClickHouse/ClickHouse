@@ -22,8 +22,9 @@ class ClickHouseLinkMixin(object):
         if el is not None:
             href = el.get('href') or ''
             is_external = href.startswith('http:') or href.startswith('https:')
-            if is_external and not href.startswith('https://clickhouse.yandex'):
-                el.set('rel', 'external nofollow')
+            if is_external:
+                if not href.startswith('https://clickhouse.yandex'):
+                    el.set('rel', 'external nofollow')
             elif single_page:
                 if '#' in href:
                     el.set('href', '#' + href.split('#', 1)[1])
