@@ -6,7 +6,7 @@
 namespace DB
 {
 
-String ASTSource::getID() const
+String ASTSource::getID(char) const
 {
     return "Source definition";
 }

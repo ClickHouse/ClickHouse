@@ -96,7 +96,7 @@ public:
     ASTFunction * layout;
     IAST * primary_key;
 
-    String getID() const override;
+    String getID(char delimiter) const override;
 
     ASTPtr clone() const override;
 
