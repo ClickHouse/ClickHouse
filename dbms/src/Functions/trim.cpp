@@ -80,8 +80,7 @@ private:
 #if __SSE4_2__
         const auto bytes_sse = sizeof(__m128i);
         const auto size_sse = size - (size % bytes_sse);
-        const static std::string whitespace_string(bytes_sse, whitespace);
-        const auto whitespace_mask = _mm_loadu_si128(reinterpret_cast<const __m128i *>(whitespace_string.data()));
+        const auto whitespace_mask = _mm_set1_epi8(whitespace);
         constexpr auto base_sse_mode = _SIDD_UBYTE_OPS | _SIDD_CMP_EQUAL_EACH | _SIDD_NEGATIVE_POLARITY;
         constexpr auto left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT;
         constexpr auto right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT;
