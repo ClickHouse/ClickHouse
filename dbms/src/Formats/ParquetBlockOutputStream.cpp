@@ -118,60 +118,6 @@ void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
-/*
-void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(
-    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
-{
-    const auto & internal_column = static_cast<const ColumnString &>(*write_column);
-    arrow::StringBuilder string_builder;
-    arrow::Status append_status;
-
-    for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
-    {
-        if (null_bytemap && (*null_bytemap)[string_i])
-        {
-            append_status = string_builder.AppendNull();
-        }
-        else
-        {
-            StringRef string_ref = internal_column.getDataAt(string_i);
-            append_status = string_builder.Append(string_ref.data, string_ref.size);
-        }
-
-        checkAppendStatus(append_status, write_column->getName());
-    }
-
-    arrow::Status finish_status = string_builder.Finish(&arrow_array);
-    checkFinishStatus(finish_status, write_column->getName());
-}
-
-void ParquetBlockOutputStream::fillArrowArrayWithFixedStringColumnData(
-    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
-{
-    const auto & internal_column = static_cast<const ColumnFixedString &>(*write_column);
-    arrow::StringBuilder string_builder;
-    arrow::Status append_status;
-
-    for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
-    {
-        if (null_bytemap && (*null_bytemap)[string_i])
-        {
-            append_status = string_builder.AppendNull();
-        }
-        else
-        {
-            StringRef string_ref = internal_column.getDataAt(string_i);
-            append_status = string_builder.Append(string_ref.data, string_ref.size);
-        }
-
-        checkAppendStatus(append_status, write_column->getName());
-    }
-
-    arrow::Status finish_status = string_builder.Finish(&arrow_array);
-    checkFinishStatus(finish_status, write_column->getName());
-}
-*/
-
 void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
