@@ -14,19 +14,22 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-struct TrimModeLeft {
+struct TrimModeLeft
+{
     static constexpr auto name = "trimLeft";
     static constexpr bool trim_left = true;
     static constexpr bool trim_right = false;
 };
 
-struct TrimModeRight {
+struct TrimModeRight
+{
     static constexpr auto name = "trimRight";
     static constexpr bool trim_left = false;
     static constexpr bool trim_right = true;
 };
 
-struct TrimModeBoth {
+struct TrimModeBoth
+{
     static constexpr auto name = "trimBoth";
     static constexpr bool trim_left = true;
     static constexpr bool trim_right = true;
@@ -85,7 +88,8 @@ private:
         auto mask = bytes_sse;
 #endif
 
-        if constexpr (mode::trim_left) {
+        if constexpr (mode::trim_left)
+        {
 #if __SSE4_2__
             /// skip whitespace from left in blocks of up to 16 characters
             constexpr auto left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT;
@@ -101,7 +105,8 @@ private:
                 ++chars_to_trim_left;
         }
 
-        if constexpr (mode::trim_right) {
+        if constexpr (mode::trim_right)
+        {
             constexpr auto right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT;
             const auto trim_right_size = size - chars_to_trim_left;
 #if __SSE4_2__
