@@ -33,7 +33,6 @@ DROP TABLE IF EXISTS test.params_when_no_params;
 DROP TABLE IF EXISTS test.too_many_params;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification;
 
-
 DROP TABLE IF EXISTS test.compression_codec_multiple;
 
 CREATE TABLE test.compression_codec_multiple (
