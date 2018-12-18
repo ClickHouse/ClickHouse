@@ -988,7 +988,7 @@
 
 ### Новые возможности:
 * Произвольный ключ партиционирования для таблиц семейства MergeTree.
-* Движок таблиц [Kafka](https://clickhouse.yandex/docs/en/single/index.html#document-table_engines/kafka).
+* Движок таблиц [Kafka](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/).
 * Возможность загружать модели [CatBoost](https://catboost.yandex/) и применять их к данным, хранящимся в ClickHouse.
 * Поддержка часовых поясов с нецелым смещением от UTC.
 * Поддержка операций с временными интервалами.
