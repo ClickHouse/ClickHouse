@@ -48,17 +48,8 @@ void ASTSource::formatImpl(const FormatSettings & settings,
         primary_key->formatImpl(settings, state, frame);
     }
 
-    settings.ostr << (settings.hilite ? hilite_function : "") << "LIFETIME(";
-    settings.ostr << min_lifetime << " " << max_lifetime << ")";
-    settings.ostr << (settings.hilite ? hilite_none : "");
-
-    /*
-    if (layout)
-    {
-        settings.ostr << (settings.hilite ? hilite_none : "");
-        layout->formatImpl(settings, state, frame);
-    }
-     */
+    lifetime->formatImpl(settings, state, frame);
+    layout->formatImpl(settings, state, frame);
 }
 
 }
