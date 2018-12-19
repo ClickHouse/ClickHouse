@@ -651,25 +651,41 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     ASTPtr expr;
     const char * function_name = nullptr;
 
-    if (ParserKeyword("SECOND").ignore(pos, expected))
-        function_name = "toSecond";
-    else if (ParserKeyword("MINUTE").ignore(pos, expected))
-        function_name = "toMinute";
-    else if (ParserKeyword("HOUR").ignore(pos, expected))
-        function_name = "toHour";
-    else if (ParserKeyword("DAY").ignore(pos, expected))
-        function_name = "toDayOfMonth";
-
-    // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
-    // else if (ParserKeyword("WEEK").ignore(pos, expected))
-    //    function_name = "toRelativeWeekNum";
-
-    else if (ParserKeyword("MONTH").ignore(pos, expected))
-        function_name = "toMonth";
-    else if (ParserKeyword("YEAR").ignore(pos, expected))
-        function_name = "toYear";
-    else
+    ParserInterval interval_parser;
+    if (!interval_parser.ignore(pos, expected))
         return false;
+
+    switch (interval_parser.interval_kind)
+    {
+        case ParserInterval::IntervalKind::Second:
+            function_name = "toSecond";
+            break;
+        case ParserInterval::IntervalKind::Minute:
+            function_name = "toMinute";
+            break;
+        case ParserInterval::IntervalKind::Hour:
+            function_name = "toHour";
+            break;
+        case ParserInterval::IntervalKind::Day:
+            function_name = "toDayOfMonth";
+            break;
+        case ParserInterval::IntervalKind::Week:
+            // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
+            // else if (ParserKeyword("WEEK").ignore(pos, expected))
+            //    function_name = "toRelativeWeekNum";
+            return false;
+        case ParserInterval::IntervalKind::Month:
+            function_name = "toMonth";
+            break;
+        case ParserInterval::IntervalKind::Quarter:
+            function_name = "toQuarter";
+            break;
+        case ParserInterval::IntervalKind::Year:
+            function_name = "toYear";
+            break;
+        default:
+            return false;
+    }
 
     ParserKeyword s_from("FROM");
     if (!s_from.ignore(pos, expected))
@@ -711,39 +727,39 @@ bool ParserDateDiffExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
     ++pos;
 
-    if (ParserKeyword("SECOND").ignore(pos, expected) || ParserKeyword("SQL_TSI_SECOND").ignore(pos, expected)
-        || ParserKeyword("SS").ignore(pos, expected) || ParserKeyword("S").ignore(pos, expected))
-        interval_name = "second";
-    else if (
-        ParserKeyword("MINUTE").ignore(pos, expected) || ParserKeyword("SQL_TSI_MINUTE").ignore(pos, expected)
-        || ParserKeyword("MI").ignore(pos, expected) || ParserKeyword("N").ignore(pos, expected))
-        interval_name = "minute";
-    else if (
-        ParserKeyword("HOUR").ignore(pos, expected) || ParserKeyword("SQL_TSI_HOUR").ignore(pos, expected)
-        || ParserKeyword("HH").ignore(pos, expected))
-        interval_name = "hour";
-    else if (
-        ParserKeyword("DAY").ignore(pos, expected) || ParserKeyword("SQL_TSI_DAY").ignore(pos, expected)
-        || ParserKeyword("DD").ignore(pos, expected) || ParserKeyword("D").ignore(pos, expected))
-        interval_name = "day";
-    else if (
-        ParserKeyword("WEEK").ignore(pos, expected) || ParserKeyword("SQL_TSI_WEEK").ignore(pos, expected)
-        || ParserKeyword("WK").ignore(pos, expected) || ParserKeyword("WW").ignore(pos, expected))
-        interval_name = "week";
-    else if (
-        ParserKeyword("MONTH").ignore(pos, expected) || ParserKeyword("SQL_TSI_MONTH").ignore(pos, expected)
-        || ParserKeyword("MM").ignore(pos, expected) || ParserKeyword("M").ignore(pos, expected))
-        interval_name = "month";
-    else if (
-        ParserKeyword("QUARTER").ignore(pos, expected) || ParserKeyword("SQL_TSI_QUARTER").ignore(pos, expected)
-        || ParserKeyword("QQ").ignore(pos, expected) || ParserKeyword("Q").ignore(pos, expected))
-        interval_name = "quarter";
-    else if (
-        ParserKeyword("YEAR").ignore(pos, expected) || ParserKeyword("SQL_TSI_YEAR").ignore(pos, expected)
-        || ParserKeyword("YYYY").ignore(pos, expected) || ParserKeyword("YY").ignore(pos, expected))
-        interval_name = "year";
-    else
+    ParserInterval interval_parser;
+    if (!interval_parser.ignore(pos, expected))
         return false;
+
+    switch (interval_parser.interval_kind)
+    {
+        case ParserInterval::IntervalKind::Second:
+            interval_name = "second";
+            break;
+        case ParserInterval::IntervalKind::Minute:
+            interval_name = "minute";
+            break;
+        case ParserInterval::IntervalKind::Hour:
+            interval_name = "hour";
+            break;
+        case ParserInterval::IntervalKind::Day:
+            interval_name = "day";
+            break;
+        case ParserInterval::IntervalKind::Week:
+            interval_name = "week";
+            break;
+        case ParserInterval::IntervalKind::Month:
+            interval_name = "month";
+            break;
+        case ParserInterval::IntervalKind::Quarter:
+            interval_name = "quarter";
+            break;
+        case ParserInterval::IntervalKind::Year:
+            interval_name = "year";
+            break;
+        default:
+            return false;
+    }
 
     if (pos->type != TokenType::Comma)
         return false;
