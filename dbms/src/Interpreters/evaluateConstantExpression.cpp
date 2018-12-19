@@ -243,9 +243,7 @@ namespace
     }
 }
 
-// TODO: distinguish always-false and failed evaluation results,
-//       assume failed if returned empty `Blocks` for now.
-Blocks evaluateConstantExpressionAsBlock(const ASTPtr & node, const ExpressionActionsPtr & target_expr)
+std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr)
 {
     Blocks result;
 
@@ -257,7 +255,7 @@ Blocks evaluateConstantExpressionAsBlock(const ASTPtr & node, const ExpressionAc
 
         if (dnf.empty())
         {
-            return result;
+            return {};
         }
 
         auto hasRequiredColumns = [&target_expr](const Block & block) -> bool
@@ -310,7 +308,7 @@ Blocks evaluateConstantExpressionAsBlock(const ASTPtr & node, const ExpressionAc
         }
     }
 
-    return result;
+    return {result};
 }
 
 }

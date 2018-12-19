@@ -36,11 +36,10 @@ ${CLICKHOUSE_CLIENT} -n --query="
 
 # Try more complext expressions for constant folding - all should pass.
 
-# TODO: should pass one day.
-#${CLICKHOUSE_CLIENT} -n --query="
-#    SET distributed_optimize_skip_select_on_unused_shards = 1;
-#    SELECT count(*) FROM test.distributed WHERE a = 1 AND a = 0;
-#"
+${CLICKHOUSE_CLIENT} -n --query="
+    SET distributed_optimize_skip_select_on_unused_shards = 1;
+    SELECT count(*) FROM test.distributed WHERE a = 1 AND a = 0 AND b = 0;
+"
 
 ${CLICKHOUSE_CLIENT} -n --query="
     SET distributed_optimize_skip_select_on_unused_shards = 1;

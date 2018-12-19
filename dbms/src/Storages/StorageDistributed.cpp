@@ -1,38 +1,41 @@
+#include <Storages/StorageDistributed.h>
+
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 
 #include <Databases/IDatabase.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/StorageDistributed.h>
-#include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/ParserAlterQuery.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/parseQuery.h>
 
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
@@ -58,6 +61,7 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int TYPE_MISMATCH;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int TOO_MANY_ROWS;
 }
 
 
@@ -131,6 +135,29 @@ void initializeFileNamesIncrement(const std::string & path, SimpleIncrement & in
 {
     if (!path.empty())
         increment.set(getMaximumFileNumber(path));
+}
+
+/// the same as DistributedBlockOutputStream::createSelector, should it be static?
+IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
+{
+    const auto & slot_to_shard = cluster->getSlotToShard();
+
+#define CREATE_FOR_TYPE(TYPE)                                   \
+    if (typeid_cast<const DataType##TYPE *>(result.type.get())) \
+        return createBlockSelector<TYPE>(*result.column, slot_to_shard);
+
+    CREATE_FOR_TYPE(UInt8)
+    CREATE_FOR_TYPE(UInt16)
+    CREATE_FOR_TYPE(UInt32)
+    CREATE_FOR_TYPE(UInt64)
+    CREATE_FOR_TYPE(Int8)
+    CREATE_FOR_TYPE(Int16)
+    CREATE_FOR_TYPE(Int32)
+    CREATE_FOR_TYPE(Int64)
+
+#undef CREATE_FOR_TYPE
+
+    throw Exception{"Sharding key expression does not evaluate to an integer type", ErrorCodes::TYPE_MISMATCH};
 }
 
 }
@@ -431,6 +458,41 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::str
 void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 {
     directory_monitor->shutdownAndDropAllData();
+}
+
+/// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
+/// using constraints from "WHERE" condition, otherwise returns `nullptr`
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
+{
+    const auto & select = typeid_cast<ASTSelectQuery &>(*query_info.query);
+
+    if (!select.where_expression)
+    {
+        return nullptr;
+    }
+
+    const auto & blocks = evaluateExpressionOverConstantCondition(select.where_expression, sharding_key_expr);
+
+    // Can't get definite answer if we can skip any shards
+    if (!blocks)
+    {
+        return nullptr;
+    }
+
+    std::set<int> shards;
+
+    for (const auto & block : *blocks)
+    {
+        if (!block.has(sharding_key_column_name))
+            throw Exception("sharding_key_expr should evaluate as a single row", ErrorCodes::TOO_MANY_ROWS);
+
+        const auto result = block.getByName(sharding_key_column_name);
+        const auto selector = createSelector(cluster, result);
+
+        shards.insert(selector.begin(), selector.end());
+    }
+
+    return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
 }
 
 
