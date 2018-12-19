@@ -88,10 +88,11 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
 
     bool has_nullable_columns = false;
 
+    ColumnPtr array_holder;
     for (size_t i = 0; i < arguments.size(); ++i)
     {
-        ColumnPtr array_ptr = block.getByPosition(arguments[i]).column;
-        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+        array_holder = block.getByPosition(arguments[i]).column;
+        const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_holder.get());
         if (!array)
         {
             const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(
@@ -100,8 +101,8 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
                 throw Exception("Illegal column " + block.getByPosition(arguments[i]).column->getName()
                     + " of " + toString(i + 1) + "-th argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
-            array_ptr = const_array->convertToFullColumn();
-            array = checkAndGetColumn<ColumnArray>(array_ptr.get());
+            array_holder = const_array->convertToFullColumn();
+            array = checkAndGetColumn<ColumnArray>(array_holder.get());
         }
 
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
