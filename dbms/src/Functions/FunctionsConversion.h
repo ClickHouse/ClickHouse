@@ -1138,6 +1138,10 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        /// If type is string, the function is no monotonic
+        if (WhichDataType(type).isString())
+            return {};
+
         size_t size_of_type = type.getSizeOfValueInMemory();
 
         /// If type is expanding
