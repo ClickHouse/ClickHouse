@@ -62,7 +62,7 @@ public:
             res_data.resize(res_data.size() + length + 1);
             std::memcpy(&res_data[res_offset], start, length);
             res_offset += length + 1;
-            res_data[res_offset - 1] = 0;
+            res_data[res_offset - 1] = '\0';
 
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
