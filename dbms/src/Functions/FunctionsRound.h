@@ -585,7 +585,7 @@ public:
     {
         const DataTypePtr & type_x = arguments[0];
 
-        if (!isNumber(type_x))
+        if (!(isNumber(type_x) || isDecimal(type_x)))
             throw Exception{"Unsupported type " + type_x->getName()
                             + " of first argument of function " + getName()
                             + ", must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -598,7 +598,7 @@ public:
 
         const auto type_arr_nested = type_arr->getNestedType();
 
-        if (!isNumber(type_arr_nested))
+        if (!(isNumber(type_arr_nested) || isDecimal(type_arr_nested)))
         {
             throw Exception{"Elements of array of second argument of function " + getName()
                             + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -644,7 +644,10 @@ public:
             && !executeNum<Int32>(in, out, boundaries)
             && !executeNum<Int64>(in, out, boundaries)
             && !executeNum<Float32>(in, out, boundaries)
-            && !executeNum<Float64>(in, out, boundaries))
+            && !executeNum<Float64>(in, out, boundaries)
+            && !executeDecimal<Decimal32>(in, out, boundaries)
+            && !executeDecimal<Decimal64>(in, out, boundaries)
+            && !executeDecimal<Decimal128>(in, out, boundaries))
         {
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
@@ -659,19 +662,31 @@ private:
         const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
         auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
         if (!in || !out)
-        {
             return false;
-        }
+
         executeImplNumToNum(in->getData(), out->getData(), boundaries);
         return true;
     }
 
     template <typename T>
-    void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst, const Array & boundaries)
+    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
     {
-        std::vector<T> boundary_values(boundaries.size());
+        const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped);
+        auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
+        if (!in || !out)
+            return false;
+
+        executeImplNumToNum(in->getData(), out->getData(), boundaries);
+        return true;
+    }
+
+    template <typename Container>
+    void executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
+    {
+        using ValueType = typename Container::value_type;
+        std::vector<ValueType> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
-            boundary_values[i] = boundaries[i].get<T>();
+            boundary_values[i] = boundaries[i].get<ValueType>();
 
         std::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
