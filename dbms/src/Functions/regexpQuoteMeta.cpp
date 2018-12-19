@@ -94,10 +94,12 @@ public:
             /// suboptimal, but uses original implementation from re2
             re2_st::StringPiece unquoted(source, srclen);
             const auto & quoted = re2_st::RE2::QuoteMeta(unquoted);
-            std::memcpy(dst_pos, quoted.data(), quoted.size());
+            const auto size = quoted.size();
+            std::memcpy(dst_pos, quoted.data(), size);
 
             source += srclen + 1;
-            dst_pos += quoted.size() + 1;
+            dst_pos[size] = '\0';
+            dst_pos += size + 1;
 
             dst_offsets[row] = dst_pos - dst;
             src_offset_prev = src_offsets[row];
