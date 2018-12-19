@@ -23,7 +23,7 @@ class ExternalDictionaries;
 class DatabaseDictionary : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, const Context & context);
+    DatabaseDictionary(const String & name_, const String & metadata_path, const Context & context);
 
     String getDatabaseName() const override;
 
@@ -63,6 +63,12 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) override;
 
+    void createDictionary(
+        const Context & context,
+        const String & table_name,
+        const DictionaryPtr & table,
+        const ASTPtr &query) override;
+
     void removeTable(
         const Context & context,
         const String & table_name) override;
@@ -96,10 +102,13 @@ public:
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
+    String getMetadataPath() const override;
+
     void shutdown() override;
 
 private:
     const String name;
+    const String metadata_path;
     mutable std::mutex mutex;
     const ExternalDictionaries & external_dictionaries;
     std::unordered_set<String> deleted_tables;

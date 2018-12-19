@@ -20,10 +20,11 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & context)
-    : name(name_),
-      external_dictionaries(context.getExternalDictionaries()),
-      log(&Logger::get("DatabaseDictionary(" + name + ")"))
+DatabaseDictionary::DatabaseDictionary(const String & name_, const String & metadata_path_, const Context & context)
+    : name(name_)
+    , metadata_path(metadata_path_)
+    , external_dictionaries(context.getExternalDictionaries())
+    , log(&Logger::get("DatabaseDictionary(" + name + ")"))
 {
 }
 
@@ -138,8 +139,19 @@ void DatabaseDictionary::createTable(
     const StoragePtr & /*table*/,
     const ASTPtr & /*query*/)
 {
-    // TODO: here will be implementation
     throw Exception("DatabaseDictionary: createTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+void DatabaseDictionary::createDictionary(const Context &context,
+                                          const String &table_name,
+                                          const DictionaryPtr &table,
+                                          const ASTPtr &query)
+{
+    (void)context;
+    (void)table_name;
+    (void)table;
+    (void)query;
 }
 
 void DatabaseDictionary::removeTable(
@@ -231,6 +243,13 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) c
 void DatabaseDictionary::shutdown()
 {
 }
+
+
+String DatabaseDictionary::getMetadataPath() const
+{
+    return metadata_path;
+}
+
 
 String DatabaseDictionary::getDatabaseName() const
 {
