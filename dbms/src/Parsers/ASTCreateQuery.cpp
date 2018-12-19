@@ -23,7 +23,7 @@ ASTPtr ASTSource::clone() const
         res->set(res->primary_key, primary_key->clone());
 
     if (lifetime)
-        res->set(res->lifetime, lifetime.clone());
+        res->set(res->lifetime, lifetime->clone());
 
     if (layout)
         res->set(res->layout, layout->clone());
