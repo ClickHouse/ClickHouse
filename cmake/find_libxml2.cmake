@@ -1,9 +1,11 @@
 option (USE_INTERNAL_LIBXML2_LIBRARY "Set to FALSE to use system libxml2 library instead of bundled" ${NOT_UNBUNDLED})
 
-if (USE_INTERNAL_LIBXML2_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libxml2/libxml.h")
-   message (WARNING "submodule contrib/libxml2 is missing. to fix try run: \n git submodule update --init --recursive")
-   set (USE_INTERNAL_LIBXML2_LIBRARY 0)
-   set (MISSING_INTERNAL_LIBXML2_LIBRARY 1)
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libxml2/libxml.h")
+    if (USE_INTERNAL_LIBXML2_LIBRARY)
+        message (WARNING "submodule contrib/libxml2 is missing. to fix try run: \n git submodule update --init --recursive")
+        set (USE_INTERNAL_LIBXML2_LIBRARY 0)
+    endif ()
+    set (MISSING_INTERNAL_LIBXML2_LIBRARY 1)
 endif ()
 
 if (NOT USE_INTERNAL_LIBXML2_LIBRARY)
