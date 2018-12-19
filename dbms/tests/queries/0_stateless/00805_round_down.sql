@@ -12,3 +12,6 @@ SELECT 1 as x, roundDown(x, [1]);
 SELECT 1 as x, roundDown(x, [1.5]);
 
 SELECT number % 10 as x, roundDown(x, (SELECT groupArray(number * 1.25) FROM numbers(100000))) FROM system.numbers LIMIT 10;
+
+SELECT toDecimal64(number, 5) / 100 as x, roundDown(x, [4, 5, 6]) FROM system.numbers LIMIT 10;
+
