@@ -57,7 +57,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
-    /// Branch with string in qery.
+    /// Branch with string in query.
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
 
