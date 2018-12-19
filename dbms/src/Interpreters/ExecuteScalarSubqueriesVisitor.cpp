@@ -102,7 +102,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     {
         if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(0).type.get()))
         {
-            throw Exception("Scalar subquery can't contain an aggregate function", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+            throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
         }
 
         auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
@@ -125,7 +125,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         {
             if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(i).type.get()))
             {
-                throw Exception("Scalar subquery can't contain an aggregate function", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+                throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
             }
 
             exp_list->children[i] = addTypeConversion(
