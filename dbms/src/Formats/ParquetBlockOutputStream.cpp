@@ -289,17 +289,6 @@ void ParquetBlockOutputStream::write(const Block & block)
 
     auto sink = std::make_shared<OstreamOutputStream>(ostr);
 
-
-#    if 0
-    arrow::Status write_status = parquet::arrow::WriteTable(
-        *arrow_table,
-        arrow::default_memory_pool(),
-        sink,
-        /* row_group_size = */ arrow_table->num_rows(),
-        parquet::default_writer_properties(),
-        parquet::arrow::default_arrow_writer_properties());
-#    endif
-
     // TODO CHECK RETURN_NOT_OK
     if (!file_writer)
     {
@@ -311,10 +300,6 @@ void ParquetBlockOutputStream::write(const Block & block)
         parquet::arrow::default_arrow_writer_properties(),
         &file_writer);
     }
-
-    //parquet::RowGroupWriter* rg_writer = file_writer->AppendBufferedRowGroup();
-    //rg_writer->Close();
-    //file_writer->NewRowGroup(0);
 
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto write_status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
