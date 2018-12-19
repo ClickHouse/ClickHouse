@@ -672,6 +672,11 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
 BlockIO InterpreterCreateQuery::execute()
 {
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
+    if (!create.table.empty() && !create.dictionary.empty())
+    {
+        throw Exception("Cannot create table and dictionary in one query", ErrorCodes::BAD_ARGUMENTS);
+    }
+
     checkAccess(create);
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
@@ -703,11 +708,6 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 
     if (!readonly && allow_ddl)
         return;
-
-    if (!create.table.empty() && !create.dictionary.empty())
-    {
-        throw Exception("Cannot create table and dictionary in one query", ErrorCodes::BAD_ARGUMENTS);
-    }
 
     String object;
 
