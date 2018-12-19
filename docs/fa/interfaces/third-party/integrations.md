@@ -33,6 +33,9 @@
 - ثبت نام
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (برای [Kubernetes](https://kubernetes.io))
+- مدیریت تنظیمات
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 
 ## اکوسیستم زبان برنامه نویسی
 
