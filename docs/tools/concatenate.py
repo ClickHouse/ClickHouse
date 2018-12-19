@@ -18,9 +18,9 @@ import os
 
 
 def concatenate(lang, docs_path, single_page_file):
-
     proj_config = os.path.join(docs_path, 'toc_%s.yml' % lang)
     lang_path = os.path.join(docs_path, lang)
+    az_re = re.compile(r'[a-z]')
 
     with open(proj_config) as cfg_file:
         files_to_concatenate = []
@@ -37,34 +37,32 @@ def concatenate(lang, docs_path, single_page_file):
     first_file = True
 
     for path in files_to_concatenate:
-
-        single_page_file.write('\n\n')
-
         with open(os.path.join(lang_path, path)) as f:
+            anchors = set()
+            tmp_path = path.replace('/index.md', '/').replace('.md', '/')
+            prefixes = ['', '../', '../../', '../../../']
+            parts = tmp_path.split('/')
+            anchors.add(parts[-2] + '/')
+            anchors.add('/'.join(parts[1:]))
 
-            # function is passed into re.sub() to process links
-            def link_proc(matchObj):
-                text, link = matchObj.group().strip('[)').split('](', 1)
-                if link.startswith('http:') or link.startswith('https:') or '.jpeg' in link or '.jpg' in link or '.png' in link or '.gif' in link:
-                    return '[' + text + '](' + link + ')'
-                else:
-                    sharp_pos = link.find('#')
-                    if sharp_pos > -1:
-                        return '[' + text + '](' + link[sharp_pos:] + ')'
-                    else:
-                        return '[' + text + '](#' + link.replace('../', '').replace('/index.md', '').replace('.md', '') + ')'
+            for part in parts[0:-2] if len(parts) > 2 else parts:
+                for prefix in prefixes:
+                    anchor = prefix + tmp_path
+                    if anchor:
+                        anchors.add(anchor)
+                        anchors.add('../' + anchor)
+                        anchors.add('../../' + anchor)
+                tmp_path = tmp_path.replace(part, '..')
+
+            for anchor in anchors:
+                if re.search(az_re, anchor):
+                    single_page_file.write('<a name="%s"></a>\n' % anchor)
+
+            single_page_file.write('\n\n')
 
             for l in f:
-                # Processing links in a string
-                l = re.sub(r'\[.+?\]\(.+?\)', link_proc, l)
-
-                # Correcting headers levels
-                if not first_file:
-                    if l.startswith('#'):
-                        l = '#' + l
-                else:
-                    first_file = False
-
+                if l.startswith('#'):
+                    l = '#' + l
                 single_page_file.write(l)
 
     single_page_file.flush()

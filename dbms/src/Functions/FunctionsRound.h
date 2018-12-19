@@ -1,14 +1,19 @@
 #pragma once
 
+#include <Columns/ColumnArray.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Interpreters/castColumn.h>
 
 #include <common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
 #include <ext/bit_cast.h>
+#include <algorithm>
 
 #if __SSE4_1__
     #include <smmintrin.h>
@@ -24,6 +29,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -553,6 +559,154 @@ public:
     {
         return { true, true, true };
     }
+};
+
+
+/** Rounds down to a number within explicitly specified array.
+  * If the value is less than the minimal bound - returns the minimal bound.
+  */
+class FunctionRoundDown : public IFunction
+{
+public:
+    static constexpr auto name = "roundDown";
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRoundDown>(context); }
+    FunctionRoundDown(const Context & context) : context(context) {}
+
+public:
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const DataTypePtr & type_x = arguments[0];
+
+        if (!(isNumber(type_x) || isDecimal(type_x)))
+            throw Exception{"Unsupported type " + type_x->getName()
+                            + " of first argument of function " + getName()
+                            + ", must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        const DataTypeArray * type_arr = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+
+        if (!type_arr)
+            throw Exception{"Second argument of function " + getName()
+                            + ", must be array of boundaries to round to.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        const auto type_arr_nested = type_arr->getNestedType();
+
+        if (!(isNumber(type_arr_nested) || isDecimal(type_arr_nested)))
+        {
+            throw Exception{"Elements of array of second argument of function " + getName()
+                            + " must be numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        }
+        return getLeastSupertype({type_x, type_arr_nested});
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
+    {
+        auto in_column = block.getByPosition(arguments[0]).column;
+        const auto & in_type = block.getByPosition(arguments[0]).type;
+
+        auto array_column = block.getByPosition(arguments[1]).column;
+        const auto & array_type = block.getByPosition(arguments[1]).type;
+
+        const auto & return_type = block.getByPosition(result).type;
+        auto column_result = return_type->createColumn();
+        auto out = column_result.get();
+
+        if (!in_type->equals(*return_type))
+            in_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
+
+        if (!array_type->equals(*return_type))
+            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type), context);
+
+        const auto in = in_column.get();
+        auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
+        size_t num_boundaries = boundaries.size();
+        if (!num_boundaries)
+            throw Exception("Empty array is illegal for boundaries in " + getName() + " function", ErrorCodes::BAD_ARGUMENTS);
+
+        if (!executeNum<UInt8>(in, out, boundaries)
+            && !executeNum<UInt16>(in, out, boundaries)
+            && !executeNum<UInt32>(in, out, boundaries)
+            && !executeNum<UInt64>(in, out, boundaries)
+            && !executeNum<Int8>(in, out, boundaries)
+            && !executeNum<Int16>(in, out, boundaries)
+            && !executeNum<Int32>(in, out, boundaries)
+            && !executeNum<Int64>(in, out, boundaries)
+            && !executeNum<Float32>(in, out, boundaries)
+            && !executeNum<Float64>(in, out, boundaries)
+            && !executeDecimal<Decimal32>(in, out, boundaries)
+            && !executeDecimal<Decimal64>(in, out, boundaries)
+            && !executeDecimal<Decimal128>(in, out, boundaries))
+        {
+            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        block.getByPosition(result).column = std::move(column_result);
+    }
+
+private:
+    template <typename T>
+    bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    {
+        const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
+        auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
+        if (!in || !out)
+            return false;
+
+        executeImplNumToNum(in->getData(), out->getData(), boundaries);
+        return true;
+    }
+
+    template <typename T>
+    bool executeDecimal(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
+    {
+        const auto in = checkAndGetColumn<ColumnDecimal<T>>(in_untyped);
+        auto out = typeid_cast<ColumnDecimal<T> *>(out_untyped);
+        if (!in || !out)
+            return false;
+
+        executeImplNumToNum(in->getData(), out->getData(), boundaries);
+        return true;
+    }
+
+    template <typename Container>
+    void executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
+    {
+        using ValueType = typename Container::value_type;
+        std::vector<ValueType> boundary_values(boundaries.size());
+        for (size_t i = 0; i < boundaries.size(); ++i)
+            boundary_values[i] = boundaries[i].get<ValueType>();
+
+        std::sort(boundary_values.begin(), boundary_values.end());
+        boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
+
+        size_t size = src.size();
+        dst.resize(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
+            if (it == boundary_values.end())
+            {
+                dst[i] = boundary_values.back();
+            }
+            else if (it == boundary_values.begin())
+            {
+                dst[i] = boundary_values.front();
+            }
+            else
+            {
+                dst[i] = *(it - 1);
+            }
+        }
+    }
+
+private:
+    const Context & context;
 };
 
 

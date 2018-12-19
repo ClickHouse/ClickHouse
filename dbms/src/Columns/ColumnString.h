@@ -158,7 +158,8 @@ public:
         offsets.push_back(new_size);
     }
 
-    void insertDataWithTerminatingZero(const char * pos, size_t length) override
+    /// Like getData, but inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
+    void insertDataWithTerminatingZero(const char * pos, size_t length)
     {
         const size_t old_size = chars.size();
         const size_t new_size = old_size + length;

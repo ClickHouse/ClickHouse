@@ -34,6 +34,9 @@ inc="-I. \
 -I./contrib/poco/Foundation/include \
 -I./contrib/boost/libs/*/include \
 -I./contrib/boost \
+-I/usr/include/llvm-7 \
+-I/usr/include/llvm-6.0 \
+-I/usr/include/llvm-5.0 \
 -I./contrib/llvm/llvm/include \
 -I${BUILD_DIR}/contrib/llvm/llvm/include \
 -I./contrib/libbtrie/include \

@@ -38,11 +38,31 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
+### LightHouse
+
+[LightHouse](https://github.com/VKCOM/lighthouse)是ClickHouse的轻量级Web界面。
+
+特征：
+
+ - 包含过滤和元数据的表列表。
+ - 带有过滤和排序的表格预览。
+ - 只读查询执行。
+
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli)是ClickHouse的替代命令行客户端，用Python 3编写。
+
+特征：
+ - 自动完成。
+ - 查询和数据输出的语法高亮显示。
+ - 寻呼机支持数据输出。
+ - 自定义PostgreSQL类命令。
+
 ## 商业
 
 ### DBeaver
 
-[DBeaver](https://dbeaver.io/) - 具有ClickHouse支持的通用桌面数据库客户端。
+[DBeaver](https://dbeaver.io/)具有ClickHouse支持的通用桌面数据库客户端。
 
 特征：
 
@@ -63,4 +83,4 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
  - 重构。
  - 搜索和导航。
 
-[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party_gui/) <!--hide-->
+[来源文章](https://clickhouse.yandex/docs/zh/interfaces/third-party/gui/) <!--hide-->

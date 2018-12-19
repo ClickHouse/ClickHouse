@@ -1,4 +1,3 @@
-<a name="utils-clickhouse-local"></a>
 
 # clickhouse-local
 

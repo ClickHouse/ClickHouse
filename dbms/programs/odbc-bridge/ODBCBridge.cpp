@@ -121,9 +121,6 @@ void ODBCBridge::initialize(Application & self)
     if (is_help)
         return;
 
-    if (!config().has("logger.log"))
-        config().setBool("logger.console", true);
-
     config().setString("logger", "ODBCBridge");
 
     buildLoggers(config());

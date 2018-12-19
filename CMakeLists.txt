@@ -127,7 +127,10 @@ endif ()
 
 include (cmake/test_cpu.cmake)
 
-option (ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
+if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
+    option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
+endif()
+
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
@@ -187,10 +190,10 @@ if (OS_LINUX AND COMPILER_CLANG)
     endif ()
 endif ()
 
-if (COMPILER_GCC)
-    set (STATIC_STDLIB_FLAGS "-static-libgcc -static-libstdc++")
-else ()
+if (USE_LIBCXX)
     set (STATIC_STDLIB_FLAGS "")
+else ()
+    set (STATIC_STDLIB_FLAGS "-static-libgcc -static-libstdc++")
 endif ()
 
 if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))

@@ -46,7 +46,7 @@ namespace
 {
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
-using Aliases = std::unordered_map<String, ASTPtr>;
+using Aliases = SyntaxAnalyzerResult::Aliases;
 
 /// Add columns from storage to source_columns list.
 void collectSourceColumns(ASTSelectQuery * select_query, const Context & context,
@@ -134,8 +134,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
         LogAST log;
-        QueryAliasesVisitor query_aliases_visitor(result.aliases, log.stream());
-        query_aliases_visitor.visit(query);
+        QueryAliasesVisitor::Data query_aliases_data{result.aliases};
+        QueryAliasesVisitor(query_aliases_data, log.stream()).visit(query);
     }
 
     /// Common subexpression elimination. Rewrite rules.
@@ -228,7 +228,8 @@ void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
 
     LogAST log;
-    TranslateQualifiedNamesVisitor visitor(source_columns, tables, log.stream());
+    TranslateQualifiedNamesVisitor::Data visitor_data{source_columns, tables};
+    TranslateQualifiedNamesVisitor visitor(visitor_data, log.stream());
     visitor.visit(query);
 }
 
@@ -341,8 +342,8 @@ void executeScalarSubqueries(ASTPtr & query, const ASTSelectQuery * select_query
 
     if (!select_query)
     {
-        ExecuteScalarSubqueriesVisitor visitor(context, subquery_depth, log.stream());
-        visitor.visit(query);
+        ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth};
+        ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
     }
     else
     {
@@ -352,8 +353,8 @@ void executeScalarSubqueries(ASTPtr & query, const ASTSelectQuery * select_query
             if (!typeid_cast<const ASTTableExpression *>(child.get())
                 && !typeid_cast<const ASTSelectQuery *>(child.get()))
             {
-                ExecuteScalarSubqueriesVisitor visitor(context, subquery_depth, log.stream());
-                visitor.visit(child);
+                ExecuteScalarSubqueriesVisitor::Data visitor_data{context, subquery_depth};
+                ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(child);
             }
         }
     }
@@ -675,9 +676,13 @@ void optimizeUsing(const ASTSelectQuery * select_query)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set)
 {
-    if (select_query && select_query->array_join_expression_list())
+    if (!select_query)
+        return;
+
+    ASTPtr array_join_expression_list = select_query->array_join_expression_list();
+    if (array_join_expression_list)
     {
-        ASTs & array_join_asts = select_query->array_join_expression_list()->children;
+        ASTs & array_join_asts = array_join_expression_list->children;
         for (const auto & ast : array_join_asts)
         {
             const String nested_table_name = ast->getColumnName();
@@ -696,10 +701,10 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
         }
 
         {
-            ArrayJoinedColumnsVisitor visitor(result.array_join_name_to_alias,
-                                              result.array_join_alias_to_name,
-                                              result.array_join_result_to_source);
-            visitor.visit(query);
+            ArrayJoinedColumnsVisitor::Data visitor_data{result.array_join_name_to_alias,
+                                                         result.array_join_alias_to_name,
+                                                         result.array_join_result_to_source};
+            ArrayJoinedColumnsVisitor(visitor_data).visit(query);
         }
 
         /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,

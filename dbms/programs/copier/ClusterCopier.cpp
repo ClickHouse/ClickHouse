@@ -481,7 +481,7 @@ String DB::TaskShard::getHostNameExample() const
 }
 
 
-static bool isExtedndedDefinitionStorage(const ASTPtr & storage_ast)
+static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
     const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
     return storage.partition_by || storage.order_by || storage.sample_by;
@@ -503,7 +503,7 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     ASTPtr arguments_ast = engine.arguments->clone();
     ASTs & arguments = typeid_cast<ASTExpressionList &>(*arguments_ast).children;
 
-    if (isExtedndedDefinitionStorage(storage_ast))
+    if (isExtendedDefinitionStorage(storage_ast))
     {
         if (storage.partition_by)
             return storage.partition_by->clone();

@@ -73,8 +73,6 @@ public:
     void insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions);
 
     void insertData(const char * pos, size_t length) override;
-    void insertDataWithTerminatingZero(const char * pos, size_t length) override;
-
 
     void popBack(size_t n) override { idx.popBack(n); }
 

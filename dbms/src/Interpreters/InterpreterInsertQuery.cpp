@@ -159,4 +159,10 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
     throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
 }
 
+std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
+{
+    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    return {query.database, query.table};
+}
+
 }
