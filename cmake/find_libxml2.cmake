@@ -3,6 +3,7 @@ option (USE_INTERNAL_LIBXML2_LIBRARY "Set to FALSE to use system libxml2 library
 if (USE_INTERNAL_LIBXML2_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libxml2/libxml.h")
    message (WARNING "submodule contrib/libxml2 is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_LIBXML2_LIBRARY 0)
+   set (MISSING_INTERNAL_LIBXML2_LIBRARY 1)
 endif ()
 
 if (NOT USE_INTERNAL_LIBXML2_LIBRARY)
@@ -11,7 +12,7 @@ if (NOT USE_INTERNAL_LIBXML2_LIBRARY)
 endif ()
 
 if (LIBXML2_LIBRARY AND LIBXML2_INCLUDE_DIR)
-else ()
+elseif (NOT MISSING_INTERNAL_LIBXML2_LIBRARY)
     set (LIBXML2_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libxml2/include ${ClickHouse_SOURCE_DIR}/contrib/libxml2-cmake/linux_x86_64/include)
     set (USE_INTERNAL_LIBXML2_LIBRARY 1)
     set (LIBXML2_LIBRARY libxml2)
