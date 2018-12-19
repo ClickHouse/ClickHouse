@@ -66,6 +66,31 @@ public:
 
     ParserInterval() : interval_kind(IntervalKind::Incorrect) {}
 
+    const char * getToIntervalKindFunctionName()
+    {
+        switch (interval_kind)
+        {
+            case ParserInterval::IntervalKind::Second:
+                return "toIntervalSecond";
+            case ParserInterval::IntervalKind::Minute:
+                return "toIntervalMinute";
+            case ParserInterval::IntervalKind::Hour:
+                return "toIntervalHour";
+            case ParserInterval::IntervalKind::Day:
+                return "toIntervalDay";
+            case ParserInterval::IntervalKind::Week:
+                return "toIntervalWeek";
+            case ParserInterval::IntervalKind::Month:
+                return "toIntervalMonth";
+            case ParserInterval::IntervalKind::Quarter:
+                return "toIntervalQuarter";
+            case ParserInterval::IntervalKind::Year:
+                return "toIntervalYear";
+            default:
+                return nullptr;
+        }
+    }
+
 protected:
     const char * getName() const override { return "interval"; }
 

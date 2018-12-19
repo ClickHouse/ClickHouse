@@ -607,41 +607,13 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
         return false;
 
-    const char * function_name = nullptr;
 
     ParserInterval interval_parser;
     if (!interval_parser.ignore(pos, expected))
         return false;
 
-    switch (interval_parser.interval_kind)
-    {
-        case ParserInterval::IntervalKind::Second:
-            function_name = "toIntervalSecond";
-            break;
-        case ParserInterval::IntervalKind::Minute:
-            function_name = "toIntervalMinute";
-            break;
-        case ParserInterval::IntervalKind::Hour:
-            function_name = "toIntervalHour";
-            break;
-        case ParserInterval::IntervalKind::Day:
-            function_name = "toIntervalDay";
-            break;
-        case ParserInterval::IntervalKind::Week:
-            function_name = "toIntervalWeek";
-            break;
-        case ParserInterval::IntervalKind::Month:
-            function_name = "toIntervalMonth";
-            break;
-        case ParserInterval::IntervalKind::Quarter:
-            function_name = "toIntervalQuarter";
-            break;
-        case ParserInterval::IntervalKind::Year:
-            function_name = "toIntervalYear";
-            break;
-        default:
-            return false;
-    }
+    const char * function_name = interval_parser.getToIntervalKindFunctionName();
+
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();
 

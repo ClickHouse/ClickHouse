@@ -131,6 +131,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserDateAddExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "DATE_ADD expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 class ParserDateDiffExpression : public IParserBase
 {
 protected:
