@@ -90,7 +90,7 @@ private:
     IndexForNativeFormat::Blocks::const_iterator index_block_it;
     IndexForNativeFormat::Blocks::const_iterator index_block_end;
     IndexOfBlockForNativeFormat::Columns::const_iterator index_column_it;
-    
+
     bool convert_types_to_low_cardinality = false;
 
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile. Unused otherwise.

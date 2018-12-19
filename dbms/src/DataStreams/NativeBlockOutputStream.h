@@ -42,7 +42,7 @@ private:
     size_t initial_size_of_file;    /// The initial size of the data file, if `append` done. Used for the index.
     /// If you need to write index, then `ostr` must be a CompressedWriteBuffer.
     CompressedWriteBuffer * ostr_concrete = nullptr;
-    
+
     bool remove_low_cardinality;
 };
 
