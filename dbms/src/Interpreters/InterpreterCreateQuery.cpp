@@ -67,6 +67,7 @@ namespace ErrorCodes
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -703,29 +704,27 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
     if (!readonly && allow_ddl)
         return;
 
+    if (!create.table.empty() && !create.dictionary.empty())
+    {
+        throw Exception("Cannot create table and dictionary in one query", ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    String object;
+
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty() && create.dictionary.empty())
-    {
-        if (readonly)
-            throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+        object = "database";
+    else if (!create.table.empty())
+        object = "table";
+    else
+        object = "dictionary";
 
-        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
-    }
-
-    if (create.temporary && readonly >= 2)
+    if (create.temporary && readonly >= 2 && object == "table")
         return;
 
-    if (!create.table.empty())
-    {
-        if (readonly)
-            throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
-
-        throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
-    }
-
     if (readonly)
-        throw Exception("Cannot create dictionary in readonly mode", ErrorCodes::READONLY);
+        throw Exception("Cannot create " + object + " in readonly mode", ErrorCodes::READONLY);
 
-    throw Exception("Cannot create dictionary. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
+    throw Exception("Cannot create " + object + ". DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 }
