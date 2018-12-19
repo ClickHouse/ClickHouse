@@ -69,6 +69,9 @@ ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 
 ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
 {
+    if (!column)
+        return column;
+
     if (from_type->equals(*to_type))
         return column;
 

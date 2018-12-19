@@ -8,6 +8,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/typeid_cast.h>
+#include "InDepthNodeVisitor.h"
 
 namespace DB
 {
@@ -18,25 +19,49 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
-/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
-
 /** Get a set of necessary columns to read from the table.
   * In this case, the columns specified in ignored_names are considered unnecessary. And the ignored_names parameter can be modified.
   * The set of columns available_joined_columns are the columns available from JOIN, they are not needed for reading from the main table.
   * Put in required_joined_columns the set of columns available from JOIN and needed.
   */
-class RequiredSourceColumnsVisitor
+class RequiredSourceColumnsMatcher
 {
 public:
-    RequiredSourceColumnsVisitor(const NameSet & available_columns_, NameSet & required_source_columns_, NameSet & ignored_names_,
-                                 const NameSet & available_joined_columns_, NameSet & required_joined_columns_)
-    :   available_columns(available_columns_),
-        required_source_columns(required_source_columns_),
-        ignored_names(ignored_names_),
-        available_joined_columns(available_joined_columns_),
-        required_joined_columns(required_joined_columns_)
-    {}
+    struct Data
+    {
+        const NameSet & available_columns;
+        NameSet & required_source_columns;
+        NameSet & ignored_names;
+        const NameSet & available_joined_columns;
+        NameSet & required_joined_columns;
+    };
+
+    static constexpr const char * label = "RequiredSourceColumns";
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
+    {
+        /// We will not go to the ARRAY JOIN section, because we need to look at the names of non-ARRAY-JOIN columns.
+        /// There, `collectUsedColumns` will send us separately.
+        if (typeid_cast<ASTSelectQuery *>(child.get()) ||
+            typeid_cast<ASTArrayJoin *>(child.get()) ||
+            typeid_cast<ASTTableExpression *>(child.get()) ||
+            typeid_cast<ASTTableJoin *>(child.get()))
+            return false;
+
+        /// Processed. Do not need children.
+        if (typeid_cast<ASTIdentifier *>(node.get()))
+            return false;
+
+        if (auto * f = typeid_cast<ASTFunction *>(node.get()))
+        {
+            /// "indexHint" is a special function for index analysis. Everything that is inside it is not calculated. @sa KeyCondition
+            /// "lambda" visit children itself.
+            if (f->name == "indexHint" || f->name == "lambda")
+                return false;
+        }
+
+        return true;
+    }
 
     /** Find all the identifiers in the query.
       * We will use depth first search in AST.
@@ -46,36 +71,34 @@ public:
       * - there is some exception for the ARRAY JOIN clause (it has a slightly different identifiers);
       * - we put identifiers available from JOIN in required_joined_columns.
       */
-    void visit(const ASTPtr & ast) const
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
     {
-        if (!tryVisit<ASTIdentifier>(ast) &&
-            !tryVisit<ASTFunction>(ast))
-            visitChildren(ast);
+        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+            visit(*t, ast, data);
+        if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
+            visit(*t, ast, data);
+        return {};
     }
 
 private:
-    const NameSet & available_columns;
-    NameSet & required_source_columns;
-    NameSet & ignored_names;
-    const NameSet & available_joined_columns;
-    NameSet & required_joined_columns;
-
-    void visit(const ASTIdentifier & node, const ASTPtr &) const
+    static void visit(const ASTIdentifier & node, const ASTPtr &, Data & data)
     {
         if (node.general()
-            && !ignored_names.count(node.name)
-            && !ignored_names.count(Nested::extractTableName(node.name)))
+            && !data.ignored_names.count(node.name)
+            && !data.ignored_names.count(Nested::extractTableName(node.name)))
         {
-            if (!available_joined_columns.count(node.name)
-                || available_columns.count(node.name)) /// Read column from left table if has.
-                required_source_columns.insert(node.name);
+            /// Read column from left table if has.
+            if (!data.available_joined_columns.count(node.name) || data.available_columns.count(node.name))
+                data.required_source_columns.insert(node.name);
             else
-                required_joined_columns.insert(node.name);
+                data.required_joined_columns.insert(node.name);
         }
     }
 
-    void visit(const ASTFunction & node, const ASTPtr & ast) const
+    static void visit(const ASTFunction & node, const ASTPtr &, Data & data)
     {
+        NameSet & ignored_names = data.ignored_names;
+
         if (node.name == "lambda")
         {
             if (node.arguments->children.size() != 2)
@@ -102,47 +125,16 @@ private:
                 }
             }
 
-            visit(node.arguments->children.at(1));
+            /// @note It's a special case where we visit children inside the matcher, not in visitor.
+            visit(node.arguments->children[1], data);
 
             for (size_t i = 0; i < added_ignored.size(); ++i)
                 ignored_names.erase(added_ignored[i]);
-
-            return;
         }
-
-        /// A special function `indexHint`. Everything that is inside it is not calculated
-        /// (and is used only for index analysis, see KeyCondition).
-        if (node.name == "indexHint")
-            return;
-
-        visitChildren(ast);
-    }
-
-    void visitChildren(const ASTPtr & ast) const
-    {
-        for (auto & child : ast->children)
-        {
-            /** We will not go to the ARRAY JOIN section, because we need to look at the names of non-ARRAY-JOIN columns.
-            * There, `collectUsedColumns` will send us separately.
-            */
-            if (!typeid_cast<const ASTSelectQuery *>(child.get())
-                && !typeid_cast<const ASTArrayJoin *>(child.get())
-                && !typeid_cast<const ASTTableExpression *>(child.get())
-                && !typeid_cast<const ASTTableJoin *>(child.get()))
-                visit(child);
-        }
-    }
-
-    template <typename T>
-    bool tryVisit(const ASTPtr & ast) const
-    {
-        if (const T * t = typeid_cast<const T *>(ast.get()))
-        {
-            visit(*t, ast);
-            return true;
-        }
-        return false;
     }
 };
+
+/// Get a set of necessary columns to read from the table.
+using RequiredSourceColumnsVisitor = InDepthNodeVisitor<RequiredSourceColumnsMatcher, true>;
 
 }

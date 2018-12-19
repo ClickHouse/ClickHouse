@@ -31,8 +31,6 @@
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -62,11 +60,9 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/QueryNormalizer.h>
 
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
-#include <Interpreters/ArrayJoinedColumnsVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
@@ -147,15 +143,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, context);
 
-    if (select_query && select_query->array_join_expression_list())
-    {
-        getRootActions(select_query->array_join_expression_list(), true, temp_actions);
-        addMultipleArrayJoinAction(temp_actions);
-        array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
-    }
-
     if (select_query)
     {
+        bool is_array_join_left;
+        ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+        if (array_join_expression_list)
+        {
+            getRootActions(array_join_expression_list, true, temp_actions);
+            addMultipleArrayJoinAction(temp_actions, is_array_join_left);
+            array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+        }
+
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
@@ -246,14 +244,14 @@ void ExpressionAnalyzer::analyzeAggregation()
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
 {
     /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesVisitor tables_visitor(context, external_tables);
-    tables_visitor.visit(query);
+    ExternalTablesVisitor::Data tables_data{context, external_tables};
+    ExternalTablesVisitor(tables_data).visit(query);
 
     if (do_global)
     {
-        GlobalSubqueriesVisitor subqueries_visitor(context, subquery_depth, isRemoteStorage(),
+        GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
                                                    external_tables, subqueries_for_sets, has_global_subqueries);
-        subqueries_visitor.visit(query);
+        GlobalSubqueriesVisitor(subqueries_data).visit(query);
     }
 }
 
@@ -516,7 +514,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 }
 
 /// "Big" ARRAY JOIN.
-void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
+void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool array_join_is_left) const
 {
     NameSet result_columns;
     for (const auto & result_source : syntax->array_join_result_to_source)
@@ -529,22 +527,24 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
         result_columns.insert(result_source.first);
     }
 
-    actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left(), context));
+    actions->add(ExpressionAction::arrayJoin(result_columns, array_join_is_left, context));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
     assertSelect();
 
-    if (!select_query->array_join_expression_list())
+    bool is_array_join_left;
+    ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+    if (!array_join_expression_list)
         return false;
 
     initChain(chain, source_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    getRootActions(select_query->array_join_expression_list(), only_types, step.actions);
+    getRootActions(array_join_expression_list, only_types, step.actions);
 
-    addMultipleArrayJoinAction(step.actions);
+    addMultipleArrayJoinAction(step.actions, is_array_join_left);
 
     return true;
 }
@@ -556,12 +556,13 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
         columns_added_by_join_list.push_back(joined_column.name_and_type);
 
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left, columns_added_by_join_list));
+        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left,
+                columns_added_by_join_list, columns_added_by_join_from_right_keys));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
                 actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzedJoin().key_names_left,
-                                                            columns_added_by_join_list));
+                        columns_added_by_join_list, columns_added_by_join_from_right_keys));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -621,10 +622,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
     if (!subquery_for_set.join)
     {
-        JoinPtr join = std::make_shared<Join>(
-            analyzedJoin().key_names_left, analyzedJoin().key_names_right, columns_added_by_join_from_right_keys,
-            settings.join_use_nulls, settings.size_limits_for_join,
-            join_params.kind, join_params.strictness);
+        JoinPtr join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
+            settings.size_limits_for_join, join_params.kind, join_params.strictness);
 
         /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
           * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
@@ -1031,8 +1030,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 /// Nothing needs to be ignored for expressions in ARRAY JOIN.
                 NameSet empty;
-                RequiredSourceColumnsVisitor visitor(available_columns, required, empty, empty, empty);
-                visitor.visit(expressions[i]);
+                RequiredSourceColumnsVisitor::Data visitor_data{available_columns, required, empty, empty, empty};
+                RequiredSourceColumnsVisitor(visitor_data).visit(expressions[i]);
             }
 
             ignored.insert(expressions[i]->getAliasOrColumnName());
@@ -1048,15 +1047,17 @@ void ExpressionAnalyzer::collectUsedColumns()
 
     NameSet required_joined_columns;
 
-    for (const auto & left_key_ast : analyzedJoin().key_asts_left)
+    for (const auto & left_key_ast : syntax->analyzed_join.key_asts_left)
     {
         NameSet empty;
-        RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, empty, required_joined_columns);
-        columns_visitor.visit(left_key_ast);
+        RequiredSourceColumnsVisitor::Data columns_data{available_columns, required, ignored, empty, required_joined_columns};
+        ASTPtr tmp = left_key_ast;
+        RequiredSourceColumnsVisitor(columns_data).visit(tmp);
     }
 
-    RequiredSourceColumnsVisitor columns_visitor(available_columns, required, ignored, available_joined_columns, required_joined_columns);
-    columns_visitor.visit(query);
+    RequiredSourceColumnsVisitor::Data columns_visitor_data{available_columns, required, ignored,
+                                                            available_joined_columns, required_joined_columns};
+    RequiredSourceColumnsVisitor(columns_visitor_data).visit(query);
 
     columns_added_by_join = analyzedJoin().available_joined_columns;
     for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end();)

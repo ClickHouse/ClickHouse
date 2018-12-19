@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=18.14.17
+ARG version=18.16.0
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -16,19 +16,29 @@ RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --allow-unauthenticated --yes --no-install-recommends \
             clickhouse-common-static=$version \
+            clickhouse-client=$version \
             clickhouse-server=$version \
             libgcc-7-dev \
+            locales \
+            tzdata \
+            wget \
     && rm -rf \
         /var/lib/apt/lists/* \
         /var/cache/debconf \
         /tmp/* \
     && apt-get clean
 
+ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64 /bin/gosu
+
+RUN locale-gen en_US.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+
 RUN mkdir /docker-entrypoint-initdb.d
 
 COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 COPY entrypoint.sh /entrypoint.sh
-ADD https://github.com/tianon/gosu/releases/download/1.10/gosu-amd64 /bin/gosu
 
 RUN chmod +x \
     /entrypoint.sh \

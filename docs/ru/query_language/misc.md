@@ -1,6 +1,5 @@
 <a name="queries"></a>
 
-<a name="queries-attach"></a>
 
 ## ATTACH
 Запрос полностью аналогичен запросу `CREATE`, но:

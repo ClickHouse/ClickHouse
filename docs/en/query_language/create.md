@@ -9,7 +9,6 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 `A database` is just a directory for tables.
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
 
-<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 
@@ -124,10 +123,6 @@ CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]table_name [TO[db.]name] [ENGINE
 ```
 
 Creates a view. There are two types of views: normal and MATERIALIZED.
-
-When creating a materialized view, you must specify ENGINE – the table engine for storing data.
-
-A materialized view works as follows: when inserting data to the table specified in SELECT, part of the inserted data is converted by this SELECT query, and the result is inserted in the view.
 
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 

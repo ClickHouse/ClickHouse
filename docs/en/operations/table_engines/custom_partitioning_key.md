@@ -1,4 +1,3 @@
-<a name="table_engines-custom_partitioning_key"></a>
 
 # Custom Partitioning Key
 
