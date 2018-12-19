@@ -31,9 +31,11 @@ friend class LiveBlockOutputStream;
 
 public:
     ~StorageLiveView() override;
-    std::string getName() const override { return "LiveView"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const { return database_name; }
+    String getName() const override { return "LiveView"; }
+    String getTableName() const override { return table_name; }
+    String getDatabaseName() const { return database_name; }
+    String getSelectDatabaseName() const { return select_database_name; }
+    String getSelectTableName() const { return select_table_name; }
 
     // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); };
@@ -41,7 +43,6 @@ public:
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
-    bool supportsParallelReplicas() const override { return true; }
 
     /// Mutex for the blocks and ready condition
     Poco::FastMutex mutex;
