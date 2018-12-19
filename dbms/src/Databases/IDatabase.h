@@ -102,6 +102,13 @@ public:
         const StoragePtr & table,
         const ASTPtr & query) = 0;
 
+    /// Add the dictionary to the database. Record its presence in the metadata.
+    virtual void createDictionary(
+        const Context & context,
+        const String & name,
+        const DictionaryPtr & dictionary,
+        const ASTPtr & query) = 0;
+
     /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
         const Context & context,
