@@ -1,10 +1,12 @@
 #pragma once
 
-#include <memory>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
+
+#include <memory>
+#include <optional>
 
 
 namespace DB
