@@ -782,7 +782,8 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision);
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -803,7 +804,8 @@ void TCPHandler::initBlockOutput(const Block & block)
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -815,7 +817,8 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
