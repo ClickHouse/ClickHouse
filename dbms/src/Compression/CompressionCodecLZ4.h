@@ -12,18 +12,19 @@ namespace DB
 class CompressionCodecLZ4 : public ICompressionCodec
 {
 public:
-    char getMethodByte() override;
+    UInt8 getMethodByte() const override;
 
-    void getCodecDesc(String & codec_desc) override;
-
-    size_t compress(char * source, size_t source_size, char * dest) override;
-
-    size_t getCompressedReserveSize(size_t uncompressed_size) override;
-
-    size_t decompress(char * source, size_t source_size, char * dest, size_t decompressed_size) override;
+    String getCodecDesc() const override;
 
 private:
-    LZ4::PerformanceStatistics lz4_stat;
+
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
+
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+
+    UInt32 getCompressedDataSize(UInt32 uncompressed_size) const override;
+
+    mutable LZ4::PerformanceStatistics lz4_stat;
 };
 
 }

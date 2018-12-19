@@ -371,8 +371,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto ct = columns.codecs.find(column.name);
         if (ct != std::end(columns.codecs))
         {
-            String codec_desc;
-            ct->second->getCodecDesc(codec_desc);
+            String codec_desc = ct->second->getCodecDesc();
             codec_desc = "CODEC(" + codec_desc + ")";
             auto pos = codec_desc.data();
             const auto end = pos + codec_desc.size();

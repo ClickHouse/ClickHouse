@@ -10,35 +10,34 @@
 namespace DB
 {
 
-char CompressionCodecLZ4::getMethodByte()
+UInt8 CompressionCodecLZ4::getMethodByte() const
 {
-    return static_cast<char>(CompressionMethodByte::LZ4);
+    return static_cast<UInt8>(CompressionMethodByte::LZ4);
 }
 
-void CompressionCodecLZ4::getCodecDesc(String & codec_desc)
+String CompressionCodecLZ4::getCodecDesc() const
 {
-    codec_desc = "LZ4";
+    return "LZ4";
 }
 
-size_t CompressionCodecLZ4::getCompressedReserveSize(size_t uncompressed_size)
+UInt32 CompressionCodecLZ4::getCompressedDataSize(UInt32 uncompressed_size) const
 {
     return LZ4_COMPRESSBOUND(uncompressed_size);
 }
 
-size_t CompressionCodecLZ4::compress(char * source, size_t source_size, char * dest)
+UInt32 CompressionCodecLZ4::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     return LZ4_compress_default(source, dest, source_size, LZ4_COMPRESSBOUND(source_size));
 }
 
-size_t CompressionCodecLZ4::decompress(char * source, size_t source_size, char * dest, size_t size_decompressed)
+void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    LZ4::decompress(source, dest, source_size, size_decompressed, lz4_stat);
-    return size_decompressed;
+    LZ4::decompress(source, dest, source_size, uncompressed_size, lz4_stat);
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
 {
-    factory.registerSimpleCompressionCodec("LZ4", static_cast<char>(CompressionMethodByte::LZ4), [&](){
+    factory.registerSimpleCompressionCodec("LZ4", static_cast<UInt8>(CompressionMethodByte::LZ4), [&](){
         return std::make_shared<CompressionCodecLZ4>();
     });
 }

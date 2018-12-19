@@ -11,17 +11,18 @@ namespace DB
 class CompressionCodecZSTD : public ICompressionCodec
 {
 public:
-    CompressionCodecZSTD(int level);
+    CompressionCodecZSTD(int level_);
 
-    char getMethodByte() override;
+    UInt8 getMethodByte() const override;
 
-    void getCodecDesc(String & codec_desc) override;
+    String getCodecDesc() const override;
 
-    size_t compress(char * source, size_t source_size, char * dest) override;
+    UInt32 getCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    size_t getCompressedReserveSize(size_t uncompressed_size) override;
+protected:
+    UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
-    size_t decompress(char *source, size_t source_size, char *dest, size_t decompressed_size) override;
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
 private:
     int level;

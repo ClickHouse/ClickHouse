@@ -21,22 +21,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-char CompressionCodecZSTD::getMethodByte()
+UInt8 CompressionCodecZSTD::getMethodByte() const
 {
-    return static_cast<char>(CompressionMethodByte::ZSTD);
+    return static_cast<UInt8>(CompressionMethodByte::ZSTD);
 }
 
-void CompressionCodecZSTD::getCodecDesc(String & codec_desc)
+String CompressionCodecZSTD::getCodecDesc() const
 {
-    codec_desc = "ZSTD";
+    return "ZSTD";
 }
 
-size_t CompressionCodecZSTD::getCompressedReserveSize(size_t uncompressed_size)
+UInt32 CompressionCodecZSTD::getCompressedDataSize(UInt32 uncompressed_size) const
 {
     return ZSTD_compressBound(uncompressed_size);
 }
 
-size_t CompressionCodecZSTD::compress(char * source, size_t source_size, char * dest)
+
+UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     size_t compressed_size = ZSTD_compress(dest, ZSTD_compressBound(source_size), source, source_size, level);
 
@@ -46,18 +47,17 @@ size_t CompressionCodecZSTD::compress(char * source, size_t source_size, char * 
     return compressed_size;
 }
 
-size_t CompressionCodecZSTD::decompress(char * source, size_t source_size, char * dest, size_t size_decompressed)
+
+void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
-    size_t res = ZSTD_decompress(dest, size_decompressed, source, source_size);
+    size_t res = ZSTD_decompress(dest, uncompressed_size, source, source_size);
 
     if (ZSTD_isError(res))
         throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
-
-    return size_decompressed;
 }
 
-CompressionCodecZSTD::CompressionCodecZSTD(int level)
-    :level(level)
+CompressionCodecZSTD::CompressionCodecZSTD(int level_)
+    :level(level_)
 {
 }
 

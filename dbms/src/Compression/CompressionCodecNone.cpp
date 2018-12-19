@@ -6,26 +6,25 @@
 namespace DB
 {
 
-char CompressionCodecNone::getMethodByte()
+UInt8 CompressionCodecNone::getMethodByte() const
 {
-    return static_cast<char>(CompressionMethodByte::NONE);
+    return static_cast<UInt8>(CompressionMethodByte::NONE);
 }
 
-void CompressionCodecNone::getCodecDesc(String & codec_desc)
+String CompressionCodecNone::getCodecDesc() const
 {
-    codec_desc = "NONE";
+    return "NONE";
 }
 
-size_t CompressionCodecNone::compress(char * source, size_t source_size, char * dest)
+UInt32 CompressionCodecNone::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
     memcpy(dest, source, source_size);
     return source_size;
 }
 
-size_t CompressionCodecNone::decompress(char * source, size_t /*source_size*/, char * dest, size_t size_decompressed)
+void CompressionCodecNone::doDecompressData(const char * source, UInt32 /*source_size*/, char * dest, UInt32 uncompressed_size) const
 {
-    memcpy(dest, source, size_decompressed);
-    return size_decompressed;
+    memcpy(dest, source, uncompressed_size);
 }
 
 void registerCodecNone(CompressionCodecFactory & factory)

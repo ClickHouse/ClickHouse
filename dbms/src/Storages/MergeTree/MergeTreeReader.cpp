@@ -252,7 +252,7 @@ MergeTreeReader::Stream::Stream(
         if (profile_callback)
             file_in->setProfileCallback(profile_callback, clock_type);
 
-        const auto compressed_buffer = codec->liftCompressed(*file_in);
+        const auto compressed_buffer = liftCompressed(codec, *file_in);
         non_cached_buffer = compressed_buffer;
         data_buffer = non_cached_buffer.get();
     }
