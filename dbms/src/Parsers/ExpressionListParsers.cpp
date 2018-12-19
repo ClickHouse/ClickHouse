@@ -609,25 +609,39 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     const char * function_name = nullptr;
 
-    if (ParserKeyword("SECOND").ignore(pos, expected))
-        function_name = "toIntervalSecond";
-    else if (ParserKeyword("MINUTE").ignore(pos, expected))
-        function_name = "toIntervalMinute";
-    else if (ParserKeyword("HOUR").ignore(pos, expected))
-        function_name = "toIntervalHour";
-    else if (ParserKeyword("DAY").ignore(pos, expected))
-        function_name = "toIntervalDay";
-    else if (ParserKeyword("WEEK").ignore(pos, expected))
-        function_name = "toIntervalWeek";
-    else if (ParserKeyword("MONTH").ignore(pos, expected))
-        function_name = "toIntervalMonth";
-    else if (ParserKeyword("QUARTER").ignore(pos, expected))
-        function_name = "toIntervalQuarter";
-    else if (ParserKeyword("YEAR").ignore(pos, expected))
-        function_name = "toIntervalYear";
-    else
+    ParserInterval interval_parser;
+    if (!interval_parser.ignore(pos, expected))
         return false;
 
+    switch (interval_parser.interval_kind)
+    {
+        case ParserInterval::IntervalKind::Second:
+            function_name = "toIntervalSecond";
+            break;
+        case ParserInterval::IntervalKind::Minute:
+            function_name = "toIntervalMinute";
+            break;
+        case ParserInterval::IntervalKind::Hour:
+            function_name = "toIntervalHour";
+            break;
+        case ParserInterval::IntervalKind::Day:
+            function_name = "toIntervalDay";
+            break;
+        case ParserInterval::IntervalKind::Week:
+            function_name = "toIntervalWeek";
+            break;
+        case ParserInterval::IntervalKind::Month:
+            function_name = "toIntervalMonth";
+            break;
+        case ParserInterval::IntervalKind::Quarter:
+            function_name = "toIntervalQuarter";
+            break;
+        case ParserInterval::IntervalKind::Year:
+            function_name = "toIntervalYear";
+            break;
+        default:
+            return false;
+    }
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();
 
