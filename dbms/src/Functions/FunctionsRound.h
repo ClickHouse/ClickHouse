@@ -30,6 +30,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -562,6 +563,9 @@ public:
 };
 
 
+/** Rounds down to a number within explicitly specified array.
+  * If the value is less than the minimal bound - returns the minimal bound.
+  */
 class FunctionRoundDown : public IFunction
 {
 public:
@@ -574,6 +578,7 @@ public:
 
     bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -601,7 +606,7 @@ public:
         return getLeastSupertype({type_x, type_arr_nested});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
         if (!array)
@@ -611,12 +616,6 @@ public:
 
         auto in_column = block.getByPosition(arguments[0]).column;
         const auto & in_type = block.getByPosition(arguments[0]).type;
-
-        if (in_column->isColumnConst())
-        {
-            executeConst(block, arguments, result, input_rows_count);
-            return;
-        }
 
         const auto & return_type = block.getByPosition(result).type;
         auto column_result = return_type->createColumn();
@@ -629,10 +628,12 @@ public:
 
         const auto in = in_column.get();
         auto boundaries = array->getValue<Array>();
-        for (size_t i = 0; i < boundaries.size(); ++i)
-        {
+        size_t num_boundaries = boundaries.size();
+        if (!num_boundaries)
+            throw Exception("Empty array is illegal for boundaries in " + getName() + " function", ErrorCodes::BAD_ARGUMENTS);
+
+        for (size_t i = 0; i < num_boundaries; ++i)
             boundaries[i] = convertFieldToType(boundaries[i], *return_type);
-        }
 
         if (!executeNum<UInt8>(in, out, boundaries)
             && !executeNum<UInt16>(in, out, boundaries)
@@ -652,31 +653,6 @@ public:
     }
 
 private:
-    void executeConst(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
-    {
-        /// Materialize the input column and compute the function as usual.
-
-        Block tmp_block;
-        ColumnNumbers tmp_arguments;
-
-        tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
-        tmp_arguments.push_back(0);
-
-        for (size_t i = 1; i < arguments.size(); ++i)
-        {
-            tmp_block.insert(block.getByPosition(arguments[i]));
-            tmp_arguments.push_back(i);
-        }
-
-        tmp_block.insert(block.getByPosition(result));
-        size_t tmp_result = arguments.size();
-
-        execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
-
-        block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
-    }
-
     template <typename T>
     bool executeNum(const IColumn * in_untyped, IColumn * out_untyped, const Array & boundaries)
     {
@@ -693,24 +669,25 @@ private:
     template <typename T>
     void executeImplNumToNum(const PaddedPODArray<T> & src, PaddedPODArray<T> & dst, const Array & boundaries)
     {
-        PaddedPODArray<T> bvalues(boundaries.size());
+        std::vector<T> boundary_values(boundaries.size());
         for (size_t i = 0; i < boundaries.size(); ++i)
-        {
-            bvalues[i] = boundaries[i].get<T>();
-        }
+            boundary_values[i] = boundaries[i].get<T>();
+
+        std::sort(boundary_values.begin(), boundary_values.end());
+        boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
 
         size_t size = src.size();
         dst.resize(size);
         for (size_t i = 0; i < size; ++i)
         {
-            auto it = std::upper_bound(bvalues.begin(), bvalues.end(), src[i]);
-            if (it == bvalues.end())
+            auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
+            if (it == boundary_values.end())
             {
-                dst[i] = bvalues.back();
+                dst[i] = boundary_values.back();
             }
-            else if (it == bvalues.begin())
+            else if (it == boundary_values.begin())
             {
-                dst[i] = bvalues.front();
+                dst[i] = boundary_values.front();
             }
             else
             {
