@@ -24,7 +24,7 @@ namespace DB
 {
 
 /// For cutting prerpocessed path to this base
-std::string main_config_path;
+static std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
