@@ -7,7 +7,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/convertFieldToType.h>
 
 #include <common/intExp.h>
 #include <cmath>
@@ -608,32 +607,27 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
-        const ColumnConst * array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
-        if (!array)
-        {
-            throw Exception{"Second argument of function " + getName() + " must be constant array.", ErrorCodes::ILLEGAL_COLUMN};
-        }
-
         auto in_column = block.getByPosition(arguments[0]).column;
         const auto & in_type = block.getByPosition(arguments[0]).type;
+
+        auto array_column = block.getByPosition(arguments[1]).column;
+        const auto & array_type = block.getByPosition(arguments[1]).type;
 
         const auto & return_type = block.getByPosition(result).type;
         auto column_result = return_type->createColumn();
         auto out = column_result.get();
 
         if (!in_type->equals(*return_type))
-        {
             in_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
-        }
+
+        if (!array_type->equals(*return_type))
+            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type), context);
 
         const auto in = in_column.get();
-        auto boundaries = array->getValue<Array>();
+        auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
         size_t num_boundaries = boundaries.size();
         if (!num_boundaries)
             throw Exception("Empty array is illegal for boundaries in " + getName() + " function", ErrorCodes::BAD_ARGUMENTS);
-
-        for (size_t i = 0; i < num_boundaries; ++i)
-            boundaries[i] = convertFieldToType(boundaries[i], *return_type);
 
         if (!executeNum<UInt8>(in, out, boundaries)
             && !executeNum<UInt16>(in, out, boundaries)
