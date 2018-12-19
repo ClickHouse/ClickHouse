@@ -5,7 +5,7 @@
 * Вычисление `DEFAULT` выражений для отсутствующих полей при загрузке данных в полуструктурированных форматах (`JSONEachRow`, `TSKV`). [#3555](https://github.com/yandex/ClickHouse/pull/3555)
 * Для запроса `ALTER TABLE` добавлено действие `MODIFY ORDER BY` для изменения ключа сортировки при одновременном добавлении или удалении столбца таблицы. Это полезно для таблиц семейства `MergeTree`, выполняющих дополнительную работу при слияниях, согласно этому ключу сортировки, как например, `SummingMergeTree`, `AggregatingMergeTree` и т. п. [#3581](https://github.com/yandex/ClickHouse/pull/3581) [#3755](https://github.com/yandex/ClickHouse/pull/3755)
 * Для таблиц семейства `MergeTree` появилась возможность указать различный ключ сортировки (`ORDER BY`) и индекс (`PRIMARY KEY`). Ключ сортировки может быть длиннее, чем индекс. [#3581](https://github.com/yandex/ClickHouse/pull/3581)
-* Добавлена табличная функция `hdfs` и движок таблиц `HDFS` для импорта и экспорта данных в HDFS. chenxing-xc [#3617](https://github.com/yandex/ClickHouse/pull/3617)
+* Добавлена табличная функция `hdfs` и движок таблиц `HDFS` для импорта и экспорта данных в HDFS. [chenxing-xc](https://github.com/yandex/ClickHouse/pull/3617)
 * Добавлены функции для работы с base64: `base64Encode`, `base64Decode`, `tryBase64Decode`. [Alexander Krasheninnikov](https://github.com/yandex/ClickHouse/pull/3350)
 * Для агрегатной функции `uniqCombined` появилась возможность настраивать точность работы с помощью параметра (выбирать количество ячеек HyperLogLog). [#3406](https://github.com/yandex/ClickHouse/pull/3406)
 * Добавлена таблица `system.contributors`, содержащая имена всех, кто делал коммиты в ClickHouse. [#3452](https://github.com/yandex/ClickHouse/pull/3452)
