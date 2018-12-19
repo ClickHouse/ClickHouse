@@ -25,3 +25,5 @@ select TRIM(both 'ab' FROM 'abbafooabbafooabba');
 select trim(LEADING '*[]{}|\\' FROM '\\|[[[}}}*foo*');
 select DATE_DIFF(MONTH, toDate('2018-12-18'), toDate('2018-01-01'));
 select DATE_DIFF(QQ, toDate('2018-12-18'), toDate('2018-01-01'));
+select DATE_ADD(YEAR, 3, toDate('2018-01-01'));
+select timestamp_sub(SQL_TSI_MONTH, 5, toDateTime('2018-12-18 01:02:03'));

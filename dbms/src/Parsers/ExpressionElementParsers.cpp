@@ -714,13 +714,78 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
+bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    const char * function_name = nullptr;
+    ASTPtr left_node;
+    ASTPtr right_node;
+
+    if (ParserKeyword("DATEADD").ignore(pos, expected) || ParserKeyword("DATE_ADD").ignore(pos, expected)
+        || ParserKeyword("TIMESTAMPADD").ignore(pos, expected) || ParserKeyword("TIMESTAMP_ADD").ignore(pos, expected))
+        function_name = "plus";
+    else if (ParserKeyword("DATESUB").ignore(pos, expected) || ParserKeyword("DATE_SUB").ignore(pos, expected)
+        || ParserKeyword("TIMESTAMPSUB").ignore(pos, expected) || ParserKeyword("TIMESTAMP_SUB").ignore(pos, expected))
+        function_name = "minus";
+    else
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    ParserInterval interval_parser;
+    if (!interval_parser.ignore(pos, expected))
+        return false;
+
+    const char * interval_function_name = interval_parser.getToIntervalKindFunctionName();
+
+    if (pos->type != TokenType::Comma)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, left_node, expected))
+        return false;
+
+    if (pos->type != TokenType::Comma)
+        return false;
+    ++pos;
+
+    if (!ParserExpression().parse(pos, right_node, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto interval_expr_list_args = std::make_shared<ASTExpressionList>();
+    interval_expr_list_args->children = {left_node};
+
+    auto interval_func_node = std::make_shared<ASTFunction>();
+    interval_func_node->name = interval_function_name;
+    interval_func_node->arguments = std::move(interval_expr_list_args);
+    interval_func_node->children.push_back(interval_func_node->arguments);
+
+    auto expr_list_args = std::make_shared<ASTExpressionList>();
+    expr_list_args->children = {right_node, interval_func_node};
+
+    auto func_node = std::make_shared<ASTFunction>();
+    func_node->name = function_name;
+    func_node->arguments = std::move(expr_list_args);
+    func_node->children.push_back(func_node->arguments);
+
+    node = std::move(func_node);
+
+    return true;
+}
+
 bool ParserDateDiffExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     const char * interval_name = nullptr;
     ASTPtr left_node;
     ASTPtr right_node;
 
-    if (!(ParserKeyword("DATEDIFF").ignore(pos, expected) || ParserKeyword("DATE_DIFF").ignore(pos, expected)))
+    if (!(ParserKeyword("DATEDIFF").ignore(pos, expected) || ParserKeyword("DATE_DIFF").ignore(pos, expected)
+        || ParserKeyword("TIMESTAMPDIFF").ignore(pos, expected) || ParserKeyword("TIMESTAMP_DIFF").ignore(pos, expected)))
         return false;
 
     if (pos->type != TokenType::OpeningRoundBracket)
@@ -1093,6 +1158,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserLiteral().parse(pos, node, expected)
         || ParserCastExpression().parse(pos, node, expected)
         || ParserExtractExpression().parse(pos, node, expected)
+        || ParserDateAddExpression().parse(pos, node, expected)
         || ParserDateDiffExpression().parse(pos, node, expected)
         || ParserSubstringExpression().parse(pos, node, expected)
         || ParserTrimExpression().parse(pos, node, expected)
