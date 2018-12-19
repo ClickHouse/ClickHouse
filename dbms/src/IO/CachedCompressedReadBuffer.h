@@ -45,7 +45,7 @@ private:
 
 public:
     CachedCompressedReadBuffer(
-        const std::string & path_, UncompressedCache * cache_, const CompressionCodecPtr & codec,
+        const std::string & path_, UncompressedCache * cache_, const CompressionCodecPtr & codec_,
         size_t estimated_size_, size_t aio_threshold_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
 

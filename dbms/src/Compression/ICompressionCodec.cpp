@@ -28,97 +28,147 @@ namespace ErrorCodes
     extern const int SEEK_POSITION_OUT_OF_BOUND;
 }
 
-CompressionCodecReadBufferPtr ICompressionCodec::liftCompressed(ReadBuffer & origin)
+static constexpr auto CHECKSUM_SIZE{sizeof(CityHash_v1_0_2::uint128)};
+
+UInt32 ICompressionCodec::compress(char * source, UInt32 source_size, char * dest) const
 {
-    return std::make_shared<CompressionCodecReadBuffer>(origin);
+    dest[0] = getMethodByte();
+    UInt8 header_size = getHeaderSize();
+    /// Write data from header_size
+    UInt32 compressed_bytes_written = doCompressData(source, source_size, &dest[header_size]);
+    unalignedStore<UInt32>(&dest[1], compressed_bytes_written + header_size);
+    unalignedStore<UInt32>(&dest[5], source_size);
+    return header_size + compressed_bytes_written;
 }
 
-CompressionCodecWriteBufferPtr ICompressionCodec::liftCompressed(WriteBuffer & origin)
+
+UInt32 ICompressionCodec::decompress(char * source, UInt32 source_size, char * dest) const
 {
-    return std::make_shared<CompressionCodecWriteBuffer>(*this, origin);
+    UInt8 method = source[0];
+    if (method != getMethodByte())
+        throw Exception("Can't decompress data with codec byte " + toString(method) + " from codec with byte " + toString(method), ErrorCodes::CANNOT_DECOMPRESS);
+
+    UInt8 header_size = getHeaderSize();
+    UInt32 decompressed_size = unalignedLoad<UInt32>(&source[5]);
+    doDecompressData(&source[header_size], source_size - header_size, dest, decompressed_size);
+    return decompressed_size;
+
 }
 
-CompressionCodecReadBuffer::CompressionCodecReadBuffer(ReadBuffer & origin)
-    : origin(origin)
+UInt32 ICompressionCodec::readCompressedBlockSize(const char * source)
+{
+    return unalignedLoad<UInt32>(&source[1]);
+}
+
+
+UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source)
+{
+    return unalignedLoad<UInt32>(&source[5]);
+}
+
+
+UInt8 ICompressionCodec::readMethod(const char * source)
+{
+    return static_cast<UInt8>(source[0]);
+}
+
+CompressionCodecReadBufferPtr liftCompressed(CompressionCodecPtr codec, ReadBuffer & origin)
+{
+    return std::make_shared<CompressionCodecReadBuffer>(codec, origin);
+}
+
+CompressionCodecWriteBufferPtr liftCompressed(CompressionCodecPtr codec, WriteBuffer & origin)
+{
+    return std::make_shared<CompressionCodecWriteBuffer>(codec, origin);
+}
+
+CompressionCodecReadBuffer::CompressionCodecReadBuffer(CompressionCodecPtr codec_, ReadBuffer & origin_)
+    : codec(codec_)
+    , origin(origin_)
 {
 }
+
 
 /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
 /// Returns number of compressed bytes read.
-size_t CompressionCodecReadBuffer::readCompressedData(size_t & size_decompressed, size_t & size_compressed)
+std::pair<UInt32, UInt32> CompressionCodecReadBuffer::readCompressedData()
 {
     if (origin.eof())
-        return 0;
+        return std::make_pair(0, 0);
 
     CityHash_v1_0_2::uint128 checksum;
-    origin.readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
+    origin.readStrict(reinterpret_cast<char *>(&checksum), CHECKSUM_SIZE);
 
-    own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
-    origin.readStrict(own_compressed_buffer.data(), COMPRESSED_BLOCK_HEADER_SIZE);
+    UInt8 header_size = ICompressionCodec::getHeaderSize();
+    own_compressed_buffer.resize(header_size);
+    origin.readStrict(own_compressed_buffer.data(), header_size);
 
-    size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
-    size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
+    UInt8 method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
-    if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
-        throw Exception("Too large size_compressed: " + toString(size_compressed) + ". Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+    if (method != codec->getMethodByte())
+        throw Exception("Can't decompress with method " + getHexUIntLowercase(method) + ", with codec " + getHexUIntLowercase(codec->getMethodByte()), ErrorCodes::CANNOT_DECOMPRESS);
 
-    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed + sizeof(checksum));
+    UInt32 size_to_read_compressed = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
+    UInt32 size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
+
+    if (size_to_read_compressed > DBMS_MAX_COMPRESSED_SIZE)
+        throw Exception("Too large size_to_read_compressed: " + toString(size_to_read_compressed) + ". Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+
+    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_to_read_compressed + CHECKSUM_SIZE);
 
     /// Is whole compressed block located in 'origin' buffer?
-    if (origin.offset() >= COMPRESSED_BLOCK_HEADER_SIZE &&
-        origin.position() + size_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER - COMPRESSED_BLOCK_HEADER_SIZE <= origin.buffer().end())
+    if (origin.offset() >= header_size &&
+        origin.position() + size_to_read_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER - header_size <= origin.buffer().end())
     {
-        origin.position() -= COMPRESSED_BLOCK_HEADER_SIZE;
+        origin.position() -= header_size;
         compressed_buffer = origin.position();
-        origin.position() += size_compressed;
+        origin.position() += size_to_read_compressed;
     }
     else
     {
-        own_compressed_buffer.resize(size_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        own_compressed_buffer.resize(size_to_read_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
         compressed_buffer = own_compressed_buffer.data();
-        origin.readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
+        origin.readStrict(compressed_buffer + header_size, size_to_read_compressed - header_size);
     }
 
-    auto checksum_calculated = CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed);
+    auto checksum_calculated = CityHash_v1_0_2::CityHash128(compressed_buffer, size_to_read_compressed);
     if (checksum != checksum_calculated)
         throw Exception("Checksum doesn't match: corrupted data."
                         " Reference: " + getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second)
                         + ". Actual: " + getHexUIntLowercase(checksum_calculated.first) + getHexUIntLowercase(checksum_calculated.second)
-                        + ". Size of compressed block: " + toString(size_compressed) + ".",
+                        + ". Size of compressed block: " + toString(size_to_read_compressed),
                         ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
-    return size_compressed + sizeof(checksum);
+    return std::make_pair(size_to_read_compressed, size_decompressed);
 }
 
-void CompressionCodecReadBuffer::decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+void CompressionCodecReadBuffer::decompress(char * to, UInt32 size_compressed)
 {
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
-    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
+    UInt8 method = ICompressionCodec::readMethod(compressed_buffer);
 
-    UInt8 current_method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
-    if (!codec || current_method != method)
-    {
-        method = current_method;
+    if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
-    }
+    else if (codec->getMethodByte() != method)
+        throw Exception("Can't decompress data with byte " + getHexUIntLowercase(method) + " expected byte " + getHexUIntLowercase(codec->getMethodByte()), ErrorCodes::CANNOT_DECOMPRESS);
 
-    codec->decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE,
-        size_compressed_without_checksum - COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed);
+    codec->decompress(compressed_buffer, size_compressed, to);
 }
 
 bool CompressionCodecReadBuffer::nextImpl()
 {
-    size_t size_decompressed;
-    size_t size_compressed_without_checksum;
+    UInt32 size_decompressed;
 
-    size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
-    if (!size_compressed)
+    std::tie(read_compressed_bytes_for_last_time, size_decompressed) = readCompressedData();
+    if (!read_compressed_bytes_for_last_time)
         return false;
 
     memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
-    decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
+    decompress(working_buffer.begin(), read_compressed_bytes_for_last_time);
+
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
+    ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
 
     return true;
 }
@@ -127,16 +177,19 @@ void CompressionCodecReadBuffer::seek(size_t offset_in_compressed_file, size_t o
 {
     if (const auto file_in = dynamic_cast<ReadBufferFromFileBase *>(&origin))
     {
-        if (size_compressed &&
-            offset_in_compressed_file == file_in->getPositionInFile() - size_compressed &&
-            offset_in_decompressed_block <= working_buffer.size())
+        UInt32 readed_size_with_checksum = read_compressed_bytes_for_last_time + CHECKSUM_SIZE;
+        UInt32 last_readed_block_start_pos = file_in->getPositionInFile() - readed_size_with_checksum;
+        /// We seek in already uncompressed block
+        if (readed_size_with_checksum && /// we already have read something
+            offset_in_compressed_file == last_readed_block_start_pos && /// our position is exactly at required byte
+            offset_in_decompressed_block <= working_buffer.size()) /// our buffer size is more, than required position in uncompressed block
         {
             bytes += offset();
             pos = working_buffer.begin() + offset_in_decompressed_block;
             /// `bytes` can overflow and get negative, but in `count()` everything will overflow back and get right.
             bytes -= offset();
         }
-        else
+        else /// or we have to read and uncompress further
         {
             file_in->seek(offset_in_compressed_file);
 
@@ -173,26 +226,18 @@ void CompressionCodecWriteBuffer::nextImpl()
     if (!offset())
         return;
 
-    static constexpr size_t header_size = 1 + sizeof(UInt32) + sizeof(UInt32);
+    size_t decompressed_size = offset();
+    UInt32 compressed_reserve_size = codec->getCompressedReserveSize(decompressed_size);
+    compressed_buffer.resize(compressed_reserve_size);
+    UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
-    size_t uncompressed_size = offset();
-    size_t compressed_reserve_size = compression_codec.getCompressedReserveSize(uncompressed_size);
-
-    compressed_buffer.resize(header_size + compressed_reserve_size);
-    compressed_buffer[0] = compression_codec.getMethodByte();
-    size_t compressed_size = header_size + compression_codec.compress(working_buffer.begin(), uncompressed_size, &compressed_buffer[header_size]);
-
-    UInt32 compressed_size_32 = compressed_size;
-    UInt32 uncompressed_size_32 = uncompressed_size;
-    unalignedStore(&compressed_buffer[1], compressed_size_32);
-    unalignedStore(&compressed_buffer[5], uncompressed_size_32);
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
-    out.write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
+    out.write(reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
     out.write(compressed_buffer.data(), compressed_size);
 }
 
-CompressionCodecWriteBuffer::CompressionCodecWriteBuffer(ICompressionCodec & compression_codec, WriteBuffer & out, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out), compression_codec(compression_codec)
+CompressionCodecWriteBuffer::CompressionCodecWriteBuffer(CompressionCodecPtr codec_, WriteBuffer & out_, size_t buf_size)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(codec_)
 {
 }
 

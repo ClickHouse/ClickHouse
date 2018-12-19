@@ -49,19 +49,19 @@ INSERT INTO test.compression_codec_multiple VALUES (1, 'world', toDate('2018-10-
 
 SELECT * FROM test.compression_codec_multiple ORDER BY id;
 
-INSERT INTO test.compression_codec_multiple select modulo(number, 100), toString(number), toDate('2018-12-01'), 5.5 * number from system.numbers limit 10000;
+INSERT INTO test.compression_codec_multiple select modulo(number, 100), toString(number), toDate('2018-12-01'), 5.5 * number FROM system.numbers limit 10000;
 
-SELECT count(*) from test.compression_codec_multiple;
+SELECT count(*) FROM test.compression_codec_multiple;
 
-SELECT count(distinct data) from test.compression_codec_multiple;
+SELECT count(distinct data) FROM test.compression_codec_multiple;
 
-SELECT floor(sum(somenum), 1) from test.compression_codec_multiple;
+SELECT floor(sum(somenum), 1) FROM test.compression_codec_multiple;
 
 TRUNCATE TABLE test.compression_codec_multiple;
 
-INSERT INTO test.compression_codec_multiple select modulo(number, 100), toString(number), toDate('2018-12-01'), 5.5 * number from system.numbers limit 10000;
+INSERT INTO test.compression_codec_multiple select modulo(number, 100), toString(number), toDate('2018-12-01'), 5.5 * number FROM system.numbers limit 10000;
 
-SELECT sum(cityHash64(*)) from test.compression_codec_multiple;
+SELECT sum(cityHash64(*)) FROM test.compression_codec_multiple;
 
 DROP TABLE IF EXISTS test.compression_codec_multiple_more_types;
 
@@ -75,3 +75,22 @@ INSERT INTO test.compression_codec_multiple_more_types VALUES(1.5555555555555, '
 INSERT INTO test.compression_codec_multiple_more_types VALUES(7.1, 'xxxxxxxxxxxx', [127], ['Henry']);
 
 SELECT * FROM test.compression_codec_multiple_more_types order by id;
+
+DROP TABLE IF EXISTS test.compression_codec_multiple_with_key;
+
+CREATE TABLE test.compression_codec_multiple_with_key (
+    somedate Date CODEC(ZSTD, ZSTD, ZSTD(12)),
+    id UInt64 CODEC(LZ4, ZSTD, NONE),
+    data String CODEC(ZSTD(2), NONE, LZ4, LZ4)
+) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
+
+
+INSERT INTO test.compression_codec_multiple_with_key VALUES(toDate('2018-10-12'), 100000, 'hello'), (toDate('2018-10-12'), 100002, 'world'), (toDate('2018-10-12'), 1111, '!');
+
+SELECT data FROM test.compression_codec_multiple_with_key WHERE id BETWEEN 3 AND 1112;
+
+INSERT INTO test.compression_codec_multiple_with_key SELECT toDate('2018-10-12'), number, toString(number) FROM system.numbers LIMIT 1000;
+
+SELECT COUNT(DISTINCT data) FROM test.compression_codec_multiple_with_key WHERE id < 222;
+
+DROP TABLE IF EXISTS test.compression_codec_multiple_with_key;
