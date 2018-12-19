@@ -1,4 +1,4 @@
-select JavaHash('abc');
-select JavaHash('874293087');
-select HiveHash('abc');
-select HiveHash('874293087');
+select javaHash('abc');
+select javaHash('874293087');
+select hiveHash('abc');
+select hiveHash('874293087');
