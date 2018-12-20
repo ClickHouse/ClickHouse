@@ -31,7 +31,7 @@
 * Исправлена работа некоторых случаев `VIEW` и подзапросов без указания базы данных. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3521)
 * Исправлен race condition при одновременном чтении из `MATERIALIZED VIEW` и удалением `MATERIALIZED VIEW` из-за отсутствия блокировки внутренней таблицы `MATERIALIZED VIEW`. [#3404](https://github.com/yandex/ClickHouse/pull/3404) [#3694](https://github.com/yandex/ClickHouse/pull/3694)
 * Исправлена ошибка `Lock handler cannot be nullptr.` [#3689](https://github.com/yandex/ClickHouse/pull/3689)
-* Исправления выполнения запросов при включенной настройке `compile_expressions` (выключена по-умолчанию) - убрана свёртка недетерминированных константных выражений, как например, функции `now`. [#3457](https://github.com/yandex/ClickHouse/pull/3457)
+* Исправления выполнения запросов при включенной настройке `compile_expressions` (включена по-умолчанию) - убрана свёртка недетерминированных константных выражений, как например, функции `now`. [#3457](https://github.com/yandex/ClickHouse/pull/3457)
 * Исправлено падение при указании неконстантного аргумента scale в функциях `toDecimal32/64/128`.
 * Исправлена ошибка при попытке вставки в формате `Values` массива с `NULL` элементами в столбец типа `Array` без `Nullable` (в случае `input_format_values_interpret_expressions` = 1). [#3487](https://github.com/yandex/ClickHouse/pull/3487) [#3503](https://github.com/yandex/ClickHouse/pull/3503)
 * Исправлено непрерывное логгирование ошибок в `DDLWorker`, если ZooKeeper недоступен. [8f50c620](https://github.com/yandex/ClickHouse/commit/8f50c620334988b28018213ec0092fe6423847e2)

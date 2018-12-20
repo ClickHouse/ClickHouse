@@ -143,15 +143,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, context);
 
-    if (select_query && select_query->array_join_expression_list())
-    {
-        getRootActions(select_query->array_join_expression_list(), true, temp_actions);
-        addMultipleArrayJoinAction(temp_actions);
-        array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
-    }
-
     if (select_query)
     {
+        bool is_array_join_left;
+        ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+        if (array_join_expression_list)
+        {
+            getRootActions(array_join_expression_list, true, temp_actions);
+            addMultipleArrayJoinAction(temp_actions, is_array_join_left);
+            array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+        }
+
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
@@ -512,7 +514,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 }
 
 /// "Big" ARRAY JOIN.
-void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
+void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool array_join_is_left) const
 {
     NameSet result_columns;
     for (const auto & result_source : syntax->array_join_result_to_source)
@@ -525,22 +527,24 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
         result_columns.insert(result_source.first);
     }
 
-    actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left(), context));
+    actions->add(ExpressionAction::arrayJoin(result_columns, array_join_is_left, context));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
     assertSelect();
 
-    if (!select_query->array_join_expression_list())
+    bool is_array_join_left;
+    ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+    if (!array_join_expression_list)
         return false;
 
     initChain(chain, source_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    getRootActions(select_query->array_join_expression_list(), only_types, step.actions);
+    getRootActions(array_join_expression_list, only_types, step.actions);
 
-    addMultipleArrayJoinAction(step.actions);
+    addMultipleArrayJoinAction(step.actions, is_array_join_left);
 
     return true;
 }
