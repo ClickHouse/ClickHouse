@@ -27,14 +27,14 @@ public:
         Context & context,
         bool throw_on_error);
 
-    void addDictionary(const String & name, Poco::Util::AbstractConfiguration & configuration)
+    void addDictionary(const String & name, ASTCreateQuery & create)
     {
         std::lock_guard lock{internal_dictionaries_mutex};
         auto it = internal_dictionaries.find(name);
         if (it != internal_dictionaries.end())
             throw Exception("Dictionary " + name + " already exist.", ErrorCodes::DICTIONARY_ALREADY_EXIST);
 
-        internal_dictionaries[name] = DictionaryFactory::instance().create(name, configuration, "", context);
+        internal_dictionaries[name] = DictionaryFactory::instance().create(name, create, context);
     }
 
     DictPtr getDictionary(const String & name) const
