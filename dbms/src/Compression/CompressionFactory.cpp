@@ -29,6 +29,13 @@ CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
     return default_codec;
 }
 
+
+CompressionCodecPtr CompressionCodecFactory::get(const CompressionSettings & settings) const
+{
+    ///TODO implement
+    return default_codec;
+}
+
 CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast.get()))
@@ -99,6 +106,14 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(const String & fami
             throw Exception("Compression codec " + family_name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
         return creator();
     });
+}
+
+
+ASTPtr CompressionCodecFactory::convertSettingsToAst(const CompressionSettings & settings) const
+{
+    ///TODO Implement
+    return nullptr;
+    //makeASTFunction();
 }
 
 void registerCodecLZ4(CompressionCodecFactory & factory);

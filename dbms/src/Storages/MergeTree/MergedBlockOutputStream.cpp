@@ -192,7 +192,7 @@ IMergedBlockOutputStream::ColumnStream::ColumnStream(
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(createWriteBufferFromFileBase(data_path + data_file_extension, estimated_size, aio_threshold, max_compress_block_size)),
-    plain_hashing(*plain_file), compressed_buf(liftCompressed(compression_codec, plain_hashing)), compressed(*compressed_buf.get()),
+    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec), compressed(compressed_buf),
     marks_file(marks_path + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
 {
 }

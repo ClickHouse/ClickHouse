@@ -49,7 +49,7 @@ protected:
         /// compressed -> compressed_buf -> plain_hashing -> plain_file
         std::unique_ptr<WriteBufferFromFileBase> plain_file;
         HashingWriteBuffer plain_hashing;
-        WriteBufferPtr compressed_buf;
+        CompressedWriteBuffer compressed_buf;
         HashingWriteBuffer compressed;
 
         /// marks -> marks_file
