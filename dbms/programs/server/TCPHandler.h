@@ -25,7 +25,7 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-class ColumnsDescription;
+struct ColumnsDescription;
 
 /// State of query processing.
 struct QueryState
