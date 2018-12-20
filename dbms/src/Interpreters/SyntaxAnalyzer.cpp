@@ -676,9 +676,13 @@ void optimizeUsing(const ASTSelectQuery * select_query)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set)
 {
-    if (select_query && select_query->array_join_expression_list())
+    if (!select_query)
+        return;
+
+    ASTPtr array_join_expression_list = select_query->array_join_expression_list();
+    if (array_join_expression_list)
     {
-        ASTs & array_join_asts = select_query->array_join_expression_list()->children;
+        ASTs & array_join_asts = array_join_expression_list->children;
         for (const auto & ast : array_join_asts)
         {
             const String nested_table_name = ast->getColumnName();
