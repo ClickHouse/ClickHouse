@@ -1,10 +1,4 @@
-DROP TABLE IF EXISTS test.number_test_table;
-DROP TABLE IF EXISTS test.string_test_table;
-CREATE TABLE test.number_test_table (val Int32) ENGINE = MergeTree ORDER BY val;
-CREATE TABLE test.string_test_table (val String) ENGINE = MergeTree ORDER BY val;
-INSERT INTO test.number_test_table VALUES (-2), (0), (2);
-INSERT INTO test.string_test_table VALUES ('0'), ('2');
-SELECT count() FROM test.number_test_table WHERE toUInt64(val) == 0;
-SELECT count() FROM test.string_test_table WHERE toUInt64(val) == 0;
-DROP TABLE IF EXISTS test.number_test_table;
-DROP TABLE IF EXISTS test.string_test_table;
+drop table if exists test.table;
+create table test.table (val Int32) engine = MergeTree order by val;
+insert into test.table values (-2), (0), (2);
+select count() from test.table where toUInt64(val) == 0;
