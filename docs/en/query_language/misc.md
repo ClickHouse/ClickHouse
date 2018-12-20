@@ -24,8 +24,7 @@ Checks if the data in the table is corrupted.
 CHECK TABLE [db.]name
 ```
 
-The `CHECK TABLE` query compares the actual file size with the expected value which is stored on the server.
- If values are not equal, the data is corrupted. This can be caused, for example, by a system crash during query execution.
+The `CHECK TABLE` query compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
 
 The query response contains the `result` column with a single row. The row has a value of
  [Boolean](../data_types/boolean.md) type:
@@ -41,17 +40,16 @@ The `CHECK TABLE` query is only supported for the following table engines:
  
 These engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
-To avoid data loss use the MergeTree family tables.
+To avoid data loss use the [MergeTree](../operations/table_engines/mergetree.md) family tables.
 
 **If the data is corrupted**
 
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
 
-1. Set the [max_threads](../operations/settings/settings.md#max_threads) parameter value to 1 to process the query in 1 stream.
-2. Execute the query `INSERT INTO <new_table> SELECT * FROM <damaged_table>`. 
-This request copies the non-corrupted data from the damaged table to another table. 
-Only the data before the corrupted part will be copied.
-3. Restart the `clickhouse-client` to reset the `max_threads` value.
+1. Create a new table with the same structure as damaged table. To do this execute the query `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
+2. Set the [max_threads](../operations/settings/settings.md#max_threads) value to 1 to process the next query in a single thread. To do this run the query `SET max_threads = 1`.
+3. Execute the query `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. This request copies the non-corrupted data from the damaged table to another table. Only the data before the corrupted part will be copied.
+4. Restart the `clickhouse-client` to reset the `max_threads` value.
 
 ## DESCRIBE TABLE
 
