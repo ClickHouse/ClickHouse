@@ -9,12 +9,16 @@
 namespace DB
 {
 
+/// key-values column_name, column_comment. column_comment should be non empty.
+using ColumnComments = std::unordered_map<std::string, String>;
+
 struct ColumnsDescription
 {
     NamesAndTypesList ordinary;
     NamesAndTypesList materialized;
     NamesAndTypesList aliases;
     ColumnDefaults defaults;
+    ColumnComments comments;
 
     ColumnsDescription() = default;
 
@@ -22,11 +26,13 @@ struct ColumnsDescription
         NamesAndTypesList ordinary_,
         NamesAndTypesList materialized_,
         NamesAndTypesList aliases_,
-        ColumnDefaults defaults_)
+        ColumnDefaults defaults_,
+        ColumnComments comments_)
         : ordinary(std::move(ordinary_))
         , materialized(std::move(materialized_))
         , aliases(std::move(aliases_))
         , defaults(std::move(defaults_))
+        , comments(std::move(comments_))
     {}
 
     explicit ColumnsDescription(NamesAndTypesList ordinary_) : ordinary(std::move(ordinary_)) {}
@@ -36,7 +42,8 @@ struct ColumnsDescription
         return ordinary == other.ordinary
             && materialized == other.materialized
             && aliases == other.aliases
-            && defaults == other.defaults;
+            && defaults == other.defaults
+            && comments == other.comments;
     }
 
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }
@@ -57,6 +64,7 @@ struct ColumnsDescription
     String toString() const;
 
     static ColumnsDescription parse(const String & str);
+    static const ColumnsDescription * loadFromContext(const Context & context, const String & db, const String & table);
 };
 
 }

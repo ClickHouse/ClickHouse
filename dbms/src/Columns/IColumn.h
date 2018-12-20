@@ -84,7 +84,7 @@ public:
     }
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
-    /// If column stores floting point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
+    /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
     virtual UInt64 get64(size_t /*n*/) const
     {
@@ -142,13 +142,6 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     /// Parameter length could be ignored if column values have fixed size.
     virtual void insertData(const char * pos, size_t length) = 0;
-
-    /// Like getData, but has special behavior for columns that contain variable-length strings.
-    /// In this special case inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
-    virtual void insertDataWithTerminatingZero(const char * pos, size_t length)
-    {
-        insertData(pos, length);
-    }
 
     /// Appends "default value".
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
@@ -377,7 +370,7 @@ protected:
 };
 
 using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr  = IColumn::MutablePtr;
+using MutableColumnPtr = IColumn::MutablePtr;
 using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 

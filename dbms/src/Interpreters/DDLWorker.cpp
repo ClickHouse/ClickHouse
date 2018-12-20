@@ -300,7 +300,13 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     bool host_in_hostlist = false;
     for (const HostID & host : task->entry.hosts)
     {
-        if (!host.isLocalAddress(context.getTCPPort()))
+        auto maybe_secure_port = context.getTCPPortSecure();
+
+        /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
+        bool is_local_port = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port))
+            || host.isLocalAddress(context.getTCPPort());
+
+        if (!is_local_port)
             continue;
 
         if (host_in_hostlist)
@@ -477,7 +483,8 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
         {
             const Cluster::Address & address = shards[shard_num][replica_num];
 
-            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort()))
+            if (isLocalAddress(address.getResolvedAddress(), context.getTCPPort())
+                || (context.getTCPPortSecure() && isLocalAddress(address.getResolvedAddress(), *context.getTCPPortSecure())))
             {
                 if (found_via_resolving)
                 {
@@ -562,6 +569,7 @@ void DDLWorker::processTask(DDLTask & task)
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
+
     if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
@@ -882,8 +890,12 @@ void DDLWorker::run()
             catch (const Coordination::Exception & e)
             {
                 if (!Coordination::isHardwareError(e.code))
-                    throw;
+                    throw;  /// A logical error.
+
                 tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                /// Avoid busy loop when ZooKeeper is not available.
+                ::sleep(1);
             }
         }
         catch (...)
@@ -943,7 +955,7 @@ void DDLWorker::run()
         }
         catch (...)
         {
-            LOG_ERROR(log, "Unexpected error: " << getCurrentExceptionMessage(true) << ". Terminating.");
+            tryLogCurrentException(log, "Unexpected error, will terminate:");
             return;
         }
     }
@@ -1056,7 +1068,7 @@ public:
                 Cluster::Address::fromString(host_id, host, port);
 
                 if (status.code != 0 && first_exception == nullptr)
-                    first_exception = std::make_unique<Exception>("There was an error on " + host + ": " + status.message, status.code);
+                    first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
 
                 ++num_hosts_finished;
 
@@ -1188,7 +1200,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
                     bool has_shard_default_db = !addr.default_database.empty();
                     use_shard_default_db |= has_shard_default_db;
                     use_local_default_db |= !has_shard_default_db;
-                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database );
+                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database);
                 }
                 else
                     databases_to_access.emplace(database);
@@ -1208,7 +1220,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     if (use_local_default_db)
     {
         AddDefaultDatabaseVisitor visitor(current_database);
-        visitor.visit(query_ptr);
+        visitor.visitDDL(query_ptr);
     }
 
     DDLLogEntry entry;

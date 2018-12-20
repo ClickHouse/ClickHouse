@@ -22,6 +22,7 @@ void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
 void registerAggregateFunctionSum(AggregateFunctionFactory &);
 void registerAggregateFunctionSumMap(AggregateFunctionFactory &);
 void registerAggregateFunctionsUniq(AggregateFunctionFactory &);
+void registerAggregateFunctionUniqCombined(AggregateFunctionFactory &);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
@@ -57,6 +58,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionSum(factory);
         registerAggregateFunctionSumMap(factory);
         registerAggregateFunctionsUniq(factory);
+        registerAggregateFunctionUniqCombined(factory);
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);

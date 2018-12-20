@@ -27,7 +27,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/ProjectionManipulation.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -49,9 +48,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// defined in ExpressionAnalyser.cpp
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
-
+NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+{
+    return std::find_if(cols.begin(), cols.end(),
+                        [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
+}
 
 void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
                      const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
@@ -221,7 +222,7 @@ const Block & ScopeStack::getSampleBlock() const
 
 
 ActionsVisitor::ActionsVisitor(
-        const Context & context_, SizeLimits set_size_limit_, bool is_conditional_tree, size_t subquery_depth_,
+        const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
         const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
         PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
         bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_)
@@ -238,10 +239,6 @@ ActionsVisitor::ActionsVisitor(
     ostr(ostr_),
     actions_stack(actions, context)
 {
-    if (is_conditional_tree)
-        projection_manipulator = std::make_shared<ConditionalTree>(actions_stack, context);
-    else
-        projection_manipulator = std::make_shared<DefaultProjectionManipulator>(actions_stack);
 }
 
 void ActionsVisitor::visit(const ASTPtr & ast)
@@ -259,12 +256,12 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
     /// If the result of the calculation already exists in the block.
     if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
-        && projection_manipulator->tryToGetFromUpperProjection(getColumnName()))
+        && actions_stack.getSampleBlock().has(getColumnName()))
         return;
 
-    if (typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (!only_consts && !projection_manipulator->tryToGetFromUpperProjection(getColumnName()))
+        if (!only_consts && !actions_stack.getSampleBlock().has(getColumnName()))
         {
             /// The requested column is not in the block.
             /// If such a column exists in the table, then the user probably forgot to surround it with an aggregate function or add it to GROUP BY.
@@ -277,6 +274,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             if (found)
                 throw Exception("Column " + getColumnName() + " is not under aggregate function and not in GROUP BY.",
                     ErrorCodes::NOT_AN_AGGREGATE);
+
+            /// Special check for WITH statement alias. Add alias action to be able to use this alias.
+            if (identifier->prefer_alias_to_column_name && !identifier->alias.empty())
+                actions_stack.addAction(ExpressionAction::addAliases({{identifier->name, identifier->alias}}));
         }
     }
     else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
@@ -294,8 +295,8 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             visit(arg);
             if (!only_consts)
             {
-                String result_name = projection_manipulator->getColumnName(getColumnName());
-                actions_stack.addAction(ExpressionAction::copyColumn(projection_manipulator->getColumnName(arg->getColumnName()), result_name));
+                String result_name = getColumnName();
+                actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
                 NameSet joined_columns;
                 joined_columns.insert(result_name);
                 actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false, context));
@@ -324,8 +325,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                     actions_stack.addAction(ExpressionAction::applyFunction(
                             FunctionFactory::instance().get("ignore", context),
                             { node->arguments->children.at(0)->getColumnName() },
-                            projection_manipulator->getColumnName(getColumnName()),
-                            projection_manipulator->getProjectionSourceColumn()));
+                            getColumnName()));
                 }
                 return;
             }
@@ -337,7 +337,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         {
             actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
                 ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
-                    projection_manipulator->getColumnName(getColumnName())), projection_manipulator->getProjectionSourceColumn(), false));
+                    getColumnName())));
             return;
         }
 
@@ -350,7 +350,6 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             : context;
 
         const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, function_context);
-        auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), function_context);
 
         Names argument_names;
         DataTypes argument_types;
@@ -395,13 +394,11 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 else
                     column.name = child_column_name;
 
-                column.name = projection_manipulator->getColumnName(column.name);
-
                 if (!actions_stack.getSampleBlock().has(column.name))
                 {
                     column.column = ColumnSet::create(1, set);
 
-                    actions_stack.addAction(ExpressionAction::addColumn(column, projection_manipulator->getProjectionSourceColumn(), false));
+                    actions_stack.addAction(ExpressionAction::addColumn(column));
                 }
 
                 argument_types.push_back(column.type);
@@ -410,10 +407,8 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             else
             {
                 /// If the argument is not a lambda expression, call it recursively and find out its type.
-                projection_action->preArgumentAction();
                 visit(child);
-                std::string name = projection_manipulator->getColumnName(child_column_name);
-                projection_action->postArgumentAction(child_column_name);
+                std::string name = child_column_name;
                 if (actions_stack.getSampleBlock().has(name))
                 {
                     argument_types.push_back(actions_stack.getSampleBlock().getByName(name).type);
@@ -422,13 +417,9 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 else
                 {
                     if (only_consts)
-                    {
                         arguments_present = false;
-                    }
                     else
-                    {
-                        throw Exception("Unknown identifier: " + name + ", projection layer " + projection_manipulator->getProjectionExpression() , ErrorCodes::UNKNOWN_IDENTIFIER);
-                    }
+                        throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
                 }
             }
         }
@@ -464,12 +455,11 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                         lambda_arguments.emplace_back(arg_name, lambda_type->getArgumentTypes()[j]);
                     }
 
-                    projection_action->preArgumentAction();
                     actions_stack.pushLevel(lambda_arguments);
                     visit(lambda->arguments->children.at(1));
                     ExpressionActionsPtr lambda_actions = actions_stack.popLevel();
 
-                    String result_name = projection_manipulator->getColumnName(lambda->arguments->children.at(1)->getColumnName());
+                    String result_name = lambda->arguments->children.at(1)->getColumnName();
                     lambda_actions->finalize(Names(1, result_name));
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
@@ -485,12 +475,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
                     auto function_capture = std::make_shared<FunctionCapture>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
-                    actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name,
-                                            projection_manipulator->getProjectionSourceColumn()));
+                    actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;
-                    projection_action->postArgumentAction(lambda_name);
                 }
             }
         }
@@ -509,15 +497,8 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
         if (arguments_present)
         {
-            projection_action->preCalculation();
-            if (projection_action->isCalculationRequired())
-            {
-                actions_stack.addAction(
-                    ExpressionAction::applyFunction(function_builder,
-                                                    argument_names,
-                                                    projection_manipulator->getColumnName(getColumnName()),
-                                                    projection_manipulator->getProjectionSourceColumn()));
-            }
+            actions_stack.addAction(
+                ExpressionAction::applyFunction(function_builder, argument_names, getColumnName()));
         }
     }
     else if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(ast.get()))
@@ -529,8 +510,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         column.type = type;
         column.name = getColumnName();
 
-        actions_stack.addAction(ExpressionAction::addColumn(column, "", false));
-        projection_manipulator->tryToGetFromUpperProjection(column.name);
+        actions_stack.addAction(ExpressionAction::addColumn(column));
     }
     else
     {

@@ -209,7 +209,7 @@ public:
     Field getField() const { return getDataColumn()[0]; }
 
     template <typename T>
-    T getValue() const { return getField().safeGet<typename NearestFieldType<T>::Type>(); }
+    T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };
 
 }

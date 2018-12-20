@@ -1,4 +1,3 @@
-<a name="aggregate_functions_reference"></a>
 
 # Function reference
 
@@ -35,7 +34,7 @@ anyHeavy(column)
 
 **Example**
 
-Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select any frequently occurring value in the `AirlineID` column.
+Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select any frequently occurring value in the `AirlineID` column.
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
@@ -213,7 +212,6 @@ SELECT argMin(user, salary) FROM salary
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
-<a name="agg_function-sum"></a>
 
 ## sum(x)
 
@@ -226,7 +224,6 @@ Computes the sum of the numbers, using the same data type for the result as for 
 
 Only works for numbers.
 
-<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -283,15 +280,17 @@ The result is determinate (it doesn't depend on the order of query processing).
 
 This function provides excellent accuracy even for data sets with extremely high cardinality (over 10 billion elements). It is recommended for default use.
 
-## uniqCombined(x)
+## uniqCombined(HLL_precision)(x)
 
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
 
-A combination of three algorithms is used: array, hash table and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table. The memory consumption is several times smaller than for the `uniq` function, and the accuracy is several times higher. Performance is slightly lower than for the `uniq` function, but sometimes it can be even higher than it, such as with distributed queries that transmit a large number of aggregation states over the network. The maximum state size is 96 KiB (HyperLogLog of 217 6-bit cells).
+A combination of three algorithms is used: array, hash table and [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) with an error correction table. For small number of distinct elements, the array is used. When the set size becomes larger the hash table is used, while it is smaller than HyperLogLog data structure. For larger number of elements, the HyperLogLog is used, and it will occupy fixed amount of memory.
 
-The result is determinate (it doesn't depend on the order of query processing).
+The parameter "HLL_precision" is the base-2 logarithm of the number of cells in HyperLogLog. You can omit the parameter (omit first parens). The default value is 17, that is effectively 96 KiB of space (2^17 cells of 6 bits each). The memory consumption is several times smaller than for the `uniq` function, and the accuracy is several times higher. Performance is slightly lower than for the `uniq` function, but sometimes it can be even higher than it, such as with distributed queries that transmit a large number of aggregation states over the network.
 
-The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error will increase for high-cardinality data sets (200M+ elements), and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
+The result is deterministic (it doesn't depend on the order of query processing).
+
+The `uniqCombined` function is a good default choice for calculating the number of different values, but keep in mind that the estimation error for large sets (200 million elements and more) will become larger than theoretical value due to poor choice of hash function.
 
 ## uniqHLL12(x)
 
@@ -320,7 +319,6 @@ For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
 
 In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
 
-<a name="agg_functions_groupArrayInsertAt"></a>
 
 ## groupArrayInsertAt(x)
 
@@ -460,7 +458,7 @@ We recommend using the `N < 10 ` value; performance is reduced with large `N` va
 
 **Example**
 
-Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) data set and select the three most frequently occurring values in the `AirlineID` column.
+Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res

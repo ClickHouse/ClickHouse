@@ -17,14 +17,14 @@ class ColumnFixedString final : public COWPtrHelper<IColumn, ColumnFixedString>
 public:
     friend class COWPtrHelper<IColumn, ColumnFixedString>;
 
-    using Chars_t = PaddedPODArray<UInt8>;
+    using Chars = PaddedPODArray<UInt8>;
 
 private:
     /// Bytes of rows, laid in succession. The strings are stored without a trailing zero byte.
     /** NOTE It is required that the offset and type of chars in the object be the same as that of `data in ColumnUInt8`.
       * Used in `packFixed` function (AggregationCommon.h)
       */
-    Chars_t chars;
+    Chars chars;
     /// The size of the rows.
     const size_t n;
 
@@ -138,8 +138,8 @@ public:
 
     /// Specialized part of interface, not from IColumn.
 
-    Chars_t & getChars() { return chars; }
-    const Chars_t & getChars() const { return chars; }
+    Chars & getChars() { return chars; }
+    const Chars & getChars() const { return chars; }
 
     size_t getN() const { return n; }
 };

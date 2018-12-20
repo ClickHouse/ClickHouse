@@ -1,54 +1,60 @@
-#include <Dictionaries/XDBCDictionarySource.h>
-#include <common/logger_useful.h>
-#include <common/LocalDateTime.h>
-#include <Poco/Ext/SessionPoolHelpers.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Net/HTTPRequest.h>
-#include <DataTypes/DataTypeString.h>
+#include "XDBCDictionarySource.h"
+
 #include <Columns/ColumnString.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Dictionaries/readInvalidateQuery.h>
-#include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
+#include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Poco/Ext/SessionPoolHelpers.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/XDBCBridgeHelper.h>
+#include <common/LocalDateTime.h>
+#include <common/logger_useful.h>
+#include "DictionarySourceFactory.h"
+#include "DictionaryStructure.h"
+#include "readInvalidateQuery.h"
 
+#include <Common/config.h>
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+#    include <Poco/Data/ODBC/Connector.h>
+#endif
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace
 {
     class XDBCBridgeBlockInputStream : public IProfilingBlockInputStream
     {
     public:
-        XDBCBridgeBlockInputStream(const Poco::URI & uri,
+        XDBCBridgeBlockInputStream(
+            const Poco::URI & uri,
             std::function<void(std::ostream &)> callback,
             const Block & sample_block,
             const Context & context,
             size_t max_block_size,
-            const ConnectionTimeouts & timeouts, const String name) : name(name)
+            const ConnectionTimeouts & timeouts,
+            const String name)
+            : name(name)
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
-            reader = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
+            reader
+                = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
         }
 
-        Block getHeader() const override
-        {
-            return reader->getHeader();
-        }
+        Block getHeader() const override { return reader->getHeader(); }
 
-        String getName() const override
-        {
-            return name;
-        }
+        String getName() const override { return name; }
 
     private:
-        Block readImpl() override
-        {
-            return reader->read();
-        }
+        Block readImpl() override { return reader->read(); }
 
         String name;
         std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
@@ -59,23 +65,27 @@ namespace
 static const size_t max_block_size = 8192;
 
 
-XDBCDictionarySource::XDBCDictionarySource(const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config_, const std::string & config_prefix_,
-    const Block & sample_block_, const Context & context_, const BridgeHelperPtr bridge_)
-    : log(&Logger::get(bridge_->getName() + "DictionarySource")),
-    update_time{std::chrono::system_clock::from_time_t(0)},
-    dict_struct{dict_struct_},
-    db{config_.getString(config_prefix_ + ".db", "")},
-    table{config_.getString(config_prefix_ + ".table")},
-    where{config_.getString(config_prefix_ + ".where", "")},
-    update_field{config_.getString(config_prefix_ + ".update_field", "")},
-    sample_block{sample_block_},
-    query_builder{dict_struct, db, table, where, bridge_->getIdentifierQuotingStyle()},
-    load_all_query{query_builder.composeLoadAllQuery()},
-    invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")},
-    bridge_helper{bridge_},
-    timeouts{ConnectionTimeouts::getHTTPTimeouts(context_.getSettingsRef())},
-    global_context(context_)
+XDBCDictionarySource::XDBCDictionarySource(
+    const DictionaryStructure & dict_struct_,
+    const Poco::Util::AbstractConfiguration & config_,
+    const std::string & config_prefix_,
+    const Block & sample_block_,
+    const Context & context_,
+    const BridgeHelperPtr bridge_)
+    : log(&Logger::get(bridge_->getName() + "DictionarySource"))
+    , update_time{std::chrono::system_clock::from_time_t(0)}
+    , dict_struct{dict_struct_}
+    , db{config_.getString(config_prefix_ + ".db", "")}
+    , table{config_.getString(config_prefix_ + ".table")}
+    , where{config_.getString(config_prefix_ + ".where", "")}
+    , update_field{config_.getString(config_prefix_ + ".update_field", "")}
+    , sample_block{sample_block_}
+    , query_builder{dict_struct, db, table, where, bridge_->getIdentifierQuotingStyle()}
+    , load_all_query{query_builder.composeLoadAllQuery()}
+    , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}
+    , bridge_helper{bridge_}
+    , timeouts{ConnectionTimeouts::getHTTPTimeouts(context_.getSettingsRef())}
+    , global_context(context_)
 {
     bridge_url = bridge_helper->getMainURI();
 
@@ -86,24 +96,23 @@ XDBCDictionarySource::XDBCDictionarySource(const DictionaryStructure & dict_stru
 
 /// copy-constructor is provided in order to support cloneability
 XDBCDictionarySource::XDBCDictionarySource(const XDBCDictionarySource & other)
-    : log(&Logger::get(other.bridge_helper->getName() + "DictionarySource")),
-    update_time{other.update_time},
-    dict_struct{other.dict_struct},
-    db{other.db},
-    table{other.table},
-    where{other.where},
-    update_field{other.update_field},
-    sample_block{other.sample_block},
-    query_builder{dict_struct, db, table, where, other.bridge_helper->getIdentifierQuotingStyle()},
-    load_all_query{other.load_all_query},
-    invalidate_query{other.invalidate_query},
-    invalidate_query_response{other.invalidate_query_response},
-    bridge_helper{other.bridge_helper},
-    bridge_url{other.bridge_url},
-    timeouts{other.timeouts},
-    global_context{other.global_context}
+    : log(&Logger::get(other.bridge_helper->getName() + "DictionarySource"))
+    , update_time{other.update_time}
+    , dict_struct{other.dict_struct}
+    , db{other.db}
+    , table{other.table}
+    , where{other.where}
+    , update_field{other.update_field}
+    , sample_block{other.sample_block}
+    , query_builder{dict_struct, db, table, where, other.bridge_helper->getIdentifierQuotingStyle()}
+    , load_all_query{other.load_all_query}
+    , invalidate_query{other.invalidate_query}
+    , invalidate_query_response{other.invalidate_query_response}
+    , bridge_helper{other.bridge_helper}
+    , bridge_url{other.bridge_url}
+    , timeouts{other.timeouts}
+    , global_context{other.global_context}
 {
-
 }
 
 std::string XDBCDictionarySource::getUpdateFieldAndDate()
@@ -144,8 +153,7 @@ BlockInputStreamPtr XDBCDictionarySource::loadIds(const std::vector<UInt64> & id
     return loadBase(query);
 }
 
-BlockInputStreamPtr XDBCDictionarySource::loadKeys(
-    const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockInputStreamPtr XDBCDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
     return loadBase(query);
@@ -168,7 +176,7 @@ DictionarySourcePtr XDBCDictionarySource::clone() const
 
 std::string XDBCDictionarySource::toString() const
 {
-    return bridge_helper->getName() +  ": " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
+    return bridge_helper->getName() + ": " + db + '.' + table + (where.empty() ? "" : ", where: " + where);
 }
 
 bool XDBCDictionarySource::isModified() const
@@ -203,7 +211,8 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
         invalidate_sample_block,
         global_context,
         max_block_size,
-        timeouts, bridge_helper->getName() + "BlockInputStream");
+        timeouts,
+        bridge_helper->getName() + "BlockInputStream");
 
     return readInvalidateQuery(stream);
 }
@@ -211,12 +220,58 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
 BlockInputStreamPtr XDBCDictionarySource::loadBase(const std::string & query) const
 {
     bridge_helper->startBridgeSync();
-    return std::make_shared<XDBCBridgeBlockInputStream>(bridge_url,
+    return std::make_shared<XDBCBridgeBlockInputStream>(
+        bridge_url,
         [query](std::ostream & os) { os << "query=" << query; },
         sample_block,
         global_context,
         max_block_size,
-        timeouts, bridge_helper->getName() + "BlockInputStream");
+        timeouts,
+        bridge_helper->getName() + "BlockInputStream");
 }
+
+void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
+{
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+    Poco::Data::ODBC::Connector::registerConnector();
+#endif
+
+    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+                                 const Poco::Util::AbstractConfiguration & config,
+                                 const std::string & config_prefix,
+                                 Block & sample_block,
+                                 Context & context) -> DictionarySourcePtr {
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
+            context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
+        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
+#else
+        (void)dict_struct;
+        (void)config;
+        (void)config_prefix;
+        (void)sample_block;
+        (void)context;
+        throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+    };
+    factory.registerSource("odbc", createTableSource);
+}
+
+void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
+{
+    auto createTableSource = [=](const DictionaryStructure & /* dict_struct */,
+                                 const Poco::Util::AbstractConfiguration & /* config */,
+                                 const std::string & /* config_prefix */,
+                                 Block & /* sample_block */,
+                                 const Context & /* context */) -> DictionarySourcePtr {
+        throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+        //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
+        //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
+    };
+    factory.registerSource("jdbc", createTableSource);
+}
+
 
 }

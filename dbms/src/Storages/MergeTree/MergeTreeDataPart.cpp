@@ -248,7 +248,6 @@ String MergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) co
         return new_part_info.getPartName();
 }
 
-
 DayNum MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
@@ -266,6 +265,22 @@ DayNum MergeTreeDataPart::getMaxDate() const
         return DayNum();
 }
 
+time_t MergeTreeDataPart::getMinTime() const
+{
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
+        return minmax_idx.parallelogram[storage.minmax_idx_time_column_pos].left.get<UInt64>();
+    else
+        return 0;
+}
+
+
+time_t MergeTreeDataPart::getMaxTime() const
+{
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
+        return minmax_idx.parallelogram[storage.minmax_idx_time_column_pos].right.get<UInt64>();
+    else
+        return 0;
+}
 
 MergeTreeDataPart::~MergeTreeDataPart()
 {
@@ -448,7 +463,7 @@ void MergeTreeDataPart::loadIndex()
             .getSize() / MERGE_TREE_MARK_SIZE;
     }
 
-    size_t key_size = storage.primary_sort_columns.size();
+    size_t key_size = storage.primary_key_columns.size();
 
     if (key_size)
     {
@@ -479,8 +494,6 @@ void MergeTreeDataPart::loadIndex()
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
-
-    bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
@@ -506,7 +519,7 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
     String calculated_partition_id = partition.getID(storage);
     if (calculated_partition_id != info.partition_id)
         throw Exception(
-            "While loading part "  + getFullPath() + ": calculated partition ID: " + calculated_partition_id
+            "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id
             + " differs from partition ID in part name: " + info.partition_id,
             ErrorCodes::CORRUPTED_DATA);
 }
@@ -514,16 +527,25 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 void MergeTreeDataPart::loadChecksums(bool require)
 {
     String path = getFullPath() + "checksums.txt";
-    if (!Poco::File(path).exists())
+    Poco::File checksums_file(path);
+    if (checksums_file.exists())
+    {
+        ReadBufferFromFile file = openForReading(path);
+        if (checksums.read(file))
+        {
+            assertEOF(file);
+            bytes_on_disk = checksums.getTotalSizeOnDisk();
+        }
+        else
+            bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
+    }
+    else
     {
         if (require)
             throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        return;
+        bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
     }
-    ReadBufferFromFile file = openForReading(path);
-    if (checksums.read(file))
-        assertEOF(file);
 }
 
 void MergeTreeDataPart::loadRowsCount()
@@ -549,7 +571,7 @@ void MergeTreeDataPart::loadRowsCount()
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
-            if (!column_col->isFixedAndContiguous())
+            if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
             size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
@@ -631,7 +653,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
     if (!checksums.empty())
     {
-        if (!storage.primary_sort_columns.empty() && !checksums.files.count("primary.idx"))
+        if (!storage.primary_key_columns.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
@@ -659,7 +681,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             if (!checksums.files.count("count.txt"))
                 throw Exception("No checksum for count.txt", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            if (storage.partition_expr && !checksums.files.count("partition.dat"))
+            if (storage.partition_key_expr && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
             if (!isEmpty())
@@ -685,14 +707,14 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.primary_sort_columns.empty())
+        if (!storage.primary_key_columns.empty())
             check_file_not_empty(path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             check_file_not_empty(path + "count.txt");
 
-            if (storage.partition_expr)
+            if (storage.partition_key_expr)
                 check_file_not_empty(path + "partition.dat");
 
             for (const String & col_name : storage.minmax_idx_columns)

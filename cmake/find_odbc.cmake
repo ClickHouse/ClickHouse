@@ -71,16 +71,20 @@ if (ENABLE_ODBC)
         )
 
         # MinGW find usually fails
-        if(MINGW)
+        if (MINGW)
             set(ODBC_INCLUDE_DIRECTORIES ".")
             set(ODBC_LIBRARIES odbc32)
-        endif()
+        endif ()
 
         include(FindPackageHandleStandardArgs)
         find_package_handle_standard_args(ODBC
             DEFAULT_MSG
             ODBC_INCLUDE_DIRECTORIES
             ODBC_LIBRARIES)
+
+        if (USE_STATIC_LIBRARIES)
+            list(APPEND ODBC_LIBRARIES ${LTDL_LIBRARY})
+        endif ()
 
         mark_as_advanced(ODBC_FOUND ODBC_LIBRARIES ODBC_INCLUDE_DIRECTORIES)
     endif ()

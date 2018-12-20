@@ -3,6 +3,9 @@
 
 #include <IO/ConcatReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromVector.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/copyData.h>
 
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
@@ -33,6 +36,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -203,10 +207,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         res = interpreter->execute();
+        if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
+            context.setInsertionTable(insert_interpreter->getDatabaseTable());
 
-        /// Delayed initialization of query streams (required for KILL QUERY purposes)
         if (process_list_entry)
-            (*process_list_entry)->setQueryStreams(res);
+        {
+            /// Query was killed before execution
+            if ((*process_list_entry)->isKilled())
+                throw Exception("Query '" + (*process_list_entry)->getInfo().client_info.current_query_id + "' is killed in pending state",
+                    ErrorCodes::QUERY_WAS_CANCELLED);
+            else
+                (*process_list_entry)->setQueryStreams(res);
+        }
 
         /// Hold element of process list till end of query execution.
         res.process_list_entry = process_list_entry;
@@ -438,8 +450,11 @@ void executeQuery(
     else
     {
         /// If not - copy enough data into 'parse_buf'.
-        parse_buf.resize(max_query_size + 1);
-        parse_buf.resize(istr.read(parse_buf.data(), max_query_size + 1));
+        WriteBufferFromVector<PODArray<char>> out(parse_buf);
+        LimitReadBuffer limit(istr, max_query_size + 1, false);
+        copyData(limit, out);
+        out.finish();
+
         begin = parse_buf.data();
         end = begin + parse_buf.size();
     }

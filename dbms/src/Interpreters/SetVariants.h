@@ -37,7 +37,8 @@ struct SetMethodOneNumber
           */
         void init(const ColumnRawPtrs & key_columns)
         {
-            vec = static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData().data();
+            /// We may interpret ColumnInt32 as ColumnUInt32. This breaks strict aliasing but compiler doesn't see it.
+            vec = reinterpret_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData().data();
         }
 
         /// Get key from key columns for insertion into hash table.
@@ -68,7 +69,7 @@ struct SetMethodString
     struct State
     {
         const ColumnString::Offsets * offsets;
-        const ColumnString::Chars_t * chars;
+        const ColumnString::Chars * chars;
 
         void init(const ColumnRawPtrs & key_columns)
         {
@@ -108,7 +109,7 @@ struct SetMethodFixedString
     struct State
     {
         size_t n;
-        const ColumnFixedString::Chars_t * chars;
+        const ColumnFixedString::Chars * chars;
 
         void init(const ColumnRawPtrs & key_columns)
         {

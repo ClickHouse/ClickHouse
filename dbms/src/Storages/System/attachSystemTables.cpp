@@ -32,9 +32,7 @@
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
-#if __has_include("StorageSystemContributors.generated.cpp")
-#   include <Storages/System/StorageSystemContributors.h>
-#endif
+#include <Storages/System/StorageSystemContributors.h>
 
 
 namespace DB
@@ -59,9 +57,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("data_type_families", StorageSystemDataTypeFamilies::create("data_type_families"));
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
     system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
-#if __has_include("StorageSystemContributors.generated.cpp")
     system_database.attachTable("contributors", StorageSystemContributors::create("contributors"));
-#endif
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)

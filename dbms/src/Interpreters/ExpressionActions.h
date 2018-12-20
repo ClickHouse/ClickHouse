@@ -81,16 +81,18 @@ public:
     /// If COPY_COLUMN can replace the result column.
     bool can_replace = false;
 
-    /// For conditional projections (projections on subset of rows)
-    std::string row_projection_column;
-    bool is_row_projection_complementary = false;
-
     /// For ADD_COLUMN.
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
     /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
+
+    /// For unaligned [LEFT] ARRAY JOIN
+    FunctionBuilderPtr function_length;
+    FunctionBuilderPtr function_greatest;
+    FunctionBuilderPtr function_arrayResize;
+
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
@@ -101,23 +103,22 @@ public:
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
     bool array_join_is_left = false;
+    bool unaligned_array_join = false;
 
     /// For JOIN
     std::shared_ptr<const Join> join;
     Names join_key_names_left;
     NamesAndTypesList columns_added_by_join;
+    NameSet columns_added_by_join_from_right_keys;
 
     /// For PROJECT.
     NamesWithAliases projection;
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
-        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "",
-        const std::string & row_projection_column = "");
+        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
 
-    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_,
-                                      const std::string & row_projection_column,
-                                      bool is_row_projection_complementary);
+    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
     static ExpressionAction removeColumn(const std::string & removed_name);
     static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace = false);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
@@ -125,7 +126,7 @@ public:
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
-                                         const NamesAndTypesList & columns_added_by_join_);
+        const NamesAndTypesList & columns_added_by_join_, const NameSet & columns_added_by_join_from_right_keys_);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -143,8 +144,7 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings);
-    size_t getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
-    void execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
+    void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
 };
 
@@ -225,7 +225,7 @@ public:
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
-    void execute(Block & block) const;
+    void execute(Block & block, bool dry_run = false) const;
 
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.

@@ -1,47 +1,46 @@
 #pragma once
 
+#include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Common/typeid_cast.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+
 namespace DB
 {
 
-/// Finds in the query the usage of external tables (as table identifiers). Fills in external_tables.
-class ExternalTablesVisitor
+/// If node is ASTIdentifier try to extract external_storage.
+class ExternalTablesMatcher
 {
 public:
-    ExternalTablesVisitor(const Context & context_, Tables & tables)
-    :   context(context_),
-        external_tables(tables)
-    {}
-
-    void visit(ASTPtr & ast) const
+    struct Data
     {
-        /// Traverse from the bottom. Intentionally go into subqueries.
-        for (auto & child : ast->children)
-            visit(child);
+        const Context & context;
+        Tables & external_tables;
+    };
 
-        tryVisit<ASTIdentifier>(ast);
+    static constexpr const char * label = "ExternalTables";
+
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = typeid_cast<ASTIdentifier *>(ast.get()))
+            return visit(*t, ast, data);
+        return {};
     }
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
 
 private:
-    const Context & context;
-    Tables & external_tables;
-
-    void visit(const ASTIdentifier * node, ASTPtr &) const
+    static std::vector<ASTPtr *> visit(const ASTIdentifier & node, ASTPtr &, Data & data)
     {
-        if (node->special())
-            if (StoragePtr external_storage = context.tryGetExternalTable(node->name))
-                external_tables[node->name] = external_storage;
-    }
-
-    template <typename T>
-    bool tryVisit(ASTPtr & ast) const
-    {
-        if (const T * t = typeid_cast<const T *>(ast.get()))
-        {
-            visit(t, ast);
-            return true;
-        }
-        return false;
+        if (node.special())
+            if (StoragePtr external_storage = data.context.tryGetExternalTable(node.name))
+                data.external_tables[node.name] = external_storage;
+        return {};
     }
 };
+
+/// Finds in the query the usage of external tables. Fills in external_tables.
+using ExternalTablesVisitor = InDepthNodeVisitor<ExternalTablesMatcher, false>;
 
 }

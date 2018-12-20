@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+#-*- coding: utf-8 -*-
+import subprocess
+import os
+import getpass
+import argparse
+import logging
+import signal
+import subprocess
+
+CUR_FILE_DIR = os.path.dirname(os.path.realpath(__file__))
+DEFAULT_CLICKHOUSE_ROOT = os.path.abspath(os.path.join(CUR_FILE_DIR, "../../../"))
+CURRENT_WORK_DIR = os.getcwd()
+CONTAINER_NAME = "clickhouse_integration_tests"
+
+DIND_INTEGRATION_TESTS_IMAGE_NAME = "yandex/clickhouse-integration-tests-runner"
+
+def check_args_and_update_paths(args):
+    if not os.path.isabs(args.binary):
+        args.binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.binary))
+
+    if not os.path.isabs(args.configs_dir):
+        args.configs_dir = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.configs_dir))
+
+    if not os.path.isabs(args.clickhouse_root):
+        args.clickhouse_root = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.clickhouse_root))
+
+    for path in [args.binary, args.configs_dir, args.clickhouse_root]:
+        if not os.path.exists(path):
+            raise Exception("Path {} doesn't exists".format(path))
+
+def try_rm_image():
+    try:
+        subprocess.check_call('docker rm {name}'.format(name=CONTAINER_NAME), shell=True)
+    except:
+        pass
+
+def docker_kill_handler_handler(signum, frame):
+    subprocess.check_call('docker kill $(docker ps -a -q --filter name={name} --format="{{{{.ID}}}}")'.format(name=CONTAINER_NAME), shell=True)
+    try_rm_image()
+    raise KeyboardInterrupt("Killed by Ctrl+C")
+
+signal.signal(signal.SIGINT, docker_kill_handler_handler)
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
+    parser = argparse.ArgumentParser(description="ClickHouse integration tests runner")
+
+    parser.add_argument(
+        "--binary",
+        default=os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", os.environ.get("CLICKHOUSE_TESTS_CLIENT_BIN_PATH", "/usr/bin/clickhouse")),
+        help="Path to clickhouse binary")
+
+    parser.add_argument(
+        "--configs-dir",
+        default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", os.path.join(DEFAULT_CLICKHOUSE_ROOT, "dbms/programs/server")),
+        help="Path to clickhouse configs directory")
+
+    parser.add_argument(
+        "--clickhouse-root",
+        default=DEFAULT_CLICKHOUSE_ROOT,
+        help="Path to repository root folder")
+
+    parser.add_argument(
+        "--disable-net-host",
+        action='store_true',
+        default=False,
+        help="Don't use net host in parent docker container")
+
+    parser.add_argument('pytest_args', nargs='*', help="args for pytest command")
+
+    args = parser.parse_args()
+
+    check_args_and_update_paths(args)
+
+    net = ""
+    if not args.disable_net_host:
+        net = "--net=host"
+
+    cmd = "docker run {net} --name {name} --user={user} --privileged --volume={bin}:/clickhouse \
+        --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img} ".format(
+        net=net,
+        bin=args.binary,
+        cfg=args.configs_dir,
+        pth=args.clickhouse_root,
+        opts=' '.join(args.pytest_args),
+        img=DIND_INTEGRATION_TESTS_IMAGE_NAME,
+        user=getpass.getuser(),
+        name=CONTAINER_NAME,
+    )
+
+    try:
+        subprocess.check_call(cmd, shell=True)
+    finally:
+        try_rm_image()

@@ -17,7 +17,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionsRandom.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <arpa/inet.h>
@@ -31,7 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
 }
 
@@ -105,7 +104,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
@@ -214,7 +213,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
@@ -310,7 +309,7 @@ public:
     }
 
     /// slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-    static void ipv6_scan(const char *  src, unsigned char * dst)
+    static void ipv6_scan(const char * src, unsigned char * dst)
     {
         const auto clear_dst = [dst]
         {
@@ -425,7 +424,7 @@ public:
             auto & vec_res = col_res->getChars();
             vec_res.resize(col_in->size() * ipv6_bytes_length);
 
-            const ColumnString::Chars_t & vec_src = col_in->getChars();
+            const ColumnString::Chars & vec_src = col_in->getChars();
             const ColumnString::Offsets & offsets_src = col_in->getOffsets();
             size_t src_offset = 0;
 
@@ -538,7 +537,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
             vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
@@ -622,7 +621,7 @@ public:
             ColumnUInt32::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
 
-            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Chars & vec_src = col->getChars();
             const ColumnString::Offsets & offsets_src = col->getOffsets();
             size_t prev_offset = 0;
 
@@ -752,7 +751,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
 
             vec_res.resize(vec_in.size() * 18); /// the value is: xx:xx:xx:xx:xx:xx\0
@@ -863,7 +862,7 @@ public:
             ColumnUInt64::Container & vec_res = col_res->getData();
             vec_res.resize(col->size());
 
-            const ColumnString::Chars_t & vec_src = col->getChars();
+            const ColumnString::Chars & vec_src = col->getChars();
             const ColumnString::Offsets & offsets_src = col->getOffsets();
             size_t prev_offset = 0;
 
@@ -938,7 +937,7 @@ public:
 
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             ColumnString::Offsets & offsets_res = col_res->getOffsets();
             vec_res.resize(size * (uuid_text_length + 1));
             offsets_res.resize(size);
@@ -1034,7 +1033,7 @@ public:
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
 
             size_t src_offset = 0;
@@ -1071,7 +1070,7 @@ public:
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
-            ColumnString::Chars_t & vec_res = col_res->getChars();
+            ColumnString::Chars & vec_res = col_res->getChars();
             vec_res.resize(size * uuid_bytes_length);
 
             size_t src_offset = 0;
@@ -1090,47 +1089,6 @@ public:
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
             + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_COLUMN);
-    }
-};
-
-class FunctionGenerateUUIDv4 : public IFunction
-{
-public:
-    static constexpr auto name = "generateUUIDv4";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionGenerateUUIDv4>(); }
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeUUID>();
-    }
-
-    bool isDeterministic() const override { return false; }
-
-    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
-    {
-        auto col_res = ColumnVector<UInt128>::create();
-        typename ColumnVector<UInt128>::Container & vec_to = col_res->getData();
-
-        size_t size = input_rows_count;
-        vec_to.resize(size);
-        Rand64Impl::execute(reinterpret_cast<UInt64 *>(vec_to.data()), vec_to.size() * 2);
-
-        for (UInt128 & uuid: vec_to)
-        {
-            /** https://tools.ietf.org/html/rfc4122#section-4.4
-             */
-            uuid.low = (uuid.low & 0xffffffffffff0fffull) | 0x0000000000004000ull;
-            uuid.high = (uuid.high & 0x3fffffffffffffffull) | 0x8000000000000000ull;
-        }
-
-        block.getByPosition(result).column = std::move(col_res);
     }
 };
 
@@ -1193,7 +1151,7 @@ public:
         if (col_vec)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
             const typename ColumnVector<T>::Container & in_vec = col_vec->getData();
@@ -1247,10 +1205,10 @@ public:
         if (col_str_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_str_in->getChars();
+            const ColumnString::Chars & in_vec = col_str_in->getChars();
             const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
             size_t size = in_offsets.size();
@@ -1291,10 +1249,10 @@ public:
         if (col_fstr_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
+            const ColumnString::Chars & in_vec = col_fstr_in->getChars();
 
             size_t size = col_fstr_in->size();
 
@@ -1403,10 +1361,10 @@ public:
         {
             auto col_res = ColumnString::create();
 
-            ColumnString::Chars_t & out_vec = col_res->getChars();
+            ColumnString::Chars & out_vec = col_res->getChars();
             ColumnString::Offsets & out_offsets = col_res->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col->getChars();
+            const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets & in_offsets = col->getOffsets();
 
             size_t size = in_offsets.size();
@@ -1557,10 +1515,10 @@ public:
         if (col_str_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_str_in->getChars();
+            const ColumnString::Chars & in_vec = col_str_in->getChars();
             const ColumnString::Offsets & in_offsets = col_str_in->getOffsets();
 
             size_t size = in_offsets.size();
@@ -1604,10 +1562,10 @@ public:
         if (col_fstr_in)
         {
             auto col_str = ColumnString::create();
-            ColumnString::Chars_t & out_vec = col_str->getChars();
+            ColumnString::Chars & out_vec = col_str->getChars();
             ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-            const ColumnString::Chars_t & in_vec = col_fstr_in->getChars();
+            const ColumnString::Chars & in_vec = col_fstr_in->getChars();
 
             size_t size = col_fstr_in->size();
 

@@ -1,6 +1,6 @@
 # ReplacingMergeTree
 
-The engine differs from [MergeTree](mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same primary key value.
+The engine differs from [MergeTree](mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same primary key value (or more accurately, with the same [sorting key](mergetree.md) value).
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, don't count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+For a description of request parameters, see [request description](../../query_language/create.md).
 
 **ReplacingMergeTree Parameters**
 
@@ -33,7 +33,7 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
+When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md)  are required, as when creating a `MergeTree`  table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 

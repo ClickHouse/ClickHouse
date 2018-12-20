@@ -1,4 +1,5 @@
-#include <Interpreters/ExternalLoader.h>
+#include "ExternalLoader.h"
+#include <Core/Defines.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
@@ -42,12 +43,12 @@ void ExternalLoader::reloadPeriodically()
 }
 
 
-ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config,
+ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config_main,
                                const ExternalLoaderUpdateSettings & update_settings,
                                const ExternalLoaderConfigSettings & config_settings,
                                std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
                                Logger * log, const std::string & loadable_object_name)
-        : config(config)
+        : config_main(config_main)
         , update_settings(update_settings)
         , config_settings(config_settings)
         , config_repository(std::move(config_repository))
@@ -214,7 +215,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
 void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool force_reload, const std::string & only_dictionary)
 {
-    const auto config_paths = config_repository->list(config, config_settings.path_setting_name);
+    const auto config_paths = config_repository->list(config_main, config_settings.path_setting_name);
 
     for (const auto & config_path : config_paths)
     {
@@ -239,7 +240,7 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
         if (current_config.find(loadable.first) == std::end(current_config))
             removed_loadable_objects.emplace_back(loadable.first);
     }
-    for(const auto & name : removed_loadable_objects)
+    for (const auto & name : removed_loadable_objects)
         loadable_objects.erase(name);
 }
 
@@ -262,7 +263,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_repository->getLastModificationTime(config_path);
         if (force_reload || last_modified > config_last_modified)
         {
-            auto loaded_config = config_repository->load(config_path);
+            auto loaded_config = config_repository->load(config_path, config_main.getString("path", DBMS_DEFAULT_PATH));
 
             loadable_objects_defined_in_config[config_path].clear();
 

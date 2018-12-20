@@ -1,8 +1,5 @@
-<a name="table_engines-custom_partitioning_key"></a>
 
 # Custom Partitioning Key
-
-Starting with version 1.1.54310, you can create tables in the MergeTree family with any partitioning expression (not only partitioning by month).
 
 The partition key can be an expression from the table columns, or a tuple of such expressions (similar to the primary key). The partition key can be omitted. When creating a table, specify the partition key in the ENGINE description with the new syntax:
 

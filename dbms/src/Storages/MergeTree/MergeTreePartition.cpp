@@ -5,6 +5,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/hex.h>
@@ -77,37 +79,43 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
     return result;
 }
 
-void MergeTreePartition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
+void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
     size_t key_size = storage.partition_key_sample.columns();
 
     if (key_size == 0)
     {
         writeCString("tuple()", out);
-        return;
     }
-
-    if (key_size > 1)
-        writeChar('(', out);
-
-    for (size_t i = 0; i < key_size; ++i)
+    else if (key_size == 1)
     {
-        if (i > 0)
-            writeCString(", ", out);
-
-        const DataTypePtr & type = storage.partition_key_sample.getByPosition(i).type;
+        const DataTypePtr & type = storage.partition_key_sample.getByPosition(0).type;
         auto column = type->createColumn();
-        column->insert(value[i]);
-        type->serializeTextQuoted(*column, 0, out, format_settings);
+        column->insert(value[0]);
+        type->serializeText(*column, 0, out, format_settings);
     }
+    else
+    {
+        DataTypes types;
+        Columns columns;
+        for (size_t i = 0; i < key_size; ++i)
+        {
+            const auto & type = storage.partition_key_sample.getByPosition(i).type;
+            types.push_back(type);
+            auto column = type->createColumn();
+            column->insert(value[i]);
+            columns.push_back(std::move(column));
+        }
 
-    if (key_size > 1)
-        writeChar(')', out);
+        DataTypeTuple tuple_type(types);
+        auto tuple_column = ColumnTuple::create(columns);
+        tuple_type.serializeText(*tuple_column, 0, out, format_settings);
+    }
 }
 
 void MergeTreePartition::load(const MergeTreeData & storage, const String & part_path)
 {
-    if (!storage.partition_expr)
+    if (!storage.partition_key_expr)
         return;
 
     ReadBufferFromFile file = openForReading(part_path + "partition.dat");
@@ -118,7 +126,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const String & part
 
 void MergeTreePartition::store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    if (!storage.partition_expr)
+    if (!storage.partition_key_expr)
         return;
 
     WriteBufferFromFile out(part_path + "partition.dat");

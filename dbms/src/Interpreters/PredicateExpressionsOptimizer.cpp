@@ -9,6 +9,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include "TranslateQualifiedNamesVisitor.h"
 
 namespace DB
 {
@@ -24,6 +25,9 @@ PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
 bool PredicateExpressionsOptimizer::optimize()
 {
     if (!settings.enable_optimize_predicate_expression || !ast_select || !ast_select->tables || ast_select->tables->children.empty())
+        return false;
+
+    if (!ast_select->where_expression && !ast_select->prewhere_expression)
         return false;
 
     SubqueriesProjectionColumns all_subquery_projection_columns;
@@ -68,7 +72,7 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
                 ASTPtr inner_predicate;
                 cloneOuterPredicateForInnerPredicate(outer_predicate, projection_columns, database_and_table_with_aliases, inner_predicate);
 
-                switch(optimize_kind)
+                switch (optimize_kind)
                 {
                     case OptimizeKind::NONE: continue;
                     case OptimizeKind::PUSH_TO_WHERE: is_rewrite_subquery |= optimizeExpression(inner_predicate, subquery->where_expression, subquery); continue;
@@ -300,14 +304,18 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(SubqueriesProje
 
 ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast)
 {
-    /// first should normalize query tree.
-    std::unordered_map<String, ASTPtr> aliases;
-    QueryAliasesVisitor query_aliases_visitor;
-    query_aliases_visitor.visit(ast, aliases, 0);
-    QueryNormalizer(ast, aliases, settings, {}, {}).perform();
-
     ASTs projection_columns;
     auto select_query = static_cast<ASTSelectQuery *>(ast.get());
+
+    /// first should normalize query tree.
+    std::unordered_map<String, ASTPtr> aliases;
+    std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
+
+    TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables};
+    TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
+    QueryAliasesVisitor::Data query_aliases_data{aliases};
+    QueryAliasesVisitor(query_aliases_data).visit(ast);
+    QueryNormalizer(ast, aliases, settings, {}, {}).perform();
 
     for (const auto & projection_column : select_query->select_expression_list->children)
     {

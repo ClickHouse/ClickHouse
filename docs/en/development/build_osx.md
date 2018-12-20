@@ -18,8 +18,8 @@ brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext r
 ## Checkout ClickHouse Sources
 
 ```bash
-git clone --recursive --depth=10 git@github.com:yandex/ClickHouse.git
-# or: git clone --recursive --depth=10 https://github.com/yandex/ClickHouse.git
+git clone --recursive git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```

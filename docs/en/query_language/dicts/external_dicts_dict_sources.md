@@ -25,14 +25,14 @@ The source is configured in the `source` section.
 
 Types of sources (`source_type`):
 
-- [Local file](#dicts-external_dicts_dict_sources-local_file)
-- [Executable file](#dicts-external_dicts_dict_sources-executable)
-- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
-- [ODBC](#dicts-external_dicts_dict_sources-odbc)
+- [Local file](#local-file)
+- [Executable file](#executable-file)
+- [HTTP(s)](#http-s)
 - DBMS
-    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [MySQL](#mysql)
+    - [ClickHouse](#clickhouse)
+    - [MongoDB](#mongodb)
+    - [ODBC](#odbc)
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
@@ -58,7 +58,7 @@ Setting fields:
 
 ## Executable File
 
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
+Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
 
 Example of settings:
 
@@ -80,7 +80,7 @@ Setting fields:
 
 ## HTTP(s)
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
 Example of settings:
 
@@ -93,7 +93,7 @@ Example of settings:
 </source>
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openSSL) in the server configuration.
+In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md) in the server configuration.
 
 Setting fields:
 
@@ -122,7 +122,7 @@ Setting fields:
 - `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
 - `table` – Name of the table and schema if exists.
 - `connection_string` – Connection string.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it's necessary to set table name accordingly to table name case in database.
 
@@ -350,7 +350,7 @@ Setting fields:
 
 - `where ` – The selection criteria. Optional parameter.
 
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -393,14 +393,14 @@ Example of settings:
 
 Setting fields:
 
-- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md#table_engines-distributed) table and enter it in subsequent configurations.
+- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md) table and enter it in subsequent configurations.
 - `port` – The port on the ClickHouse server.
 - `user` – Name of the ClickHouse user.
 - `password` – Password of the ClickHouse user.
 - `db` – Name of the database.
 - `table` – Name of the table.
 - `where ` – The selection criteria. May be omitted.
-- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
+- `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
 <a name="dicts-external_dicts_dict_sources-mongodb"></a>
 

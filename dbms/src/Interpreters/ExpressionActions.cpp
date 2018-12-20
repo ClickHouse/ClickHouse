@@ -51,11 +51,6 @@ Names ExpressionAction::getNeededColumns() const
     if (!source_name.empty())
         res.push_back(source_name);
 
-    if (!row_projection_column.empty())
-    {
-        res.push_back(row_projection_column);
-    }
-
     return res;
 }
 
@@ -63,8 +58,7 @@ Names ExpressionAction::getNeededColumns() const
 ExpressionAction ExpressionAction::applyFunction(
     const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
-    std::string result_name_,
-    const std::string & row_projection_column)
+    std::string result_name_)
 {
     if (result_name_ == "")
     {
@@ -83,22 +77,17 @@ ExpressionAction ExpressionAction::applyFunction(
     a.result_name = result_name_;
     a.function_builder = function_;
     a.argument_names = argument_names_;
-    a.row_projection_column = row_projection_column;
     return a;
 }
 
 ExpressionAction ExpressionAction::addColumn(
-    const ColumnWithTypeAndName & added_column_,
-    const std::string & row_projection_column,
-    bool is_row_projection_complementary)
+    const ColumnWithTypeAndName & added_column_)
 {
     ExpressionAction a;
     a.type = ADD_COLUMN;
     a.result_name = added_column_.name;
     a.result_type = added_column_.type;
     a.added_column = added_column_.column;
-    a.row_projection_column = row_projection_column;
-    a.is_row_projection_complementary = is_row_projection_complementary;
     return a;
 }
 
@@ -154,22 +143,32 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     a.type = ARRAY_JOIN;
     a.array_joined_columns = array_joined_columns;
     a.array_join_is_left = array_join_is_left;
+    a.unaligned_array_join = context.getSettingsRef().enable_unaligned_array_join;
 
-    if (array_join_is_left)
+    if (a.unaligned_array_join)
+    {
+        a.function_length = FunctionFactory::instance().get("length", context);
+        a.function_greatest = FunctionFactory::instance().get("greatest", context);
+        a.function_arrayResize = FunctionFactory::instance().get("arrayResize", context);
+    }
+    else if (array_join_is_left)
         a.function_builder = FunctionFactory::instance().get("emptyArrayToSingle", context);
 
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_,
-                                                const Names & join_key_names_left,
-                                                const NamesAndTypesList & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(
+    std::shared_ptr<const Join> join_,
+    const Names & join_key_names_left,
+    const NamesAndTypesList & columns_added_by_join_,
+    const NameSet & columns_added_by_join_from_right_keys_)
 {
     ExpressionAction a;
     a.type = JOIN;
     a.join = std::move(join_);
     a.join_key_names_left = join_key_names_left;
     a.columns_added_by_join = columns_added_by_join_;
+    a.columns_added_by_join_from_right_keys = columns_added_by_join_from_right_keys_;
     return a;
 }
 
@@ -215,7 +214,7 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
             /// so we don't want to unfold non deterministic functions
             if (all_const && function_base->isSuitableForConstantFolding() && (!compile_expressions || function_base->isDeterministic()))
             {
-                function->execute(sample_block, arguments, result_position, sample_block.rows());
+                function->execute(sample_block, arguments, result_position, sample_block.rows(), true);
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
                 ColumnWithTypeAndName & col = sample_block.safeGetByPosition(result_position);
@@ -271,8 +270,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = sample_block.getByName(name);
-                if (column.column)
-                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -337,40 +334,10 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
     }
 }
 
-size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
+
+void ExpressionAction::execute(Block & block, bool dry_run) const
 {
-    auto it = input_rows_counts.find(row_projection_column);
-    size_t projection_space_dimension;
-    if (it == input_rows_counts.end())
-    {
-        const auto & projection_column = block.getByName(row_projection_column).column;
-        projection_space_dimension = 0;
-        for (size_t i = 0; i < projection_column->size(); ++i)
-            if (projection_column->getBool(i))
-                ++projection_space_dimension;
-
-        input_rows_counts[row_projection_column] = projection_space_dimension;
-    }
-    else
-    {
-        projection_space_dimension = it->second;
-    }
-    size_t parent_space_dimension;
-    if (row_projection_column.empty())
-    {
-        parent_space_dimension = input_rows_counts[""];
-    }
-    else
-    {
-        parent_space_dimension = block.getByName(row_projection_column).column->size();
-    }
-
-    return is_row_projection_complementary ? parent_space_dimension - projection_space_dimension : projection_space_dimension;
-}
-
-void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
-{
-    size_t input_rows_count = getInputRowsCount(block, input_rows_counts);
+    size_t input_rows_count = block.rows();
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)
         if (!block.has(source_name))
@@ -398,7 +365,7 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
             if (is_function_compiled)
                 ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-            function->execute(block, arguments, num_columns_without_result, input_rows_count);
+            function->execute(block, arguments, num_columns_without_result, input_rows_count, dry_run);
 
             break;
         }
@@ -418,7 +385,44 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 
             /// If LEFT ARRAY JOIN, then we create columns in which empty arrays are replaced by arrays with one element - the default value.
             std::map<String, ColumnPtr> non_empty_array_columns;
-            if (array_join_is_left)
+
+            if (unaligned_array_join)
+            {
+                /// Resize all array joined columns to the longest one, (at least 1 if LEFT ARRAY JOIN), padded with default values.
+                auto rows = block.rows();
+                auto uint64 = std::make_shared<DataTypeUInt64>();
+                ColumnWithTypeAndName column_of_max_length;
+                if (array_join_is_left)
+                    column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 1u), uint64, {});
+                else
+                    column_of_max_length = ColumnWithTypeAndName(uint64->createColumnConst(rows, 0u), uint64, {});
+
+                for (const auto & name : array_joined_columns)
+                {
+                    auto & src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, {{}, uint64, {}}};
+                    function_length->build({src_col})->execute(tmp_block, {0}, 1, rows);
+
+                    Block tmp_block2{
+                        column_of_max_length, tmp_block.safeGetByPosition(1), {{}, uint64, {}}};
+                    function_greatest->build({column_of_max_length, tmp_block.safeGetByPosition(1)})->execute(tmp_block2, {0, 1}, 2, rows);
+                    column_of_max_length = tmp_block2.safeGetByPosition(2);
+                }
+
+                for (const auto & name : array_joined_columns)
+                {
+                    auto & src_col = block.getByName(name);
+
+                    Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
+                    function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
+                    any_array_ptr = src_col.column = tmp_block.safeGetByPosition(2).column;
+                }
+                if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
+                    any_array_ptr = converted;
+                any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
+            }
+            else if (array_join_is_left && !unaligned_array_join)
             {
                 for (const auto & name : array_joined_columns)
                 {
@@ -426,7 +430,7 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 
                     Block tmp_block{src_col, {{}, src_col.type, {}}};
 
-                    function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size());
+                    function_builder->build({src_col})->execute(tmp_block, {0}, 1, src_col.column->size(), dry_run);
                     non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
                 }
 
@@ -447,13 +451,13 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                     if (!typeid_cast<const DataTypeArray *>(&*current.type))
                         throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
-                    ColumnPtr array_ptr = array_join_is_left ? non_empty_array_columns[current.name] : current.column;
+                    ColumnPtr array_ptr = (array_join_is_left && !unaligned_array_join) ? non_empty_array_columns[current.name] : current.column;
 
                     if (ColumnPtr converted = array_ptr->convertToFullColumnIfConst())
                         array_ptr = converted;
 
                     const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
-                    if (!array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
+                    if (!unaligned_array_join && !array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
                         throw Exception("Sizes of ARRAY-JOIN-ed arrays do not match", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
                     current.column = typeid_cast<const ColumnArray &>(*array_ptr).getDataPtr();
@@ -465,14 +469,12 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 }
             }
 
-            // Temporary support case with no projections
-            input_rows_counts[""] = block.rows();
             break;
         }
 
         case JOIN:
         {
-            join->joinBlock(block);
+            join->joinBlock(block, join_key_names_left, columns_added_by_join_from_right_keys);
             break;
         }
 
@@ -485,8 +487,6 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = block.getByName(name);
-                if (column.column)
-                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -538,10 +538,8 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 
 void ExpressionAction::executeOnTotals(Block & block) const
 {
-    std::unordered_map<std::string, size_t> input_rows_counts;
-    input_rows_counts[""] = block.rows();
     if (type != JOIN)
-        execute(block, input_rows_counts);
+        execute(block, false);
     else
         join->joinTotals(block);
 }
@@ -639,7 +637,7 @@ void ExpressionActions::checkLimits(Block & block) const
         {
             std::stringstream list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
-                if (!block.safeGetByPosition(i).column->isColumnConst())
+                if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isColumnConst())
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
@@ -695,6 +693,10 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
         action.result_type = action.function_base->getReturnType();
     }
 
+    if (action.type == ExpressionAction::ADD_ALIASES)
+        for (const auto & name_with_alias : action.projection)
+            new_names.emplace_back(name_with_alias.second);
+
     action.prepare(sample_block, settings);
     actions.push_back(action);
 }
@@ -749,13 +751,11 @@ bool ExpressionActions::popUnusedArrayJoin(const Names & required_columns, Expre
     return true;
 }
 
-void ExpressionActions::execute(Block & block) const
+void ExpressionActions::execute(Block & block, bool dry_run) const
 {
-    std::unordered_map<std::string, size_t> input_rows_counts;
-    input_rows_counts[""] = block.rows();
     for (const auto & action : actions)
     {
-        action.execute(block, input_rows_counts);
+        action.execute(block, dry_run);
         checkLimits(block);
     }
 }
@@ -980,9 +980,6 @@ void ExpressionActions::finalize(const Names & output_columns)
         if (!action.source_name.empty())
             ++columns_refcount[action.source_name];
 
-        if (!action.row_projection_column.empty())
-            ++columns_refcount[action.row_projection_column];
-
         for (const auto & name : action.argument_names)
             ++columns_refcount[name];
 
@@ -1010,9 +1007,6 @@ void ExpressionActions::finalize(const Names & output_columns)
 
         if (!action.source_name.empty())
             process(action.source_name);
-
-        if (!action.row_projection_column.empty())
-            process(action.row_projection_column);
 
         for (const auto & name : action.argument_names)
             process(name);
@@ -1138,7 +1132,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 {
     for (const auto & action : actions)
         if (action.join && (action.join->getKind() == ASTTableJoin::Kind::Full || action.join->getKind() == ASTTableJoin::Kind::Right))
-            return action.join->createStreamWithNonJoinedRows(source_header, max_block_size);
+            return action.join->createStreamWithNonJoinedRows(source_header, action.join_key_names_left, max_block_size);
 
     return {};
 }
@@ -1150,7 +1144,7 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
     SipHash hash;
     hash.update(action.type);
     hash.update(action.is_function_compiled);
-    switch(action.type)
+    switch (action.type)
     {
         case ADD_COLUMN:
             hash.update(action.result_name);
@@ -1240,8 +1234,6 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
 
     return source_name == other.source_name
         && result_name == other.result_name
-        && row_projection_column == other.row_projection_column
-        && is_row_projection_complementary == other.is_row_projection_complementary
         && argument_names == other.argument_names
         && array_joined_columns == other.array_joined_columns
         && array_join_is_left == other.array_join_is_left

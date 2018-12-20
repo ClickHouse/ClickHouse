@@ -2,11 +2,11 @@
 
 # Storing Dictionaries in Memory
 
-There are a [variety of ways](#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
+There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed)and[complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache](#dicts-external_dicts_dict_layout-cache)".
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache](#cache)".
 
 There are several ways to improve dictionary performance:
 
@@ -36,19 +36,16 @@ The configuration looks like this:
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-manner"></a>
 
 ## Ways to Store Dictionaries in Memory
 
-- [flat](#dicts-external_dicts_dict_layout-flat)
-- [hashed](#dicts-external_dicts_dict_layout-hashed)
-- [cache](#dicts-external_dicts_dict_layout-cache)
-- [range_hashed](#dicts-external_dicts_dict_layout-range_hashed)
-- [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed)
-- [complex_key_cache](#dicts-external_dicts_dict_layout-complex_key_cache)
-- [ip_trie](#dicts-external_dicts_dict_layout-ip_trie)
-
-<a name="dicts-external_dicts_dict_layout-flat"></a>
+- [flat](#flat)
+- [hashed](#hashed)
+- [cache](#cache)
+- [range_hashed](#range-hashed)
+- [complex_key_hashed](#complex-key-hashed)
+- [complex_key_cache](#complex-key-cache)
+- [ip_trie](#ip-trie)
 
 ### flat
 
@@ -84,11 +81,10 @@ Configuration example:
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-complex_key_hashed"></a>
 
 ### complex_key_hashed
 
-This type of storage is for use with composite [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `hashed`.
+This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `hashed`.
 
 Configuration example:
 
@@ -98,7 +94,6 @@ Configuration example:
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-range_hashed"></a>
 
 ### range_hashed
 
@@ -120,7 +115,7 @@ Example: The table contains discounts for each advertiser in the format:
 +---------------+---------------------+-------------------+--------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md).
 
 Example:
 
@@ -185,7 +180,6 @@ Configuration example:
 </yandex>
 ```
 
-<a name="dicts-external_dicts_dict_layout-cache"></a>
 
 ### cache
 
@@ -193,13 +187,12 @@ The dictionary is stored in a cache that has a fixed number of cells. These cell
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using ` SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used, and it is re-requested the next time it needs to be used.
-
+For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used, and it is re-requested the next time it needs to be used.
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
 
 To improve cache performance, use a subquery with ` LIMIT`, and call the function with the dictionary externally.
 
-Supported [sources](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
+Supported [sources](external_dicts_dict_sources.md): MySQL, ClickHouse, executable, HTTP.
 
 Example of settings:
 
@@ -222,13 +215,11 @@ Set a large enough cache size. You need to experiment to select the number of ce
 !!! warning
     Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
-<a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 
 ### complex_key_cache
 
-This type of storage is for use with composite [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
+This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `cache`.
 
-<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
 
 ### ip_trie
 

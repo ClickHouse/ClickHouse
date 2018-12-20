@@ -323,7 +323,7 @@ struct TaskTable
 struct TaskCluster
 {
     TaskCluster(const String & task_zookeeper_path_, const String & default_local_database_)
-        : task_zookeeper_path(task_zookeeper_path_),  default_local_database(default_local_database_) {}
+        : task_zookeeper_path(task_zookeeper_path_), default_local_database(default_local_database_) {}
 
     void loadTasks(const Poco::Util::AbstractConfiguration & config, const String & base_key = "");
 
@@ -410,8 +410,7 @@ BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
     return std::make_shared<SquashingBlockInputStream>(
         stream,
         std::numeric_limits<size_t>::max(),
-        std::numeric_limits<size_t>::max()
-    );
+        std::numeric_limits<size_t>::max());
 }
 
 Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
@@ -482,7 +481,7 @@ String DB::TaskShard::getHostNameExample() const
 }
 
 
-static bool isExtedndedDefinitionStorage(const ASTPtr & storage_ast)
+static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
     const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
     return storage.partition_by || storage.order_by || storage.sample_by;
@@ -504,7 +503,7 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     ASTPtr arguments_ast = engine.arguments->clone();
     ASTs & arguments = typeid_cast<ASTExpressionList &>(*arguments_ast).children;
 
-    if (isExtedndedDefinitionStorage(storage_ast))
+    if (isExtendedDefinitionStorage(storage_ast))
     {
         if (storage.partition_by)
             return storage.partition_by->clone();
