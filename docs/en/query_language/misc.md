@@ -1,6 +1,6 @@
 # Miscellaneous Queries
 
-## ATTACH TABLE
+## ATTACH
 
 This query is exactly the same as `CREATE`, but
 
@@ -244,7 +244,7 @@ See also the section "LIKE operator".
 
 ## TRUNCATE
 
-```sql
+``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
