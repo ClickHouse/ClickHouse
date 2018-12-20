@@ -76,7 +76,6 @@ public:
         auto & dst_data = dst_column->getChars();
         auto & dst_offsets = dst_column->getOffsets();
 
-        dst_data.resize(input->getChars().size() * input->size());
         dst_offsets.resize(input_rows_count);
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
@@ -86,22 +85,22 @@ public:
         auto dst_pos = dst;
 
         size_t src_offset_prev = 0;
-
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t srclen = src_offsets[row] - src_offset_prev - 1;
 
             /// suboptimal, but uses original implementation from re2
-            re2_st::StringPiece unquoted(source, srclen);
-            const auto & quoted = re2_st::RE2::QuoteMeta(unquoted);
-            const auto size = quoted.size();
-            std::memcpy(dst_pos, quoted.data(), size);
+            const auto & quoted = re2_st::RE2::QuoteMeta({source, srclen});
+            const auto size = quoted.size() + 1;
+
+            size_t new_dst_size = dst_data.size() + size;
+            dst_data.resize(new_dst_size);
+            memcpy(dst_pos, quoted.c_str(), size);
 
             source += srclen + 1;
-            dst_pos[size] = '\0';
-            dst_pos += size + 1;
+            dst_pos += size;
 
-            dst_offsets[row] = dst_pos - dst;
+            dst_offsets[row] = new_dst_size;
             src_offset_prev = src_offsets[row];
         }
 
