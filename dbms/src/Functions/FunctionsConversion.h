@@ -1138,8 +1138,7 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        /// If type is string, the function is no monotonic
-        if (WhichDataType(type).isString())
+        if (!type.isValueRepresentedByNumber())
             return {};
 
         size_t size_of_type = type.getSizeOfValueInMemory();
@@ -1157,13 +1156,9 @@ struct ToIntMonotonicity
         }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
-        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
+        if (checkAndGetDataType<DataTypeNumberBase<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
-
-        /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
-        if (left.isNull() || right.isNull())
-            return {};
 
         /// If converting from float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
