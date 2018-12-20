@@ -21,9 +21,9 @@ namespace ErrorCodes
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionHistogram(const std::string &, const DataTypes &, const Array &)
+AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, const DataTypes & arguments, const Array & params)
 {
-/*    if (params.size() != 1)
+    if (params.size() != 1)
         throw Exception("Function " + name + " requires single parameter: bins count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (params[0].getType() != Field::Types::UInt64)
@@ -44,7 +44,7 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string &, const
     if (!res)
         throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return res;*/
+    return res;
 
     return nullptr;
 }

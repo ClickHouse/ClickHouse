@@ -253,7 +253,7 @@ public:
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
 
-    /// Impose an additional condition: the value in the column column must be in the `range` range.
+    /// Impose an additional condition: the value in the column `column` must be in the range `range`.
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
