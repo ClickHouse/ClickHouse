@@ -250,138 +250,137 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
     if (config_path.empty() || !config_repository->exists(config_path))
     {
         LOG_WARNING(log, "config file '" + config_path + "' does not exist");
+        return;
     }
-    else
+
+    std::unique_lock<std::mutex> all_lock(all_mutex);
+
+    auto modification_time_it = last_modification_times.find(config_path);
+    if (modification_time_it == std::end(last_modification_times))
+        modification_time_it = last_modification_times.emplace(config_path, Poco::Timestamp{0}).first;
+    auto & config_last_modified = modification_time_it->second;
+
+    const auto last_modified = config_repository->getLastModificationTime(config_path);
+    if (force_reload || last_modified > config_last_modified)
     {
-        std::unique_lock<std::mutex> all_lock(all_mutex);
+        auto loaded_config = config_repository->load(config_path, config_main.getString("path", DBMS_DEFAULT_PATH));
 
-        auto modification_time_it = last_modification_times.find(config_path);
-        if (modification_time_it == std::end(last_modification_times))
-            modification_time_it = last_modification_times.emplace(config_path, Poco::Timestamp{0}).first;
-        auto & config_last_modified = modification_time_it->second;
+        loadable_objects_defined_in_config[config_path].clear();
 
-        const auto last_modified = config_repository->getLastModificationTime(config_path);
-        if (force_reload || last_modified > config_last_modified)
+        /// Definitions of loadable objects may have changed, recreate all of them
+
+        /// If we need update only one object, don't update modification time: might be other objects in the config file
+        if (loadable_name.empty())
+            config_last_modified = last_modified;
+
+        /// get all objects' definitions
+        Poco::Util::AbstractConfiguration::Keys keys;
+        loaded_config->keys(keys);
+
+        /// for each loadable object defined in xml config
+        for (const auto & key : keys)
         {
-            auto loaded_config = config_repository->load(config_path, config_main.getString("path", DBMS_DEFAULT_PATH));
+            std::string name;
 
-            loadable_objects_defined_in_config[config_path].clear();
-
-            /// Definitions of loadable objects may have changed, recreate all of them
-
-            /// If we need update only one object, don't update modification time: might be other objects in the config file
-            if (loadable_name.empty())
-                config_last_modified = last_modified;
-
-            /// get all objects' definitions
-            Poco::Util::AbstractConfiguration::Keys keys;
-            loaded_config->keys(keys);
-
-            /// for each loadable object defined in xml config
-            for (const auto & key : keys)
+            if (!startsWith(key, config_settings.external_config))
             {
-                std::string name;
+                if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
+                    LOG_WARNING(log, config_path << ": unknown node in file: '" << key
+                                                 << "', expected '" << config_settings.external_config << "'");
+                continue;
+            }
 
-                if (!startsWith(key, config_settings.external_config))
+            try
+            {
+                name = loaded_config->getString(key + "." + config_settings.external_name);
+                if (name.empty())
                 {
-                    if (!startsWith(key, "comment") && !startsWith(key, "include_from"))
-                        LOG_WARNING(log, config_path << ": unknown node in file: '" << key
-                                                     << "', expected '" << config_settings.external_config << "'");
+                    LOG_WARNING(log, config_path << ": " + config_settings.external_name + " name cannot be empty");
                     continue;
                 }
 
-                try
+                loadable_objects_defined_in_config[config_path].emplace(name);
+                if (!loadable_name.empty() && name != loadable_name)
+                    continue;
+
+                decltype(loadable_objects.begin()) object_it;
                 {
-                    name = loaded_config->getString(key + "." + config_settings.external_name);
-                    if (name.empty())
+                    std::lock_guard<std::mutex> lock{map_mutex};
+                    object_it = loadable_objects.find(name);
+                }
+
+                /// Object with the same name was declared in other config file.
+                if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
+                    throw Exception(object_name + " '" + name + "' from file " + config_path
+                                    + " already declared in file " + object_it->second.origin,
+                                    ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
+
+                auto object_ptr = create(name, *loaded_config, key);
+
+                /// If the object could not be loaded.
+                if (const auto exception_ptr = object_ptr->getCreationException())
+                {
+                    std::chrono::seconds delay(update_settings.backoff_initial_sec);
+                    const auto failed_dict_it = failed_loadable_objects.find(name);
+                    FailedLoadableInfo info{std::move(object_ptr), std::chrono::system_clock::now() + delay, 0};
+                    if (failed_dict_it != std::end(failed_loadable_objects))
+                        (*failed_dict_it).second = std::move(info);
+                    else
+                        failed_loadable_objects.emplace(name, std::move(info));
+
+                    std::rethrow_exception(exception_ptr);
+                }
+                else if (object_ptr->supportUpdates())
+                {
+                    const auto & lifetime = object_ptr->getLifetime();
+                    if (lifetime.min_sec != 0 && lifetime.max_sec != 0)
                     {
-                        LOG_WARNING(log, config_path << ": " + config_settings.external_name + " name cannot be empty");
-                        continue;
+                        std::uniform_int_distribution<UInt64> distribution(lifetime.min_sec, lifetime.max_sec);
+
+                        update_times[name] = std::chrono::system_clock::now() +
+                                             std::chrono::seconds{distribution(rnd_engine)};
                     }
+                }
 
-                    loadable_objects_defined_in_config[config_path].emplace(name);
-                    if (!loadable_name.empty() && name != loadable_name)
-                        continue;
+                const std::lock_guard<std::mutex> lock{map_mutex};
 
-                    decltype(loadable_objects.begin()) object_it;
-                    {
-                        std::lock_guard<std::mutex> lock{map_mutex};
-                        object_it = loadable_objects.find(name);
-                    }
+                /// add new loadable object or update an existing version
+                if (object_it == std::end(loadable_objects))
+                    loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path, {}});
+                else
+                {
+                    if (object_it->second.loadable)
+                        object_it->second.loadable.reset();
+                    object_it->second.loadable = std::move(object_ptr);
 
-                    /// Object with the same name was declared in other config file.
-                    if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
-                        throw Exception(object_name + " '" + name + "' from file " + config_path
-                                        + " already declared in file " + object_it->second.origin,
-                                        ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
-
-                    auto object_ptr = create(name, *loaded_config, key);
-
-                    /// If the object could not be loaded.
-                    if (const auto exception_ptr = object_ptr->getCreationException())
-                    {
-                        std::chrono::seconds delay(update_settings.backoff_initial_sec);
-                        const auto failed_dict_it = failed_loadable_objects.find(name);
-                        FailedLoadableInfo info{std::move(object_ptr), std::chrono::system_clock::now() + delay, 0};
-                        if (failed_dict_it != std::end(failed_loadable_objects))
-                            (*failed_dict_it).second = std::move(info);
-                        else
-                            failed_loadable_objects.emplace(name, std::move(info));
-
-                        std::rethrow_exception(exception_ptr);
-                    }
-                    else if (object_ptr->supportUpdates())
-                    {
-                        const auto & lifetime = object_ptr->getLifetime();
-                        if (lifetime.min_sec != 0 && lifetime.max_sec != 0)
-                        {
-                            std::uniform_int_distribution<UInt64> distribution(lifetime.min_sec, lifetime.max_sec);
-
-                            update_times[name] = std::chrono::system_clock::now() +
-                                                 std::chrono::seconds{distribution(rnd_engine)};
-                        }
-                    }
+                    /// erase stored exception on success
+                    object_it->second.exception = std::exception_ptr{};
+                    failed_loadable_objects.erase(name);
+                }
+            }
+            catch (...)
+            {
+                if (!name.empty())
+                {
+                    /// If the loadable object could not load data or even failed to initialize from the config.
+                    /// - all the same we insert information into the `loadable_objects`, with the zero pointer `loadable`.
 
                     const std::lock_guard<std::mutex> lock{map_mutex};
 
-                    /// add new loadable object or update an existing version
-                    if (object_it == std::end(loadable_objects))
-                        loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path, {}});
+                    const auto exception_ptr = std::current_exception();
+                    const auto loadable_it = loadable_objects.find(name);
+                    if (loadable_it == std::end(loadable_objects))
+                        loadable_objects.emplace(name, LoadableInfo{nullptr, config_path, exception_ptr});
                     else
-                    {
-                        if (object_it->second.loadable)
-                            object_it->second.loadable.reset();
-                        object_it->second.loadable = std::move(object_ptr);
-
-                        /// erase stored exception on success
-                        object_it->second.exception = std::exception_ptr{};
-                        failed_loadable_objects.erase(name);
-                    }
+                        loadable_it->second.exception = exception_ptr;
                 }
-                catch (...)
-                {
-                    if (!name.empty())
-                    {
-                        /// If the loadable object could not load data or even failed to initialize from the config.
-                        /// - all the same we insert information into the `loadable_objects`, with the zero pointer `loadable`.
 
-                        const std::lock_guard<std::mutex> lock{map_mutex};
+                tryLogCurrentException(log, "Cannot create " + object_name + " '"
+                                            + name + "' from config path " + config_path);
 
-                        const auto exception_ptr = std::current_exception();
-                        const auto loadable_it = loadable_objects.find(name);
-                        if (loadable_it == std::end(loadable_objects))
-                            loadable_objects.emplace(name, LoadableInfo{nullptr, config_path, exception_ptr});
-                        else
-                            loadable_it->second.exception = exception_ptr;
-                    }
-
-                    tryLogCurrentException(log, "Cannot create " + object_name + " '"
-                                                + name + "' from config path " + config_path);
-
-                    /// propagate exception
-                    if (throw_on_error)
-                        throw;
-                }
+                /// propagate exception
+                if (throw_on_error)
+                    throw;
             }
         }
     }
