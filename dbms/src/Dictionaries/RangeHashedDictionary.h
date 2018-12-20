@@ -59,6 +59,11 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    bool isDefinedInDDL() const override
+    {
+        return false;
+    }
+
     typedef Int64 RangeStorageType;
 
     template <typename T>

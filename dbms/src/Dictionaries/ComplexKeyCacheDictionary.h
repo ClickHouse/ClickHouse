@@ -91,6 +91,11 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    bool isDefinedInDDL() const override
+    {
+        return false;
+    }
+
     template <typename T>
     using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
 

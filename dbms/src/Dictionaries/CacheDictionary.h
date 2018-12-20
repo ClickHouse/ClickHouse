@@ -68,6 +68,11 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    bool isDefinedInDDL() const override
+    {
+        return false;
+    }
+
     bool hasHierarchy() const override { return hierarchical_attribute; }
 
     void toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const override;
