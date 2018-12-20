@@ -5,7 +5,7 @@
 This query is exactly the same as `CREATE`, but
 
 - Instead of the word `CREATE` it uses the word `ATTACH`.
-- The query doesn't create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
+- The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
 After executing an ATTACH query, the server will know about the existence of the table.
 
 If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
@@ -25,12 +25,12 @@ CHECK TABLE [db.]name
 ```
 
 The `CHECK TABLE` query compares the actual file size with the expected value which is stored on the server.
- If the values are not equal, the data is corrupted. This can be caused, for example, by a system crash during request execution.
+ If values are not equal, the data is corrupted. This can be caused, for example, by a system crash during query execution.
 
-The query response contains the `result` column with a single row. The row has the value of
+The query response contains the `result` column with a single row. The row has a value of
  [Boolean](../data_types/boolean.md) type:
 
-- 0 - The data in a table is corrupted.
+- 0 - The data in the table is corrupted.
 - 1 - The data maintains integrity.
  
 The `CHECK TABLE` query is only supported for the following table engines:
