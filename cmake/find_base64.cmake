@@ -1,4 +1,4 @@
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/base64/lib/lib.c")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/base64/lib/lib.c")
     set (MISSING_INTERNAL_BASE64_LIBRARY 1)
     message (WARNING "submodule contrib/base64 is missing. to fix try run: \n git submodule update --init --recursive")
 endif ()
