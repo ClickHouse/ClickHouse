@@ -24,11 +24,11 @@ DROP TABLE IF EXISTS test.params_zstd;
 DROP TABLE IF EXISTS test.too_many_params;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification;
 
-CREATE TABLE test.bad_codec(id UInt64 CODEC(adssadads)) ENGINE = MergeTree() order by tuple(); -- { serverError 429 }
-CREATE TABLE test.too_many_params(id UInt64 CODEC(ZSTD(2,3,4,5))) ENGINE = MergeTree() order by tuple(); -- { serverError 428 }
+CREATE TABLE test.bad_codec(id UInt64 CODEC(adssadads)) ENGINE = MergeTree() order by tuple(); -- { serverError 430 }
+CREATE TABLE test.too_many_params(id UInt64 CODEC(ZSTD(2,3,4,5))) ENGINE = MergeTree() order by tuple(); -- { serverError 429 }
 CREATE TABLE test.params_when_no_params(id UInt64 CODEC(LZ4(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 378 }
-CREATE TABLE test.params_zstd(id UInt64 CODEC(ZSTD(33))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 430 }
-CREATE TABLE test.codec_multiple_direct_specification(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 429 }
+CREATE TABLE test.params_zstd(id UInt64 CODEC(ZSTD(33))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 431 }
+CREATE TABLE test.codec_multiple_direct_specification(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 430 }
 
 DROP TABLE IF EXISTS test.bad_codec;
 DROP TABLE IF EXISTS test.params_when_no_params;

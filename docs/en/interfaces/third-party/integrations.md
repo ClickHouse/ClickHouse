@@ -28,9 +28,14 @@
     - [Prometheus](https://prometheus.io/)
         - [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
+    - [Nagios](https://www.nagios.org/)
+        - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
 - Logging
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
+- Configuration management
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 
 ## Programming Language Ecosystems
 
