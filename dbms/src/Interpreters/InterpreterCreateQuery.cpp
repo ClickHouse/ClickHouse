@@ -651,10 +651,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
 {
     String dictionary_name = create.dictionary;
-    String database_name = context.getCurrentDatabase();
+    String database_name = create.database.empty() ? create.database : context.getCurrentDatabase();
 
+    // TODO: может быть этот гард не нужен
     auto guard = context.getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = context.getDatabase(database_name);
+
     if (database->isDictionaryExist(context, dictionary_name))
     {
         if (create.if_not_exists)
@@ -663,8 +665,8 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
             throw Exception("Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = getDictionaryConfigFromAST(create);
-    auto res = DictionaryFactory::instance().create(dictionary_name, *config, "", context);
+    auto res = DictionaryFactory::instance().create(dictionary_name, create, context);
+    database->createDictionary(context, dictionary_name, res, query_ptr);
     return {};
 }
 
