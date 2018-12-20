@@ -418,7 +418,7 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
             if (max_source_parts_size > 0)
                 selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
         }
