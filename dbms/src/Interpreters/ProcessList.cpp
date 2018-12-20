@@ -382,8 +382,9 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
         }
         return CancellationCode::CancelCannotBeSent;
     }
-
-    return CancellationCode::QueryIsNotInitializedYet;
+    /// Query is not even started
+    elem->is_killed.store(true);
+    return CancellationCode::CancelSent;
 }
 
 

@@ -41,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -298,6 +299,51 @@ struct MurmurHash3Impl64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+/// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
+/// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
+///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
+struct JavaHashImpl
+{
+    static constexpr auto name = "javaHash";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        UInt32 h = 0;
+        for (size_t i = 0; i < size; ++i)
+            h = 31 * h + static_cast<UInt32>(static_cast<Int8>(data[i]));
+        return static_cast<Int32>(h);
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+/// This is just JavaHash with zeroed out sign bit.
+/// This function is used in Hive for versions before 3.0,
+///  after 3.0, Hive uses murmur-hash3.
+struct HiveHashImpl
+{
+    static constexpr auto name = "hiveHash";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        return static_cast<Int32>(0x7FFFFFFF & static_cast<UInt32>(JavaHashImpl::apply(data, size)));
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Hive hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct MurmurHash3Impl128
 {
     static constexpr auto name = "murmurHash3_128";
@@ -387,7 +433,7 @@ public:
         {
             auto col_to = ColumnFixedString::create(Impl::length);
 
-            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             auto & chars_to = col_to->getChars();
             const auto size = offsets.size();
@@ -558,7 +604,7 @@ private:
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
-            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Chars & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
@@ -579,7 +625,7 @@ private:
         }
         else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
         {
-            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Chars & data = col_from->getChars();
             size_t n = col_from->getN();
             size_t size = data.size() / n;
 
@@ -978,4 +1024,7 @@ using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
+using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
+
 }

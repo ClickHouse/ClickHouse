@@ -1,3 +1,4 @@
+#pragma once
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <common/DateLUTImpl.h>

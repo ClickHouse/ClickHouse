@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/StringRange.h>
-
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -10,7 +9,6 @@ namespace DB
 
 class Context;
 class ASTFunction;
-struct ProjectionManipulatorBase;
 
 
 class Set;
@@ -90,7 +88,7 @@ struct ScopeStack
 class ActionsVisitor
 {
 public:
-    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, bool is_conditional_tree, size_t subquery_depth_,
+    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                    const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
                    PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                    bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_ = nullptr);
@@ -112,7 +110,6 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
     ScopeStack actions_stack;
-    std::shared_ptr<ProjectionManipulatorBase> projection_manipulator;
 
     void makeSet(const ASTFunction * node, const Block & sample_block);
 };

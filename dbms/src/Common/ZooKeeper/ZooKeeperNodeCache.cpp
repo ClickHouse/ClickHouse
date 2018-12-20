@@ -9,7 +9,16 @@ ZooKeeperNodeCache::ZooKeeperNodeCache(GetZooKeeper get_zookeeper_)
 {
 }
 
-std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, EventPtr watch_event)
+{
+    Coordination::WatchCallback watch_callback;
+    if (watch_event)
+        watch_callback = [watch_event](const Coordination::WatchResponse &) { watch_event->set(); };
+
+    return get(path, watch_callback);
+}
+
+ZooKeeperNodeCache::ZNode ZooKeeperNodeCache::get(const std::string & path, Coordination::WatchCallback caller_watch_callback)
 {
     zkutil::ZooKeeperPtr zookeeper;
     std::unordered_set<std::string> invalidated_paths;
@@ -19,8 +28,7 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
         if (!context->zookeeper)
         {
             /// Possibly, there was a previous session and it has expired. Clear the cache.
-            nonexistent_nodes.clear();
-            node_cache.clear();
+            path_to_cached_znode.clear();
 
             context->zookeeper = get_zookeeper();
         }
@@ -33,65 +41,62 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
         throw DB::Exception("Could not get znode: `" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
 
     for (const auto & invalidated_path : invalidated_paths)
-    {
-        nonexistent_nodes.erase(invalidated_path);
-        node_cache.erase(invalidated_path);
-    }
+        path_to_cached_znode.erase(invalidated_path);
 
-    if (nonexistent_nodes.count(path))
-        return std::nullopt;
+    auto cache_it = path_to_cached_znode.find(path);
+    if (cache_it != path_to_cached_znode.end())
+        return cache_it->second;
 
-    auto watch_callback = [context=context](const Coordination::WatchResponse & response)
+    std::weak_ptr<Context> weak_context(context);
+    auto watch_callback = [weak_context, caller_watch_callback](const Coordination::WatchResponse & response)
     {
         if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
             return;
 
+        auto owned_context = weak_context.lock();
+        if (!owned_context)
+            return;
+
         bool changed = false;
         {
-            std::lock_guard<std::mutex> lock(context->mutex);
+            std::lock_guard<std::mutex> lock(owned_context->mutex);
 
             if (response.type != Coordination::SESSION)
-                changed = context->invalidated_paths.emplace(response.path).second;
+                changed = owned_context->invalidated_paths.emplace(response.path).second;
             else if (response.state == Coordination::EXPIRED_SESSION)
             {
-                context->zookeeper = nullptr;
-                context->invalidated_paths.clear();
+                owned_context->zookeeper = nullptr;
+                owned_context->invalidated_paths.clear();
                 changed = true;
             }
         }
-        if (changed)
-            context->changed_event.set();
+        if (changed && caller_watch_callback)
+            caller_watch_callback(response);
     };
 
-    std::string contents;
+    ZNode result;
 
-    auto cache_it = node_cache.find(path);
-    if (cache_it != node_cache.end())
+    result.exists = zookeeper->tryGetWatch(path, result.contents, &result.stat, watch_callback);
+    if (result.exists)
     {
-        return cache_it->second;
+        path_to_cached_znode.emplace(path, result);
+        return result;
     }
 
-    if (zookeeper->tryGetWatch(path, contents, /* stat = */nullptr, watch_callback))
+    /// Node doesn't exist. We must set a watch on node creation (because it wasn't set by tryGetWatch).
+
+    result.exists = zookeeper->existsWatch(path, &result.stat, watch_callback);
+    if (!result.exists)
     {
-        node_cache.emplace(path, contents);
-        return contents;
+        path_to_cached_znode.emplace(path, result);
+        return result;
     }
-
-    /// Node doesn't exist. Create a watch on node creation.
-    nonexistent_nodes.insert(path);
-
-    if (!zookeeper->existsWatch(path, /* stat = */nullptr, watch_callback))
-        return std::nullopt;
 
     /// Node was created between the two previous calls, try again. Watch is already set.
-    if (zookeeper->tryGet(path, contents))
-    {
-        nonexistent_nodes.erase(path);
-        node_cache.emplace(path, contents);
-        return contents;
-    }
 
-    return std::nullopt;
+    result.exists = zookeeper->tryGet(path, result.contents, &result.stat);
+    path_to_cached_znode.emplace(path, result);
+    return result;
 }
 
 }

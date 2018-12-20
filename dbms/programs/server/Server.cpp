@@ -36,11 +36,17 @@
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
+
+#if defined(__linux__)
+#include <Common/hasLinuxCapability.h>
+#include <sys/mman.h>
+#endif
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
@@ -50,6 +56,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Revision;
+    extern const Metric VersionInteger;
 }
 
 namespace DB
@@ -61,6 +68,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -68,7 +77,7 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty");
+        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
@@ -88,7 +97,7 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path")) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
@@ -101,8 +110,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
+    CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -114,18 +125,45 @@ int Server::main(const std::vector<std::string> & /*args*/)
     bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+    zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
-        config_processor.savePreprocessedConfig(loaded_config);
+            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    std::string path = getCanonicalPath(config().getString("path"));
+    const auto memory_amount = getMemoryAmount();
+
+#if defined(__linux__)
+    /// After full config loaded
+    {
+        if (config().getBool("mlock_executable", false))
+        {
+            if (hasLinuxCapability(CAP_IPC_LOCK))
+            {
+                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
+                else
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
+            }
+            else
+            {
+                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.");
+            }
+        }
+    }
+#endif
+
+    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
     global_context->setPath(path);
@@ -266,7 +304,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
+        config().getString("path", ""),
         std::move(main_config_zk_node_cache),
+        main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
             buildLoggers(*config);
@@ -287,7 +327,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
         include_from_path,
+        config().getString("path", ""),
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+        std::make_shared<Poco::Event>(),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
 
@@ -334,13 +376,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");
-    loadMetadataSystem(*global_context);
-    /// After attaching system databases we can initialize system log.
-    global_context->initializeSystemLogs();
-    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
-    /// Then, load remaining databases
-    loadMetadata(*global_context);
+    try
+    {
+        loadMetadataSystem(*global_context);
+        /// After attaching system databases we can initialize system log.
+        global_context->initializeSystemLogs();
+        /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+        attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+        /// Then, load remaining databases
+        loadMetadata(*global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading metadata");
+        throw;
+    }
     LOG_DEBUG(log, "Loaded metadata.");
 
     global_context->setCurrentDatabase(default_database);
@@ -524,10 +574,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this, /* secure= */ true ),
-                                                                  server_pool,
-                                                                  socket,
-                                                                  new Poco::Net::TCPServerParams));
+                        new TCPHandlerFactory(*this, /* secure= */ true),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_secure: " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -599,10 +649,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
-                << " threads = " <<  std::thread::hardware_concurrency() << ".";
+                << " threads = " << std::thread::hardware_concurrency() << ".";
             LOG_INFO(log, message.str());
         }
 

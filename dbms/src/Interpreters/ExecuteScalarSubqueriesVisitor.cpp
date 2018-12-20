@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
+#include <DataTypes/DataTypeAggregateFunction.h>
+
 namespace DB
 {
 
@@ -35,17 +37,40 @@ static ASTPtr addTypeConversion(std::unique_ptr<ASTLiteral> && ast, const String
     return res;
 }
 
-void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr & ast, const DumpASTNode &) const
+bool ExecuteScalarSubqueriesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
-    Context subquery_context = context;
-    Settings subquery_settings = context.getSettings();
+    /// Processed
+    if (typeid_cast<ASTSubquery *>(node.get()) ||
+        typeid_cast<ASTFunction *>(node.get()))
+        return false;
+
+    /// Don't descend into subqueries in FROM section
+    if (typeid_cast<ASTTableExpression *>(node.get()))
+        return false;
+
+    return true;
+}
+
+std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (auto * t = typeid_cast<ASTSubquery *>(ast.get()))
+        visit(*t, ast, data);
+    if (auto * t = typeid_cast<ASTFunction *>(ast.get()))
+        return visit(*t, ast, data);
+    return {};
+}
+
+void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr & ast, Data & data)
+{
+    Context subquery_context = data.context;
+    Settings subquery_settings = data.context.getSettings();
     subquery_settings.max_result_rows = 1;
     subquery_settings.extremes = 0;
     subquery_context.setSettings(subquery_settings);
 
-    ASTPtr subquery_select = subquery->children.at(0);
+    ASTPtr subquery_select = subquery.children.at(0);
     BlockIO res = InterpreterSelectWithUnionQuery(
-        subquery_select, subquery_context, {}, QueryProcessingStage::Complete, subquery_depth + 1).execute();
+        subquery_select, subquery_context, {}, QueryProcessingStage::Complete, data.subquery_depth + 1).execute();
 
     Block block;
     try
@@ -75,15 +100,20 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr 
     size_t columns = block.columns();
     if (columns == 1)
     {
+        if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(0).type.get()))
+        {
+            throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+        }
+
         auto lit = std::make_unique<ASTLiteral>((*block.safeGetByPosition(0).column)[0]);
-        lit->alias = subquery->alias;
-        lit->prefer_alias_to_column_name = subquery->prefer_alias_to_column_name;
+        lit->alias = subquery.alias;
+        lit->prefer_alias_to_column_name = subquery.prefer_alias_to_column_name;
         ast = addTypeConversion(std::move(lit), block.safeGetByPosition(0).type->getName());
     }
     else
     {
         auto tuple = std::make_shared<ASTFunction>();
-        tuple->alias = subquery->alias;
+        tuple->alias = subquery.alias;
         ast = tuple;
         tuple->name = "tuple";
         auto exp_list = std::make_shared<ASTExpressionList>();
@@ -93,6 +123,11 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr 
         exp_list->children.resize(columns);
         for (size_t i = 0; i < columns; ++i)
         {
+            if (typeid_cast<const DataTypeAggregateFunction*>(block.safeGetByPosition(i).type.get()))
+            {
+                throw Exception("Scalar subquery can't return an aggregate function state", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
+            }
+
             exp_list->children[i] = addTypeConversion(
                 std::make_unique<ASTLiteral>((*block.safeGetByPosition(i).column)[0]),
                 block.safeGetByPosition(i).type->getName());
@@ -100,31 +135,29 @@ void ExecuteScalarSubqueriesVisitor::visit(const ASTSubquery * subquery, ASTPtr 
     }
 }
 
-
-void ExecuteScalarSubqueriesVisitor::visit(const ASTTableExpression *, ASTPtr &, const DumpASTNode &) const
-{
-    /// Don't descend into subqueries in FROM section.
-}
-
-void ExecuteScalarSubqueriesVisitor::visit(const ASTFunction * func, ASTPtr & ast, const DumpASTNode &) const
+std::vector<ASTPtr *> ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)
 {
     /// Don't descend into subqueries in arguments of IN operator.
     /// But if an argument is not subquery, than deeper may be scalar subqueries and we need to descend in them.
 
-    if (functionIsInOrGlobalInOperator(func->name))
+    std::vector<ASTPtr *> out;
+    if (functionIsInOrGlobalInOperator(func.name))
     {
         for (auto & child : ast->children)
         {
-            if (child != func->arguments)
-                visit(child);
+            if (child != func.arguments)
+                out.push_back(&child);
             else
-                for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
-                    if (i != 1 || !typeid_cast<ASTSubquery *>(func->arguments->children[i].get()))
-                        visit(func->arguments->children[i]);
+                for (size_t i = 0, size = func.arguments->children.size(); i < size; ++i)
+                    if (i != 1 || !typeid_cast<ASTSubquery *>(func.arguments->children[i].get()))
+                        out.push_back(&func.arguments->children[i]);
         }
     }
     else
-        visitChildren(ast);
+        for (auto & child : ast->children)
+            out.push_back(&child);
+
+    return out;
 }
 
 }

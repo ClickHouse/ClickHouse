@@ -58,7 +58,7 @@ namespace ErrorCodes
 
 inline char parseEscapeSequence(char c)
 {
-    switch(c)
+    switch (c)
     {
         case 'a':
             return '\a';

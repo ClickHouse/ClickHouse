@@ -51,6 +51,9 @@
 /// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
 /// (keys will be placed in different buckets and result will not be fully aggregated).
 #define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54408
+#define DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA 54410
+
+#define DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE 54405
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
@@ -58,10 +61,13 @@
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 
-#define DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS 7500
-
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
+/// Maximum namber of http-connections between two endpoints
+/// the number is unmotivated
+#define DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT 15
+
+#define DBMS_DEFAULT_PATH "/var/lib/clickhouse/"
 
 // more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
 

@@ -10,7 +10,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <common/DateLUTImpl.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 
 #include <type_traits>
 
@@ -285,7 +285,7 @@ public:
         if (!executeType<UInt32>(block, arguments, result)
             && !executeType<UInt16>(block, arguments, result))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                            + "  of function " + getName() + ", must be Date or DateTime",
+                            + " of function " + getName() + ", must be Date or DateTime",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 
@@ -350,7 +350,7 @@ public:
 
             for (size_t i = 0; i < vec.size(); ++i)
             {
-                for(auto & instruction : instructions)
+                for (auto & instruction : instructions)
                     instruction.perform(pos, vec[i], time_zone);
 
                 dst_offsets[i] = pos - begin;

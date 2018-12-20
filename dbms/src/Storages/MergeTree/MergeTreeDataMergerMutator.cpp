@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
-#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
@@ -127,7 +127,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_, co
 }
 
 
-size_t MergeTreeDataMergerMutator::getMaxSourcePartsSize()
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize()
 {
     size_t total_threads_in_pool = pool.getNumberOfThreads();
     size_t busy_threads_in_pool = CurrentMetrics::values[CurrentMetrics::BackgroundPoolTask].load(std::memory_order_relaxed);
@@ -136,14 +136,14 @@ size_t MergeTreeDataMergerMutator::getMaxSourcePartsSize()
 }
 
 
-size_t MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_t pool_used)
+UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_t pool_used)
 {
     if (pool_used > pool_size)
         throw Exception("Logical error: invalid arguments passed to getMaxSourcePartsSize: pool_used > pool_size", ErrorCodes::LOGICAL_ERROR);
 
     size_t free_entries = pool_size - pool_used;
 
-    size_t max_size = 0;
+    UInt64 max_size = 0;
     if (free_entries >= data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge)
         max_size = data.settings.max_bytes_to_merge_at_max_space_in_pool;
     else
@@ -152,7 +152,7 @@ size_t MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_
             data.settings.max_bytes_to_merge_at_max_space_in_pool,
             static_cast<double>(free_entries) / data.settings.number_of_free_entries_in_pool_to_lower_max_size_of_merge);
 
-    return std::min(max_size, static_cast<size_t>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
+    return std::min(max_size, static_cast<UInt64>(DiskSpaceMonitor::getUnreservedFreeSpace(data.full_path) / DISK_USAGE_COEFFICIENT_TO_SELECT));
 }
 
 
@@ -245,7 +245,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
 bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FuturePart & future_part,
-    size_t & available_disk_space,
+    UInt64 & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
@@ -266,7 +266,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     auto it = parts.begin();
     auto prev_it = it;
 
-    size_t sum_bytes = 0;
+    UInt64 sum_bytes = 0;
     while (it != parts.end())
     {
         /// For the case of one part, we check that it can be merged "with itself".
@@ -333,20 +333,15 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
-static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_columns,
-    const ExpressionActionsPtr & primary_key_expressions, const ExpressionActionsPtr & secondary_key_expressions,
+static void extractMergingAndGatheringColumns(
+    const NamesAndTypesList & all_columns,
+    const ExpressionActionsPtr & sorting_key_expr,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
-    NamesAndTypesList & merging_columns, Names & merging_column_names
-)
+    NamesAndTypesList & merging_columns, Names & merging_column_names)
 {
-    Names primary_key_columns_vec = primary_key_expressions->getRequiredColumns();
-    std::set<String> key_columns(primary_key_columns_vec.cbegin(), primary_key_columns_vec.cend());
-    if (secondary_key_expressions)
-    {
-        Names secondary_key_columns_vec = secondary_key_expressions->getRequiredColumns();
-        key_columns.insert(secondary_key_columns_vec.begin(), secondary_key_columns_vec.end());
-    }
+    Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
+    std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -366,19 +361,17 @@ static void extractMergingAndGatheringColumns(const NamesAndTypesList & all_colu
 
     /// TODO: also force "summing" and "aggregating" columns to make Horizontal merge only for such columns
 
-    for (auto & column : all_columns)
+    for (const auto & column : all_columns)
     {
-        auto it = std::find(key_columns.cbegin(), key_columns.cend(), column.name);
-
-        if (key_columns.end() == it)
-        {
-            gathering_columns.emplace_back(column);
-            gathering_column_names.emplace_back(column.name);
-        }
-        else
+        if (key_columns.count(column.name))
         {
             merging_columns.emplace_back(column);
             merging_column_names.emplace_back(column.name);
+        }
+        else
+        {
+            gathering_columns.emplace_back(column);
+            gathering_column_names.emplace_back(column.name);
         }
     }
 }
@@ -555,8 +548,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
-    extractMergingAndGatheringColumns(all_columns, data.getPrimaryExpression(), data.getSecondarySortExpression()
-            , data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
+    extractMergingAndGatheringColumns(
+        all_columns, data.sorting_key_expr,
+        data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);
@@ -606,11 +600,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     BlockInputStreams src_streams;
     UInt64 watch_prev_elapsed = 0;
 
-    /// Note: this is dirty hack. MergeTreeBlockInputStream expects minimal amount of bytes after which it will
-    /// use DIRECT_IO for every peace of data it reads.
-    /// When we send `min_bytes_when_use_direct_io = 1 (byte)`, it will use O_DIRECT in any case
-    /// because stream can't read less then single byte
-    size_t min_bytes_when_use_direct_io = 0;
+    /// We count total amount of bytes in parts
+    /// and use direct_io + aio if there is more than min_merge_bytes_to_use_direct_io
+    bool read_with_direct_io = false;
     if (data.settings.min_merge_bytes_to_use_direct_io != 0)
     {
         size_t total_size = 0;
@@ -620,7 +612,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             if (total_size >= data.settings.min_merge_bytes_to_use_direct_io)
             {
                 LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
-                min_bytes_when_use_direct_io = 1;
+                read_with_direct_io = true;
+
                 break;
             }
         }
@@ -629,21 +622,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     for (const auto & part : parts)
     {
-        auto input = std::make_unique<MergeTreeBlockInputStream>(
-            data, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, part->marks_count)),
-            false, nullptr, true, min_bytes_when_use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false);
+        auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
+            data, part, merging_column_names, read_with_direct_io, true);
 
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
         if (data.hasPrimaryKey())
             src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.getPrimaryExpression())));
+                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.sorting_key_expr)));
         else
             src_streams.emplace_back(std::move(input));
     }
 
-    Names sort_columns = data.getSortColumns();
+    Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -703,7 +695,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     MergedBlockOutputStream to{
-        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, min_bytes_when_use_direct_io};
+        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, data.settings.min_merge_bytes_to_use_direct_io};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -776,9 +768,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
-                auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
-                    data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_names, MarkRanges{MarkRange(0, parts[part_num]->marks_count)},
-                    false, nullptr, true, min_bytes_when_use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
+                auto column_part_stream = std::make_shared<MergeTreeSequentialBlockInputStream>(
+                    data, parts[part_num], column_names, read_with_direct_io, true);
 
                 column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
                         merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed));
@@ -911,7 +902,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         if (data.hasPrimaryKey())
             in = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
+                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -990,7 +981,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->columns = all_columns;
         Names source_column_names = source_part->columns.getNames();
         NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
-        for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end(); )
+        for (auto it = new_data_part->columns.begin(); it != new_data_part->columns.end();)
         {
             if (source_columns_name_set.count(it->name) || in_header.has(it->name))
                 ++it;

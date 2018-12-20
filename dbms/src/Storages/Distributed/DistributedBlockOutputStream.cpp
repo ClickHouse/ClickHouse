@@ -15,6 +15,7 @@
 #include <Interpreters/createBlockSelector.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentMetrics.h>
@@ -54,6 +55,7 @@ namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
+    extern const int CANNOT_LINK;
 }
 
 
@@ -196,7 +198,8 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
     auto thread_group = CurrentThread::getGroup();
     return [this, thread_group, &job, &current_block]()
     {
-        CurrentThread::attachToIfDetached(thread_group);
+        if (thread_group)
+            CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;
@@ -404,9 +407,13 @@ IColumn::Selector DistributedBlockOutputStream::createSelector(const Block & sou
     const auto & key_column = current_block_with_sharding_key_expr.getByName(storage.getShardingKeyColumnName());
     const auto & slot_to_shard = cluster->getSlotToShard();
 
+// If key_column.type is DataTypeLowCardinality, do shard according to its dictionaryType
 #define CREATE_FOR_TYPE(TYPE) \
     if (typeid_cast<const DataType ## TYPE *>(key_column.type.get())) \
-        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard);
+        return createBlockSelector<TYPE>(*key_column.column, slot_to_shard); \
+    else if (auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(key_column.type.get())) \
+        if (typeid_cast<const DataType ## TYPE *>(type_low_cardinality->getDictionaryType().get())) \
+            return createBlockSelector<TYPE>(*key_column.column->convertToFullColumnIfLowCardinality(), slot_to_shard);
 
     CREATE_FOR_TYPE(UInt8)
     CREATE_FOR_TYPE(UInt16)
@@ -556,7 +563,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path);
+            throwFromErrno("Could not link " + block_file_path + " to " + first_file_tmp_path, ErrorCodes::CANNOT_LINK);
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads

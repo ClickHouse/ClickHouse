@@ -62,7 +62,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Параметры**
 
 - `window` — ширина скользящего окна по времени в секундах.
-- `timestamp` — имя столбца, содержащего отметки времени. Тип данных [DateTime](../../data_types/datetime.md#data_type-datetime) или [UInt32](../../data_types/int_uint.md#data_type-int).
+- `timestamp` — имя столбца, содержащего отметки времени. Тип данных [DateTime](../../data_types/datetime.md#data_type-datetime) или [UInt32](../../data_types/int_uint.md).
 - `cond1`, `cond2`... — условия или данные, описывающие цепочку событий. Тип данных — `UInt8`. Значения могут быть 0 или 1.
 
 **Алгоритм**

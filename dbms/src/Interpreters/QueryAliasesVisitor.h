@@ -1,34 +1,39 @@
 #pragma once
 
-#include <Parsers/DumpASTNode.h>
 #include <unordered_map>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
 {
 
+class ASTSelectWithUnionQuery;
+class ASTSubquery;
+struct ASTTableExpression;
+struct ASTArrayJoin;
+
 using Aliases = std::unordered_map<String, ASTPtr>;
 
-/// Visits AST nodes and collect their aliases in one map (with links to source nodes).
-class QueryAliasesVisitor
+/// Visits AST node to collect aliases.
+class QueryAliasesMatcher
 {
 public:
-    QueryAliasesVisitor(std::ostream * ostr_ = nullptr)
-    :   visit_depth(0),
-        ostr(ostr_)
-    {}
-
-    void visit(const ASTPtr & ast, Aliases & aliases, int ignore_levels = 0) const
+    struct Data
     {
-        getQueryAliases(ast, aliases, ignore_levels);
-    }
+        Aliases & aliases;
+    };
+
+    static constexpr const char * label = "QueryAliases";
+
+    static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data);
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child);
 
 private:
-    static constexpr const char * visit_action = "addAlias";
-    mutable size_t visit_depth;
-    std::ostream * ostr;
-
-    void getQueryAliases(const ASTPtr & ast, Aliases & aliases, int ignore_levels) const;
-    void getNodeAlias(const ASTPtr & ast, Aliases & aliases, const DumpASTNode & dump) const;
+    static std::vector<ASTPtr *> visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data);
+    static std::vector<ASTPtr *> visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data);
+    static void visitOther(const ASTPtr & ast, Data & data);
 };
+
+/// Visits AST nodes and collect their aliases in one map (with links to source nodes).
+using QueryAliasesVisitor = InDepthNodeVisitor<QueryAliasesMatcher, false>;
 
 }

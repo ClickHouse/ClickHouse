@@ -20,6 +20,11 @@
 
 using namespace Poco::XML;
 
+namespace DB
+{
+
+/// For cutting prerpocessed path to this base
+static std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
@@ -40,13 +45,6 @@ static std::string numberFromHost(const std::string & s)
     return "";
 }
 
-static std::string preprocessedConfigPath(const std::string & path)
-{
-    Poco::Path preprocessed_path(path);
-    preprocessed_path.setBaseName(preprocessed_path.getBaseName() + PREPROCESSED_SUFFIX);
-    return preprocessed_path.toString();
-}
-
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
     return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
@@ -59,7 +57,6 @@ ConfigProcessor::ConfigProcessor(
     bool log_to_console,
     const Substitutions & substitutions_)
     : path(path_)
-    , preprocessed_path(preprocessedConfigPath(path))
     , throw_on_bad_incl(throw_on_bad_incl_)
     , substitutions(substitutions_)
     /// We need larger name pool to allow to support vast amount of users in users.xml files for ClickHouse.
@@ -234,6 +231,7 @@ void ConfigProcessor::doIncludesRecursive(
         XMLDocumentPtr include_from,
         Node * node,
         zkutil::ZooKeeperNodeCache * zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         std::unordered_set<std::string> & contributing_zk_paths)
 {
     if (node->nodeType() == Node::TEXT_NODE)
@@ -260,10 +258,10 @@ void ConfigProcessor::doIncludesRecursive(
 
     /// Substitute <layer> for the number extracted from the hostname only if there is an
     /// empty <layer> tag without attributes in the original file.
-    if ( node->nodeName() == "layer" &&
-        !node->hasAttributes() &&
-        !node->hasChildNodes() &&
-         node->nodeValue().empty())
+    if (node->nodeName() == "layer"
+        && !node->hasAttributes()
+        && !node->hasChildNodes()
+        && node->nodeValue().empty())
     {
         NodePtr new_node = config->createTextNode(layerFromHost());
         node->appendChild(new_node);
@@ -352,12 +350,12 @@ void ConfigProcessor::doIncludesRecursive(
             XMLDocumentPtr zk_document;
             auto get_zk_node = [&](const std::string & name) -> const Node *
             {
-                std::optional<std::string> contents = zk_node_cache->get(name);
-                if (!contents)
+                zkutil::ZooKeeperNodeCache::ZNode znode = zk_node_cache->get(name, zk_changed_event);
+                if (!znode.exists)
                     return nullptr;
 
                 /// Enclose contents into a fake <from_zk> tag to allow pure text substitutions.
-                zk_document = dom_parser.parseString("<from_zk>" + *contents + "</from_zk>");
+                zk_document = dom_parser.parseString("<from_zk>" + znode.contents + "</from_zk>");
                 return getRootNode(zk_document.get());
             };
 
@@ -383,13 +381,13 @@ void ConfigProcessor::doIncludesRecursive(
     }
 
     if (included_something)
-        doIncludesRecursive(config, include_from, node, zk_node_cache, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
     else
     {
         NodeListPtr children = node->childNodes();
         Node * child = nullptr;
         for (size_t i = 0; (child = children->item(i)); ++i)
-            doIncludesRecursive(config, include_from, child, zk_node_cache, contributing_zk_paths);
+            doIncludesRecursive(config, include_from, child, zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
 }
 
@@ -433,7 +431,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
 
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
-    zkutil::ZooKeeperNodeCache * zk_node_cache)
+    zkutil::ZooKeeperNodeCache * zk_node_cache,
+    const zkutil::EventPtr & zk_changed_event)
 {
     XMLDocumentPtr config = dom_parser.parse(path);
 
@@ -463,7 +462,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         if (node)
         {
             /// if we include_from env or zk.
-            doIncludesRecursive(config, nullptr, node, zk_node_cache, contributing_zk_paths);
+            doIncludesRecursive(config, nullptr, node, zk_node_cache, zk_changed_event, contributing_zk_paths);
             include_from_path = node->innerText();
         }
         else
@@ -478,7 +477,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             include_from = dom_parser.parse(include_from_path);
         }
 
-        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, contributing_zk_paths);
+        doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
     }
     catch (Poco::Exception & e)
     {
@@ -522,11 +521,12 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml};
+    return LoadedConfig{configuration, has_zk_includes, /* loaded_from_preprocessed = */ false, config_xml, path};
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         zkutil::ZooKeeperNodeCache & zk_node_cache,
+        const zkutil::EventPtr & zk_changed_event,
         bool fallback_to_preprocessed)
 {
     XMLDocumentPtr config_xml;
@@ -534,7 +534,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache);
+        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -556,11 +556,44 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
     ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
 
-    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml};
+    return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config)
+void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
+    if (preprocessed_path.empty())
+    {
+        auto new_path = loaded_config.config_path;
+        if (new_path.substr(0, main_config_path.size()) == main_config_path)
+            new_path.replace(0, main_config_path.size(), "");
+        std::replace(new_path.begin(), new_path.end(), '/', '_');
+
+        if (preprocessed_dir.empty())
+        {
+            if (!loaded_config.configuration->has("path"))
+            {
+                // Will use current directory
+                auto parent_path = Poco::Path(loaded_config.config_path).makeParent();
+                preprocessed_dir = parent_path.toString();
+                Poco::Path poco_new_path(new_path);
+                poco_new_path.setBaseName(poco_new_path.getBaseName() + PREPROCESSED_SUFFIX);
+                new_path = poco_new_path.toString();
+            }
+            else
+            {
+                preprocessed_dir = loaded_config.configuration->getString("path") + "/preprocessed_configs/";
+            }
+        }
+        else
+        {
+            preprocessed_dir += "/preprocessed_configs/";
+        }
+
+        preprocessed_path = preprocessed_dir + new_path;
+        auto path = Poco::Path(preprocessed_path).makeParent();
+        if (!path.toString().empty())
+            Poco::File(path).createDirectories();
+    }
     try
     {
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
@@ -569,4 +602,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config)
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
     }
+}
+
+void ConfigProcessor::setConfigPath(const std::string & config_path)
+{
+    main_config_path = config_path;
+}
+
 }

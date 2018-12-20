@@ -1,4 +1,3 @@
-<a name="data_type-enum"></a>
 
 # Enum8, Enum16
 
@@ -77,9 +76,9 @@ SELECT toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))
 
 Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` or in the range `-32768 ... 32767` for `Enum16`. All the strings and numbers must be different. An empty string is allowed. If this type is specified (in a table definition), numbers can be in an arbitrary order. However, the order does not matter.
 
-Neither the string nor the numeric value in an `Enum` can be [NULL](../query_language/syntax.md#null-literal).
+Neither the string nor the numeric value in an `Enum` can be [NULL](../query_language/syntax.md).
 
-An `Enum` can be contained in [Nullable](nullable.md#data_type-nullable) type. So if you create a table using the query
+An `Enum` can be contained in [Nullable](nullable.md) type. So if you create a table using the query
 
 ```
 CREATE TABLE t_enum_nullable

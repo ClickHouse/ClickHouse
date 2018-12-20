@@ -6,7 +6,9 @@ set -e
 # Finds missing #include <...>
 # prints compile time, number of includes, use with sort: ./check_include.sh 2>&1 | sort -rk3
 # use with clang: CXX=`which clang++-7 clang++-7.0 clang++-6.0 clang++-5.0 | head -n1` ./check_include.sh
-RUN_DIR=${RUN_DIR=`pwd`}
+CUR_DIR=`dirname $0`
+CUR_DIR=`readlink -f $CUR_DIR`
+CUR_DIR="${CUR_DIR}/"
 BUILD_DIR=${BUILD_DIR:=./build}
 inc="-I. \
 -I./contrib/libdivide \
@@ -32,24 +34,30 @@ inc="-I. \
 -I./contrib/poco/Foundation/include \
 -I./contrib/boost/libs/*/include \
 -I./contrib/boost \
+-I/usr/include/llvm-7 \
+-I/usr/include/llvm-6.0 \
+-I/usr/include/llvm-5.0 \
 -I./contrib/llvm/llvm/include \
 -I${BUILD_DIR}/contrib/llvm/llvm/include \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./contrib/capnproto/c++/src \
+-I./contrib/unixodbc/include \
+-I./contrib/unixodbc-cmake/linux_x86_64 \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I${BUILD_DIR}/libs/libcommon/include \
 -I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
--I./libs/libconsistent-hashing \
+-I./libs/consistent-hashing \
+-I./libs/consistent-hashing-sumbur \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 
 if [ -z $1 ]; then
-    cd ${ROOT_DIR=../..}
-    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -exec sh $RUN_DIR/`basename $0` {} \; ;
+    cd ${ROOT_DIR=${CUR_DIR}../..}
+    find dbms libs utils \( -name *.h -and -not -name *.inl.h \) -print0 | xargs -0 -n1 sh $CUR_DIR`basename $0`
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "

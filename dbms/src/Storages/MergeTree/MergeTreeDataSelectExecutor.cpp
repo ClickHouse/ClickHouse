@@ -3,9 +3,9 @@
 
 #include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
-#include <Storages/MergeTree/MergeTreeBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
-#include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -194,10 +194,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
 
-    NamesAndTypesList available_real_and_virtual_columns = available_real_columns;
-    for (const auto & name : virt_column_names)
-        available_real_and_virtual_columns.emplace_back(data.getColumn(name));
-
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
@@ -212,18 +208,16 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     data.check(real_column_names);
 
     const Settings & settings = context.getSettingsRef();
-    Names primary_sort_columns = data.getPrimarySortColumns();
+    Names primary_key_columns = data.primary_key_columns;
 
-    KeyCondition key_condition(
-        query_info, context, available_real_and_virtual_columns,
-        primary_sort_columns, data.getPrimaryExpression());
+    KeyCondition key_condition(query_info, context, primary_key_columns, data.primary_key_expr);
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
     {
         std::stringstream exception_message;
         exception_message << "Primary key (";
-        for (size_t i = 0, size = primary_sort_columns.size(); i < size; ++i)
-            exception_message << (i == 0 ? "" : ", ") << primary_sort_columns[i];
+        for (size_t i = 0, size = primary_key_columns.size(); i < size; ++i)
+            exception_message << (i == 0 ? "" : ", ") << primary_key_columns[i];
         exception_message << ") is not used and setting 'force_primary_key' is set.";
 
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
@@ -232,9 +226,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     std::optional<KeyCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
-        minmax_idx_condition.emplace(
-            query_info, context, available_real_and_virtual_columns,
-            data.minmax_idx_columns, data.minmax_idx_expr);
+        minmax_idx_condition.emplace(query_info, context, data.minmax_idx_columns, data.minmax_idx_expr);
 
         if (settings.force_index_by_date && minmax_idx_condition->alwaysUnknownOrTrue())
         {
@@ -377,14 +369,14 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     if (use_sampling)
     {
-        if (!data.sampling_expression)
+        if (!data.supportsSampling())
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
         if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
-        DataTypePtr type = data.getPrimaryExpression()->getSampleBlock().getByName(data.sampling_expression->getColumnName()).type;
+        DataTypePtr type = data.primary_key_sample.getByName(data.sampling_expr_column_name).type;
 
         if (typeid_cast<const DataTypeUInt64 *>(type.get()))
             size_of_universum = RelativeSize(std::numeric_limits<UInt64>::max()) + RelativeSize(1);
@@ -451,11 +443,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
             if (has_lower_limit)
             {
-                if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createLeftBounded(lower, true)))
+                if (!key_condition.addCondition(data.sampling_expr_column_name, Range::createLeftBounded(lower, true)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.sampling_expression);
+                args->children.push_back(data.getSamplingExpression());
                 args->children.push_back(std::make_shared<ASTLiteral>(lower));
 
                 lower_function = std::make_shared<ASTFunction>();
@@ -468,11 +460,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
             if (has_upper_limit)
             {
-                if (!key_condition.addCondition(data.sampling_expression->getColumnName(), Range::createRightBounded(upper, false)))
+                if (!key_condition.addCondition(data.sampling_expr_column_name, Range::createRightBounded(upper, false)))
                     throw Exception("Sampling column not in primary key", ErrorCodes::ILLEGAL_COLUMN);
 
                 ASTPtr args = std::make_shared<ASTExpressionList>();
-                args->children.push_back(data.sampling_expression);
+                args->children.push_back(data.getSamplingExpression());
                 args->children.push_back(std::make_shared<ASTLiteral>(upper));
 
                 upper_function = std::make_shared<ASTFunction>();
@@ -495,9 +487,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                 filter_function->children.push_back(filter_function->arguments);
             }
 
-            filter_expression = ExpressionAnalyzer(filter_function, context, nullptr, available_real_columns).getActions(false);
+            ASTPtr query = filter_function;
+            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, available_real_columns);
+            filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
-            /// Add columns needed for `sampling_expression` to `column_names_to_read`.
+            /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
             std::vector<String> add_columns = filter_expression->getRequiredColumns();
             column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
             std::sort(column_names_to_read.begin(), column_names_to_read.end());
@@ -558,8 +552,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
     if (select.final())
     {
-        /// Add columns needed to calculate primary key and the sign.
-        std::vector<String> add_columns = data.getPrimaryExpression()->getRequiredColumns();
+        /// Add columns needed to calculate the sorting expression and the sign.
+        std::vector<String> add_columns = data.sorting_key_expr->getRequiredColumns();
         column_names_to_read.insert(column_names_to_read.end(), add_columns.begin(), add_columns.end());
 
         if (!data.merging_params.sign_column.empty())
@@ -660,7 +654,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
 
         for (size_t i = 0; i < num_streams; ++i)
         {
-            res.emplace_back(std::make_shared<MergeTreeThreadBlockInputStream>(
+            res.emplace_back(std::make_shared<MergeTreeThreadSelectBlockInputStream>(
                 i, pool, min_marks_for_concurrent_read, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, data, use_uncompressed_cache,
                 prewhere_info, settings, virt_columns));
@@ -736,7 +730,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                     parts.emplace_back(part);
                 }
 
-                BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
+                BlockInputStreamPtr source_stream = std::make_shared<MergeTreeSelectBlockInputStream>(
                     data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                     settings.preferred_max_column_in_block_size_bytes, column_names, ranges_to_get_from_part,
                     use_uncompressed_cache, prewhere_info, true, settings.min_bytes_to_use_direct_io,
@@ -781,16 +775,16 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     {
         RangesInDataPart & part = parts[part_index];
 
-        BlockInputStreamPtr source_stream = std::make_shared<MergeTreeBlockInputStream>(
+        BlockInputStreamPtr source_stream = std::make_shared<MergeTreeSelectBlockInputStream>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
             prewhere_info, true, settings.min_bytes_to_use_direct_io, settings.max_read_buffer_size, true,
             virt_columns, part.part_index_in_query);
 
-        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
+        to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.sorting_key_expr));
     }
 
-    Names sort_columns = data.getSortColumns();
+    Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
@@ -853,7 +847,9 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(sign);
     arguments->children.push_back(one);
 
-    out_expression = ExpressionAnalyzer(function, context, {}, data.getColumns().getAllPhysical()).getActions(false);
+    ASTPtr query = function;
+    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, data.getColumns().getAllPhysical());
+    out_expression = ExpressionAnalyzer(query, syntax_result, context).getActions(false);
     out_column = function->getColumnName();
 }
 

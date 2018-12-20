@@ -10,6 +10,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -216,7 +217,7 @@ BlockInputStreams StorageMerge::read(
 
     for (auto it = selected_tables.begin(); it != selected_tables.end(); ++it)
     {
-        size_t current_need_streams =  tables_count >= num_streams ? 1 : (num_streams / tables_count);
+        size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
         current_streams = std::max(1, current_streams);
@@ -264,10 +265,8 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
                                                     Context & modified_context, size_t streams_num, bool has_table_virtual_column,
                                                     bool concat_streams)
 {
-    SelectQueryInfo modified_query_info;
-    modified_query_info.sets = query_info.sets;
+    SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
-    modified_query_info.prewhere_info = query_info.prewhere_info;
 
     VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage ? storage->getTableName() : "");
 
@@ -345,7 +344,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables() const
         {
             auto & table = iterator->table();
             if (table.get() != this)
-                selected_tables.emplace_back(table, table->lockStructure(false, __PRETTY_FUNCTION__));
+                selected_tables.emplace_back(table, table->lockStructure(false));
         }
 
         iterator->next();
@@ -375,7 +374,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
             if (storage.get() != this)
             {
                 virtual_column->insert(storage->getTableName());
-                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false, __PRETTY_FUNCTION__) : TableStructureReadLockPtr{});
+                selected_tables.emplace_back(storage, get_lock ? storage->lockStructure(false) : TableStructureReadLockPtr{});
             }
         }
 
@@ -397,11 +396,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
 void StorageMerge::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
 {
-    for (const auto & param : params)
-        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-            throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
-
-    auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
+    auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();
     params.apply(new_columns);
@@ -458,7 +453,8 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
             NameAndTypePair virtual_column = getColumn("_table");
             source_columns.insert(source_columns.end(), virtual_column);
-            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, context, {}, source_columns}.getActions(false, false);
+            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(where_expression, source_columns);
+            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
             for (const auto required_column : required_columns)

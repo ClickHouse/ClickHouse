@@ -14,11 +14,13 @@ import xml.dom.minidom
 from kazoo.client import KazooClient
 from kazoo.exceptions import KazooException
 import psycopg2
+import requests
 
 import docker
 from docker.errors import ContainerError
 
 from .client import Client, CommandRequest
+from .hdfs_api import HDFSApi
 
 
 HELPERS_DIR = p.dirname(__file__)
@@ -83,6 +85,7 @@ class ClickHouseCluster:
         self.with_postgres = False
         self.with_kafka = False
         self.with_odbc_drivers = False
+        self.with_hdfs = False
 
         self.docker_client = None
         self.is_up = False
@@ -94,7 +97,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, hostname=None, env_variables={}, image="ubuntu:14.04"):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, with_postgres=False, with_hdfs=False, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -113,7 +116,7 @@ class ClickHouseCluster:
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=hostname, env_variables=env_variables, image=image)
+            clickhouse_path_dir, with_odbc_drivers, hostname=hostname, env_variables=env_variables, image=image, stay_alive=stay_alive)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -148,12 +151,18 @@ class ClickHouseCluster:
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
 
-
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+
+        if with_hdfs and not self.with_hdfs:
+            self.with_hdfs = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
+            self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+
 
         return instance
 
@@ -212,6 +221,20 @@ class ClickHouseCluster:
 
         raise Exception("Cannot wait ZooKeeper container")
 
+    def wait_hdfs_to_start(self, timeout=60):
+        hdfs_api = HDFSApi("root")
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                hdfs_api.write_data("/somefilewithrandomname222", "1")
+                print "Connected to HDFS and SafeMode disabled! "
+                return
+            except Exception as ex:
+                print "Can't connect to HDFS " + str(ex)
+                time.sleep(1)
+
+        raise Exception("Can't wait HDFS to start")
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -250,7 +273,11 @@ class ClickHouseCluster:
             subprocess_check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
-        subprocess_check_call(self.base_cmd + ['up', '-d', '--force-recreate'])
+        if self.with_hdfs and self.base_hdfs_cmd:
+            subprocess_check_call(self.base_hdfs_cmd + ['up', '-d', '--force-recreate'])
+            self.wait_hdfs_to_start(120)
+
+        subprocess_check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -300,37 +327,34 @@ class ClickHouseCluster:
         self.pre_zookeeper_commands.append(command)
 
 
+CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-server/config.xml --log-file=/var/log/clickhouse-server/clickhouse-server.log --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
+
+CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "{} --daemon; tail -f /dev/null"'.format(CLICKHOUSE_START_COMMAND)
+
 DOCKER_COMPOSE_TEMPLATE = '''
 version: '2'
 services:
     {name}:
         image: {image}
         hostname: {hostname}
-        user: '{uid}'
         volumes:
             - {binary_path}:/usr/bin/clickhouse:ro
             - {configs_dir}:/etc/clickhouse-server/
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             {odbc_ini_path}
-        entrypoint:
-            -  clickhouse
-            -  server
-            -  --config-file=/etc/clickhouse-server/config.xml
-            -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
-            -  --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
+        entrypoint: {entrypoint_cmd}
         depends_on: {depends_on}
         env_file:
             - {env_file}
 '''
-
 
 class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="ubuntu:14.04"):
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="yandex/clickhouse-integration-test", stay_alive=False):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -366,6 +390,7 @@ class ClickHouseInstance:
         self.client = None
         self.default_timeout = 20.0 # 20 sec
         self.image = image
+        self.stay_alive = stay_alive
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
@@ -579,12 +604,16 @@ class ClickHouseInstance:
             self._create_odbc_config_file()
             odbc_ini_path = '- ' + self.odbc_ini_path
 
+        entrypoint_cmd = CLICKHOUSE_START_COMMAND
+
+        if self.stay_alive:
+            entrypoint_cmd = CLICKHOUSE_STAY_ALIVE_COMMAND
+
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 image=self.image,
                 name=self.name,
                 hostname=self.hostname,
-                uid=os.getuid(),
                 binary_path=self.server_bin_path,
                 configs_dir=configs_dir,
                 config_d_dir=config_d_dir,
@@ -593,6 +622,7 @@ class ClickHouseInstance:
                 depends_on=str(depends_on),
                 env_file=env_file,
                 odbc_ini_path=odbc_ini_path,
+                entrypoint_cmd=entrypoint_cmd,
             ))
 
 

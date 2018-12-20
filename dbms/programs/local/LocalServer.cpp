@@ -30,6 +30,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 
@@ -115,9 +116,11 @@ try
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
+        const auto config_path = config().getString("config-file", "config.xml");
+        ConfigProcessor config_processor(config_path, false, true);
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", DBMS_DEFAULT_PATH));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
@@ -140,6 +143,7 @@ try
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -348,7 +352,7 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         users_config = loaded_config.configuration;
     }
     else

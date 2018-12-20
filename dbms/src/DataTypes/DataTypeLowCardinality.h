@@ -96,7 +96,7 @@ public:
         serializeImpl(column, row_num, ostr, &IDataType::serializeText, settings);
     }
 
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &  settings) const override
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
     {
         serializeImpl(column, row_num, ostr, &IDataType::serializeTextJSON, settings);
     }
@@ -163,5 +163,14 @@ private:
 
 /// Returns dictionary type if type is DataTypeLowCardinality, type otherwise.
 DataTypePtr removeLowCardinality(const DataTypePtr & type);
+
+/// Remove LowCardinality recursively from all nested types.
+DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
+
+/// Remove LowCardinality recursively from all nested columns.
+ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
+
+/// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
+ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);
 
 }

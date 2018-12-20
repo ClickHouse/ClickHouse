@@ -12,22 +12,21 @@ Main features:
 
     This allows you to create a small sparse index that helps find data faster.
 
-- This allows you to use partitions if the [partitioning key](custom_partitioning_key.md#table_engines-custom_partitioning_key) is specified.
+- This allows you to use partitions if the [partitioning key](custom_partitioning_key.md) is specified.
 
     ClickHouse supports certain operations with partitions that are more effective than general operations on the same data with the same result. ClickHouse also automatically cuts off the partition data where the partitioning key is specified in the query. This also increases the query performance.
 
 - Data replication support.
 
-    The family of `ReplicatedMergeTree` tables is used for this. For more information, see the [Data replication](replication.md#table_engines-replication) section.
+    The family of `ReplicatedMergeTree` tables is used for this. For more information, see the [Data replication](replication.md) section.
 
 - Data sampling support.
 
     If necessary, you can set the data sampling method in the table.
 
 !!! info
-    The [Merge](merge.md#table_engine-merge) engine does not belong to the `*MergeTree` family.
+    The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
 
-<a name="table_engines-mergetree-configuring"></a>
 
 ## Creating a Table
 
@@ -40,26 +39,34 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = MergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
+[PRIMARY KEY expr]
 [SAMPLE BY expr]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+For a description of request parameters, see [request description](../../query_language/create.md).
 
 **Query clauses**
 
 - `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
-- `ORDER BY` — Primary key.
+- `PARTITION BY` — The [partitioning key](custom_partitioning_key.md).
+
+    For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md). The partition names here have the `"YYYYMM"` format.
+
+- `ORDER BY` — The sorting key.
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounerID, EventDate, intHash32(UserID))`.
 
-- `PARTITION BY` — The [partitioning key](custom_partitioning_key.md#table_engines-custom_partitioning_key).
+- `PRIMARY KEY` - The primary key if it [differs from the sorting key](mergetree.md).
 
-    For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md#data_type-date). The partition names here have the `"YYYYMM"` format.
+    By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause).
+    Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
-- `SAMPLE BY` — An  expression for sampling. Example: `intHash32(UserID))`.
+- `SAMPLE BY` — An  expression for sampling.
+
+    If a sampling expression is used, the primary key must contain it. Example:  
+    `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
 - `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
@@ -72,7 +79,7 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If, when selecting the data, you define a [SAMPLE](../../query_language/select.md#select-section-sample) clause, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If, when selecting the data, you define a [SAMPLE](../../query_language/select.md#sample) clause, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 `index_granularity` could be omitted because 8192 is the default value.
 
@@ -92,10 +99,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() parameters**
 
-- `date-column` — The name of a column of the type [Date](../../data_types/date.md#data_type-date). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
+- `date-column` — The name of a column of the type [Date](../../data_types/date.md). ClickHouse automatically creates partitions by month on the basis of this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — an expression for sampling.
-- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md#data_type-tuple). It may consist of arbitrary expressions, but it typically is a tuple of columns.  It must include an expression for sampling if it is set. It must not include a column with a `date-column` date.
-- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
+- `(primary, key)` — primary key. Type — [Tuple()](../../data_types/tuple.md- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -159,11 +165,33 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md#table_engine-summingmergetree) engines.
+- Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md) engines.
 
-    You may need many fields in the primary key even if they are not necessary for the previous steps.
+    In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
+
+
+### Choosing the Primary Key that differs from the Sorting Key
+
+It is possible to specify the primary key (the expression, values of which are written into the index file
+for each mark) that is different from the sorting key (the expression for sorting the rows in data parts).
+In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
+
+This feature is helpful when using the [SummingMergeTree](summingmergetree.md) and
+[AggregatingMergeTree](aggregatingmergetree.md) table engines. In a common case when using these engines the
+table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure
+columns with arbitrary `GROUP BY` and filtering by dimensions. As SummingMergeTree and AggregatingMergeTree
+aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result
+the key expression consists of a long list of columns and this list must be frequently updated with newly
+added dimensions.
+
+In this case it makes sense to leave only a few columns in the primary key that will provide efficient
+range scans and add the remaining dimension columns to the sorting key tuple.
+
+[ALTER of the sorting key](../../query_language/alter.md) is a
+lightweight operation because when a new column is simultaneously added to the table and to the sorting key
+data parts need not be changed (they remain sorted by the new sorting key expression).
 
 ### Use of Indexes and Partitions in Queries
 
@@ -195,7 +223,7 @@ In the example below, the index can't be used.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../settings/settings.md#settings-settings-force_index_by_date) and [force_primary_key](../settings/settings.md#settings-settings-force_primary_key).
+To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../settings/settings.md#settings-settings-force_index_by_date) and [force_primary_key](../settings/settings.md).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 

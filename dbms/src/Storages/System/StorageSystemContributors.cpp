@@ -1,10 +1,8 @@
-#if __has_include("StorageSystemContributors.generated.cpp")
-
 #include "StorageSystemContributors.h"
 
 #include <algorithm>
-#include <pcg_random.hpp>
 #include <DataTypes/DataTypeString.h>
+#include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 
 
@@ -32,5 +30,3 @@ void StorageSystemContributors::fillData(MutableColumns & res_columns, const Con
         res_columns[0]->insert(String(it));
 }
 }
-
-#endif

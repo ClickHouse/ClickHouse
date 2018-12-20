@@ -92,7 +92,7 @@ BlockIO InterpreterInsertQuery::execute()
     checkAccess(query);
     StoragePtr table = getTable(query);
 
-    auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);
+    auto table_lock = table->lockStructure(true);
 
     /// We create a pipeline of several streams, into which we will write data.
     BlockOutputStreamPtr out;
@@ -157,6 +157,12 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
     }
 
     throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
+}
+
+std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
+{
+    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    return {query.database, query.table};
 }
 
 }

@@ -23,20 +23,26 @@ namespace CurrentMetrics
 namespace DB
 {
 
+static constexpr double thread_sleep_seconds = 10;
+static constexpr double thread_sleep_seconds_random_part = 1.0;
 
-constexpr double BackgroundProcessingPool::sleep_seconds;
-constexpr double BackgroundProcessingPool::sleep_seconds_random_part;
+/// For exponential backoff.
+static constexpr double task_sleep_seconds_when_no_work_min = 10;
+static constexpr double task_sleep_seconds_when_no_work_max = 600;
+static constexpr double task_sleep_seconds_when_no_work_multiplier = 1.1;
+static constexpr double task_sleep_seconds_when_no_work_random_part = 1.0;
 
 
 void BackgroundProcessingPoolTaskInfo::wake()
 {
-    if (removed)
-        return;
-
     Poco::Timestamp current_time;
 
     {
         std::unique_lock lock(pool.tasks_mutex);
+
+        /// This will ensure that iterator is valid. Must be done under the same mutex when the iterator is invalidated.
+        if (removed)
+            return;
 
         auto next_time_to_execute = iterator->first;
         auto this_task_handle = iterator->second;
@@ -93,6 +99,7 @@ void BackgroundProcessingPool::removeTask(const TaskHandle & task)
     {
         std::unique_lock lock(tasks_mutex);
         tasks.erase(task->iterator);
+        /// Note that the task may be still accessible through TaskHandle (shared_ptr).
     }
 }
 
@@ -135,7 +142,7 @@ void BackgroundProcessingPool::threadFunction()
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
 
     pcg64 rng(randomSeed());
-    std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
+    std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, thread_sleep_seconds_random_part)(rng)));
 
     while (!shutdown)
     {
@@ -170,8 +177,8 @@ void BackgroundProcessingPool::threadFunction()
             {
                 std::unique_lock lock(tasks_mutex);
                 wake_event.wait_for(lock,
-                    std::chrono::duration<double>(sleep_seconds
-                        + std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
+                    std::chrono::duration<double>(thread_sleep_seconds
+                        + std::uniform_real_distribution<double>(0, thread_sleep_seconds_random_part)(rng)));
                 continue;
             }
 
@@ -181,7 +188,7 @@ void BackgroundProcessingPool::threadFunction()
             {
                 std::unique_lock lock(tasks_mutex);
                 wake_event.wait_for(lock, std::chrono::microseconds(
-                    min_time - current_time + std::uniform_int_distribution<uint64_t>(0, sleep_seconds_random_part * 1000000)(rng)));
+                    min_time - current_time + std::uniform_int_distribution<uint64_t>(0, thread_sleep_seconds_random_part * 1000000)(rng)));
             }
 
             std::shared_lock rlock(task->rwlock);
@@ -203,15 +210,26 @@ void BackgroundProcessingPool::threadFunction()
         if (shutdown)
             break;
 
-        /// If task has done work, it could be executed again immediately.
-        /// If not, add delay before next run.
-        Poco::Timestamp next_time_to_execute = Poco::Timestamp() + (done_work ? 0 : sleep_seconds * 1000000);
-
         {
             std::unique_lock lock(tasks_mutex);
 
             if (task->removed)
                 continue;
+
+            if (done_work)
+                task->count_no_work_done = 0;
+            else
+                ++task->count_no_work_done;
+
+            /// If task has done work, it could be executed again immediately.
+            /// If not, add delay before next run.
+
+            Poco::Timestamp next_time_to_execute;   /// current time
+            if (!done_work)
+                next_time_to_execute += 1000000 * (std::min(
+                        task_sleep_seconds_when_no_work_max,
+                        task_sleep_seconds_when_no_work_min * std::pow(task_sleep_seconds_when_no_work_multiplier, task->count_no_work_done))
+                    + std::uniform_real_distribution<double>(0, task_sleep_seconds_when_no_work_random_part)(rng));
 
             tasks.erase(task->iterator);
             task->iterator = tasks.emplace(next_time_to_execute, task);

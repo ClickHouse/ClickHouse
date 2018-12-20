@@ -1,11 +1,17 @@
 #pragma once
 
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Exception.h>
-
 #include <common/Types.h>
-
 #include <ext/singleton.h>
+
+namespace Poco
+{
+namespace Util
+{
+    class AbstractConfiguration;
+}
+
+class Logger;
+}
 
 
 /** @brief Class that lets you know if a search engine or operating system belongs
@@ -15,8 +21,8 @@
 class TechDataHierarchy
 {
 private:
-    UInt8 os_parent[256] {};
-    UInt8 se_parent[256] {};
+    UInt8 os_parent[256]{};
+    UInt8 se_parent[256]{};
 
 public:
     void reload();
@@ -43,15 +49,9 @@ public:
     }
 
 
-    UInt8 OSToParent(UInt8 x) const
-    {
-        return os_parent[x];
-    }
+    UInt8 OSToParent(UInt8 x) const { return os_parent[x]; }
 
-    UInt8 SEToParent(UInt8 x) const
-    {
-        return se_parent[x];
-    }
+    UInt8 SEToParent(UInt8 x) const { return se_parent[x]; }
 
 
     /// To the topmost ancestor.
@@ -71,4 +71,6 @@ public:
 };
 
 
-class TechDataHierarchySingleton : public ext::singleton<TechDataHierarchySingleton>, public TechDataHierarchy {};
+class TechDataHierarchySingleton : public ext::singleton<TechDataHierarchySingleton>, public TechDataHierarchy
+{
+};

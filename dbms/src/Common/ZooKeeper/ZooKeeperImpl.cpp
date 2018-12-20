@@ -395,17 +395,16 @@ void ZooKeeper::read(T & x)
 }
 
 
-
-    void ZooKeeperRequest::write(WriteBuffer & out) const
-    {
-        /// Excessive copy to calculate length.
-        WriteBufferFromOwnString buf;
-        Coordination::write(xid, buf);
-        Coordination::write(getOpNum(), buf);
-        writeImpl(buf);
-        Coordination::write(buf.str(), out);
-        out.next();
-    }
+void ZooKeeperRequest::write(WriteBuffer & out) const
+{
+    /// Excessive copy to calculate length.
+    WriteBufferFromOwnString buf;
+    Coordination::write(xid, buf);
+    Coordination::write(getOpNum(), buf);
+    writeImpl(buf);
+    Coordination::write(buf.str(), out);
+    out.next();
+}
 
 
 struct ZooKeeperResponse : virtual Response

@@ -206,9 +206,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -238,7 +238,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+        auto table_lock = table->lockForAlter();
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);

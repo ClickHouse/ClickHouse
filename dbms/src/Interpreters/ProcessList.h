@@ -191,6 +191,8 @@ public:
 
     /// Get query in/out pointers from BlockIO
     bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
+
+    bool isKilled() const { return is_killed; }
 };
 
 
