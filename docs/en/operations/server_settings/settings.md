@@ -681,8 +681,20 @@ For more information, see the section "[Replication](../../operations/table_engi
 **Example**
 
 ```xml
-<zookeeper incl="zookeeper-servers" optional="true" />
+<zookeeper>
+    <node index="1">
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node index="2">
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node index="3">
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
 ```
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->
