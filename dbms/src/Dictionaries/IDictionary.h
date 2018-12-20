@@ -56,6 +56,11 @@ struct IDictionaryBase : public IExternalLoadable
         return source && source->isModified();
     }
 
+    bool isDefinedInDDL() const override
+    {
+        return false;
+    }
+
     std::shared_ptr<IDictionaryBase> shared_from_this()
     {
         return std::static_pointer_cast<IDictionaryBase>(IExternalLoadable::shared_from_this());
