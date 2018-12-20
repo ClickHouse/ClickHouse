@@ -71,14 +71,7 @@ UInt32 CompressionCodecMultiple::doCompressData(const char * source, UInt32 sour
         source_size = size_compressed;
     }
 
-    //std::cerr << "(compress) BUF_SIZE_COMPRESSED:" << source_size << std::endl;
-
     memcpy(&dest[1 + codecs.size()], uncompressed_buf.data(), source_size);
-
-    //std::cerr << "(compress) COMPRESSING BUF:\n";
-    //for (size_t i = 0; i < source_size + 1 + codecs.size(); ++i)
-    //    std::cerr << getHexUIntLowercase(+dest[i]) << " ";
-    //std::cerr << std::endl;
 
     return 1 + codecs.size() + source_size;
 }
@@ -87,13 +80,6 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 {
     UInt8 compression_methods_size = source[0];
 
-    //std::cerr << "(decompress) DECOMPRESSING BUF:\n";
-    //for (size_t i = 0; i < source_size; ++i)
-    //    std::cerr << getHexUIntLowercase(+source[i]) << " ";
-    //std::cerr << std::endl;
-
-    //std::cerr << "(decompress) BUF_SIZE_COMPRESSED:" << source_size << std::endl;
-    //std::cerr << "(decompress) CODECS SIZE:" << +compression_methods_size << std::endl;
     PODArray<char> compressed_buf(&source[compression_methods_size + 1], &source[source_size]);
     PODArray<char> uncompressed_buf;
     /// Insert all data into compressed buf
@@ -103,13 +89,13 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
     {
         UInt8 compression_method = source[idx + 1];
         const auto codec = CompressionCodecFactory::instance().get(compression_method);
+        compressed_buf.resize(compressed_buf.size() + codec->getAdditionalSizeAtTheEndOfBuffer());
         UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
-        //std::cerr << "(decompress) UNCOMPRESSED SIZE READ:" << uncompressed_size << std::endl;
 
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) + ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
 
-        uncompressed_buf.resize(uncompressed_size);
+        uncompressed_buf.resize(uncompressed_size + codec->getAdditionalSizeAtTheEndOfBuffer());
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
         uncompressed_buf.swap(compressed_buf);
         source_size = uncompressed_size;
