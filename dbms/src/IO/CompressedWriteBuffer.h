@@ -7,6 +7,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionSettings.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionFactory.h>
 
 
 namespace DB
@@ -16,7 +18,7 @@ class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     WriteBuffer & out;
-    CompressionSettings compression_settings;
+    CompressionCodecPtr codec;
 
     PODArray<char> compressed_buffer;
 
@@ -25,8 +27,14 @@ private:
 public:
     CompressedWriteBuffer(
         WriteBuffer & out_,
+        CompressionCodecPtr codec_,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
+    explicit CompressedWriteBuffer(
+        WriteBuffer & out_,
         CompressionSettings compression_settings = CompressionSettings(),
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
+
 
     /// The amount of compressed data
     size_t getCompressedBytes()

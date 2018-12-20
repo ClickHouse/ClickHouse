@@ -20,7 +20,7 @@ void CachedCompressedReadBuffer::initInput()
     if (!file_in)
     {
         file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size);
-        in = liftCompressed(codec, *file_in);
+        compressed_in = &*file_in;
 
         if (profile_callback)
             file_in->setProfileCallback(profile_callback, clock_type);
@@ -42,16 +42,15 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         owned_cell = std::make_shared<UncompressedCacheCell>();
 
-        UInt32 size_decompressed;
-        std::tie(owned_cell->compressed_size, size_decompressed) = in->readCompressedData();
+
+        size_t size_decompressed;
+        size_t size_compressed_without_checksum;
+        owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum);
 
         if (owned_cell->compressed_size)
         {
-            owned_cell->data.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-            in->decompress(owned_cell->data.data(), owned_cell->compressed_size);
-
-            in->buffer() = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-            in->decompress(owned_cell->data.data(), owned_cell->compressed_size);
+            owned_cell->data.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+            decompress(owned_cell->data.data(), size_decompressed, owned_cell->compressed_size);
 
             /// Put data into cache.
             cache->set(key, owned_cell);
@@ -64,7 +63,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         return false;
     }
 
-    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - codec->getAdditionalSizeAtTheEndOfBuffer());
 
     file_pos += owned_cell->compressed_size;
 
@@ -73,9 +72,9 @@ bool CachedCompressedReadBuffer::nextImpl()
 
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
-    const std::string & path_, UncompressedCache * cache_, const CompressionCodecPtr & codec_,
+    const std::string & path_, UncompressedCache * cache_,
     size_t estimated_size_, size_t aio_threshold_, size_t buf_size_)
-    : ReadBuffer(nullptr, 0), path(path_), cache(cache_), codec(codec_), buf_size(buf_size_), estimated_size(estimated_size_),
+    : ReadBuffer(nullptr, 0), path(path_), cache(cache_), buf_size(buf_size_), estimated_size(estimated_size_),
         aio_threshold(aio_threshold_), file_pos(0)
 {
 }

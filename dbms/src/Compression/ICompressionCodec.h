@@ -19,54 +19,6 @@ class ICompressionCodec;
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CompressionCodecPtr>;
 
-class CompressionCodecReadBuffer;
-class CompressionCodecWriteBuffer;
-
-using CompressionCodecReadBufferPtr = std::shared_ptr<CompressionCodecReadBuffer>;
-using CompressionCodecWriteBufferPtr = std::shared_ptr<CompressionCodecWriteBuffer>;
-
-class CompressionCodecWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
-{
-public:
-    CompressionCodecWriteBuffer(CompressionCodecPtr codec_, WriteBuffer & out_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
-
-    ~CompressionCodecWriteBuffer() override;
-
-private:
-    void nextImpl() override;
-
-private:
-    WriteBuffer & out;
-    CompressionCodecPtr codec;
-    PODArray<char> compressed_buffer;
-};
-
-class CompressionCodecReadBuffer : public BufferWithOwnMemory<ReadBuffer>
-{
-
-    UInt32 read_compressed_bytes_for_last_time = 0;
-
-public:
-    std::pair<UInt32, UInt32> readCompressedData();
-
-    void decompress(char * to, UInt32 size_compressed);
-
-    CompressionCodecReadBuffer(CompressionCodecPtr codec_, ReadBuffer & origin_);
-
-    void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
-private:
-    CompressionCodecPtr codec;
-    ReadBuffer & origin;
-    char * compressed_buffer;
-    PODArray<char> own_compressed_buffer;
-
-    bool nextImpl() override;
-};
-
-CompressionCodecReadBufferPtr liftCompressed(CompressionCodecPtr codec, ReadBuffer & origin);
-
-CompressionCodecWriteBufferPtr liftCompressed(CompressionCodecPtr codec, WriteBuffer & origin);
-
 /**
 *
 */

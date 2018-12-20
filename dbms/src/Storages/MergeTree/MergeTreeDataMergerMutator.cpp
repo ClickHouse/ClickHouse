@@ -20,8 +20,6 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <Interpreters/MutationsInterpreter.h>
-#include <IO/CompressedWriteBuffer.h>
-#include <IO/CompressedReadBufferFromFile.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>

@@ -4,17 +4,16 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <IO/CompressedReadBufferFromFile.h>
 #include <Core/NamesAndTypes.h>
 #include <port/clock.h>
 
+class CachedCompressedReadBuffer;
 
 namespace DB
 {
 
 class IDataType;
-class CachedCompressedReadBuffer;
-class CompressedReadBufferFromFile;
-
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
@@ -63,7 +62,6 @@ private:
     public:
         Stream(
             const String & path_prefix_, const String & extension_, size_t marks_count_,
-            const CompressionCodecPtr & codec,
             const MarkRanges & all_mark_ranges,
             MarkCache * mark_cache, bool save_marks_in_cache,
             UncompressedCache * uncompressed_cache,
@@ -92,9 +90,9 @@ private:
         bool save_marks_in_cache;
         MarkCache::MappedPtr marks;
 
-        std::unique_ptr<ReadBufferFromFileBase> file_in;
-        std::shared_ptr<CachedCompressedReadBuffer> cached_buffer;
-        std::shared_ptr<CompressionCodecReadBuffer> non_cached_buffer;
+
+        std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
+        std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
     };
 
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
@@ -123,7 +121,7 @@ private:
     size_t max_read_buffer_size;
     size_t index_granularity;
 
-    void addStreams(const String & name, const IDataType & type, const CompressionCodecPtr & codec,
+    void addStreams(const String & name, const IDataType & type,
         const MarkRanges & all_mark_ranges, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(

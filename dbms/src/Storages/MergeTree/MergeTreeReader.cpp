@@ -3,7 +3,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
 #include <IO/CachedCompressedReadBuffer.h>
-#include <IO/CompressedReadBufferFromFile.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
@@ -54,8 +53,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
 
         for (const NameAndTypePair & column : columns)
         {
-            CompressionCodecPtr codec = columns_desc.getCodec(column.name, {});
-            addStreams(column.name, *column.type, codec, all_mark_ranges, profile_callback, clock_type);
+            addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
         }
     }
     catch (...)
@@ -164,7 +162,6 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
 MergeTreeReader::Stream::Stream(
     const String & path_prefix_, const String & extension_, size_t marks_count_,
-    const CompressionCodecPtr & codec,
     const MarkRanges & all_mark_ranges,
     MarkCache * mark_cache_, bool save_marks_in_cache_,
     UncompressedCache * uncompressed_cache,
@@ -236,8 +233,8 @@ MergeTreeReader::Stream::Stream(
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)
     {
-        auto buffer = std::make_shared<CachedCompressedReadBuffer>(
-            path_prefix + extension, uncompressed_cache, codec, estimated_size, aio_threshold, buffer_size);
+        auto buffer = std::make_unique<CachedCompressedReadBuffer>(
+            path_prefix + extension, uncompressed_cache, estimated_size, aio_threshold, buffer_size);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -247,13 +244,13 @@ MergeTreeReader::Stream::Stream(
     }
     else
     {
-        file_in = createReadBufferFromFileBase(path_prefix + extension, estimated_size, aio_threshold, buffer_size);
+        auto buffer = std::make_unique<CompressedReadBufferFromFile>(
+            path_prefix + extension, estimated_size, aio_threshold, buffer_size);
 
         if (profile_callback)
-            file_in->setProfileCallback(profile_callback, clock_type);
+            buffer->setProfileCallback(profile_callback, clock_type);
 
-        const auto compressed_buffer = liftCompressed(codec, *file_in);
-        non_cached_buffer = compressed_buffer;
+        non_cached_buffer = std::move(buffer);
         data_buffer = non_cached_buffer.get();
     }
 }
@@ -361,7 +358,7 @@ void MergeTreeReader::Stream::seekToStart()
 }
 
 
-void MergeTreeReader::addStreams(const String & name, const IDataType & type, const CompressionCodecPtr & codec,
+void MergeTreeReader::addStreams(const String & name, const IDataType & type,
     const MarkRanges & all_mark_ranges, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
@@ -381,7 +378,7 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
 
         streams.emplace(stream_name, std::make_unique<Stream>(
             path + stream_name, DATA_FILE_EXTENSION, data_part->marks_count,
-            codec, all_mark_ranges, mark_cache, save_marks_in_cache,
+            all_mark_ranges, mark_cache, save_marks_in_cache,
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
     };
 

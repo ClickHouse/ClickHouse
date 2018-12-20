@@ -19,17 +19,15 @@ namespace DB
   * Disadvantages:
   * - in case you need to read a lot of data in a row, but of them only a part is cached, you have to do seek-and.
   */
-class CachedCompressedReadBuffer : public ReadBuffer
+class CachedCompressedReadBuffer : public CompressedReadBufferBase,  public ReadBuffer
 {
 private:
     const std::string path;
     UncompressedCache * cache;
-    const CompressionCodecPtr & codec;
     size_t buf_size;
     size_t estimated_size;
     size_t aio_threshold;
 
-    CompressionCodecReadBufferPtr in;
     std::unique_ptr<ReadBufferFromFileBase> file_in;
     size_t file_pos;
 
@@ -45,8 +43,7 @@ private:
 
 public:
     CachedCompressedReadBuffer(
-        const std::string & path_, UncompressedCache * cache_, const CompressionCodecPtr & codec_,
-        size_t estimated_size_, size_t aio_threshold_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);

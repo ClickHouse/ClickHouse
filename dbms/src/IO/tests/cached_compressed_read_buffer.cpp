@@ -32,7 +32,7 @@ int main(int argc, char ** argv)
 
         {
             Stopwatch watch;
-            CachedCompressedReadBuffer in(path, &cache, CompressionCodecFactory::instance().getDefaultCodec(), 0, 0);
+            CachedCompressedReadBuffer in(path, &cache, 0, 0);
             WriteBufferFromFile out("/dev/null");
             copyData(in, out);
 
@@ -44,7 +44,7 @@ int main(int argc, char ** argv)
 
         {
             Stopwatch watch;
-            CachedCompressedReadBuffer in(path, &cache, CompressionCodecFactory::instance().getDefaultCodec(), 0, 0);
+            CachedCompressedReadBuffer in(path, &cache, 0, 0);
             WriteBufferFromFile out("/dev/null");
             copyData(in, out);
 
