@@ -149,7 +149,7 @@ Default value: 0 (off).
 
 Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
-## max_threads
+## max_threads {#max_threads}
 
 The maximum number of query processing threads
 
