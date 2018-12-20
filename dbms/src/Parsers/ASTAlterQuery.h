@@ -26,7 +26,6 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
-        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
 
         DROP_PARTITION,
@@ -54,10 +53,6 @@ public:
      * The DROP query stores the column name for deletion here
      */
     ASTPtr column;
-
-    /** For MODIFY PRIMARY KEY
-     */
-    ASTPtr primary_key;
 
     /** For MODIFY ORDER BY
      */
