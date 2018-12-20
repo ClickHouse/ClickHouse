@@ -1,30 +1,17 @@
-#include <Common/config.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/GatherUtils/Algorithms.h>
-#include <IO/WriteHelpers.h>
+#include <common/find_symbols.h>
 
-#include <re2/re2.h>
-#include <re2/stringpiece.h>
-
-#if USE_RE2_ST
-    #include <re2_st/re2.h> // Y_IGNORE
-#else
-    #define re2_st re2
-#endif
 
 namespace DB
 {
-using namespace GatherUtils;
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionRegexpQuoteMeta : public IFunction
@@ -64,7 +51,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const ColumnPtr column_string = block.getByPosition(arguments[0]).column;
+        const ColumnPtr & column_string = block.getByPosition(arguments[0]).column;
         const ColumnString * input = checkAndGetColumn<ColumnString>(column_string.get());
 
         if (!input)
@@ -80,31 +67,40 @@ public:
 
         const ColumnString::Offsets & src_offsets = input->getOffsets();
 
-        auto source = reinterpret_cast<const char *>(input->getChars().data());
-        auto dst = reinterpret_cast<char *>(dst_data.data());
-        auto dst_pos = dst;
+        auto src_begin = reinterpret_cast<const char *>(input->getChars().data());
+        auto src_pos = src_begin;
 
-        size_t src_offset_prev = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            size_t srclen = src_offsets[row] - src_offset_prev - 1;
+            /// NOTE This implementation slightly differs from re2::RE2::QuoteMeta.
+            /// It escapes zero byte as \0 instead of \x00
+            ///  and it escapes only required characters.
+            /// This is Ok. Look at comments in re2.cc
 
-            /// suboptimal, but uses original implementation from re2
-            const auto & quoted = re2_st::RE2::QuoteMeta({source, srclen});
-            const auto size = quoted.size() + 1;
+            const char * src_end = src_begin + src_offsets[row_idx] - 1;
 
-            size_t new_dst_size = dst_data.size() + size;
-            dst_data.resize(new_dst_size);
-            memcpy(dst_pos, quoted.c_str(), size);
+            while (true)
+            {
+                const char * next_src_pos = find_first_symbols<'\0', '\\', '|', '(', ')', '^', '$', '.', '[', '?', '*', '+', '{', ':', '-'>(src_pos, src_end);
 
-            source += srclen + 1;
-            dst_pos += size;
+                size_t bytes_to_copy = next_src_pos - src_pos;
+                size_t old_dst_size = dst_data.size();
+                dst_data.resize(old_dst_size + bytes_to_copy);
+                memcpySmallAllowReadWriteOverflow15(dst_data.data() + old_dst_size, src_pos, bytes_to_copy);
+                src_pos = next_src_pos + 1;
 
-            dst_offsets[row] = new_dst_size;
-            src_offset_prev = src_offsets[row];
+                if (next_src_pos == src_end)
+                {
+                    dst_data.emplace_back('\0');
+                    break;
+                }
+
+                dst_data.emplace_back('\\');
+                dst_data.emplace_back(*next_src_pos);
+            }
+
+            dst_offsets[row_idx] = dst_data.size();
         }
-
-        dst_data.resize(dst_pos - dst);
 
         block.getByPosition(result).column = std::move(dst_column);
     }
