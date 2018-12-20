@@ -653,7 +653,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names &
         dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
 }
 
-struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
+struct RangeHashedDictionaryCallGetBlockInputStreamImpl
 {
     BlockInputStreamPtr stream;
     const RangeHashedDictionary * dict;
@@ -673,7 +673,7 @@ BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & col
 {
     using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
 
-    RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
+    RangeHashedDictionaryCallGetBlockInputStreamImpl callable;
     callable.dict = this;
     callable.column_names = &column_names;
     callable.max_block_size = max_block_size;
