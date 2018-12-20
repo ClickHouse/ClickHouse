@@ -48,4 +48,11 @@ DictionaryPtr DictionaryFactory::create(
     throw Exception{name + ": unknown dictionary layout type: " + layout_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
+
+DictionaryPtr DictionaryFactory::create(const String & name, const ASTCreateQuery & create, Context & context) const
+{
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = getDictionaryConfigFromAST(create);
+    return this->create(name, *config, "", context);
+}
+
 }

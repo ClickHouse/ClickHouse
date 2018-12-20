@@ -3,6 +3,8 @@
 #include <ext/singleton.h>
 #include "IDictionary.h"
 
+#include <Parsers/ASTCreateQuery.h>
+
 namespace Poco
 {
 namespace Util
@@ -22,6 +24,10 @@ class DictionaryFactory : public ext::singleton<DictionaryFactory>
 public:
     DictionaryPtr
     create(const std::string & name, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, Context & context)
+        const;
+
+    DictionaryPtr
+    create(const String & name, const ASTCreateQuery & create, Context & context)
         const;
 
     using Creator = std::function<DictionaryPtr(
