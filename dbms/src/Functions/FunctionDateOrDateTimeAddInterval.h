@@ -113,6 +113,21 @@ struct AddMonthsImpl
     }
 };
 
+struct AddQuartersImpl
+{
+    static constexpr auto name = "addQuarters";
+
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.addQuarters(t, delta);
+    }
+
+    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return time_zone.addQuarters(DayNum(d), delta);
+    }
+};
+
 struct AddYearsImpl
 {
     static constexpr auto name = "addYears";
@@ -149,6 +164,7 @@ struct SubtractHoursImpl : SubtractIntervalImpl<AddHoursImpl> { static constexpr
 struct SubtractDaysImpl : SubtractIntervalImpl<AddDaysImpl> { static constexpr auto name = "subtractDays"; };
 struct SubtractWeeksImpl : SubtractIntervalImpl<AddWeeksImpl> { static constexpr auto name = "subtractWeeks"; };
 struct SubtractMonthsImpl : SubtractIntervalImpl<AddMonthsImpl> { static constexpr auto name = "subtractMonths"; };
+struct SubtractQuartersImpl : SubtractIntervalImpl<AddQuartersImpl> { static constexpr auto name = "subtractQuarters"; };
 struct SubtractYearsImpl : SubtractIntervalImpl<AddYearsImpl> { static constexpr auto name = "subtractYears"; };
 
 
