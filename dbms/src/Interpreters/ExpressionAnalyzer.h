@@ -240,7 +240,7 @@ private:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 

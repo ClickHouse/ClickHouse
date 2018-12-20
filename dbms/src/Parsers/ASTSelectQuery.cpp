@@ -283,23 +283,21 @@ bool ASTSelectQuery::final() const
 }
 
 
-ASTPtr ASTSelectQuery::array_join_expression_list() const
+ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
     return array_join->expression_list;
 }
 
 
-bool ASTSelectQuery::array_join_is_left() const
+ASTPtr ASTSelectQuery::array_join_expression_list() const
 {
-    const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
-    if (!array_join)
-        return {};
-
-    return array_join->kind == ASTArrayJoin::Kind::Left;
+    bool is_left;
+    return array_join_expression_list(is_left);
 }
 
 
