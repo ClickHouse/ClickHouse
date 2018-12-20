@@ -584,6 +584,16 @@ public:
         }
     }
 
+    inline time_t addQuarters(time_t t, Int64 delta) const
+    {
+        return addMonths(t, delta * 3);
+    }
+
+    inline DayNum addQuarters(DayNum d, Int64 delta) const
+    {
+        return addMonths(d, delta * 3);
+    }
+
     /// Saturation can occur if 29 Feb is mapped to non-leap year.
     inline time_t addYears(time_t t, Int64 delta) const
     {
