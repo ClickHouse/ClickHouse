@@ -108,7 +108,10 @@ void NO_INLINE Aggregator::executeSpecialized(
     AggregateDataPtr overflow_row) const
 {
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, aggregation_state_cache);
+    else
+        state.init(key_columns);
 
     if (!no_more_keys)
         executeSpecializedCase<false, Method, AggregateFunctionsList>(
@@ -133,15 +136,19 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     AggregateDataPtr overflow_row) const
 {
     /// For all rows.
-    typename Method::iterator it;
     typename Method::Key prev_key;
+    AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {
-        bool inserted;            /// Inserted a new key, or was this key already?
-        bool overflow = false;    /// New key did not fit in the hash table because of no_more_keys.
+        bool inserted = false;            /// Inserted a new key, or was this key already?
 
         /// Get the key to insert into the hash table.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        typename Method::Key key;
+        if constexpr (!Method::low_cardinality_optimization)
+            key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+
+        AggregateDataPtr * aggregate_data = nullptr;
+        typename Method::iterator it; /// Is not used if Method::low_cardinality_optimization
 
         if (!no_more_keys)    /// Insert.
         {
@@ -150,8 +157,6 @@ void NO_INLINE Aggregator::executeSpecializedCase(
             {
                 if (i != 0 && key == prev_key)
                 {
-                    AggregateDataPtr value = Method::getAggregateData(it->second);
-
                     /// Add values into aggregate functions.
                     AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
                         aggregate_functions, offsets_of_aggregate_states, aggregate_columns, value, i, aggregates_pool));
@@ -163,19 +168,29 @@ void NO_INLINE Aggregator::executeSpecializedCase(
                     prev_key = key;
             }
 
-            method.data.emplace(key, it, inserted);
+            if constexpr (Method::low_cardinality_optimization)
+                aggregate_data = state.emplaceKeyFromRow(method.data, i, inserted, params.keys_size, keys, *aggregates_pool);
+            else
+            {
+                method.data.emplace(key, it, inserted);
+                aggregate_data = &Method::getAggregateData(it->second);
+            }
         }
         else
         {
             /// Add only if the key already exists.
-            inserted = false;
-            it = method.data.find(key);
-            if (method.data.end() == it)
-                overflow = true;
+            if constexpr (Method::low_cardinality_optimization)
+                aggregate_data = state.findFromRow(method.data, i);
+            else
+            {
+                it = method.data.find(key);
+                if (method.data.end() != it)
+                    aggregate_data = &Method::getAggregateData(it->second);
+            }
         }
 
         /// If the key does not fit, and the data does not need to be aggregated in a separate row, then there's nothing to do.
-        if (no_more_keys && overflow && !overflow_row)
+        if (!aggregate_data && !overflow_row)
         {
             method.onExistingKey(key, keys, *aggregates_pool);
             continue;
@@ -184,22 +199,25 @@ void NO_INLINE Aggregator::executeSpecializedCase(
         /// If a new key is inserted, initialize the states of the aggregate functions, and possibly some stuff related to the key.
         if (inserted)
         {
-            AggregateDataPtr & aggregate_data = Method::getAggregateData(it->second);
-            aggregate_data = nullptr;
+            *aggregate_data = nullptr;
 
-            method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
+            if constexpr (!Method::low_cardinality_optimization)
+                method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
             AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
             AggregateFunctionsList::forEach(AggregateFunctionsCreator(
                 aggregate_functions, offsets_of_aggregate_states, place));
 
-            aggregate_data = place;
+            *aggregate_data = place;
+
+            if constexpr (Method::low_cardinality_optimization)
+                state.cacheAggregateData(i, place);
         }
         else
             method.onExistingKey(key, keys, *aggregates_pool);
 
-        AggregateDataPtr value = (!no_more_keys || !overflow) ? Method::getAggregateData(it->second) : overflow_row;
+        value = aggregate_data ? *aggregate_data : overflow_row;
 
         /// Add values into the aggregate functions.
         AggregateFunctionsList::forEach(AggregateFunctionsUpdater(
