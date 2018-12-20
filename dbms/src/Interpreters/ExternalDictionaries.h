@@ -11,8 +11,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern int BAD_ARGUMENTS;
-    extern int DICTIONARY_ALREADY_EXIST;
+    extern const int BAD_ARGUMENTS;
+    extern const int DICTIONARY_ALREADY_EXIST;
 };
 
 class Context;
