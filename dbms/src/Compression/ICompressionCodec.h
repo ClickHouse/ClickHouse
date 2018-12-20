@@ -85,6 +85,8 @@ public:
 
     virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const { return getHeaderSize() + getCompressedDataSize(uncompressed_size); }
 
+    virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
+
     static UInt8 getHeaderSize() { return 1 + 8; }
 
     static UInt32 readCompressedBlockSize(const char * source);

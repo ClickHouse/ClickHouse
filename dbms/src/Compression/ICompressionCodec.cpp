@@ -118,7 +118,7 @@ std::pair<UInt32, UInt32> CompressionCodecReadBuffer::readCompressedData()
 
     /// Is whole compressed block located in 'origin' buffer?
     if (origin.offset() >= header_size &&
-        origin.position() + size_to_read_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER - header_size <= origin.buffer().end())
+        origin.position() + size_to_read_compressed + codec->getAdditionalSizeAtTheEndOfBuffer()  - header_size <= origin.buffer().end())
     {
         origin.position() -= header_size;
         compressed_buffer = origin.position();
@@ -126,7 +126,7 @@ std::pair<UInt32, UInt32> CompressionCodecReadBuffer::readCompressedData()
     }
     else
     {
-        own_compressed_buffer.resize(size_to_read_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        own_compressed_buffer.resize(size_to_read_compressed + codec->getAdditionalSizeAtTheEndOfBuffer());
         compressed_buffer = own_compressed_buffer.data();
         origin.readStrict(compressed_buffer + header_size, size_to_read_compressed - header_size);
     }
@@ -162,7 +162,7 @@ bool CompressionCodecReadBuffer::nextImpl()
     if (!read_compressed_bytes_for_last_time)
         return false;
 
-    memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+    memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
     decompress(working_buffer.begin(), read_compressed_bytes_for_last_time);

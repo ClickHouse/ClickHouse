@@ -16,6 +16,7 @@ public:
 
     String getCodecDesc() const override;
 
+    UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER; }
 private:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
