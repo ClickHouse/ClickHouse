@@ -22,7 +22,6 @@ struct AlterCommand
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
-        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
         UKNOWN_TYPE,
     };
@@ -43,9 +42,6 @@ struct AlterCommand
 
     /// For ADD - after which column to add a new one. If an empty string, add to the end. To add to the beginning now it is impossible.
     String after_column;
-
-    /// For MODIFY_PRIMARY_KEY
-    ASTPtr primary_key;
 
     /// For MODIFY_ORDER_BY
     ASTPtr order_by;
@@ -73,7 +69,7 @@ class AlterCommands : public std::vector<AlterCommand>
 public:
     void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
 
-    /// For storages that don't support MODIFY_PRIMARY_KEY or MODIFY_ORDER_BY.
+    /// For storages that don't support MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;
 
     void validate(const IStorage & table, const Context & context);
