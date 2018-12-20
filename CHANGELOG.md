@@ -3,7 +3,7 @@
 ### Bug fixes:
 * Fixed error in `dictGet...` function for dictionaries of type `range`, if one of the arguments is constant and other is not. [#3751](https://github.com/yandex/ClickHouse/pull/3751)
 * Fixed error that caused messages `netlink: '...': attribute type 1 has an invalid length` to be printed in Linux kernel log, that was happening only on fresh enough versions of Linux kernel. [#3749](https://github.com/yandex/ClickHouse/pull/3749)
-* Fixed segfault in function `empty` for argument of `FixedString` type. [#3703](https://github.com/yandex/ClickHouse/pull/3703)
+* Fixed segfault in function `empty` for argument of `FixedString` type. [Daniel, Dao Quang Minh](https://github.com/yandex/ClickHouse/pull/3703)
 * Fixed excessive memory allocation when using large value of `max_query_size` setting (a memory chunk of `max_query_size` bytes was preallocated at once). [#3720](https://github.com/yandex/ClickHouse/pull/3720)
 
 ### Build changes:
@@ -926,7 +926,7 @@ This release contains bug fixes for the previous release 1.1.54310:
 ### New features:
 
 * Custom partitioning key for the MergeTree family of table engines.
-* [ Kafka](https://clickhouse.yandex/docs/en/single/index.html#document-table_engines/kafka)  table engine.
+* [Kafka](https://clickhouse.yandex/docs/en/operations/table_engines/kafka/)  table engine.
 * Added support for loading [CatBoost](https://catboost.yandex/)  models and applying them to data stored in ClickHouse.
 * Added support for time zones with non-integer offsets from UTC.
 * Added support for arithmetic operations with time intervals.

@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Interpreters/convertFieldToType.h>
 #include <Common/Exception.h>
 #include <ext/size.h>
 
