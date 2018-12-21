@@ -46,6 +46,9 @@ struct AlterCommand
     /// For MODIFY_ORDER_BY
     ASTPtr order_by;
 
+    /// For ADD and MODIFY
+    CompressionCodecPtr codec;
+
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,
