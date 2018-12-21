@@ -196,15 +196,12 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
     assertChar('\n', buf);
 }
 
-CompressionCodecPtr ColumnsDescription::getCodec(const String & column_name, const CompressionSettings & compression_settings) const
+CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     const auto codec = codecs.find(column_name);
 
     if (codec == codecs.end())
-    {
-        return CompressionCodecFactory::instance().getDefaultCodec();
-            //return CompressionCodecFactory::instance().get(compression_settings.method, compression_settings.level);
-    }
+        return default_codec;
 
     return codec->second;
 }

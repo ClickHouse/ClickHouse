@@ -18,7 +18,6 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -32,6 +31,7 @@
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Compression/CompressionFactory.h>
 
 #include "TCPHandler.h"
 
@@ -772,9 +772,29 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
+            /// crutch TODO(aleap)
+
+            std::string method = "LZ4";
+            std::optional<int> level;
+            switch(query_context.getSettingsRef().network_compression_method)
+            {
+            case CompressionMethod::ZSTD:
+                level = query_context.getSettingsRef().network_zstd_compression_level;
+                method = "ZSTD";
+                break;
+            case CompressionMethod::LZ4HC:
+                method = "LZ4HC";
+                break;
+            case CompressionMethod::NONE:
+                method = "NONE";
+                break;
+            default:
+                break;
+            }
+
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionSettings(query_context.getSettingsRef()));
+                    *out, CompressionCodecFactory::instance().get(method, level));
             else
                 state.maybe_compressed_out = out;
         }

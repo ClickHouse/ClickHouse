@@ -30,10 +30,19 @@ CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 }
 
 
-CompressionCodecPtr CompressionCodecFactory::get(const CompressionSettings & settings) const
+CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std::optional<int> level) const
 {
-    ///TODO implement
-    return default_codec;
+    if (level)
+    {
+        auto identifier = std::make_shared<ASTIdentifier>(family_name);
+        auto literal = std::make_shared<ASTLiteral>(*level);
+        return get(makeASTFunction("CODEC", identifier, literal));
+    }
+    else
+    {
+        auto identifier = std::make_shared<ASTIdentifier>(family_name);
+        return get(makeASTFunction("CODEC", identifier));
+    }
 }
 
 CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
@@ -73,7 +82,7 @@ CompressionCodecPtr CompressionCodecFactory::get(const UInt8 byte_code) const
 
 CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name, const ASTPtr & arguments) const
 {
-    if (family_name == "MULTIPLE")
+    if (family_name == "Multiple")
         throw Exception("Codec MULTIPLE cannot be specified directly", ErrorCodes::UNKNOWN_CODEC);
 
     const auto family_and_creator = family_name_with_codec.find(family_name);
@@ -108,13 +117,6 @@ void CompressionCodecFactory::registerSimpleCompressionCodec(const String & fami
     });
 }
 
-
-ASTPtr CompressionCodecFactory::convertSettingsToAst(const CompressionSettings & settings) const
-{
-    ///TODO Implement
-    return nullptr;
-    //makeASTFunction();
-}
 
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecNone(CompressionCodecFactory & factory);

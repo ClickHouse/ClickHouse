@@ -21,6 +21,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
@@ -353,7 +354,27 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    compression_settings = settings ? CompressionSettings(*settings) : CompressionSettings(CompressionMethod::LZ4);
+    std::string method = "LZ4";
+    std::optional<int> level;
+    if (settings) {
+    switch(settings->network_compression_method)
+    {
+        case CompressionMethod::ZSTD:
+            level = settings->network_zstd_compression_level;
+            method = "ZSTD";
+            break;
+        case CompressionMethod::LZ4HC:
+            method = "LZ4HC";
+            break;
+        case CompressionMethod::NONE:
+            method = "NONE";
+            break;
+        default:
+            break;
+        }
+    }
+
+    compression_codec = CompressionCodecFactory::instance().get(method, level);
 
     query_id = query_id_;
 
@@ -426,7 +447,7 @@ void Connection::sendData(const Block & block, const String & name)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_settings);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_codec);
         else
             maybe_compressed_out = out;
 

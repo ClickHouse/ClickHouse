@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
+#include <Compression/CompressionFactory.h>
 
 namespace DB
 {
@@ -85,18 +86,20 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool use_none = options.count("none");
         unsigned block_size = options["block-size"].as<unsigned>();
 
-        DB::CompressionMethod method = DB::CompressionMethod::LZ4;
+        std::string method_family = "LZ4";
 
         if (use_lz4hc)
-            method = DB::CompressionMethod::LZ4HC;
+            method_family = "LZ4HC";
         else if (use_zstd)
-            method = DB::CompressionMethod::ZSTD;
+            method_family = "ZSTD";
         else if (use_none)
-            method = DB::CompressionMethod::NONE;
+            method_family = "NONE";
 
-        DB::CompressionSettings settings(method, options.count("level")
-            ? options["level"].as<int>()
-            : DB::CompressionSettings::getDefaultLevel(method));
+        std::optional<int> level;
+        if (options.count("level"))
+            level = options["level"].as<int>();
+
+        DB::CompressionCodecPtr codec = DB::CompressionCodecFactory::instance().get(method_family, level);
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
         DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
@@ -115,7 +118,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else
         {
             /// Compression
-            DB::CompressedWriteBuffer to(wb, settings, block_size);
+            DB::CompressedWriteBuffer to(wb, codec, block_size);
             DB::copyData(rb, to);
         }
     }
