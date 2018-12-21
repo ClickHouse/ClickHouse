@@ -1504,7 +1504,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false);
+        auto transaction = data.alterDataPart(part, columns_for_parts, false);
         if (!transaction)
             continue;
 
@@ -2160,7 +2160,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
-            size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
                 data.settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
 
             if (max_source_parts_size > 0)
@@ -2948,7 +2948,6 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-        size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
         auto zookeeper = getZooKeeper();
         ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
 
@@ -2966,6 +2965,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             for (const MergeTreeData::DataPartPtr & part : data_parts)
                 partition_ids.emplace(part->info.partition_id);
+
+            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
             for (const String & partition_id : partition_ids)
             {
@@ -2989,6 +2990,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             }
             else
             {
+                UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
                 String partition_id = data.getPartitionIDFromQuery(partition, context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
@@ -3056,12 +3058,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
         data.checkAlter(params);
-
-        for (const AlterCommand & param : params)
-        {
-            if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-                throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
-        }
 
         ColumnsDescription new_columns = data.getColumns();
         ASTPtr new_order_by_ast = data.order_by_ast;

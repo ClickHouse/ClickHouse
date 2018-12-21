@@ -6,6 +6,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
+#include <common/unaligned.h>
+
 
 namespace DB
 {
@@ -112,7 +114,7 @@ namespace
             else
             {
                 using ValueType = typename ColumnType::value_type;
-                ValueType value = *reinterpret_cast<const ValueType *>(state.index_column->getDataAt(index).data);
+                ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data);
                 return DefaultHash<ValueType>()(value);
             }
         }
@@ -289,7 +291,7 @@ private:
         if constexpr (is_numeric_column)
         {
             using ValueType = typename ColumnType::value_type;
-            ValueType value = *reinterpret_cast<const ValueType *>(ref.data);
+            ValueType value = unalignedLoad<ValueType>(ref.data);
             return DefaultHash<ValueType>()(value);
         }
         else

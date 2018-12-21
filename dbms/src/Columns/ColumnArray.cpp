@@ -8,6 +8,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <common/unaligned.h>
+
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <Common/Exception.h>
@@ -186,7 +188,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 
 const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 {
-    size_t array_size = *reinterpret_cast<const size_t *>(pos);
+    size_t array_size = unalignedLoad<size_t>(pos);
     pos += sizeof(array_size);
 
     for (size_t i = 0; i < array_size; ++i)

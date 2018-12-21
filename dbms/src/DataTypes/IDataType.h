@@ -26,7 +26,7 @@ using DataTypes = std::vector<DataTypePtr>;
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
   * Implementations of this interface represent a data type (example: UInt8)
-  *  or parapetric family of data types (example: Array(...)).
+  *  or parametric family of data types (example: Array(...)).
   *
   * DataType is totally immutable object. You can always share them.
   */

@@ -16,7 +16,7 @@ namespace DB
 class Cluster
 {
 public:
-    Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
+    Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name);
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -66,7 +66,7 @@ public:
         Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
-        Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
         Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port);
 
         /// Returns 'escaped_host_name:port'
@@ -143,6 +143,9 @@ public:
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
+    /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
+    std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
+
 private:
     using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
@@ -153,8 +156,8 @@ public:
 private:
     void initMisc();
 
-    /// For getClusterWithSingleShard implementation.
-    Cluster(const Cluster & from, size_t index);
+    /// For getClusterWithMultipleShards implementation.
+    Cluster(const Cluster & from, const std::vector<size_t> & indices);
 
     String hash_of_addresses;
     /// Description of the cluster shards.
@@ -178,7 +181,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 class Clusters
 {
 public:
-    Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
+    Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name = "remote_servers");
 
     Clusters(const Clusters &) = delete;
     Clusters & operator=(const Clusters &) = delete;
@@ -186,7 +189,7 @@ public:
     ClusterPtr getCluster(const std::string & cluster_name) const;
     void setCluster(const String & cluster_name, const ClusterPtr & cluster);
 
-    void updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
+    void updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name);
 
 public:
     using Impl = std::map<String, ClusterPtr>;

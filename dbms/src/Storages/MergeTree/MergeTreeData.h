@@ -479,13 +479,11 @@ public:
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.
-    /// If new_primary_key_expr_list is not nullptr, will prepare the new primary.idx file.
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
-        const ASTPtr & new_primary_key_expr_list,
         bool skip_sanity_checks);
 
     /// Freezes all parts.

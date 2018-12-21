@@ -404,4 +404,25 @@ struct SettingDateTimeInputFormat
     void write(WriteBuffer & buf) const;
 };
 
+
+class SettingLogsLevel
+{
+public:
+
+    String value;
+    bool changed = false;
+    static const std::vector<String> log_levels;
+
+    SettingLogsLevel(const String & level);
+    operator String() const { return value; }
+    void set(const String & level);
+    void set(const Field & level);
+    void set(ReadBuffer & buf);
+
+    String toString() const;
+    void write(WriteBuffer & buf) const;
+};
+
+
+
 }

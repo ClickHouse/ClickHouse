@@ -21,10 +21,10 @@ namespace ErrorCodes
 
 
 NativeBlockOutputStream::NativeBlockOutputStream(
-    WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_,
+    WriteBuffer & ostr_, UInt64 client_revision_, const Block & header_, bool remove_low_cardinality_,
     WriteBuffer * index_ostr_, size_t initial_size_of_file_)
     : ostr(ostr_), client_revision(client_revision_), header(header_),
-    index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_)
+    index_ostr(index_ostr_), initial_size_of_file(initial_size_of_file_), remove_low_cardinality(remove_low_cardinality_)
 {
     if (index_ostr)
     {
@@ -104,7 +104,7 @@ void NativeBlockOutputStream::write(const Block & block)
         ColumnWithTypeAndName column = block.safeGetByPosition(i);
 
         /// Send data to old clients without low cardinality type.
-        if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+        if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
         {
             column.column = recursiveRemoveLowCardinality(column.column);
             column.type = recursiveRemoveLowCardinality(column.type);

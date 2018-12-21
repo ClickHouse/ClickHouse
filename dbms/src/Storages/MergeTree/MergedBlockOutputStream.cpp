@@ -378,7 +378,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->columns = *total_column_list;
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
-    new_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_part->getFullPath());
+    new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
 }
 
 void MergedBlockOutputStream::init()
