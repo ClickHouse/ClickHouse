@@ -93,7 +93,7 @@ CompressionCodecPtr CompressionCodecFactory::getImpl(const String & family_name,
     return family_and_creator->second(arguments);
 }
 
-void CompressionCodecFactory::registerCompressionCodec(const String & family_name, UInt8 byte_code, Creator creator)
+void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator)
 {
     if (creator == nullptr)
         throw Exception("CompressionCodecFactory: the codec family " + family_name + " has been provided a null constructor",
@@ -102,11 +102,12 @@ void CompressionCodecFactory::registerCompressionCodec(const String & family_nam
     if (!family_name_with_codec.emplace(family_name, creator).second)
         throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 
-    if (!family_code_with_codec.emplace(byte_code, creator).second)
-        throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+    if (byte_code)
+        if (!family_code_with_codec.emplace(*byte_code, creator).second)
+            throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
-void CompressionCodecFactory::registerSimpleCompressionCodec(const String & family_name, UInt8 byte_code,
+void CompressionCodecFactory::registerSimpleCompressionCodec(const String & family_name, std::optional<UInt8> byte_code,
                                                                  std::function<CompressionCodecPtr()> creator)
 {
     registerCompressionCodec(family_name, byte_code, [family_name, creator](const ASTPtr & ast)
@@ -122,6 +123,7 @@ void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
+void registerCodecLZ4HC(CompressionCodecFactory & factory);
 //void registerCodecDelta(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
@@ -131,6 +133,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecZSTD(*this);
     registerCodecMultiple(*this);
+    registerCodecLZ4HC(*this);
 //    registerCodecDelta(*this);
 }
 
