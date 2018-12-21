@@ -195,6 +195,9 @@ public:
         if (isCancelledOrThrowIfKilled() || !hasClaimed())
             return {};
 
+        if (!reader)
+            throw Exception("Logical error: reader is not initialized", ErrorCodes::LOGICAL_ERROR);
+
         return reader->read();
     }
 
@@ -239,7 +242,7 @@ private:
     size_t max_block_size;
     Block sample_block;
     std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
-    BlockInputStreamPtr reader = nullptr;
+    BlockInputStreamPtr reader;
     bool finalized = false;
 
     // Return true if consumer has been claimed by the stream
