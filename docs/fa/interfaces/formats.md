@@ -1,8 +1,6 @@
-<a name="formats"></a>
-
 <div dir="rtl" markdown="1">
 
-# فرمت های Input و Output
+# فرمت های Input و Output {#formats}
 
 فرمت تعیین می کند که چگونه داده ها پس از اجرای SELECT (چگونه نوشته شده و چگونه توسط سرور فرمت شده) به شما بر می گردد، و چگونه آن برای INSERT ها پذیرفته شده (چگونه آن توسط سرور پارس و خوانده می شود).
 
@@ -144,9 +142,7 @@ SearchPhrase=baku       count()=1000
 
 پارس کردن، اجازه می دهد که فیلد اضافه ی `tskv` بدون علامت و مقدار وجود داشته باشد. این فیلد نادیده گرفته می شود.
 
-<a name="csv"></a>
-
-## CSV
+## CSV {#csv}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
@@ -548,9 +544,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 آرایه ها به شکل `<array><elem>Hello</elem><elem>World</elem>...</array>` و tuple ها به صورت `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>` در خروجی می آیند.
 
-<a name="format_capnproto"></a>
-
-## CapnProto
+## CapnProto {#format_capnproto}
 
 Cap'n Proto یک فرمت پیام باینری شبیه به Protocol Buffer و Thrift می باشد، اما شبیه به JSON یا MessagePack نیست.
 
