@@ -615,7 +615,6 @@ void NO_INLINE Aggregator::executeImplCase(
     AggregateDataPtr overflow_row) const
 {
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
-    /// TODO for low cardinality optimization.
 
     /// For all rows.
     typename Method::Key prev_key;

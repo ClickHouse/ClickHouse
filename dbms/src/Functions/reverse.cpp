@@ -147,7 +147,7 @@ private:
 
 void registerFunctionReverse(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderReverse>();
+    factory.registerFunction<FunctionBuilderReverse>(FunctionFactory::CaseInsensitive);
 }
 
 }
