@@ -437,14 +437,8 @@ bool Join::insertFromBlock(const Block & block)
     /// Memoize key columns to work.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column));
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column->convertToFullColumnIfConst()));
         key_columns[i] = materialized_columns.back().get();
-
-        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns[i] = materialized_columns.back().get();
-        }
     }
 
     /// We will insert to the map only keys, where all components are not NULL.
@@ -483,11 +477,7 @@ bool Join::insertFromBlock(const Block & block)
 
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
     for (size_t i = 0; i < size; ++i)
-    {
-        ColumnPtr col = stored_block->safeGetByPosition(i).column;
-        if (ColumnPtr converted = col->convertToFullColumnIfConst())
-            stored_block->safeGetByPosition(i).column = converted;
-    }
+        stored_block->safeGetByPosition(i).column = stored_block->safeGetByPosition(i).column->convertToFullColumnIfConst();
 
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
     if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
@@ -685,14 +675,8 @@ void Join::joinBlockImpl(
     /// Memoize key columns to work with.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column));
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column->convertToFullColumnIfConst()));
         key_columns[i] = materialized_columns.back().get();
-
-        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns[i] = materialized_columns.back().get();
-        }
     }
 
     /// Keys with NULL value in any column won't join to anything.
@@ -710,10 +694,7 @@ void Join::joinBlockImpl(
     {
         for (size_t i = 0; i < existing_columns; ++i)
         {
-            auto & col = block.getByPosition(i).column;
-
-            if (ColumnPtr converted = col->convertToFullColumnIfConst())
-                col = converted;
+            block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
 
             /// If use_nulls, convert left columns (except keys) to Nullable.
             if (use_nulls)
