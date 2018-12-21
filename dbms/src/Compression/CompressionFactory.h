@@ -39,9 +39,9 @@ public:
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
-    void registerCompressionCodec(const String & family_name, UInt8 byte_code, Creator creator);
+    void registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator);
 
-    void registerSimpleCompressionCodec(const String & family_name, UInt8 byte_code, SimpleCreator creator);
+    void registerSimpleCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, SimpleCreator creator);
 
 protected:
     CompressionCodecPtr getImpl(const String & family_name, const ASTPtr & arguments) const;
