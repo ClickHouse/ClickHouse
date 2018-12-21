@@ -143,7 +143,7 @@ Default value: 0 (off).
 
 Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
-## max_threads {#settings_max_threads}
+## max_threads {#settings-max_threads}
 
 The maximum number of query processing threads
 
@@ -267,7 +267,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 ## stream_flush_interval_ms
 
-Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#settings-max_insert_block_size) rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#settings-max_insert_block_size) rows.
 
 The default value is 7500.
 
@@ -346,7 +346,7 @@ It works for JSONEachRow and TSKV formats.
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats  (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
-## format_csv_delimiter {#format_csv_delimiter}
+## format_csv_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 

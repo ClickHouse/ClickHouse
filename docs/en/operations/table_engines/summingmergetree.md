@@ -104,7 +104,7 @@ The values are not summarized for columns in the primary key.
 
 ### The Summation in the AggregateFunction Columns
 
-For columns of [AggregateFunction type](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md) engine aggregating according to the function.
+For columns of [AggregateFunction type](../../data_types/nested_data_structures/aggregatefunction.md) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md) engine aggregating according to the function.
 
 ### Nested Structures
 

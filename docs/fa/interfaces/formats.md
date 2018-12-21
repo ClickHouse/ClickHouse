@@ -156,7 +156,7 @@ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMA
 
 <div dir="rtl" markdown="1">
 
-&ast;به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format_csv_delimiter](/operations/settings/settings/#format_csv_delimiter) را ببینید.
+&ast;به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format_csv_delimiter](/operations/settings/settings/#settings-format_csv_delimiter) را ببینید.
 
 در هنگام پارس کردن، تمامی مقادیر می توانند با کوتیشن یا بدون کوتیشن پارس شوند. تک کوتیشن و دابل کوتیشن پشتیبانی می شود. سطر ها می توانند بدون کوتیشن تنظیم شوند. در این مورد سطر ها، جدا کننده ها با (CR یا LF) پارس می شوند. در موارد نقض RFC، در هنگام پارس کردن سطر ها بدون کوتیشن، فضاها و tab های پیشین نادید گرفته می شوند. برای line feed، یونیکس از (LF)، ویدنوز از (CR LF) و Mac OS کلاسیک (CR LF) پشتیبانی می کند.
 
@@ -544,7 +544,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 آرایه ها به شکل `<array><elem>Hello</elem><elem>World</elem>...</array>` و tuple ها به صورت `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>` در خروجی می آیند.
 
-## CapnProto {#format_capnproto}
+## CapnProto {#capnproto}
 
 Cap'n Proto یک فرمت پیام باینری شبیه به Protocol Buffer و Thrift می باشد، اما شبیه به JSON یا MessagePack نیست.
 

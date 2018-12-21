@@ -567,7 +567,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 数组输出为 `<array> <elem> Hello </ elem> <elem> World </ elem> ... </ array>`，元组输出为 `<tuple> <elem> Hello </ elem> <elem> World </ ELEM> ... </tuple>` 。
 
-## CapnProto {#format_capnproto}
+## CapnProto {#capnproto}
 
 Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
 
