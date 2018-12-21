@@ -204,7 +204,6 @@ static bool isSupportedAlterType(int type)
         ASTAlterCommand::ADD_COLUMN,
         ASTAlterCommand::DROP_COLUMN,
         ASTAlterCommand::MODIFY_COLUMN,
-        ASTAlterCommand::MODIFY_PRIMARY_KEY,
         ASTAlterCommand::DROP_PARTITION,
         ASTAlterCommand::DELETE,
         ASTAlterCommand::UPDATE,
