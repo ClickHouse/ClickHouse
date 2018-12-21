@@ -738,6 +738,7 @@ DEFINE_NAME_TO_INTERVAL(Hour)
 DEFINE_NAME_TO_INTERVAL(Day)
 DEFINE_NAME_TO_INTERVAL(Week)
 DEFINE_NAME_TO_INTERVAL(Month)
+DEFINE_NAME_TO_INTERVAL(Quarter)
 DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
@@ -1138,6 +1139,9 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+
         size_t size_of_type = type.getSizeOfValueInMemory();
 
         /// If type is expanding
@@ -1153,13 +1157,9 @@ struct ToIntMonotonicity
         }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
-        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
+        if (checkAndGetDataType<DataTypeNumberBase<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
-
-        /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
-        if (left.isNull() || right.isNull())
-            return {};
 
         /// If converting from float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())

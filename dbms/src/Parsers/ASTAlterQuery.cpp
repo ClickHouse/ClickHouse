@@ -25,11 +25,6 @@ ASTPtr ASTAlterCommand::clone() const
         res->column = column->clone();
         res->children.push_back(res->column);
     }
-    if (primary_key)
-    {
-        res->primary_key = primary_key->clone();
-        res->children.push_back(res->primary_key);
-    }
     if (order_by)
     {
         res->order_by = order_by->clone();
@@ -81,11 +76,6 @@ void ASTAlterCommand::formatImpl(
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
-    }
-    else if (type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PRIMARY KEY " << (settings.hilite ? hilite_none : "");
-        primary_key->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
