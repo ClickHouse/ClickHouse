@@ -210,24 +210,12 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
-    ASTPtr primary_expr_list_for_altering_parts;
-    for (const AlterCommand & param : params)
-    {
-        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-        {
-            if (supportsSampling())
-                throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
-
-            primary_expr_list_for_altering_parts = MergeTreeData::extractKeyExpressionList(param.primary_key);
-        }
-    }
-
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, primary_expr_list_for_altering_parts, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
             transactions.push_back(std::move(transaction));
     }
 
@@ -238,19 +226,7 @@ void StorageMergeTree::alter(
         auto & storage_ast = typeid_cast<ASTStorage &>(ast);
 
         if (new_order_by_ast.get() != data.order_by_ast.get())
-        {
-            if (storage_ast.order_by)
-            {
-                /// The table was created using the "new" syntax (with key expressions in separate clauses).
-                storage_ast.set(storage_ast.order_by, new_order_by_ast);
-            }
-            else
-            {
-                /// Primary key is in the second place in table engine description and can be represented as a tuple.
-                /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
-                storage_ast.engine->arguments->children.at(1) = new_order_by_ast;
-            }
-        }
+            storage_ast.set(storage_ast.order_by, new_order_by_ast);
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
@@ -266,9 +242,6 @@ void StorageMergeTree::alter(
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
-
-    if (primary_expr_list_for_altering_parts)
-        data.loadDataParts(false);
 }
 
 
@@ -725,7 +698,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);

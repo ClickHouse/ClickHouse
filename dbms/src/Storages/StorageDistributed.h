@@ -166,6 +166,8 @@ protected:
         const ASTPtr & sharding_key_,
         const String & data_path_,
         bool attach);
+
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
 };
 
 }

@@ -25,6 +25,7 @@ public:
         Day,
         Week,
         Month,
+        Quarter,
         Year
     };
 
@@ -46,6 +47,7 @@ public:
             case Day: return "Day";
             case Week: return "Week";
             case Month: return "Month";
+            case Quarter: return "Quarter";
             case Year: return "Year";
             default: __builtin_unreachable();
         }
