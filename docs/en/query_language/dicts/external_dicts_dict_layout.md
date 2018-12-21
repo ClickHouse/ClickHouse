@@ -1,10 +1,8 @@
-<a name="dicts-external_dicts_dict_layout"></a>
-
-# Storing Dictionaries in Memory
+# Storing Dictionaries in Memory {#dicts-external_dicts_dict_layout}
 
 There are a variety of ways to store dictionaries in memory.
 
-We recommend [flat](#flat), [hashed](#hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
+We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex_key_hashed](#complex-key-hashed). which provide optimal processing speed.
 
 Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache](#cache)".
 
@@ -40,7 +38,7 @@ The configuration looks like this:
 ## Ways to Store Dictionaries in Memory
 
 - [flat](#flat)
-- [hashed](#hashed)
+- [hashed](#dicts-external_dicts_dict_layout-hashed)
 - [cache](#cache)
 - [range_hashed](#range-hashed)
 - [complex_key_hashed](#complex-key-hashed)
@@ -65,9 +63,7 @@ Configuration example:
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-hashed"></a>
-
-### hashed
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 

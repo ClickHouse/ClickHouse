@@ -47,7 +47,7 @@ To avoid data loss use the [MergeTree](../operations/table_engines/mergetree.md)
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
 
 1. Create a new table with the same structure as damaged table. To do this execute the query `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2. Set the [max_threads](../operations/settings/settings.md#max_threads) value to 1 to process the next query in a single thread. To do this run the query `SET max_threads = 1`.
+2. Set the [max_threads](../operations/settings/settings.md#settings-max_threads) value to 1 to process the next query in a single thread. To do this run the query `SET max_threads = 1`.
 3. Execute the query `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. This request copies the non-corrupted data from the damaged table to another table. Only the data before the corrupted part will be copied.
 4. Restart the `clickhouse-client` to reset the `max_threads` value.
 
@@ -248,7 +248,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Removes all data from a table. When the clause `IF EXISTS` is omitted, the query returns an error if the table does not exist.
 
-The `TRUNCATE` query is not supported for [View](../operations/table_engines/view.md#table_engines-view), [File](../operations/table_engines/file.md#table_engines-file), [URL](../operations/table_engines/url.md#table_engines-url) and [Null](../operations/table_engines/null.md) table engines.
+The `TRUNCATE` query is not supported for [View](../operations/table_engines/view.md), [File](../operations/table_engines/file.md), [URL](../operations/table_engines/url.md) and [Null](../operations/table_engines/null.md) table engines.
 
 ## USE
 

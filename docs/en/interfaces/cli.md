@@ -65,9 +65,7 @@ You can cancel a long query by pressing Ctrl+C. However, you will still need to 
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-<a name="interfaces_cli_configuration"></a>
-
-## Configuring
+## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 

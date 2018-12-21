@@ -1,6 +1,4 @@
-<a name="table_engine-collapsingmergetree"></a>
-
-# CollapsingMergeTree
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 *Движок достаточно специфичен для Яндекс.Метрики.*
 
