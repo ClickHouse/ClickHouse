@@ -1,3 +1,18 @@
+## ClickHouse release 18.16.1, 2018-12-21
+
+### Bug fixes:
+
+* Fixed an error that led to problems with updating dictionaries with the ODBC source. [#3825](https://github.com/yandex/ClickHouse/issues/3825), [#3829](https://github.com/yandex/ClickHouse/issues/3829)
+* JIT compilation of aggregate functions now works with LowCardinality columns. [#3838](https://github.com/yandex/ClickHouse/issues/3838)
+
+### Improvements:
+
+* Added the `low_cardinality_allow_in_native_format` setting (enabled by default). When disabled, LowCardinality columns will be converted to ordinary columns for SELECT queries and ordinary columns will be expected for INSERT queries. [#3879](https://github.com/yandex/ClickHouse/pull/3879)
+
+### Build improvements:
+
+* Fixes for builds on macOS and ARM.
+
 ## ClickHouse release 18.16.0, 2018-12-14
 
 ### New features:
@@ -92,6 +107,18 @@
 ### Backward incompatible changes:
 
 * Removed the ability to compare the `Date` type with a number. Instead of `toDate('2018-12-18') = 17883`, you must use explicit type conversion `= toDate(17883)` [#3687](https://github.com/yandex/ClickHouse/pull/3687)
+
+## ClickHouse release 18.14.19, 2018-12-19
+
+### Bug fixes:
+
+* Fixed an error that led to problems with updating dictionaries with the ODBC source. [#3825](https://github.com/yandex/ClickHouse/issues/3825), [#3829](https://github.com/yandex/ClickHouse/issues/3829)
+* Databases are correctly specified when executing DDL `ON CLUSTER` queries. [#3460](https://github.com/yandex/ClickHouse/pull/3460)
+* Fixed a segfault if the `max_temporary_non_const_columns` limit was exceeded. [#3788](https://github.com/yandex/ClickHouse/pull/3788)
+
+### Build improvements:
+
+* Fixes for builds on ARM.
 
 ## ClickHouse release 18.14.18, 2018-12-04
 

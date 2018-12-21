@@ -96,7 +96,7 @@ Access to the `system` database is always allowed (since this database is used f
 
 The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn't allowed.
 
-Database access is not related to the [readonly](settings/query_complexity.md#readonly) setting. You can't grant full access to one database and `readonly` access to another one.
+Database access is not related to the [readonly](settings/permissions_for_queries.md#settings_readonly) setting. You can't grant full access to one database and `readonly` access to another one.
 
 
 [Original article](https://clickhouse.yandex/docs/en/operations/access_rights/) <!--hide-->

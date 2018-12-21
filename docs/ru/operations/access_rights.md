@@ -96,6 +96,6 @@
 
 Пользователь может получить список всех БД и таблиц в них с помощью запросов `SHOW` или системных таблиц, даже если у него нет доступа к отдельным БД.
 
-Доступ к БД не связан с настройкой [readonly](settings/query_complexity.md#readonly). Невозможно дать полный доступ к одной БД и `readonly` к другой.
+Доступ к БД не связан с настройкой [readonly](settings/permissions_for_queries.md#settings_readonly). Невозможно дать полный доступ к одной БД и `readonly` к другой.
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/access_rights/) <!--hide-->
