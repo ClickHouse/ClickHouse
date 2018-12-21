@@ -320,19 +320,6 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 }
 
 
-ColumnPtr ColumnArray::convertToFullColumnIfConst() const
-{
-    ColumnPtr new_data;
-
-    if (ColumnPtr full_column = getData().convertToFullColumnIfConst())
-        new_data = full_column;
-    else
-        new_data = data;
-
-    return ColumnArray::create(new_data, offsets);
-}
-
-
 void ColumnArray::getExtremes(Field & min, Field & max) const
 {
     min = Array();
