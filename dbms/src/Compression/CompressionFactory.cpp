@@ -123,8 +123,12 @@ void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
+<<<<<<< HEAD
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 //void registerCodecDelta(CompressionCodecFactory & factory);
+=======
+void registerCodecDelta(CompressionCodecFactory & factory);
+>>>>>>> ISSUES-838 add delta codec
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -133,8 +137,12 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecNone(*this);
     registerCodecZSTD(*this);
     registerCodecMultiple(*this);
+<<<<<<< HEAD
     registerCodecLZ4HC(*this);
 //    registerCodecDelta(*this);
+=======
+    registerCodecDelta(*this);
+>>>>>>> ISSUES-838 add delta codec
 }
 
 }
