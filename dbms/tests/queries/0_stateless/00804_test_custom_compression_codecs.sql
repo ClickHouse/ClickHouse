@@ -17,7 +17,7 @@ INSERT INTO test.compression_codec VALUES(2, '', toDate('2018-12-13'), 4.4, 'ddd
 SELECT count(*) FROM test.compression_codec WHERE id = 2 GROUP BY id;
 
 DETACH TABLE IF EXISTS test.compression_codec;
-ATTACH TABLE IF EXISTS test.compression_codec;
+ATTACH TABLE IF NOT EXISTS test.compression_codec;
 
 DROP TABLE IF EXISTS test.compression_codec;
 
