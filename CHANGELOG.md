@@ -1,3 +1,98 @@
+## ClickHouse release 18.16.0, 2018-12-14
+
+### New features:
+
+* `DEFAULT` expressions are evaluated for missing fields when loading data in semi-structured input formats (`JSONEachRow`, `TSKV`). [#3555](https://github.com/yandex/ClickHouse/pull/3555)
+* The `ALTER TABLE` query now has the `MODIFY ORDER BY` action for changing the sorting key when adding or removing a table column. This is useful for tables in the `MergeTree` family that perform additional tasks when merging based on this sorting key, such as `SummingMergeTree`, `AggregatingMergeTree`, and so on. [#3581](https://github.com/yandex/ClickHouse/pull/3581) [#3755](https://github.com/yandex/ClickHouse/pull/3755)
+* For tables in the `MergeTree` family, now you can specify a different sorting key (`ORDER BY`) and index (`PRIMARY KEY`). The sorting key can be longer than the index. [#3581](https://github.com/yandex/ClickHouse/pull/3581)
+* Added the `hdfs` table function and the `HDFS` table engine for importing and exporting data to HDFS. [chenxing-xc](https://github.com/yandex/ClickHouse/pull/3617)
+* Added functions for working with base64: `base64Encode`, `base64Decode`, `tryBase64Decode`. [Alexander Krasheninnikov](https://github.com/yandex/ClickHouse/pull/3350)
+* Now you can use a parameter to configure the precision of the `uniqCombined` aggregate function (select the number of HyperLogLog cells). [#3406](https://github.com/yandex/ClickHouse/pull/3406)
+* Added the `system.contributors` table that contains the names of everyone who made commits in ClickHouse. [#3452](https://github.com/yandex/ClickHouse/pull/3452)
+* Added the ability to omit the partition for the `ALTER TABLE ... FREEZE` query in order to back up all partitions at once. [#3514](https://github.com/yandex/ClickHouse/pull/3514)
+* Added `dictGet` and `dictGetOrDefault` functions that don't require specifying the type of return value. The type is determined automatically from the dictionary description. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3564)
+* Now you can specify comments for a column in the table description and change it using `ALTER`. [#3377](https://github.com/yandex/ClickHouse/pull/3377)
+* Reading is supported for `Join` type tables with simple keys. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3728)
+* Now you can specify the options `join_use_nulls`, `max_rows_in_join`, `max_bytes_in_join`, and `join_overflow_mode` when creating a `Join` type table. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3728)
+* Added the `joinGet` function that allows you to use a `Join` type table like a dictionary. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3728)
+* Added the `partition_key`, `sorting_key`, `primary_key`, and `sampling_key` columns to the `system.tables` table in order to provide information about table keys. [#3609](https://github.com/yandex/ClickHouse/pull/3609)
+* Added the `is_in_partition_key`, `is_in_sorting_key`, `is_in_primary_key`, and `is_in_sampling_key` columns to the `system.columns` table. [#3609](https://github.com/yandex/ClickHouse/pull/3609)
+* Added the `min_time` and `max_time`  columns to the `system.parts` table. These columns are populated when the partitioning key is an expression consisting of `DateTime` columns. [Emmanuel Donin de Rosière](https://github.com/yandex/ClickHouse/pull/3800)
+
+### Bug fixes:
+
+* Fixes and performance improvements for the `LowCardinality` data type. `GROUP BY` using `LowCardinality(Nullable(...))`. Getting the values of `extremes`. Processing high-order functions. `LEFT ARRAY JOIN`. Distributed `GROUP BY`. Functions that return `Array`. Execution of `ORDER BY`. Writing to `Distributed` tables (nicelulu). Backward compatibility for `INSERT` queries from old clients that implement the `Native` protocol. Support for `LowCardinality` for `JOIN`. Improved performance when working in a single stream. [#3823](https://github.com/yandex/ClickHouse/pull/3823) [#3803](https://github.com/yandex/ClickHouse/pull/3803) [#3799](https://github.com/yandex/ClickHouse/pull/3799) [#3769](https://github.com/yandex/ClickHouse/pull/3769) [#3744](https://github.com/yandex/ClickHouse/pull/3744) [#3681](https://github.com/yandex/ClickHouse/pull/3681) [#3651](https://github.com/yandex/ClickHouse/pull/3651) [#3649](https://github.com/yandex/ClickHouse/pull/3649) [#3641](https://github.com/yandex/ClickHouse/pull/3641) [#3632](https://github.com/yandex/ClickHouse/pull/3632) [#3568](https://github.com/yandex/ClickHouse/pull/3568) [#3523](https://github.com/yandex/ClickHouse/pull/3523) [#3518](https://github.com/yandex/ClickHouse/pull/3518)
+* Fixed how the `select_sequential_consistency` option works. Previously, when this setting was enabled, an incomplete result was sometimes returned after beginning to write to a new partition. [#2863](https://github.com/yandex/ClickHouse/pull/2863)
+* Databases are correctly specified when executing DDL `ON CLUSTER` queries and `ALTER UPDATE/DELETE`. [#3772](https://github.com/yandex/ClickHouse/pull/3772) [#3460](https://github.com/yandex/ClickHouse/pull/3460)
+* Databases are correctly specified for subqueries inside a VIEW. [#3521](https://github.com/yandex/ClickHouse/pull/3521)
+* Fixed a bug in `PREWHERE` with `FINAL` for `VersionedCollapsingMergeTree`. [7167bfd7](https://github.com/yandex/ClickHouse/commit/7167bfd7b365538f7a91c4307ad77e552ab4e8c1)
+* Now you can use `KILL QUERY` to cancel queries that have not started yet because they are waiting for the table to be locked. [#3517](https://github.com/yandex/ClickHouse/pull/3517)
+* Corrected date and time calculations if the clocks were moved back at midnight (this happens in Iran, and happened in Moscow from 1981 to 1983). Previously, this led to the time being reset a day earlier than necessary, and also caused incorrect formatting of the date and time in text format. [#3819](https://github.com/yandex/ClickHouse/pull/3819)
+* Fixed bugs in some cases of `VIEW` and subqueries that omit the database. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3521)
+* Fixed a race condition when simultaneously reading from a `MATERIALIZED VIEW` and deleting a `MATERIALIZED VIEW` due to not locking the internal `MATERIALIZED VIEW`. [#3404](https://github.com/yandex/ClickHouse/pull/3404) [#3694](https://github.com/yandex/ClickHouse/pull/3694)
+* Fixed the error `Lock handler cannot be nullptr.` [#3689](https://github.com/yandex/ClickHouse/pull/3689)
+* Fixed query processing when the `compile_expressions` option is enabled (it's enabled by default). Nondeterministic constant expressions like the `now` function are no longer unfolded. [#3457](https://github.com/yandex/ClickHouse/pull/3457)
+* Fixed a crash when specifying a non-constant scale argument in `toDecimal32/64/128` functions.
+* Fixed an error when trying to insert an array with `NULL` elements in the `Values` format into a column of type `Array` without `Nullable` (if `input_format_values_interpret_expressions` = 1). [#3487](https://github.com/yandex/ClickHouse/pull/3487) [#3503](https://github.com/yandex/ClickHouse/pull/3503)
+* Fixed continuous error logging in `DDLWorker` if ZooKeeper is not available. [8f50c620](https://github.com/yandex/ClickHouse/commit/8f50c620334988b28018213ec0092fe6423847e2)
+* Fixed the return type for `quantile*` functions from `Date` and `DateTime` types of arguments. [#3580](https://github.com/yandex/ClickHouse/pull/3580)
+* Fixed the `WITH` clause if it specifies a simple alias without expressions. [#3570](https://github.com/yandex/ClickHouse/pull/3570)
+* Fixed processing of queries with named sub-queries and qualified column names when `enable_optimize_predicate_expression` is enabled. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3588)
+* Fixed the error `Attempt to attach to nullptr thread group` when working with materialized views. [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3623)
+* Fixed a crash when passing certain incorrect arguments to the `arrayReverse` function. [73e3a7b6](https://github.com/yandex/ClickHouse/commit/73e3a7b662161d6005e7727d8a711b930386b871)
+* Fixed the buffer overflow in the `extractURLParameter` function. Improved performance. Added correct processing of strings containing zero bytes. [141e9799](https://github.com/yandex/ClickHouse/commit/141e9799e49201d84ea8e951d1bed4fb6d3dacb5)
+* Fixed buffer overflow in the `lowerUTF8` and `upperUTF8` functions. Removed the ability to execute these functions over `FixedString` type arguments. [#3662](https://github.com/yandex/ClickHouse/pull/3662)
+* Fixed a rare race condition when deleting `MergeTree` tables. [#3680](https://github.com/yandex/ClickHouse/pull/3680)
+* Fixed a race condition when reading from `Buffer` tables and simultaneously performing `ALTER` or `DROP` on the target tables. [#3719](https://github.com/yandex/ClickHouse/pull/3719)
+* Fixed a segfault if the `max_temporary_non_const_columns` limit was exceeded. [#3788](https://github.com/yandex/ClickHouse/pull/3788)
+
+### Improvements:
+
+* The server does not write the processed configuration files to the `/etc/clickhouse-server/` directory. Instead, it saves them in the `preprocessed_configs` directory inside `path`. This means that the `/etc/clickhouse-server/` directory doesn't have write access for the `clickhouse` user, which improves security. [#2443](https://github.com/yandex/ClickHouse/pull/2443)
+* The `min_merge_bytes_to_use_direct_io` option is set to 10 GiB by default. A merge that forms large parts of tables from the MergeTree family will be performed in `O_DIRECT` mode, which prevents excessive page cache eviction. [#3504](https://github.com/yandex/ClickHouse/pull/3504)
+* Accelerated server start when there is a very large number of tables. [#3398](https://github.com/yandex/ClickHouse/pull/3398)
+* Added a connection pool and HTTP `Keep-Alive` for connections between replicas. [#3594](https://github.com/yandex/ClickHouse/pull/3594)
+* If the query syntax is invalid, the `400 Bad Request` code is returned in the `HTTP` interface (500 was returned previously). [31bc680a](https://github.com/yandex/ClickHouse/commit/31bc680ac5f4bb1d0360a8ba4696fa84bb47d6ab)
+* The `join_default_strictness` option is set to `ALL` by default for compatibility. [120e2cbe](https://github.com/yandex/ClickHouse/commit/120e2cbe2ff4fbad626c28042d9b28781c805afe)
+* Removed logging to `stderr` from the `re2` library for invalid or complex regular expressions. [#3723](https://github.com/yandex/ClickHouse/pull/3723)
+* Added for the `Kafka` table engine: checks for subscriptions before beginning to read from Kafka; the kafka_max_block_size setting for the table. [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3396)
+* The `cityHash64`, `farmHash64`, `metroHash64`, `sipHash64`, `halfMD5`, `murmurHash2_32`, `murmurHash2_64`, `murmurHash3_32`, and `murmurHash3_64` functions now work for any number of arguments and for arguments in the form of tuples. [#3451](https://github.com/yandex/ClickHouse/pull/3451) [#3519](https://github.com/yandex/ClickHouse/pull/3519)
+* The `arrayReverse` function now works with any types of arrays. [73e3a7b6](https://github.com/yandex/ClickHouse/commit/73e3a7b662161d6005e7727d8a711b930386b871)
+* Added an optional parameter: the slot size for the `timeSlots` function. [Kirill Shvakov](https://github.com/yandex/ClickHouse/pull/3724)
+* For `FULL` and `RIGHT JOIN`, the `max_block_size` setting is used for a stream of non-joined data from the right table. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3699)
+* Added the `--secure` command line parameter in  `clickhouse-benchmark` and `clickhouse-performance-test` to enable TLS. [#3688](https://github.com/yandex/ClickHouse/pull/3688) [#3690](https://github.com/yandex/ClickHouse/pull/3690)
+* Type conversion when the structure of a `Buffer` type table does not match the structure of the destination table. [Vitaly Baranov](https://github.com/yandex/ClickHouse/pull/3603)
+* Added the `tcp_keep_alive_timeout` option to enable keep-alive packets after inactivity for the specified time interval. [#3441](https://github.com/yandex/ClickHouse/pull/3441)
+* Removed unnecessary quoting of values for the partition key in the `system.parts` table if it consists of a single column. [#3652](https://github.com/yandex/ClickHouse/pull/3652)
+* The modulo function works for `Date` and `DateTime` data types. [#3385](https://github.com/yandex/ClickHouse/pull/3385)
+* Added synonyms for the `POWER`, `LN`, `LCASE`, `UCASE`, `REPLACE`, `LOCATE`, `SUBSTR`, and `MID` functions. [#3774](https://github.com/yandex/ClickHouse/pull/3774) [#3763](https://github.com/yandex/ClickHouse/pull/3763) Some function names are case-insensitive for compatibility with the SQL standard. Added syntactic sugar `SUBSTRING(expr FROM start FOR length)` for compatibility with SQL. [#3804](https://github.com/yandex/ClickHouse/pull/3804)
+* Added the ability to `mlock` memory pages corresponding to `clickhouse-server`  executable code to prevent it from being forced out of memory. This feature is disabled by default. [#3553](https://github.com/yandex/ClickHouse/pull/3553)
+* Improved performance when reading from `O_DIRECT` (with the `min_bytes_to_use_direct_io` option enabled). [#3405](https://github.com/yandex/ClickHouse/pull/3405)
+* Improved performance of the `dictGet...OrDefault` function for a constant key argument and a non-constant default argument. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3563)
+* The `firstSignificantSubdomain` function now processes the domains `gov`, `mil`, and `edu`. [Igor Hatarist](https://github.com/yandex/ClickHouse/pull/3601) Improved performance. [#3628](https://github.com/yandex/ClickHouse/pull/3628)
+* Ability to specify custom environment variables for starting `clickhouse-server` using the `SYS-V init.d` script by defining `CLICKHOUSE_PROGRAM_ENV` in `/etc/default/clickhouse`.
+[Pavlo Bashynskyi](https://github.com/yandex/ClickHouse/pull/3612)
+* Correct return code for the clickhouse-server init script. [#3516](https://github.com/yandex/ClickHouse/pull/3516)
+* The `system.metrics` table now has the `VersionInteger` metric, and `system.build_options` has the added line `VERSION_INTEGER`, which contains the numeric form of the ClickHouse version, such as  `18016000`. [#3644](https://github.com/yandex/ClickHouse/pull/3644)
+* Removed the ability to compare the `Date` type with a number to avoid potential errors like `date = 2018-12-17`, where quotes around the date are omitted by mistake. [#3687](https://github.com/yandex/ClickHouse/pull/3687)
+* Fixed the behavior of stateful functions like `rowNumberInAllBlocks`. They previously output a result that was one number larger due to starting during query analysis. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3729)
+* If the `force_restore_data` file can't be deleted, an error message is displayed. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3794)
+
+### Build improvements:
+
+* Updated the `jemalloc` library, which fixes a potential memory leak. [Amos Bird](https://github.com/yandex/ClickHouse/pull/3557)
+* Profiling with `jemalloc` is enabled by default in order to debug builds. [2cc82f5c](https://github.com/yandex/ClickHouse/commit/2cc82f5cbe266421cd4c1165286c2c47e5ffcb15)
+* Added the ability to run integration tests when only `Docker` is installed on the system. [#3650](https://github.com/yandex/ClickHouse/pull/3650)
+* Added the fuzz expression test in SELECT queries. [#3442](https://github.com/yandex/ClickHouse/pull/3442)
+* Added a stress test for commits, which performs functional tests in parallel and in random order to detect more race conditions. [#3438](https://github.com/yandex/ClickHouse/pull/3438)
+* Improved the method for starting clickhouse-server in a Docker image. [Elghazal Ahmed](https://github.com/yandex/ClickHouse/pull/3663)
+* For a Docker image, added support for initializing databases using files in the `/docker-entrypoint-initdb.d` directory. [Konstantin Lebedev](https://github.com/yandex/ClickHouse/pull/3695)
+* Fixes for builds on ARM. [#3709](https://github.com/yandex/ClickHouse/pull/3709)
+
+### Backward incompatible changes:
+
+* Removed the ability to compare the `Date` type with a number. Instead of `toDate('2018-12-18') = 17883`, you must use explicit type conversion `= toDate(17883)` [#3687](https://github.com/yandex/ClickHouse/pull/3687)
+
 ## ClickHouse release 18.14.18, 2018-12-04
 
 ### Bug fixes:
@@ -90,7 +185,7 @@
 
 ### Improvements:
 
-* Significantly reduced memory consumption for requests with `ORDER BY` and `LIMIT`. See the `max_bytes_before_remerge_sort` setting. [#3205](https://github.com/yandex/ClickHouse/pull/3205)
+* Significantly reduced memory consumption for queries with `ORDER BY` and `LIMIT`. See the `max_bytes_before_remerge_sort` setting. [#3205](https://github.com/yandex/ClickHouse/pull/3205)
 * In the absence of `JOIN` (`LEFT`, `INNER`, ...), `INNER JOIN` is assumed. [#3147](https://github.com/yandex/ClickHouse/pull/3147)
 * Qualified asterisks work correctly in queries with `JOIN`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3202)
 * The `ODBC` table engine correctly chooses the method for quoting identifiers in the SQL dialect of a remote database. [Alexandr Krasheninnikov](https://github.com/yandex/ClickHouse/pull/3210)
@@ -127,7 +222,7 @@
 * If after merging data parts, the checksum for the resulting part differs from the result of the same merge in another replica, the result of the merge is deleted and the data part is downloaded from the other replica (this is the correct behavior). But after downloading the data part, it couldn't be added to the working set because of an error that the part already exists (because the data part was deleted with some delay after the merge). This led to cyclical attempts to download the same data. [#3194](https://github.com/yandex/ClickHouse/pull/3194)
 * Fixed incorrect calculation of total memory consumption by queries (because of incorrect calculation, the `max_memory_usage_for_all_queries` setting worked incorrectly and the `MemoryTracking` metric had an incorrect value). This error occurred in version 18.12.13. [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3344)
 * Fixed the functionality of `CREATE TABLE ... ON CLUSTER ... AS SELECT ...` This error occurred in version 18.12.13. [#3247](https://github.com/yandex/ClickHouse/pull/3247)
-* Fixed unnecessary preparation of data structures for `JOIN`s on the server that initiates the request if the `JOIN` is only performed on remote servers. [#3340](https://github.com/yandex/ClickHouse/pull/3340)
+* Fixed unnecessary preparation of data structures for `JOIN`s on the server that initiates the query if the `JOIN` is only performed on remote servers. [#3340](https://github.com/yandex/ClickHouse/pull/3340)
 * Fixed bugs in the `Kafka` engine: deadlocks after exceptions when starting to read data, and locks upon completion [Marek Vavruša](https://github.com/yandex/ClickHouse/pull/3215).
 * For `Kafka` tables, the optional `schema` parameter was not passed  (the schema of the `Cap'n'Proto` format). [Vojtech Splichal](https://github.com/yandex/ClickHouse/pull/3150)
 * If the ensemble of ZooKeeper servers has servers that accept the connection but then immediately close it instead of responding to the handshake, ClickHouse chooses to connect another server. Previously, this produced the error `Cannot read all data. Bytes read: 0. Bytes expected: 4.` and the server couldn't start. [8218cf3a](https://github.com/yandex/ClickHouse/commit/8218cf3a5f39a43401953769d6d12a0bb8d29da9)
@@ -208,7 +303,7 @@
 
 * Added the `DECIMAL(digits, scale)` data type (`Decimal32(scale)`, `Decimal64(scale)`, `Decimal128(scale)`). To enable it, use the setting `allow_experimental_decimal_type`. [#2846](https://github.com/yandex/ClickHouse/pull/2846) [#2970](https://github.com/yandex/ClickHouse/pull/2970) [#3008](https://github.com/yandex/ClickHouse/pull/3008) [#3047](https://github.com/yandex/ClickHouse/pull/3047)
 * New `WITH ROLLUP` modifier for `GROUP BY` (alternative syntax: `GROUP BY ROLLUP(...)`). [#2948](https://github.com/yandex/ClickHouse/pull/2948)
-* In requests with JOIN, the star character expands to a list of columns in all tables, in compliance with the SQL standard. You can restore the old behavior by setting `asterisk_left_columns_only` to 1 on the user configuration level. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2787)
+* In queries with JOIN, the star character expands to a list of columns in all tables, in compliance with the SQL standard. You can restore the old behavior by setting `asterisk_left_columns_only` to 1 on the user configuration level. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2787)
 * Added support for JOIN with table functions. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2907)
 * Autocomplete by pressing Tab in clickhouse-client. [Sergey Shcherbin](https://github.com/yandex/ClickHouse/pull/2447)
 * Ctrl+C in clickhouse-client clears a query that was entered. [#2877](https://github.com/yandex/ClickHouse/pull/2877)
@@ -294,7 +389,7 @@
 
 ### Backward incompatible changes:
 
-* In requests with JOIN, the star character expands to a list of columns in all tables, in compliance with the SQL standard. You can restore the old behavior by setting `asterisk_left_columns_only` to 1 on the user configuration level.
+* In queries with JOIN, the star character expands to a list of columns in all tables, in compliance with the SQL standard. You can restore the old behavior by setting `asterisk_left_columns_only` to 1 on the user configuration level.
 
 ### Build changes:
 
@@ -338,7 +433,7 @@
 * Fixed an error for concurrent `Set` or `Join`. [Amos Bird](https://github.com/yandex/ClickHouse/pull/2823)
 * Fixed the `Block structure mismatch in UNION stream: different number of columns` error that occurred for `UNION ALL` queries inside a sub-query if one of the `SELECT` queries contains duplicate column names. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2094)
 * Fixed a memory leak if an exception occurred when connecting to a MySQL server.
-* Fixed incorrect clickhouse-client response code in case of a request error.
+* Fixed incorrect clickhouse-client response code in case of a query error.
 * Fixed incorrect behavior of materialized views containing DISTINCT. [#2795](https://github.com/yandex/ClickHouse/issues/2795)
 
 ### Backward incompatible changes
@@ -452,7 +547,7 @@ The expression must be a chain of equalities joined by the AND operator. Each si
 * Fixed a problem with a very small timeout for sockets (one second) for reading and writing when sending and downloading replicated data, which made it impossible to download larger parts if there is a load on the network or disk (it resulted in cyclical attempts to download parts). This error occurred in version 1.1.54388.
 * Fixed issues when using chroot in ZooKeeper if you inserted duplicate data blocks in the table.
 * The `has` function now works correctly for an array with Nullable elements ([#2115](https://github.com/yandex/ClickHouse/issues/2115)).
-* The `system.tables` table now works correctly when used in distributed queries. The `metadata_modification_time` and `engine_full` columns are now non-virtual. Fixed an error that occurred if only these columns were requested from the table.
+* The `system.tables` table now works correctly when used in distributed queries. The `metadata_modification_time` and `engine_full` columns are now non-virtual. Fixed an error that occurred if only these columns were queried from the table.
 * Fixed how an empty `TinyLog` table works after inserting an empty data block ([#2563](https://github.com/yandex/ClickHouse/issues/2563)).
 * The `system.zookeeper` table works if the value of the node in ZooKeeper is NULL.
 
@@ -701,7 +796,7 @@ The expression must be a chain of equalities joined by the AND operator. Each si
 * Added the `parseDateTimeBestEffort`, `parseDateTimeBestEffortOrZero`, and `parseDateTimeBestEffortOrNull` functions to read the DateTime from a string containing text in a wide variety of possible formats.
 * Data can be partially reloaded from external dictionaries during updating (load just the records in which the value of the specified field greater than in the previous download) (Arsen Hakobyan).
 * Added the `cluster` table function. Example: `cluster(cluster_name, db, table)`. The `remote` table function can accept the cluster name as the first argument, if it is specified as an identifier.
-* The `remote` and `cluster` table functions can be used in `INSERT` requests.
+* The `remote` and `cluster` table functions can be used in `INSERT` queries.
 * Added the `create_table_query` and `engine_full` virtual columns to the `system.tables`table . The `metadata_modification_time` column is virtual.
 * Added the `data_path` and `metadata_path` columns to `system.tables`and` system.databases` tables, and added the `path` column to the `system.parts` and `system.parts_columns` tables.
 * Added additional information about merges in the `system.part_log` table.
@@ -1040,7 +1135,7 @@ This release contains bug fixes for the previous release 1.1.54310:
 
 ### Please note when upgrading:
 
-* There is now a higher default value for the MergeTree setting `max_bytes_to_merge_at_max_space_in_pool`  (the maximum total size of data parts to merge, in bytes): it has increased from 100 GiB to 150 GiB. This might result in large merges running after the server upgrade, which could cause an increased load on the disk subsystem. If the free space available on the server is less than twice the total amount of the merges that are running, this will cause all other merges to stop running, including merges of small data parts. As a result, INSERT requests will fail with the message "Merges are processing significantly slower than inserts." Use the ` SELECT * FROM system.merges`  request to monitor the situation. You can also check the `DiskSpaceReservedForMerge`  metric in the `system.metrics`  table, or in Graphite. You don't need to do anything to fix this, since the issue will resolve itself once the large merges finish. If you find this unacceptable, you can restore the previous value for the `max_bytes_to_merge_at_max_space_in_pool`  setting. To do this, go to the <merge_tree> section in config.xml, set `<merge_tree>``<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>` and restart the server.
+* There is now a higher default value for the MergeTree setting `max_bytes_to_merge_at_max_space_in_pool`  (the maximum total size of data parts to merge, in bytes): it has increased from 100 GiB to 150 GiB. This might result in large merges running after the server upgrade, which could cause an increased load on the disk subsystem. If the free space available on the server is less than twice the total amount of the merges that are running, this will cause all other merges to stop running, including merges of small data parts. As a result, INSERT queries will fail with the message "Merges are processing significantly slower than inserts." Use the ` SELECT * FROM system.merges`  query to monitor the situation. You can also check the `DiskSpaceReservedForMerge`  metric in the `system.metrics`  table, or in Graphite. You don't need to do anything to fix this, since the issue will resolve itself once the large merges finish. If you find this unacceptable, you can restore the previous value for the `max_bytes_to_merge_at_max_space_in_pool`  setting. To do this, go to the <merge_tree> section in config.xml, set `<merge_tree>``<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>` and restart the server.
 
 ## ClickHouse release 1.1.54284, 2017-08-29
 
@@ -1133,7 +1228,7 @@ This release contains bug fixes for the previous release 1.1.54276:
 ### New features:
 
 * Distributed DDL (for example, `CREATE TABLE ON CLUSTER`)
-* The replicated request `ALTER TABLE CLEAR COLUMN IN PARTITION.`
+* The replicated query `ALTER TABLE CLEAR COLUMN IN PARTITION.`
 * The engine for Dictionary tables (access to dictionary data in the form of a table).
 * Dictionary database engine (this type of database automatically has Dictionary tables available for all the connected external dictionaries).
 * You can check for updates to the dictionary by sending a request to the source.
