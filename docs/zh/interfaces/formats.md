@@ -1,6 +1,4 @@
-<a name="formats"></a>
-
-# 输入输出格式
+# 输入输出格式 {#formats}
 
 ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT`) 请求中使用。
 
@@ -32,9 +30,7 @@ ClickHouse 可以接受多种数据格式，可以在 (`INSERT`) 以及 (`SELECT
 | [XML](#xml) | ✗ | ✔ |
 | [CapnProto](#capnproto) | ✔ | ✔ |
 
-<a name="tabseparated"></a>
-
-## TabSeparated
+## TabSeparated {#tabseparated}
 
 在 TabSeparated 格式中，数据按行写入。每行包含由制表符分隔的值。除了行中的最后一个值（后面紧跟换行符）之外，每个值都跟随一个制表符。 在任何地方都可以使用严格的 Unix 命令行。最后一行还必须在最后包含换行符。值以文本格式编写，不包含引号，并且要转义特殊字符。
 
@@ -97,34 +93,29 @@ world
 
 [NULL](../query_language/syntax.md) 将输出为 `\N`。
 
-<a name="tabseparatedraw"></a>
-
-## TabSeparatedRaw
+## TabSeparatedRaw {#tabseparatedraw}
 
 与 `TabSeparated` 格式不一样的是，行数据是不会被转义的。
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
 这种格式也可以使用名称 `TSVRaw` 来表示。
-<a name="tabseparatedwithnames"></a>
 
-## TabSeparatedWithNames
+## TabSeparatedWithNames {#tabseparatedwithnames}
 
 与 `TabSeparated` 格式不一样的是，第一行会显示列的名称。
 在解析过程中，第一行完全被忽略。您不能使用列名来确定其位置或检查其正确性。
 （未来可能会加入解析头行的功能）
 
 这种格式也可以使用名称 ` TSVWithNames` 来表示。
-<a name="tabseparatedwithnamesandtypes"></a>
 
-## TabSeparatedWithNamesAndTypes
+## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 与 `TabSeparated` 格式不一样的是，第一行会显示列的名称，第二行会显示列的类型。
 在解析过程中，第一行和第二行完全被忽略。
 
 这种格式也可以使用名称 ` TSVWithNamesAndTypes` 来表示。
-<a name="tskv"></a>
 
-## TSKV
+## TSKV {#tskv}
 
 与 `TabSeparated` 格式类似，但它输出的是 `name=value` 的格式。名称会和 `TabSeparated` 格式一样被转义，`=` 字符也会被转义。
 
@@ -156,9 +147,8 @@ x=1	y=\N
 数据的输出和解析都支持这种格式。对于解析，任何顺序都支持不同列的值。可以省略某些值，用 `-` 表示， 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。作为默认值，不支持表中指定的复杂值。
 
 对于不带等号或值，可以用附加字段 `tskv` 来表示，这种在解析上是被允许的。这样的话该字段被忽略。
-<a name="csv"></a>
 
-## CSV
+## CSV {#csv}
 
 按逗号分隔的数据格式([RFC](https://tools.ietf.org/html/rfc4180))。
 
@@ -180,9 +170,8 @@ CSV 格式是和 TabSeparated 一样的方式输出总数和极值。
 ## CSVWithNames
 
 会输出带头部行，和 `TabSeparatedWithNames` 一样。
-<a name="json"></a>
 
-## JSON
+## JSON {#json}
 
 以 JSON 格式输出数据。除了数据表之外，它还输出列名称和类型以及一些附加信息：输出行的总数以及在没有 LIMIT 时可以输出的行数。 例：
 
@@ -271,9 +260,7 @@ ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `nu
 
 参考 JSONEachRow 格式。
 
-<a name="jsoncompact"></a>
-
-## JSONCompact
+## JSONCompact {#jsoncompact}
 
 与 JSON 格式不同的是它以数组的方式输出结果，而不是以结构体。
 
@@ -318,9 +305,8 @@ ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `nu
 
 这种格式仅仅适用于输出结果集，而不适用于解析（将数据插入到表中）。
 参考 `JSONEachRow` 格式。
-<a name="jsoneachrow"></a>
 
-## JSONEachRow
+## JSONEachRow {#jsoneachrow}
 
 将数据结果每一行以 JSON 结构体输出（换行分割 JSON 结构体）。
 
@@ -340,22 +326,19 @@ ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `nu
 与 JSON 格式不同的是，没有替换无效的UTF-8序列。任何一组字节都可以在行中输出。这是必要的，因为这样数据可以被格式化而不会丢失任何信息。值的转义方式与JSON相同。
 
 对于解析，任何顺序都支持不同列的值。可以省略某些值 - 它们被视为等于它们的默认值。在这种情况下，零和空行被用作默认值。 作为默认值，不支持表中指定的复杂值。元素之间的空白字符被忽略。如果在对象之后放置逗号，它将被忽略。对象不一定必须用新行分隔。
-<a name="native"></a>
 
-## Native
+## Native {#native}
 
 最高性能的格式。 据通过二进制格式的块进行写入和读取。对于每个块，该块中的行数，列数，列名称和类型以及列的部分将被相继记录。 换句话说，这种格式是 “列式”的 - 它不会将列转换为行。 这是用于在服务器之间进行交互的本地界面中使用的格式，用于使用命令行客户端和 C++ 客户端。
 
 您可以使用此格式快速生成只能由 ClickHouse DBMS 读取的格式。但自己处理这种格式是没有意义的。
-<a name="null"></a>
 
-## Null
+## Null {#null}
 
 没有输出。但是，查询已处理完毕，并且在使用命令行客户端时，数据将传输到客户端。这仅用于测试，包括生产力测试。
 显然，这种格式只适用于输出，不适用于解析。
-<a name="pretty"></a>
 
-## Pretty
+## Pretty {#pretty}
 
 将数据以表格形式输出，也可以使用 ANSI 转义字符在终端中设置颜色。
 它会绘制一个完整的表格，每行数据在终端中占用两行。
@@ -405,19 +388,15 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<a name="prettycompact"></a>
-
-## PrettyCompact
+## PrettyCompact {#prettycompact}
 
 与 `Pretty` 格式不一样的是，`PrettyCompact` 去掉了行之间的表格分割线，这样使得结果更加紧凑。这种格式会在交互命令行客户端下默认使用。
-<a name="prettycompactmonoblock"></a>
 
-## PrettyCompactMonoBlock
+## PrettyCompactMonoBlock {#prettycompactmonoblock}
 
 与 `PrettyCompact` 格式不一样的是，它支持 10,000 行数据缓冲，然后输出在一个表格中，不会按照块来区分
-<a name="prettynoescapes"></a>
 
-## PrettyNoEscapes
+## PrettyNoEscapes {#prettynoescapes}
 
 与 `Pretty` 格式不一样的是，它不使用 ANSI 字符转义， 这在浏览器显示数据以及在使用 `watch` 命令行工具是有必要的。
 
@@ -436,14 +415,12 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 ### PrettySpaceNoEscapes
 
 用法类似上述。
-<a name="prettyspace"></a>
 
-## PrettySpace
+## PrettySpace {#prettyspace}
 
 与 `PrettyCompact`(#prettycompact) 格式不一样的是，它使用空格来代替网格来显示数据。
-<a name="rowbinary"></a>
 
-## RowBinary
+## RowBinary {#rowbinary}
 
 以二进制格式逐行格式化和解析数据。行和值连续列出，没有分隔符。
 这种格式比 Native 格式效率低，因为它是基于行的。
@@ -466,9 +443,7 @@ FixedString 被简单地表示为一个字节序列。
 
 这是 `INSERT INTO t VALUES ...` 中可以使用的格式，但您也可以将其用于查询结果。
 
-<a name="vertical"></a>
-
-## Vertical
+## Vertical {#vertical}
 
 使用指定的列名在单独的行上打印每个值。如果每行都包含大量列，则此格式便于打印一行或几行。
 
@@ -489,9 +464,7 @@ y: ᴺᵁᴸᴸ
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-<a name="verticalraw"></a>
-
-## VerticalRaw
+## VerticalRaw {#verticalraw}
 
 和 `Vertical` 格式不同点在于，行是不会被转义的。
 这种格式仅仅适用于输出，但不适用于解析输入（将数据插入到表中）。
@@ -520,9 +493,7 @@ Row 1:
 test: string with \'quotes\' and \t with some special \n characters
 ```
 
-<a name="xml"></a>
-
-## XML
+## XML {#xml}
 
 该格式仅适用于输出查询结果，但不适用于解析输入，示例：
 
@@ -596,9 +567,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 数组输出为 `<array> <elem> Hello </ elem> <elem> World </ elem> ... </ array>`，元组输出为 `<tuple> <elem> Hello </ elem> <elem> World </ ELEM> ... </tuple>` 。
 
-<a name="format_capnproto"></a>
-
-## CapnProto
+## CapnProto {#capnproto}
 
 Cap'n Proto 是一种二进制消息格式，类似 Protocol Buffers 和 Thriftis，但与 JSON 或 MessagePack 格式不一样。
 

@@ -70,9 +70,7 @@ command line برا پایه 'readline' (و 'history' یا 'libedit'، یه بد
 
 کلاینت commant-line اجازه ی پاس دادن داده های external  (جداول موقت external) را برای query ها می دهد. برای اطلاعات بیشتر به بخش "داده های External برای پردازش query" مراجعه کنید.
 
-<a name="interfaces_cli_configuration"></a>
-
-## پیکربندی
+## پیکربندی {#interfaces_cli_configuration}
 
 شما میتوانید، پارامتر ها را به `clickhouse-client` (تمام پارامترها دارای مقدار پیش فرض هستند) از دو روش زیر پاس بدید:
 

@@ -48,7 +48,7 @@
         - [RClickhouse](https://github.com/IMSMWU/RClickhouse) (использует [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 - Java
     - [Hadoop](http://hadoop.apache.org)
-        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (использует [JDBC](../jdbc.md))
+        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (использует [JDBC](../../query_language/table_functions/jdbc.md))
 - Scala
     - [Akka](https://akka.io)
         - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)

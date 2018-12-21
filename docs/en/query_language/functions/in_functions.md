@@ -2,7 +2,7 @@
 
 ## in, notIn, globalIn, globalNotIn
 
-See the section [IN operators](../select.md/).
+See the section [IN operators](../select.md#select-in-operators).
 
 ## tuple(x, y, ...), operator (x, y, ...)
 
