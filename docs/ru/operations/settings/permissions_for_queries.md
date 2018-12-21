@@ -1,6 +1,4 @@
-<a name="permissions_for_queries"></a>
-
-# Разрешения для запросов
+# Разрешения для запросов {#permissions_for_queries}
 
 Запросы в ClickHouse можно разделить на несколько типов:
 
@@ -17,9 +15,7 @@
 
 `KILL QUERY` выполняется с любыми настройками.
 
-<a name="settings_readonly"></a>
-
-## readonly
+## readonly {#settings_readonly}
 
 Ограничивает разрешения для запросов на чтение данных, запись данных и изменение параметров.
 
@@ -39,9 +35,7 @@
 
 0
 
-<a name="settings_allow_ddl"></a>
-
-## allow_ddl
+## allow_ddl {#settings_allow_ddl}
 
 Разрешает/запрещает [DDL](https://ru.wikipedia.org/wiki/Data_Definition_Language) запросы.
 
