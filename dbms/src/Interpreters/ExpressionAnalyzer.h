@@ -58,10 +58,6 @@ struct ExpressionAnalyzerData
 
     bool has_global_subqueries = false;
 
-    /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
-    /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
-    NameToNameMap array_join_result_to_source;
-
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
 
@@ -244,7 +240,7 @@ private:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
@@ -273,7 +269,7 @@ private:
     void assertAggregation() const;
 
     /**
-      * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
+      * Create Set from a subuquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);

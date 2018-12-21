@@ -139,10 +139,14 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const ASTSetQuery::Change & setting : args.storage_def->settings->changes)
             {
-                if (setting.name == "join_use_nulls") join_use_nulls.set(setting.value);
-                else if (setting.name == "max_rows_in_join") max_rows_in_join.set(setting.value);
-                else if (setting.name == "max_bytes_in_join") max_bytes_in_join.set(setting.value);
-                else if (setting.name == "join_overflow_mode") join_overflow_mode.set(setting.value);
+                if (setting.name == "join_use_nulls")
+                    join_use_nulls.set(setting.value);
+                else if (setting.name == "max_rows_in_join")
+                    max_rows_in_join.set(setting.value);
+                else if (setting.name == "max_bytes_in_join")
+                    max_bytes_in_join.set(setting.value);
+                else if (setting.name == "join_overflow_mode")
+                    join_overflow_mode.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,

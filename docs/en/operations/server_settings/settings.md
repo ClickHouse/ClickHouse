@@ -74,7 +74,7 @@ To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.m
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#user-config).
+Settings profiles are located in the file specified in the parameter `user_config`.
 
 **Example**
 
@@ -196,7 +196,7 @@ For more details, see [GraphiteMergeTree](../../operations/table_engines/graphit
 
 The port for connecting to the server over HTTP(s).
 
-If `https_port` is specified, [openSSL]() must be configured.
+If `https_port` is specified, [openSSL](#openssl) must be configured.
 
 If `http_port` is specified, the openSSL configuration is ignored even if it is set.
 
@@ -681,8 +681,20 @@ For more information, see the section "[Replication](../../operations/table_engi
 **Example**
 
 ```xml
-<zookeeper incl="zookeeper-servers" optional="true" />
+<zookeeper>
+    <node index="1">
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node index="2">
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node index="3">
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
 ```
-
 
 [Original article](https://clickhouse.yandex/docs/en/operations/server_settings/settings/) <!--hide-->
