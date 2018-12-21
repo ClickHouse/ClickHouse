@@ -6,7 +6,7 @@
 #include <ext/singleton.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Compression/ICompressionCodec.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 
 namespace DB
 {

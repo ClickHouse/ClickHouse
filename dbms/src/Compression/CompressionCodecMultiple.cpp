@@ -1,5 +1,5 @@
 #include <Compression/CompressionCodecMultiple.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadHelpers.h>

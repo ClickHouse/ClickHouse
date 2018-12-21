@@ -1,7 +1,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/LZ4_decompress_faster.h>
 #include <common/unaligned.h>
-#include <IO/CompressedStream.h>
 #include <Common/hex.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>

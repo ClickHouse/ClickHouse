@@ -1,5 +1,5 @@
 #include <Compression/CompressionCodecZSTD.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressionFactory.h>
 #include <zstd.h>
