@@ -14,10 +14,13 @@
 
 namespace DB
 {
+
+class Context;
+
 class ParquetBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_);
+    ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_);
 
     String getName() const override { return "Parquet"; }
     Block getHeader() const override;
@@ -40,6 +43,8 @@ private:
     static const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type;
 
     // TODO: check that this class implements every part of its parent
+
+    const Context & context;
 };
 
 }

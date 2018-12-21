@@ -26,6 +26,7 @@
 #    include <IO/copyData.h>
 #    include <common/DateLUTImpl.h>
 #    include <ext/range.h>
+#    include <Interpreters/castColumn.h>
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
@@ -56,7 +57,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
-ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_) : istr(istr_), header(header_)
+ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_) : istr{istr_}, header{header_}, context{context_}
 {
 }
 
@@ -302,12 +303,22 @@ Block ParquetBlockInputStream::readImpl()
         // TODO: can it be done with typeid_cast?
         if (internal_nested_type_name != column_nested_type_name)
         {
-            throw Exception{"Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name
+
+//DUMP("should convert ", internal_nested_type_name, column_nested_type_name);
+
+         // possible:
+         // Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
+         // column.column = castColumn(column, dst_col.type, context);
+
+/*
+             throw Exception{"Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name
                                 + "\""
                                   " is not compatible with a column type \""
                                 + column_nested_type_name + "\"",
                             ErrorCodes::CANNOT_CONVERT_TYPE};
+*/
         }
+
 
         ColumnWithTypeAndName column;
         column.name = header_column.name;
@@ -351,6 +362,9 @@ Block ParquetBlockInputStream::readImpl()
         {
             column.column = std::move(read_column);
         }
+
+        column.column = castColumn(column, column_type, context);
+
         res.insert(std::move(column));
     }
 
@@ -361,9 +375,9 @@ void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "Parquet",
-        [](ReadBuffer & buf, const Block & sample, const Context &, size_t /*max_block_size */, const FormatSettings & /* settings */)
+        [](ReadBuffer & buf, const Block & sample, const Context & context, size_t /*max_block_size */, const FormatSettings & /* settings */)
         {
-            return std::make_shared<ParquetBlockInputStream>(buf, sample);
+            return std::make_shared<ParquetBlockInputStream>(buf, sample, context);
         });
 }
 
