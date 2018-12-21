@@ -63,9 +63,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 "[外部数据查询处理](../operations/table_engines/external_data.md)".
 
-<a name="interfaces_cli_configuration"></a>
-
-## 配置
+## 配置 {#interfaces_cli_configuration}
 
 您可以通过以下方式传入参数到 `clickhouse-client` 中 （所有的参数都有默认值）：
 

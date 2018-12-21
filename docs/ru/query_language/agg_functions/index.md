@@ -1,6 +1,4 @@
-<a name="aggregate_functions"></a>
-
-# Агрегатные функции
+# Агрегатные функции {#aggregate_functions}
 
 Агрегатные функции работают в [привычном](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) для специалистов по базам данных смысле.
 

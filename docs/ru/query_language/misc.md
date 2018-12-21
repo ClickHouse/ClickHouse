@@ -1,7 +1,4 @@
-<a name="queries"></a>
-
-
-## ATTACH
+## ATTACH {#queries}
 Запрос полностью аналогичен запросу `CREATE`, но:
 
 - вместо слова `CREATE` используется слово `ATTACH`;

@@ -44,7 +44,7 @@ FROM子句规定了将从哪个表、或子查询、或表函数中读取数据�
 
 最后的FINAL修饰符仅能够被使用在SELECT from CollapsingMergeTree场景中。当你为FROM指定了FINAL修饰符时，你的查询结果将会在查询过程中被聚合。需要注意的是，在这种情况下，查询将在单个流中读取所有相关的主键列，同时对需要的数据进行合并。这意味着，当使用FINAL修饰符时，查询将会处理的更慢。在大多数情况下，你应该避免使用FINAL修饰符。更多信息，请参阅“CollapsingMergeTree引擎”部分。
 
-### SAMPLE 子句
+### SAMPLE 子句 {#select-sample-clause}
 
 通过SAMPLE子句用户可以进行近似查询处理，近似查询处理仅能工作在MergeTree\*类型的表中，并且在创建表时需要您指定采样表达式（参见“MergeTree 引擎”部分）。
 
@@ -81,7 +81,7 @@ ORDER BY PageViews DESC LIMIT 1000
 例如，我们可以使用采样的方式获取到与不进行采样相同的用户ID的列表。这将表明，你可以在IN子查询中使用采样，或者使用采样的结果与其他查询进行关联。
 
 
-### ARRAY JOIN 子句
+### ARRAY JOIN 子句 {#select-array-join-clause}
 
 ARRAY JOIN子句可以帮助查询进行与数组和nested数据类型的连接。它有点类似arrayJoin函数，但它的功能更广泛。
 
@@ -339,7 +339,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num
 JOIN子句用于连接数据，作用与[SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL))的定义相同。
 
 !!! info "注意"
-    与[ARRAY JOIN](#array-join)没有关系.
+    与[ARRAY JOIN](#select-array-join-clause)没有关系.
 
 
 ``` sql
@@ -373,7 +373,7 @@ FROM <left_subquery>
 
 当使用`GLOBAL ... JOIN`，首先会在请求服务器上计算右表并以临时表的方式将其发送到所有服务器。这时每台服务器将直接使用它进行计算。
 
-使用`GLOBAL`时需要小心。更多信息，参阅[Distributed subqueries](#distributed-subqueries)部分。
+使用`GLOBAL`时需要小心。更多信息，参阅[Distributed subqueries](#select-distributed-subqueries)部分。
 
 **使用建议**
 
@@ -441,7 +441,7 @@ LIMIT 10
 
 JOIN的行为受[join_use_nulls](../operations/settings/settings.md)的影响。当`join_use_nulls=1`时，`JOIN`的工作与SQL标准相同。
 
-如果JOIN的key是[Nullable](../data_types/nullable.md#data_types-nullable)类型的字段，则其中至少一个存在[NULL](syntax.md)值的key不会被关联。
+如果JOIN的key是[Nullable](../data_types/nullable.md)类型的字段，则其中至少一个存在[NULL](syntax.md)值的key不会被关联。
 
 
 ### WHERE 子句
@@ -747,7 +747,7 @@ UNION ALL中的查询可以同时运行，它们的结果将被混合到一起�
 当使用命令行客户端时，数据以内部高效的格式在服务器和客户端之间进行传递。客户端将单独的解析FORMAT子句，以帮助数据格式的转换（这将减轻网络和服务器的负载）。
 
 
-### IN 运算符
+### IN 运算符 {#select-in-operators}
 
 对于`IN`、`NOT IN`、`GLOBAL IN`、`GLOBAL NOT IN`操作符被分别实现，因为它们的功能非常丰富。
 
@@ -846,7 +846,7 @@ FROM t_null
 ```
 
 
-#### 分布式子查询
+#### 分布式子查询 {#select-distributed-subqueries}
 
 对于带有子查询的（类似与JOINs）IN中，有两种选择:普通的`IN`／`JOIN`与`GLOBAL IN` ／ `GLOBAL JOIN`。它们对于分布式查询的处理运行方式是不同的。
 

@@ -1,6 +1,4 @@
-<a name="table_engines-file"></a>
-
-# File(InputFormat)
+# File(InputFormat) {#table_engines-file}
 
 The data source is a file that stores data in one of the supported input formats (TabSeparated, Native, etc.).
 
