@@ -1157,7 +1157,7 @@ struct ToIntMonotonicity
         }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
-        if (checkAndGetDataType<DataTypeNumberBase<T>>(&type) ||
+        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
 
