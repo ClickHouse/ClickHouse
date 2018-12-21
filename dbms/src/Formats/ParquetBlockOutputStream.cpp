@@ -292,29 +292,31 @@ void ParquetBlockOutputStream::write(const Block & block)
     // TODO CHECK RETURN_NOT_OK
     if (!file_writer)
     {
-    parquet::arrow::FileWriter::Open(
+        auto status =     parquet::arrow::FileWriter::Open(
         *arrow_table->schema(),
         arrow::default_memory_pool(),
         sink,
         parquet::default_writer_properties(),
         parquet::arrow::default_arrow_writer_properties(),
         &file_writer);
+        if (!status.ok())
+            throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
-    auto write_status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
+    auto status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
 
-    if (!write_status.ok())
-       throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+    if (!status.ok())
+       throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 void ParquetBlockOutputStream::writeSuffix()
 {
     if (file_writer)
     {
-        auto write_status = file_writer->Close();
-        if (!write_status.ok())
-            throw Exception{"Error while writing a table: " + write_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+        auto status = file_writer->Close();
+        if (!status.ok())
+            throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 }
 
@@ -328,7 +330,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
         });
 }
 
-};
+}
 
 
 #else
