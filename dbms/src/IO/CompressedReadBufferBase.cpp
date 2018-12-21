@@ -15,7 +15,7 @@
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 
 

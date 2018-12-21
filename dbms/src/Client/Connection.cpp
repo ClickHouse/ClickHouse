@@ -354,27 +354,19 @@ void Connection::sendQuery(
     if (!connected)
         connect();
 
-    std::string method = "LZ4";
-    std::optional<int> level;
-    if (settings) {
-    switch(settings->network_compression_method)
+    if (settings)
     {
-        case CompressionMethod::ZSTD:
-            level = settings->network_zstd_compression_level;
-            method = "ZSTD";
-            break;
-        case CompressionMethod::LZ4HC:
-            method = "LZ4HC";
-            break;
-        case CompressionMethod::NONE:
-            method = "NONE";
-            break;
-        default:
-            break;
-        }
-    }
+        std::optional<int> level;
+        std::string method = settings->network_compression_method;
 
-    compression_codec = CompressionCodecFactory::instance().get(method, level);
+        /// Bad custom logic
+        if (method == "ZSTD")
+            level = settings->network_zstd_compression_level;
+
+        compression_codec = CompressionCodecFactory::instance().get(method, level);
+    }
+    else
+        compression_codec = CompressionCodecFactory::instance().getDefaultCodec();
 
     query_id = query_id_;
 

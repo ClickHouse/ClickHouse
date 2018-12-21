@@ -11,6 +11,8 @@
 #include <IO/UncompressedCache.h>
 #include <IO/LZ4_decompress_faster.h>
 
+#include <Compression/CompressionInfo.h>
+
 namespace DB
 {
 
@@ -39,7 +41,7 @@ public:
 
     virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
 
-    static UInt8 getHeaderSize() { return 1 + 8; }
+    static UInt8 getHeaderSize() { return COMPRESSED_BLOCK_HEADER_SIZE; }
 
     static UInt32 readCompressedBlockSize(const char * source);
 

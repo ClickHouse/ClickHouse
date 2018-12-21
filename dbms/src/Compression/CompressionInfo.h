@@ -8,18 +8,8 @@
 
 #define COMPRESSED_BLOCK_HEADER_SIZE 9
 
-
 namespace DB
 {
-
-/** Compression method */
-enum class CompressionMethod
-{
-    LZ4 = 1,
-    LZ4HC = 2,        /// The format is the same as for LZ4. The difference is only in compression.
-    ZSTD = 3,         /// Experimental algorithm: https://github.com/Cyan4973/zstd
-    NONE = 4,         /// No compression
-};
 
 /** The compressed block format is as follows:
   *

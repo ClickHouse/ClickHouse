@@ -772,25 +772,10 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
-            /// crutch TODO(aleap)
-
-            std::string method = "LZ4";
+            std::string method = query_context.getSettingsRef().network_compression_method;
             std::optional<int> level;
-            switch(query_context.getSettingsRef().network_compression_method)
-            {
-            case CompressionMethod::ZSTD:
+            if (method == "ZSTD")
                 level = query_context.getSettingsRef().network_zstd_compression_level;
-                method = "ZSTD";
-                break;
-            case CompressionMethod::LZ4HC:
-                method = "LZ4HC";
-                break;
-            case CompressionMethod::NONE:
-                method = "NONE";
-                break;
-            default:
-                break;
-            }
 
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(

@@ -1,7 +1,7 @@
 #include <Compression/CompressionCodecLZ4.h>
 #include <lz4.h>
 #include <lz4hc.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/LZ4_decompress_faster.h>
 #include "CompressionCodecLZ4.h"
