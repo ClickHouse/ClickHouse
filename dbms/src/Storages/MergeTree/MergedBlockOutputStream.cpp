@@ -26,13 +26,13 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeData & storage_,
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
-    CompressionSettings compression_settings_,
+    CompressionCodecPtr codec_,
     size_t aio_threshold_)
     : storage(storage_),
     min_compress_block_size(min_compress_block_size_),
     max_compress_block_size(max_compress_block_size_),
     aio_threshold(aio_threshold_),
-    compression_settings(compression_settings_)
+    codec(codec_)
 {
 }
 
@@ -231,10 +231,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
-    CompressionSettings compression_settings)
+    CompressionCodecPtr default_codec_)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_settings,
+        storage_.context.getSettings().max_compress_block_size, default_codec_,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
     columns_list(columns_list_), part_path(part_path_)
 {
@@ -242,7 +242,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     for (const auto & it : columns_list)
     {
         const auto columns = storage.getColumns();
-        addStreams(part_path, it.name, *it.type, columns.getCodec(it.name, compression_settings), 0, false);
+        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
     }
 }
 
@@ -250,12 +250,12 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
-    CompressionSettings compression_settings,
+    CompressionCodecPtr default_codec_,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_settings,
+        storage_.context.getSettings().max_compress_block_size, default_codec_,
         aio_threshold_),
     columns_list(columns_list_), part_path(part_path_)
 {
@@ -276,7 +276,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     for (const auto & it : columns_list)
     {
         const auto columns = storage.getColumns();
-        addStreams(part_path, it.name, *it.type, columns.getCodec(it.name, compression_settings), total_size, false);
+        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
     }
 }
 
@@ -514,11 +514,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
-    CompressionSettings compression_settings, bool skip_offsets_,
+    CompressionCodecPtr default_codec_, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_settings,
+        storage_.context.getSettings().max_compress_block_size, default_codec_,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns)
@@ -540,7 +540,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
             const auto & col = block.safeGetByPosition(i);
 
             const auto columns = storage.getColumns();
-            addStreams(part_path, col.name, *col.type, columns.getCodec(col.name, compression_settings), 0, skip_offsets);
+            addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
             serialization_states.emplace_back(nullptr);
             settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());

@@ -7,7 +7,6 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/CompressedStream.h>
-#include <IO/CompressionSettings.h>
 
 namespace DB
 {
@@ -37,7 +36,8 @@ public:
 
     CompressionCodecPtr get(const UInt8 byte_code) const;
 
-    CompressionCodecPtr get(const CompressionSettings & settings) const;
+    /// For backward compatibility with config settings
+    CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
     void registerCompressionCodec(const String & family_name, UInt8 byte_code, Creator creator);
 
@@ -50,8 +50,6 @@ private:
     CompressionCodecsDictionary family_name_with_codec;
     CompressionCodecsCodeDictionary family_code_with_codec;
     CompressionCodecPtr default_codec;
-
-    ASTPtr convertSettingsToAst(const CompressionSettings & settings) const;
 
     CompressionCodecFactory();
 

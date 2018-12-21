@@ -11,6 +11,8 @@ namespace DB
 class CompressionCodecZSTD : public ICompressionCodec
 {
 public:
+    static constexpr auto ZSTD_DEFAULT_LEVEL = 1;
+
     CompressionCodecZSTD(int level_);
 
     UInt8 getMethodByte() const override;

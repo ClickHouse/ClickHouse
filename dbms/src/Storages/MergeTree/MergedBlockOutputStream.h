@@ -20,7 +20,7 @@ public:
         MergeTreeData & storage_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
-        CompressionSettings compression_settings_,
+        CompressionCodecPtr default_codec_,
         size_t aio_threshold_);
 
     using WrittenOffsetColumns = std::set<std::string>;
@@ -87,7 +87,7 @@ protected:
 
     size_t aio_threshold;
 
-    CompressionSettings compression_settings;
+    CompressionCodecPtr codec;
 };
 
 
@@ -101,13 +101,13 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionSettings compression_settings);
+        CompressionCodecPtr default_codec_);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionSettings compression_settings,
+        CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_);
 
@@ -161,7 +161,7 @@ public:
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
-        CompressionSettings compression_settings, bool skip_offsets_,
+        CompressionCodecPtr default_codec_, bool skip_offsets_,
         WrittenOffsetColumns & already_written_offset_columns);
 
     Block getHeader() const override { return header; }

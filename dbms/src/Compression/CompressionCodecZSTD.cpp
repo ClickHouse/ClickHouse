@@ -66,10 +66,10 @@ void registerCodecZSTD(CompressionCodecFactory & factory)
     UInt8 method_code = static_cast<char>(CompressionMethodByte::ZSTD);
     factory.registerCompressionCodec("ZSTD", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
-        int level = 0;
+        int level = CompressionCodecZSTD::ZSTD_DEFAULT_LEVEL;
         if (arguments && !arguments->children.empty())
         {
-            if (arguments->children.size() != 1)
+            if (arguments->children.size() > 1)
                 throw Exception("ZSTD codec must have 1 parameter, given " + std::to_string(arguments->children.size()), ErrorCodes::ILLEGAL_SYNTAX_FOR_CODEC_TYPE);
 
             const auto children = arguments->children;

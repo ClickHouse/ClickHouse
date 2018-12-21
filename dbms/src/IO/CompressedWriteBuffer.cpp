@@ -47,15 +47,6 @@ CompressedWriteBuffer::CompressedWriteBuffer(
 {
 }
 
-CompressedWriteBuffer::CompressedWriteBuffer(
-    WriteBuffer & out_,
-    CompressionSettings compression_settings,
-    size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(CompressionCodecFactory::instance().get(compression_settings))
-{
-}
-
-
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
     try

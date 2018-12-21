@@ -5,7 +5,6 @@
 #include <Storages/ColumnDefault.h>
 #include <Core/Block.h>
 #include <Storages/ColumnCodec.h>
-#include <IO/CompressionSettings.h>
 
 
 namespace DB
@@ -68,7 +67,7 @@ struct ColumnsDescription
 
     String toString() const;
 
-    CompressionCodecPtr getCodec(const String & column_name, const CompressionSettings & compression_settings) const;
+    CompressionCodecPtr getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
     static ColumnsDescription parse(const String & str);
 
