@@ -211,7 +211,7 @@ SELECT argMin(user, salary) FROM salary
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
 
-## sum(x)
+## sum(x) {#agg_function-sum}
 
 Calculates the sum.
 Only works for numbers.

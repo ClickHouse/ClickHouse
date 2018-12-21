@@ -28,7 +28,7 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [Native](#native) | ✔ | ✔ |
 | [Null](#null) | ✗ | ✔ |
 | [XML](#xml) | ✗ | ✔ |
-| [CapnProto](#capnproto) | ✔ | ✔ |
+| [CapnProto](#format_capnproto) | ✔ | ✔ |
 
 ## TabSeparated {#tabseparated}
 

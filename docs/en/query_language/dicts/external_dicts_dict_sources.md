@@ -23,14 +23,14 @@ The source is configured in the `source` section.
 
 Types of sources (`source_type`):
 
-- [Local file](#local-file)
-- [Executable file](#executable-file)
-- [HTTP(s)](#http-s)
+- [Local file](#dicts-external_dicts_dict_sources-local_file)
+- [Executable file](#dicts-external_dicts_dict_sources-executable)
+- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - DBMS
-    - [MySQL](#mysql)
-    - [ClickHouse](#clickhouse)
-    - [MongoDB](#mongodb)
-    - [ODBC](#odbc)
+    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}

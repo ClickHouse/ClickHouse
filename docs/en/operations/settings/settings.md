@@ -32,7 +32,7 @@ Used when performing `SELECT`  from a distributed table that points to replicate
 
 By default, 1 (enabled).
 
-## force_index_by_date {#settings-settings-force_index_by_date}
+## force_index_by_date {#settings-force_index_by_date}
 
 Disables query execution if the index can't be used by date.
 
@@ -121,7 +121,7 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
     log_queries=1
 
-## max_insert_block_size {#settings-settings-max_insert_block_size}
+## max_insert_block_size {#settings-max_insert_block_size}
 
 The size of blocks to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
@@ -133,7 +133,7 @@ By default, it is 1,048,576.
 
 This is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allows sorting more data in RAM.
 
-## max_replica_delay_for_distributed_queries {#settings_settings_max_replica_delay_for_distributed_queries}
+## max_replica_delay_for_distributed_queries {#settings-max_replica_delay_for_distributed_queries}
 
 Disables lagging replicas for distributed queries. See "[Replication](../../operations/table_engines/replication.md)".
 
@@ -267,7 +267,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 ## stream_flush_interval_ms
 
-Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#max-insert-block-size) rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#settings-max_insert_block_size) rows.
 
 The default value is 7500.
 

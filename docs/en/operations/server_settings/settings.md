@@ -639,7 +639,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path
+## user_files_path {#server_settings-user_files_path}
 
 The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md).
 
