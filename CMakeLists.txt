@@ -36,7 +36,7 @@ if (NOT PARALLEL_COMPILE_JOBS)
     endif ()
 endif ()
 if (PARALLEL_COMPILE_JOBS)
-    set_property(GLOBAL APPEND PROPERTY JOB_POOLS compile_job_pool="${PARALLEL_COMPILE_JOBS}")
+    set_property(GLOBAL APPEND PROPERTY JOB_POOLS compile_job_pool=${PARALLEL_COMPILE_JOBS})
     set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
 endif ()
 
