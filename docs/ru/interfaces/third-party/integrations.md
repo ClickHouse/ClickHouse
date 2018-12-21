@@ -18,6 +18,9 @@
 - Хранилища объектов
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- Системы управления конфигурацией
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 - Мониторинг
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
@@ -27,12 +30,11 @@
     - [Prometheus](https://prometheus.io/)
         - [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
+    - [Nagios](https://www.nagios.org/)
+        - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
 - Логирование
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (для [Kubernetes](https://kubernetes.io))
-- Системы управления конфигурацией
-    - [puppet](https://puppet.com)
-        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 
 ## Экосистемы вокруг языков программирования
 
