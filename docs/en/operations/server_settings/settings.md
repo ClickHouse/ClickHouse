@@ -221,9 +221,7 @@ Opens `https://tabix.io/` when accessing ` http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-<a name="server_settings-include_from"></a>
-
-## include_from
+## include_from {#server_settings-include_from}
 
 The path to the file with substitutions.
 

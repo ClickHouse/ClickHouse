@@ -1,6 +1,4 @@
-<a name="dicts-external_dicts_dict_layout"></a>
-
-# Storing Dictionaries in Memory
+# Storing Dictionaries in Memory {#dicts-external_dicts_dict_layout}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -65,9 +63,7 @@ Configuration example:
 </layout>
 ```
 
-<a name="dicts-external_dicts_dict_layout-hashed"></a>
-
-### hashed
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 

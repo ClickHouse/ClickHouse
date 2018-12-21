@@ -1,6 +1,4 @@
-<a name="table_engines-mergetree"></a>
-
-# MergeTree
+# MergeTree {#table_engines-mergetree}
 
 The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
 

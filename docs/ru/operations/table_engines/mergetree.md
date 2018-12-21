@@ -1,6 +1,4 @@
-<a name="table_engines-mergetree"></a>
-
-# MergeTree
+# MergeTree {#table_engines-mergetree}
 
 Движок `MergeTree`, а также другие движки этого семейства (`*MergeTree`) — это наиболее функциональные движки таблиц ClickHousе.
 

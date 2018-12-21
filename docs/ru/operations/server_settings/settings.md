@@ -222,9 +222,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </http_server_default_response>
 ```
 
-<a name="server_settings-include_from"></a>
-
-## include_from
+## include_from {#server_settings-include_from}
 
 Путь к файлу с подстановками.
 

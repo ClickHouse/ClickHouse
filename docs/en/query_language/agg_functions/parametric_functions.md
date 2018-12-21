@@ -1,6 +1,4 @@
-<a name="aggregate_functions_parametric"></a>
-
-# Parametric aggregate functions
+# Parametric aggregate functions {#aggregate_functions_parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 

@@ -1,6 +1,4 @@
-<a name="data_type-aggregatefunction"></a>
-
-# AggregateFunction(name, types_of_arguments...)
+# AggregateFunction(name, types_of_arguments...) {#data_type-aggregatefunction}
 
 The intermediate state of an aggregate function. To get it, use aggregate functions with the `-State` suffix. To get aggregated data in the future, you must use the same aggregate functions with the `-Merge`suffix.
 

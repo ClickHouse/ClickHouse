@@ -1,6 +1,4 @@
-<a name="table_engines-url"></a>
-
-# URL(URL, Format)
+# URL(URL, Format) {#table_engines-url}
 
 Manages data on a remote HTTP/HTTPS server. This engine is similar
 to the [File](file.md) engine.
