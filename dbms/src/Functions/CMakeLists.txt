@@ -12,7 +12,7 @@ add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        dbms 
+        dbms
     PRIVATE
         clickhouse_dictionaries
         ${CONSISTENT_HASHING_LIBRARY}
@@ -21,7 +21,8 @@ target_link_libraries(clickhouse_functions
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
-        ${OPENSSL_CRYPTO_LIBRARY})
+        ${OPENSSL_CRYPTO_LIBRARY}
+        ${LZ4_LIBRARY})
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 
