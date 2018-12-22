@@ -19,6 +19,9 @@
 - Object storages
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- Configuration management
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 - Monitoring
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
@@ -33,9 +36,6 @@
 - Logging
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
-- Configuration management
-    - [puppet](https://puppet.com)
-        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 
 ## Programming Language Ecosystems
 
