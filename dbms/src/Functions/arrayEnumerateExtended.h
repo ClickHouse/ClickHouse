@@ -61,21 +61,10 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values);
-
-    bool executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values);
-
-    bool execute128bit(
-        const ColumnArray::Offsets & offsets,
-        const ColumnRawPtrs & columns,
-        const ColumnRawPtrs & null_maps,
-        ColumnUInt32::Container & res_values,
-        bool has_nullable_columns);
-
-    void executeHashed(
-        const ColumnArray::Offsets & offsets,
-        const ColumnRawPtrs & columns,
-        ColumnUInt32::Container & res_values);
+    bool executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool executeString(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values);
+    bool execute128bit(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
+    bool executeHashed(const ColumnArray::Offsets & offsets, const ColumnRawPtrs & columns, ColumnUInt32::Container & res_values);
 };
 
 
@@ -86,9 +75,8 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     ColumnRawPtrs data_columns;
     data_columns.reserve(arguments.size());
 
-    bool has_nullable_columns = false;
-
     Columns array_holders;
+    ColumnPtr offsets_holder;
     for (size_t i = 0; i < arguments.size(); ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
@@ -105,6 +93,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
         }
 
+        offsets_holder = array->getOffsetsPtr();
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
             offsets = &offsets_i;
@@ -117,26 +106,22 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     }
 
     size_t num_columns = data_columns.size();
-    ColumnRawPtrs original_data_columns(num_columns);
-    ColumnRawPtrs null_maps(num_columns);
+    const NullMap * null_map = nullptr;
 
     for (size_t i = 0; i < num_columns; ++i)
     {
-        original_data_columns[i] = data_columns[i];
-
         if (data_columns[i]->isColumnNullable())
         {
-            has_nullable_columns = true;
             const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
-            data_columns[i] = &nullable_col.getNestedColumn();
-            null_maps[i] = &nullable_col.getNullMapColumn();
+
+            if (num_columns == 1)
+                data_columns[i] = &nullable_col.getNestedColumn();
+
+            null_map = &nullable_col.getNullMapData();
+            break;
         }
-        else
-            null_maps[i] = nullptr;
     }
 
-    const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments.at(0)).column.get());
-    const IColumn * first_null_map = null_maps[0];
     auto res_nested = ColumnUInt32::create();
 
     ColumnUInt32::Container & res_values = res_nested->getData();
@@ -145,56 +130,41 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
 
     if (num_columns == 1)
     {
-        if (!(executeNumber<UInt8>(first_array, first_null_map, res_values)
-            || executeNumber<UInt16>(first_array, first_null_map, res_values)
-            || executeNumber<UInt32>(first_array, first_null_map, res_values)
-            || executeNumber<UInt64>(first_array, first_null_map, res_values)
-            || executeNumber<Int8>(first_array, first_null_map, res_values)
-            || executeNumber<Int16>(first_array, first_null_map, res_values)
-            || executeNumber<Int32>(first_array, first_null_map, res_values)
-            || executeNumber<Int64>(first_array, first_null_map, res_values)
-            || executeNumber<Float32>(first_array, first_null_map, res_values)
-            || executeNumber<Float64>(first_array, first_null_map, res_values)
-            || executeString (first_array, first_null_map, res_values)))
-            executeHashed(*offsets, original_data_columns, res_values);
+        executeNumber<UInt8>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<UInt16>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<UInt32>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<UInt64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Int8>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Int16>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Int32>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Int64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Float32>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeString(*offsets, *data_columns[0], null_map, res_values)
+            || executeHashed(*offsets, data_columns, res_values);
     }
     else
     {
-        if (!execute128bit(*offsets, data_columns, null_maps, res_values, has_nullable_columns))
-            executeHashed(*offsets, original_data_columns, res_values);
+        execute128bit(*offsets, data_columns, res_values)
+            || executeHashed(*offsets, data_columns, res_values);
     }
 
-    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), first_array->getOffsetsPtr());
+    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_holder);
 }
 
 
 template <typename Derived>
 template <typename T>
-bool FunctionArrayEnumerateExtended<Derived>::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
+bool FunctionArrayEnumerateExtended<Derived>::executeNumber(
+    const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
-    const IColumn * inner_col;
-
-    const auto & array_data = array->getData();
-    if (array_data.isColumnNullable())
-    {
-        const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = &nullable_col.getNestedColumn();
-    }
-    else
-        inner_col = &array_data;
-
-    const ColumnVector<T> * nested = checkAndGetColumn<ColumnVector<T>>(inner_col);
-    if (!nested)
+    const ColumnVector<T> * data_concrete = typeid_cast<const ColumnVector<T> *>(&data);
+    if (!data_concrete)
         return false;
-    const ColumnArray::Offsets & offsets = array->getOffsets();
-    const typename ColumnVector<T>::Container & values = nested->getData();
+    const auto & values = data_concrete->getData();
 
     using ValuesToIndices = ClearableHashMap<T, UInt32, DefaultHash<T>, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
-
-    const PaddedPODArray<UInt8> * null_map_data = nullptr;
-    if (null_map)
-        null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
 
     ValuesToIndices indices;
     size_t prev_off = 0;
@@ -208,7 +178,7 @@ bool FunctionArrayEnumerateExtended<Derived>::executeNumber(const ColumnArray * 
             size_t off = offsets[i];
             for (size_t j = prev_off; j < off; ++j)
             {
-                if (null_map_data && ((*null_map_data)[j] == 1))
+                if (null_map && (*null_map)[j])
                     res_values[j] = ++null_count;
                 else
                     res_values[j] = ++indices[values[j]];
@@ -227,7 +197,7 @@ bool FunctionArrayEnumerateExtended<Derived>::executeNumber(const ColumnArray * 
             size_t off = offsets[i];
             for (size_t j = prev_off; j < off; ++j)
             {
-                if (null_map_data && ((*null_map_data)[j] == 1))
+                if (null_map && (*null_map)[j])
                 {
                     if (!null_index)
                         null_index = ++rank;
@@ -248,31 +218,16 @@ bool FunctionArrayEnumerateExtended<Derived>::executeNumber(const ColumnArray * 
 }
 
 template <typename Derived>
-bool FunctionArrayEnumerateExtended<Derived>::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
+bool FunctionArrayEnumerateExtended<Derived>::executeString(
+    const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
-    const IColumn * inner_col;
-
-    const auto & array_data = array->getData();
-    if (array_data.isColumnNullable())
-    {
-        const auto & nullable_col = static_cast<const ColumnNullable &>(array_data);
-        inner_col = &nullable_col.getNestedColumn();
-    }
-    else
-        inner_col = &array_data;
-
-    const ColumnString * nested = checkAndGetColumn<ColumnString>(inner_col);
-    if (!nested)
+    const ColumnString * values = typeid_cast<const ColumnString *>(&data);
+    if (!values)
         return false;
-    const ColumnArray::Offsets & offsets = array->getOffsets();
 
     size_t prev_off = 0;
     using ValuesToIndices = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-
-    const PaddedPODArray<UInt8> * null_map_data = nullptr;
-    if (null_map)
-        null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
 
     ValuesToIndices indices;
     if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniq>)
@@ -285,10 +240,10 @@ bool FunctionArrayEnumerateExtended<Derived>::executeString(const ColumnArray * 
             size_t off = offsets[i];
             for (size_t j = prev_off; j < off; ++j)
             {
-                if (null_map_data && ((*null_map_data)[j] == 1))
+                if (null_map && (*null_map)[j])
                     res_values[j] = ++null_count;
                 else
-                    res_values[j] = ++indices[nested->getDataAt(j)];
+                    res_values[j] = ++indices[values->getDataAt(j)];
             }
             prev_off = off;
         }
@@ -304,7 +259,7 @@ bool FunctionArrayEnumerateExtended<Derived>::executeString(const ColumnArray * 
             size_t off = offsets[i];
             for (size_t j = prev_off; j < off; ++j)
             {
-                if (null_map_data && ((*null_map_data)[j] == 1))
+                if (null_map && (*null_map)[j])
                 {
                     if (!null_index)
                         null_index = ++rank;
@@ -312,7 +267,7 @@ bool FunctionArrayEnumerateExtended<Derived>::executeString(const ColumnArray * 
                 }
                 else
                 {
-                    auto & idx = indices[nested->getDataAt(j)];
+                    auto & idx = indices[values->getDataAt(j)];
                     if (!idx)
                         idx = ++rank;
                     res_values[j] = idx;
@@ -328,9 +283,7 @@ template <typename Derived>
 bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
-    const ColumnRawPtrs & null_maps,
-    ColumnUInt32::Container & res_values,
-    bool has_nullable_columns)
+    ColumnUInt32::Container & res_values)
 {
     size_t count = columns.size();
     size_t keys_bytes = 0;
@@ -343,8 +296,6 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
         key_sizes[j] = columns[j]->sizeOfValueIfFixed();
         keys_bytes += key_sizes[j];
     }
-    if (has_nullable_columns)
-        keys_bytes += std::tuple_size<KeysNullMap<UInt128>>::value;
 
     if (keys_bytes > 16)
         return false;
@@ -362,29 +313,7 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
             indices.clear();
             size_t off = offsets[i];
             for (size_t j = prev_off; j < off; ++j)
-            {
-                if (has_nullable_columns)
-                {
-                    KeysNullMap<UInt128> bitmap{};
-
-                    for (size_t i = 0; i < columns.size(); ++i)
-                    {
-                        if (null_maps[i])
-                        {
-                            const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
-                            if (null_map[j] == 1)
-                            {
-                                size_t bucket = i / 8;
-                                size_t offset = i % 8;
-                                bitmap[bucket] |= UInt8(1) << offset;
-                            }
-                        }
-                    }
-                    res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
-                }
-                else
-                    res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
-            }
+                res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
             prev_off = off;
         }
     }
@@ -398,35 +327,10 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
             size_t rank = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-                if (has_nullable_columns)
-                {
-                    KeysNullMap<UInt128> bitmap{};
-
-                    for (size_t i = 0; i < columns.size(); ++i)
-                    {
-                        if (null_maps[i])
-                        {
-                            const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
-                            if (null_map[j] == 1)
-                            {
-                                size_t bucket = i / 8;
-                                size_t offset = i % 8;
-                                bitmap[bucket] |= UInt8(1) << offset;
-                            }
-                        }
-                    }
-                    auto &idx = indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
-                    if (!idx)
-                        idx = ++rank;
-                    res_values[j] = idx;
-                }
-                else
-                {
-                    auto &idx = indices[packFixed<UInt128>(j, count, columns, key_sizes)];;
-                    if (!idx)
-                        idx = ++rank;
-                    res_values[j] = idx;
-                }
+                auto &idx = indices[packFixed<UInt128>(j, count, columns, key_sizes)];;
+                if (!idx)
+                    idx = ++rank;
+                res_values[j] = idx;
             }
             prev_off = off;
         }
@@ -436,7 +340,7 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
 }
 
 template <typename Derived>
-void FunctionArrayEnumerateExtended<Derived>::executeHashed(
+bool FunctionArrayEnumerateExtended<Derived>::executeHashed(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
     ColumnUInt32::Container & res_values)
@@ -480,6 +384,8 @@ void FunctionArrayEnumerateExtended<Derived>::executeHashed(
             prev_off = off;
         }
     }
+
+    return true;
 }
 
 }
