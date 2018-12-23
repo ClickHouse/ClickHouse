@@ -79,6 +79,7 @@ public:
     size_t byteSize() const override;
     size_t allocatedBytes() const override;
     ColumnPtr replicate(const Offsets & replicate_offsets) const override;
+    ColumnPtr convertToFullColumnIfConst() const override;
     void getExtremes(Field & min, Field & max) const override;
 
     bool hasEqualOffsets(const ColumnArray & other) const;

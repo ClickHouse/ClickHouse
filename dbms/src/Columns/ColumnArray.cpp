@@ -320,6 +320,13 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 }
 
 
+ColumnPtr ColumnArray::convertToFullColumnIfConst() const
+{
+    /// It is possible to have an array with constant data and non-constant offsets.
+    /// Example is the result of expression: replicate('hello', [1])
+    return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
+}
+
 void ColumnArray::getExtremes(Field & min, Field & max) const
 {
     min = Array();
