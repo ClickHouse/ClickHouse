@@ -72,12 +72,12 @@ template <typename Derived>
 void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
-    ColumnRawPtrs data_columns;
-    data_columns.reserve(arguments.size());
+    size_t num_arguments = arguments.size();
+    ColumnRawPtrs data_columns(num_arguments);
 
     Columns array_holders;
-    ColumnPtr offsets_holder;
-    for (size_t i = 0; i < arguments.size(); ++i)
+    ColumnPtr offsets_column;
+    for (size_t i = 0; i < num_arguments; ++i)
     {
         const ColumnPtr & array_ptr = block.getByPosition(arguments[i]).column;
         const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
@@ -93,28 +93,29 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
             array = checkAndGetColumn<ColumnArray>(array_holders.back().get());
         }
 
-        offsets_holder = array->getOffsetsPtr();
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
+        {
             offsets = &offsets_i;
+            offsets_column = array->getOffsetsPtr();
+        }
         else if (offsets_i != *offsets)
             throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         auto * array_data = &array->getData();
-        data_columns.push_back(array_data);
+        data_columns[i] = array_data;
     }
 
-    size_t num_columns = data_columns.size();
     const NullMap * null_map = nullptr;
 
-    for (size_t i = 0; i < num_columns; ++i)
+    for (size_t i = 0; i < num_arguments; ++i)
     {
         if (data_columns[i]->isColumnNullable())
         {
             const auto & nullable_col = static_cast<const ColumnNullable &>(*data_columns[i]);
 
-            if (num_columns == 1)
+            if (num_arguments == 1)
                 data_columns[i] = &nullable_col.getNestedColumn();
 
             null_map = &nullable_col.getNullMapData();
@@ -128,7 +129,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
-    if (num_columns == 1)
+    if (num_arguments == 1)
     {
         executeNumber<UInt8>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<UInt16>(*offsets, *data_columns[0], null_map, res_values)
@@ -149,7 +150,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
             || executeHashed(*offsets, data_columns, res_values);
     }
 
-    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_holder);
+    block.getByPosition(result).column = ColumnArray::create(std::move(res_nested), offsets_column);
 }
 
 
@@ -158,7 +159,7 @@ template <typename T>
 bool FunctionArrayEnumerateExtended<Derived>::executeNumber(
     const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
-    const ColumnVector<T> * data_concrete = typeid_cast<const ColumnVector<T> *>(&data);
+    const ColumnVector<T> * data_concrete = checkAndGetColumn<ColumnVector<T>>(&data);
     if (!data_concrete)
         return false;
     const auto & values = data_concrete->getData();
@@ -221,7 +222,7 @@ template <typename Derived>
 bool FunctionArrayEnumerateExtended<Derived>::executeString(
     const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values)
 {
-    const ColumnString * values = typeid_cast<const ColumnString *>(&data);
+    const ColumnString * values = checkAndGetColumn<ColumnString>(&data);
     if (!values)
         return false;
 
