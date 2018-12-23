@@ -67,8 +67,7 @@ void evaluateMissingDefaults(Block & block,
         if (copy_block.has(col->name))
         {
             auto evaluated_col = copy_block.getByName(col->name);
-            if (ColumnPtr converted = evaluated_col.column->convertToFullColumnIfConst())
-                evaluated_col.column = converted;
+            evaluated_col.column = evaluated_col.column->convertToFullColumnIfConst();
 
             block.insert(pos, std::move(evaluated_col));
         }

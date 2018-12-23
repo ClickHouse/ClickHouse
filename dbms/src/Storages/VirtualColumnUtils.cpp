@@ -166,9 +166,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column;
-    if (ColumnPtr converted = filter_column->convertToFullColumnIfConst())
-        filter_column = converted;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
     const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
     for (size_t i = 0; i < block.columns(); ++i)
