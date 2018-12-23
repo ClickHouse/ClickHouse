@@ -517,7 +517,7 @@ public:
 
     inline time_t addDays(time_t t, Int64 delta) const
     {
-        size_t index = findIndex(t);
+        UInt16 index = findIndex(t);    /// Using UInt16 to possibly overflow within valid range.
         time_t time_offset = toHour(t) * 3600 + toMinute(t) * 60 + toSecond(t);
 
         index += delta;
