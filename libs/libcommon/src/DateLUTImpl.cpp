@@ -56,6 +56,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
     cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));
     offset_at_start_of_epoch = start_of_epoch_lookup.offset;
+    offset_is_whole_number_of_hours_everytime = true;
 
     cctz::civil_day date{1970, 1, 1};
 
@@ -82,6 +83,9 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 
         values.time_at_offset_change = 0;
         values.amount_of_offset_change = 0;
+
+        if (start_of_day % 3600)
+            offset_is_whole_number_of_hours_everytime = false;
 
         /// If UTC offset was changed in previous day.
         if (i != 0)
