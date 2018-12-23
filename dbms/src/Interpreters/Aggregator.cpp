@@ -772,13 +772,8 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
-        key_columns[i] = block.safeGetByPosition(params.keys[i]).column.get();
-
-        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
-        {
-            materialized_columns.push_back(converted);
-            key_columns[i] = materialized_columns.back().get();
-        }
+        materialized_columns.push_back(block.safeGetByPosition(params.keys[i]).column->convertToFullColumnIfConst());
+        key_columns[i] = materialized_columns.back().get();
 
         if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
         {
@@ -797,13 +792,8 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     {
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
-            aggregate_columns[i][j] = block.safeGetByPosition(params.aggregates[i].arguments[j]).column.get();
-
-            if (ColumnPtr converted = aggregate_columns[i][j]->convertToFullColumnIfConst())
-            {
-                materialized_columns.push_back(converted);
-                aggregate_columns[i][j] = materialized_columns.back().get();
-            }
+            materialized_columns.push_back(block.safeGetByPosition(params.aggregates[i].arguments[j]).column->convertToFullColumnIfConst());
+            aggregate_columns[i][j] = materialized_columns.back().get();
 
             if (auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(aggregate_columns[i][j]))
             {

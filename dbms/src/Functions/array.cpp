@@ -69,8 +69,7 @@ public:
             if (!arg.type->equals(*elem_type))
                 preprocessed_column = castColumn(arg, elem_type, context);
 
-            if (ColumnPtr materialized_column = preprocessed_column->convertToFullColumnIfConst())
-                preprocessed_column = materialized_column;
+            preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
 
             columns_holder[i] = std::move(preprocessed_column);
             columns[i] = columns_holder[i].get();
