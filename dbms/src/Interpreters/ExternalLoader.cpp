@@ -236,7 +236,7 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
     std::list<std::string> removed_loadable_objects;
     for (const auto & loadable : loadable_objects)
     {
-        const auto & current_config = loadable_objects_defined_in_config[loadable.second.origin];
+        const auto & current_config = loadable_objects_defined_in_config[loadable.second.origin.name];
         if (current_config.find(loadable.first) == std::end(current_config))
             removed_loadable_objects.emplace_back(loadable.first);
     }
@@ -277,6 +277,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         Poco::Util::AbstractConfiguration::Keys keys;
         loaded_config->keys(keys);
 
+        // TODO: fix comment below
         /// for each loadable object defined in xml config
         for (const auto & key : keys)
         {
@@ -303,16 +304,17 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                 if (!loadable_name.empty() && name != loadable_name)
                     continue;
 
-                decltype(loadable_objects.begin()) object_it;
+                decltype(loadable_objects.begin()) object_it, end_it;
                 {
                     std::lock_guard<std::mutex> lock{map_mutex};
                     object_it = loadable_objects.find(name);
+                    end_it = loadable_objects.end();
                 }
 
                 /// Object with the same name was declared in other config file.
-                if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
+                if (object_it != end_it && object_it->second.origin.name != config_path)
                     throw Exception(object_name + " '" + name + "' from file " + config_path
-                                    + " already declared in file " + object_it->second.origin,
+                                    + " already declared in file " + object_it->second.origin.name,
                                     ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
                 auto object_ptr = create(name, *loaded_config, key);
@@ -346,7 +348,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                 /// add new loadable object or update an existing version
                 if (object_it == std::end(loadable_objects))
-                    loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), config_path, {}});
+                    loadable_objects.emplace(name, LoadableInfo{std::move(object_ptr), {DefinitionSource::Type::File, config_path}, {}});
                 else
                 {
                     if (object_it->second.loadable)
@@ -370,7 +372,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                     const auto exception_ptr = std::current_exception();
                     const auto loadable_it = loadable_objects.find(name);
                     if (loadable_it == std::end(loadable_objects))
-                        loadable_objects.emplace(name, LoadableInfo{nullptr, config_path, exception_ptr});
+                        loadable_objects.emplace(name, LoadableInfo{nullptr, {DefinitionSource::Type::File, config_path}, exception_ptr});
                     else
                         loadable_it->second.exception = exception_ptr;
                 }

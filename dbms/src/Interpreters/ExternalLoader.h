@@ -69,11 +69,23 @@ class ExternalLoader
 public:
     using LoadablePtr = std::shared_ptr<IExternalLoadable>;
 
+    struct OriginSource
+    {
+        enum class Type
+        {
+            AST,
+            File,
+        };
+
+        Type type;
+        std::string name;
+    };
 private:
+
     struct LoadableInfo final
     {
         LoadablePtr loadable;
-        std::string origin;
+        OriginSource origin;
         std::exception_ptr exception;
     };
 
