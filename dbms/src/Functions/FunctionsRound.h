@@ -87,7 +87,7 @@ struct IntegerRoundingComputation
         return scale;
     }
 
-    static ALWAYS_INLINE T computeImpl(T x, T scale)
+    static ALWAYS_INLINE T computeImpl(T x, size_t scale)
     {
         switch (rounding_mode)
         {
@@ -122,7 +122,7 @@ struct IntegerRoundingComputation
         }
     }
 
-    static ALWAYS_INLINE T compute(T x, T scale)
+    static ALWAYS_INLINE T compute(T x, size_t scale)
     {
         switch (scale_mode)
         {
