@@ -299,7 +299,7 @@ private:
     ColumnPtr databases;
     size_t database_idx = 0;
     DatabaseIteratorPtr tables_it;
-    const Context context;
+    const Context & context;
     bool done = false;
     DatabasePtr database;
     std::string database_name;
