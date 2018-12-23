@@ -45,7 +45,7 @@ public:
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       */
-    virtual Ptr convertToFullColumnIfConst() const { return {}; }
+    virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
     /// If column isn't ColumnLowCardinality, return itself.
     /// If column is ColumnLowCardinality, transforms is to full column.
