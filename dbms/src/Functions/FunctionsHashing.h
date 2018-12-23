@@ -7,7 +7,11 @@
 #include <metrohash.h>
 #include <murmurhash2.h>
 #include <murmurhash3.h>
-#include <xxhash.h>
+
+#include <Common/config.h>
+#if USE_XXHASH
+    #include <xxhash.h>
+#endif
 
 #include <Poco/ByteOrder.h>
 
@@ -403,6 +407,9 @@ struct ImplMetroHash64
     static constexpr bool use_int_hash_for_pods = true;
 };
 
+
+#if USE_XXHASH
+
 struct ImplXxHash32
 {
     static constexpr auto name = "xxHash32";
@@ -440,6 +447,8 @@ struct ImplXxHash64
 
     static constexpr bool use_int_hash_for_pods = false;
 };
+
+#endif
 
 
 template <typename Impl>
@@ -1064,9 +1073,12 @@ using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
-using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
-using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
+
+#if USE_XXHASH
+    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+#endif
 
 }
