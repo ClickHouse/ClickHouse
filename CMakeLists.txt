@@ -268,6 +268,7 @@ include (cmake/find_odbc.cmake)
 # openssl, zlib, odbc before poco
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
+include (cmake/find_xxhash.cmake)
 include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_execinfo.cmake)
