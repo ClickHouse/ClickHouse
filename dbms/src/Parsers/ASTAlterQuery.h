@@ -78,6 +78,10 @@ public:
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
+    bool if_not_exists = false;  /// option for ADD_COLUMN
+
+    bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */
     String from;

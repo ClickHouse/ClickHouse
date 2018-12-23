@@ -23,6 +23,13 @@ ALTER TABLE test.alter_test DROP COLUMN NestedColumn.S;
 
 ALTER TABLE test.alter_test DROP COLUMN AddedNested1.B;
 
+ALTER TABLE test.alter_test ADD COLUMN IF NOT EXISTS Added0 UInt32;
+ALTER TABLE test.alter_test ADD COLUMN IF NOT EXISTS AddedNested1 Nested(A UInt32, B UInt64);
+ALTER TABLE test.alter_test ADD COLUMN IF NOT EXISTS AddedNested1.C Array(String);
+ALTER TABLE test.alter_test MODIFY COLUMN IF EXISTS ToDrop UInt64;
+ALTER TABLE test.alter_test DROP COLUMN IF EXISTS ToDrop;
+ALTER TABLE test.alter_test COMMENT COLUMN IF EXISTS ToDrop 'new comment';
+
 DESC TABLE test.alter_test;
 
 SELECT * FROM test.alter_test;
