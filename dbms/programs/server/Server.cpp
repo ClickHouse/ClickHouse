@@ -195,7 +195,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Check that the process' user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    const auto effective_user = getUserName(effective_user_id);
     if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         const auto effective_user = getUserName(effective_user_id);
