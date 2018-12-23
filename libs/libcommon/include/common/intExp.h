@@ -32,7 +32,8 @@ inline uint64_t intExp10(int x)
     return table[x];
 }
 
-namespace common {
+namespace common
+{
 
 inline int exp10_i32(int x)
 {
@@ -123,4 +124,4 @@ inline __int128 exp10_i128(int x)
     return values[x];
 }
 
-} // common
+}
