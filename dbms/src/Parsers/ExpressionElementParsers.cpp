@@ -306,6 +306,7 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "CODEC";
     function_node->arguments = expr_list_args;
     function_node->children.push_back(function_node->arguments);
 
