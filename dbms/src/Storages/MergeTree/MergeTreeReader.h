@@ -8,12 +8,12 @@
 #include <Core/NamesAndTypes.h>
 #include <port/clock.h>
 
-class CachedCompressedReadBuffer;
 
 namespace DB
 {
 
 class IDataType;
+class CachedCompressedReadBuffer;
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
@@ -89,7 +89,6 @@ private:
         MarkCache * mark_cache;
         bool save_marks_in_cache;
         MarkCache::MappedPtr marks;
-
 
         std::unique_ptr<CachedCompressedReadBuffer> cached_buffer;
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
