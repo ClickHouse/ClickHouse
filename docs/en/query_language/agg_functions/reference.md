@@ -8,9 +8,7 @@ The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate f
 
 A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
-<a name="agg_function-any"></a>
-
-## any(x)
+## any(x) {#agg_function-any}
 
 Selects the first encountered value.
 The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
@@ -213,7 +211,7 @@ SELECT argMin(user, salary) FROM salary
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
 
-## sum(x)
+## sum(x) {#agg_function-sum}
 
 Calculates the sum.
 Only works for numbers.
@@ -267,9 +265,7 @@ Calculates the average.
 Only works for numbers.
 The result is always Float64.
 
-<a name="agg_function-uniq"></a>
-
-## uniq(x)
+## uniq(x) {#agg_function-uniq}
 
 Calculates the approximate number of different values of the argument. Works for numbers, strings, dates, date-with-time, and for multiple arguments and tuple arguments.
 

@@ -15,8 +15,12 @@ public:
     ASTPtr clone() const override
     {
         auto clone = std::make_shared<ASTKillQueryQuery>(*this);
-        clone->where_expression = where_expression->clone();
-        clone->children = {clone->where_expression};
+        if (where_expression)
+        {
+            clone->where_expression = where_expression->clone();
+            clone->children = {clone->where_expression};
+        }
+
         return clone;
     }
 

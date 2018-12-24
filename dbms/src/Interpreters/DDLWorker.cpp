@@ -691,17 +691,31 @@ void DDLWorker::processTaskAlter(
             auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
             pcg64 rng(randomSeed());
 
+            auto is_already_executed = [&]() -> bool
+            {
+                String executed_by;
+                if (zookeeper->tryGet(is_executed_path, executed_by))
+                {
+                    is_executed_by_any_replica = true;
+                    LOG_DEBUG(log, "Task " << task.entry_name << " has already been executed by another replica ("
+                        << executed_by << ") of the same shard.");
+                    return true;
+                }
+
+                return false;
+            };
+
             static const size_t max_tries = 20;
             for (size_t num_tries = 0; num_tries < max_tries; ++num_tries)
             {
-                if (zookeeper->exists(is_executed_path))
-                {
-                    is_executed_by_any_replica = true;
+                if (is_already_executed())
                     break;
-                }
 
                 if (lock->tryLock())
                 {
+                    if (is_already_executed())
+                        break;
+
                     tryExecuteQuery(rewritten_query, task, task.execution_status);
 
                     if (execute_on_leader_replica && task.execution_status.code == ErrorCodes::NOT_IMPLEMENTED)

@@ -92,7 +92,9 @@ private:
         {
 #if __SSE4_2__
             /// skip whitespace from left in blocks of up to 16 characters
-            constexpr auto left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT;
+
+            /// Avoid gcc bug: _mm_cmpistri: error: the third argument must be an 8-bit immediate
+            enum { left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT };
             while (mask == bytes_sse && chars_to_trim_left < size_sse)
             {
                 const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + chars_to_trim_left));
@@ -107,10 +109,12 @@ private:
 
         if constexpr (mode::trim_right)
         {
-            constexpr auto right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT;
             const auto trim_right_size = size - chars_to_trim_left;
 #if __SSE4_2__
             /// try to skip whitespace from right in blocks of up to 16 characters
+
+            /// Avoid gcc bug: _mm_cmpistri: error: the third argument must be an 8-bit immediate
+            enum { right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT };
             const auto trim_right_size_sse = trim_right_size - (trim_right_size % bytes_sse);
             while (mask == bytes_sse && chars_to_trim_right < trim_right_size_sse)
             {

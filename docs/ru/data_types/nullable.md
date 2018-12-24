@@ -1,6 +1,4 @@
-<a name="data_type-nullable"></a>
-
-# Nullable(TypeName)
+# Nullable(TypeName) {#data_type-nullable}
 
 Позволяет работать как со значением типа `TypeName` так и с отсутствием этого значения ([NULL](../query_language/syntax.md)) в одной и той же переменной, в том числе хранить `NULL` в таблицах вместе со значения типа `TypeName`. Например, в столбце типа `Nullable(Int8)` можно хранить значения типа `Int8`, а в тех строках, где значения нет, будет храниться `NULL`.
 

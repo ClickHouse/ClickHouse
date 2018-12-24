@@ -51,7 +51,7 @@ void ASTAlterCommand::formatImpl(
 
     if (type == ASTAlterCommand::ADD_COLUMN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD COLUMN " << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
 
         /// AFTER
@@ -64,7 +64,7 @@ void ASTAlterCommand::formatImpl(
     else if (type == ASTAlterCommand::DROP_COLUMN)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
-                      << (clear_column ? "CLEAR " : "DROP ") << "COLUMN " << (settings.hilite ? hilite_none : "");
+                      << (clear_column ? "CLEAR " : "DROP ") << "COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         column->formatImpl(settings, state, frame);
         if (partition)
         {
@@ -74,7 +74,7 @@ void ASTAlterCommand::formatImpl(
     }
     else if (type == ASTAlterCommand::MODIFY_COLUMN)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY COLUMN " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         col_decl->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::MODIFY_ORDER_BY)

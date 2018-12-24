@@ -1,3 +1,17 @@
+## ClickHouse release 18.16.1, 2018-12-21
+
+### Исправления ошибок:
+
+* Исправлена проблема, приводившая к невозможности обновить словари с источником ODBC. [#3825](https://github.com/yandex/ClickHouse/issues/3825), [#3829](https://github.com/yandex/ClickHouse/issues/3829)
+* JIT-компиляция агрегатных функций теперь работает с LowCardinality столбцами. [#3838](https://github.com/yandex/ClickHouse/issues/3838)
+
+### Улучшения:
+
+* Добавлена настройка `low_cardinality_allow_in_native_format` (по умолчанию включена). Если её выключить, столбцы LowCardinality в Native формате будут преобразовываться в соответствующий обычный тип при SELECT и из этого типа при INSERT. [#3879](https://github.com/yandex/ClickHouse/pull/3879)
+
+### Улучшения сборки:
+* Исправления сборки под macOS и ARM.
+
 ## ClickHouse release 18.16.0, 2018-12-14
 
 ### Новые возможности:
@@ -93,6 +107,16 @@
 
 * Удалена возможность сравнения типа `Date` с числом, необходимо вместо  `toDate('2018-12-18') = 17883`, использовать явное приведение типов `= toDate(17883)` [#3687](https://github.com/yandex/ClickHouse/pull/3687)
 
+## ClickHouse release 18.14.19, 2018-12-19
+
+### Исправления ошибок:
+
+* Исправлена проблема, приводившая к невозможности обновить словари с источником ODBC. [#3825](https://github.com/yandex/ClickHouse/issues/3825), [#3829](https://github.com/yandex/ClickHouse/issues/3829)
+* Исправлен segfault в случае превышения ограничения `max_temporary_non_const_columns`. [#3788](https://github.com/yandex/ClickHouse/pull/3788)
+* Корректное указание базы данных при выполнении DDL запросов `ON CLUSTER`. [#3460](https://github.com/yandex/ClickHouse/pull/3460)
+
+### Улучшения сборки:
+* Исправления сборки под ARM.
 
 ## ClickHouse release 18.14.18, 2018-12-04
 
