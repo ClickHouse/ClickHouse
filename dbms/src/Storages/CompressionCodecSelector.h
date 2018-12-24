@@ -28,7 +28,7 @@ namespace ErrorCodes
             <min_part_size>10000000000</min_part_size>         <!-- The minimum size of a part in bytes. -->
             <min_part_size_ratio>0.01</min_part_size_ratio>    <!-- The minimum size of the part relative to all the data in the table. -->
 
-            <! - Which compression method to choose. ->
+            <!-- Which compression method to choose. -->
             <method>zstd</method>
             <level>2</level>
         </case>

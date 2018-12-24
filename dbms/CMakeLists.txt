@@ -179,9 +179,6 @@ target_link_libraries (clickhouse_common_io
 
 target_link_libraries (dbms
         PRIVATE
-    ${LZ4_LIBRARY}
-    ${ZSTD_LIBRARY}
-        PRIVATE
     clickhouse_parsers
     clickhouse_common_config
         PUBLIC
