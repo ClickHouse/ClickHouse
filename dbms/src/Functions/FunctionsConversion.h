@@ -1230,7 +1230,9 @@ struct ToIntMonotonicity
             else
             {
                 /// When signedness is changed, it's also required for arguments to be from the same half.
+                /// And they must be in the same half after converting to the result type.
                 if (left_in_first_half == right_in_first_half
+                    && (T(left.get<Int64>()) >= 0) == (T(right.get<Int64>()) >= 0)
                     && divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
                     return {true};
 
