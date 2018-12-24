@@ -48,7 +48,8 @@ void CompressionCodecLZ4::doDecompressData(const char * source, UInt32 source_si
 
 void registerCodecLZ4(CompressionCodecFactory & factory)
 {
-    factory.registerSimpleCompressionCodec("LZ4", static_cast<UInt8>(CompressionMethodByte::LZ4), [&] () {
+    factory.registerSimpleCompressionCodec("LZ4", static_cast<UInt8>(CompressionMethodByte::LZ4), [&] ()
+    {
         return std::make_shared<CompressionCodecLZ4>();
     });
 }
@@ -73,7 +74,7 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 {
     factory.registerCompressionCodec("LZ4HC", {}, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
-        int level = LZ4HC_CLEVEL_DEFAULT;
+        int level = 0;
 
         if (arguments && !arguments->children.empty())
         {
@@ -83,11 +84,6 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
             const auto children = arguments->children;
             const ASTLiteral * literal = static_cast<const ASTLiteral *>(children[0].get());
             level = literal->value.safeGet<UInt64>();
-            if (level > LZ4HC_CLEVEL_MAX || level < LZ4HC_CLEVEL_MIN)
-                throw Exception("LZ4HC codec can't have level more than "
-                    + std::to_string(LZ4HC_CLEVEL_MAX) + " and less than "
-                    + std::to_string(LZ4HC_CLEVEL_MIN) + ", given "
-                    + std::to_string(level), ErrorCodes::ILLEGAL_CODEC_PARAMETER);
         }
 
         return std::make_shared<CompressionCodecLZ4HC>(level);
