@@ -18,6 +18,9 @@
 - 对象存储
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- 配置管理
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 - 监控
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
@@ -27,6 +30,8 @@
     - [Prometheus](https://prometheus.io/)
         - [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
+    - [Nagios](https://www.nagios.org/)
+        - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
 - 记录
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (对于 [Kubernetes](https://kubernetes.io))
