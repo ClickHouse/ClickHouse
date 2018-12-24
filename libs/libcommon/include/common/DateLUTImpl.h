@@ -79,7 +79,7 @@ private:
 
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
 
-        if (t >= lut[guess].date && t < lut[DayNum(guess + 1)].date)
+        if ((guess == 0 || t >= lut[guess].date) && t < lut[DayNum(guess + 1)].date)
             return guess;
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
