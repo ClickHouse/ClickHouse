@@ -38,6 +38,8 @@ DROP TABLE IF EXISTS test.codec_multiple_direct_specification_2;
 
 DROP TABLE IF EXISTS test.compression_codec_multiple;
 
+SET network_compression_method = 'lz4hc';
+
 CREATE TABLE test.compression_codec_multiple (
     id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
     data String CODEC(ZSTD(2), NONE, LZ4HC, LZ4, LZ4),
@@ -77,6 +79,9 @@ INSERT INTO test.compression_codec_multiple_more_types VALUES(7.1, 'xxxxxxxxxxxx
 SELECT * FROM test.compression_codec_multiple_more_types order by id;
 
 DROP TABLE IF EXISTS test.compression_codec_multiple_with_key;
+
+SET network_compression_method = 'zstd';
+SET network_zstd_compression_level = 5;
 
 CREATE TABLE test.compression_codec_multiple_with_key (
     somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
