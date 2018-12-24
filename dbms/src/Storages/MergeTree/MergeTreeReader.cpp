@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Common/typeid_cast.h>
 #include <Poco/File.h>
-#include <IO/createReadBufferFromFileBase.h>
 
 
 namespace DB
@@ -49,12 +48,8 @@ MergeTreeReader::MergeTreeReader(const String & path,
         if (!Poco::File(path).exists())
             throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
-        const auto columns_desc = storage.getColumns();
-
         for (const NameAndTypePair & column : columns)
-        {
             addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
-        }
     }
     catch (...)
     {
@@ -358,8 +353,8 @@ void MergeTreeReader::Stream::seekToStart()
 }
 
 
-void MergeTreeReader::addStreams(const String & name, const IDataType & type,
-    const MarkRanges & all_mark_ranges, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
+void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {

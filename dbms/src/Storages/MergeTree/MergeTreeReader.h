@@ -121,8 +121,8 @@ private:
     size_t max_read_buffer_size;
     size_t index_granularity;
 
-    void addStreams(const String & name, const IDataType & type,
-        const MarkRanges & all_mark_ranges, const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
+    void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(
         const String & name, const IDataType & type, IColumn & column,
