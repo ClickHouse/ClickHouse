@@ -9,19 +9,24 @@ Each functional test sends one or multiple queries to the running ClickHouse ser
 
 Tests are located in `dbms/src/tests/queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
 
-Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery`. `.sh` test is a script that is run by itself.
+Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself.
 
 To run all tests, use `dbms/tests/clickhouse-test` tool. Look `--help` for the list of possible options. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`.
 
 The most simple way to invoke functional tests is to copy `clickhouse-client` to `/usr/bin/`, run `clickhouse-server` and then run `./clickhouse-test` from its own directory.
 
-To add new test, create a `.sql` or `.sh` file in  `dbms/src/tests/queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+To add new test, create a `.sql` or `.sh` file in  `dbms/src/tests/queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
 
 Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper; `shard` is for tests that requires server to listen `127.0.0.*`; `long` is for tests that run slightly longer that one second.
+
+
+## Known bugs
+
+If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `dbms/src/tests/queries/bugs` directory. These tests will be moved to `dbms/src/tests/queries/0_stateless` when bugs are fixed.
 
 
 ## Integration Tests
@@ -55,7 +60,7 @@ Performance tests are not run on per-commit basis. Results of performance tests 
 
 Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `dbms/src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
-You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. There kind of tests are not automated.
+You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
 
 
 ## Miscellanous Tests
@@ -173,7 +178,7 @@ For production builds, gcc is used (it still generates slightly more efficient c
 ## Sanitizers
 
 **Address sanitizer**.
-We run functional tests under ASan on per-commit basis.
+We run functional and integration tests under ASan on per-commit basis.
 
 **Valgrind (Memcheck)**.
 We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
@@ -185,7 +190,7 @@ We run functional tests under TSan. ClickHouse must pass all tests. Run under TS
 Currently we still don't use MSan.
 
 **Undefined behaviour sanitizer.**
-We still don't use UBSan. The only thing to fix is unaligned placement of structs in Arena during aggregation. This is totally fine, we only have to force alignment under UBSan.
+We still don't use UBSan on per commit basis. There are some places to fix.
 
 **Debug allocator.**
 You can enable debug version of `tcmalloc` with `DEBUG_TCMALLOC` CMake option. We run tests with debug allocator on per-commit basis.
@@ -195,7 +200,9 @@ You will find some additional details in `dbms/tests/instructions/sanitizers.txt
 
 ## Fuzzing
 
-As of July 2018 we don't use fuzzing.
+We use simple fuzz test to generate random SQL queries and to check that the server doesn't die. Fuzz testing is performed with Address sanitizer. You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+
+As of December 2018, we still don't use isolated fuzz testing of library code.
 
 
 ## Security Audit
@@ -242,12 +249,12 @@ As of July 2018 we don't track test coverage.
 
 ## Test Automation
 
-We run tests with Travis CI (available for general public) and Jenkins (available inside Yandex).
+We run tests with Yandex internal CI and job automation system named "Sandbox". We also continue to use Jenkins (available inside Yandex).
 
-In Travis CI due to limit on time and computational power we can afford only subset of functional tests that are run with limited build of ClickHouse (debug version with cut off most of libraries). In about half of runs it still fails to finish in 50 minutes timeout. The only advantage - test results are visible for all external contributors.
+Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored eternally. When you send a pull request on GitHub, we tag it as "can be tested" and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
 
-In Jenkins we run functional tests for each commit and for each pull request from trusted users; the same under ASan; we also run quorum tests, dictionary tests, Metrica B2B tests. We use Jenkins to prepare and publish releases. Worth to note that we are not happy with Jenkins at all.
+We don't use Travis CI due to the limit on time and computational power.
 
-One of our goals is to provide reliable testing infrastructure that will be available to community.
+In Jenkins we run dictionary tests, Metrica B2B tests. We use Jenkins to prepare and publish releases. Jenkins is a legacy technology and all jobs will be moved to Sandbox.
 
 [Original article](https://clickhouse.yandex/docs/en/development/tests/) <!--hide-->
