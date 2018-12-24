@@ -256,7 +256,7 @@ JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null`  输出来表示.
+ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
 
 参考 JSONEachRow 格式。
 

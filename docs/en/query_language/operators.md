@@ -5,7 +5,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Access Operators
 
-`a[N]`  Access to an element of an array; ` arrayElement(a, N) function`.
+`a[N]` Access to an element of an array; ` arrayElement(a, N) function`.
 
 `a.N` – Access to a tuble element; `tupleElement(a, N)` function.
 
@@ -120,7 +120,7 @@ The following operators do not have a priority, since they are brackets:
 ## Associativity
 
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
-Sometimes this doesn't work the way you expect. For example, ` SELECT 4 > 2 > 3`  will result in 0.
+Sometimes this doesn't work the way you expect. For example, ` SELECT 4 > 2 > 3` will result in 0.
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed to a single call of these functions.
 

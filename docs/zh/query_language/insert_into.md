@@ -34,8 +34,8 @@ ClickHouse会清除数据前所有的空白字符与一行摘要信息（如果�
 
 ``` sql
 INSERT INTO t FORMAT TabSeparated
-11  Hello, world!
-22  Qwerty
+11 Hello, world!
+22 Qwerty
 ```
 
 在使用命令行客户端或HTTP客户端时，你可以将具体的查询语句与数据分开发送。更多具体信息，请参考“[客户端](../interfaces/index.md#interfaces)”部分。

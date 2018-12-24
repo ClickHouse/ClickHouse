@@ -102,7 +102,7 @@ coalesce(x,...)
 
 **Returned values**
 
-- The first  non-`NULL` argument.
+- The first non-`NULL` argument.
 - `NULL`, if all arguments are `NULL`.
 
 **Example**
@@ -230,7 +230,7 @@ Consider the `t_null` table.
 SHOW CREATE TABLE t_null
 
 ┌─statement─────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE default.t_null ( x Int8,  y Nullable(Int8)) ENGINE = TinyLog │
+│ CREATE TABLE default.t_null ( x Int8, y Nullable(Int8)) ENGINE = TinyLog │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 

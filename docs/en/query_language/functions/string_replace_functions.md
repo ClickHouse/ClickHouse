@@ -60,7 +60,7 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 
 ```
 ┌─res────────────────────────┐
-│ HHeelllloo,,  WWoorrlldd!! │
+│ HHeelllloo,, WWoorrlldd!! │
 └────────────────────────────┘
 ```
 
