@@ -49,16 +49,22 @@ namespace DB
   * TODO Pass alignment to Allocator.
   * TODO Allow greater alignment than alignof(T). Example: array of char aligned to page size.
   */
-template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0>
+static constexpr size_t EmptyPODArraySize = 1024;
+extern const char EmptyPODArray[EmptyPODArraySize];
+template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0, size_t pad_left_ = 0>
 class PODArray : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
 protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = (pad_right_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
+    static constexpr size_t pad_left_unaligned = (pad_left_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
+    static constexpr size_t pad_left = pad_left_unaligned ? pad_left_unaligned + 15 - (pad_left_unaligned - 1) % 16 : 0;
+    static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
+    static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Element size too large?");
 
-    char * c_start          = nullptr;
-    char * c_end            = nullptr;
-    char * c_end_of_storage = nullptr;    /// Does not include pad_right.
+    char * c_start          = null;    /// Does not include pad_left.
+    char * c_end            = null;
+    char * c_end_of_storage = null;    /// Does not include pad_right.
 
     T * t_start()                      { return reinterpret_cast<T *>(c_start); }
     T * t_end()                        { return reinterpret_cast<T *>(c_end); }
@@ -72,7 +78,7 @@ protected:
     static size_t byte_size(size_t num_elements) { return num_elements * sizeof(T); }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
-    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right; }
+    static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
 
     void alloc_for_num_elements(size_t num_elements)
     {
@@ -82,22 +88,24 @@ protected:
     template <typename ... TAllocatorParams>
     void alloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...));
-        c_end_of_storage = c_start + bytes - pad_right;
+        c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
+        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        if (pad_left)
+            *(t_start() - 1) = {};
     }
 
     void dealloc()
     {
-        if (c_start == nullptr)
+        if (c_start == null)
             return;
 
-        TAllocator::free(c_start, allocated_bytes());
+        TAllocator::free(c_start - pad_left, allocated_bytes());
     }
 
     template <typename ... TAllocatorParams>
     void realloc(size_t bytes, TAllocatorParams &&... allocator_params)
     {
-        if (c_start == nullptr)
+        if (c_start == null)
         {
             alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...);
             return;
@@ -105,15 +113,18 @@ protected:
 
         ptrdiff_t end_diff = c_end - c_start;
 
-        c_start = reinterpret_cast<char *>(TAllocator::realloc(c_start, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...));
-
+        c_start = reinterpret_cast<char *>(
+                      TAllocator::realloc(c_start - pad_left, allocated_bytes(), bytes, std::forward<TAllocatorParams>(allocator_params)...))
+            + pad_left;
         c_end = c_start + end_diff;
-        c_end_of_storage = c_start + bytes - pad_right;
+        c_end_of_storage = c_start + bytes - pad_right - pad_left;
+        if (pad_left)
+            *(t_start() - 1) = {};
     }
 
     bool isInitialized() const
     {
-        return (c_start != nullptr) && (c_end != nullptr) && (c_end_of_storage != nullptr);
+        return (c_start != null) && (c_end != null) && (c_end_of_storage != null);
     }
 
     bool isAllocatedFromStack() const
@@ -139,7 +150,7 @@ protected:
 public:
     using value_type = T;
 
-    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right; }
+    size_t allocated_bytes() const { return c_end_of_storage - c_start + pad_right + pad_left; }
 
     /// You can not just use `typedef`, because there is ambiguity for the constructors and `assign` functions.
     struct iterator : public boost::iterator_adaptor<iterator, T*>
@@ -378,9 +389,9 @@ public:
                 memcpy(dest.c_start, src.c_start, byte_size(src.size()));
                 dest.c_end = dest.c_start + (src.c_end - src.c_start);
 
-                src.c_start = nullptr;
-                src.c_end = nullptr;
-                src.c_end_of_storage = nullptr;
+                src.c_start = null;
+                src.c_end = null;
+                src.c_end_of_storage = null;
             }
             else
             {
@@ -504,7 +515,7 @@ void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, I
 
 /** For columns. Padding is enough to read and write xmm-register at the address of the last element. */
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
-using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15>;
+using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15, 16>;
 
 
 inline constexpr size_t integerRound(size_t value, size_t dividend)
