@@ -1,6 +1,6 @@
 # SQL Reference
 
-* [SELECT](select.md#select)
+* [SELECT](select.md)
 * [INSERT INTO](insert_into.md)
 * [CREATE](create.md)
 * [ALTER](alter.md#query_language_queries_alter)

@@ -43,9 +43,10 @@ class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkPat
 
 class ClickHousePreprocessor(markdown.util.Processor):
     def run(self, lines):
-        for line in lines:
-            if '<!--hide-->' not in line:
-                yield line
+        if os.getenv('QLOUD_TOKEN'):
+            for line in lines:
+                if '<!--hide-->' not in line:
+                    yield line
 
 
 class ClickHouseMarkdown(markdown.extensions.Extension):

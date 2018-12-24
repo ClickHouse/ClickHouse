@@ -1,6 +1,4 @@
-<a name="dicts-external_dicts_dict_sources"></a>
-
-# Sources of External Dictionaries
+# Sources of External Dictionaries {#dicts-external_dicts_dict_sources}
 
 An external dictionary can be connected from many different sources.
 
@@ -25,18 +23,17 @@ The source is configured in the `source` section.
 
 Types of sources (`source_type`):
 
-- [Local file](#local-file)
-- [Executable file](#executable-file)
-- [HTTP(s)](#http-s)
+- [Local file](#dicts-external_dicts_dict_sources-local_file)
+- [Executable file](#dicts-external_dicts_dict_sources-executable)
+- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - DBMS
-    - [MySQL](#mysql)
-    - [ClickHouse](#clickhouse)
-    - [MongoDB](#mongodb)
-    - [ODBC](#odbc)
+    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 
-<a name="dicts-external_dicts_dict_sources-local_file"></a>
 
-## Local File
+## Local File {#dicts-external_dicts_dict_sources-local_file}
 
 Example of settings:
 
@@ -54,9 +51,8 @@ Setting fields:
 - `path` – The absolute path to the file.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
-<a name="dicts-external_dicts_dict_sources-executable"></a>
 
-## Executable File
+## Executable File {#dicts-external_dicts_dict_sources-executable}
 
 Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
 
@@ -76,9 +72,8 @@ Setting fields:
 - `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
-<a name="dicts-external_dicts_dict_sources-http"></a>
 
-## HTTP(s)
+## HTTP(s) {#dicts-external_dicts_dict_sources-http}
 
 Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
 
@@ -100,9 +95,8 @@ Setting fields:
 - `url` – The source URL.
 - `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
-<a name="dicts-external_dicts_dict_sources-odbc"></a>
 
-## ODBC
+## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
 You can use this method to connect any database that has an ODBC driver.
 
@@ -303,9 +297,8 @@ Configuring the dictionary in ClickHouse:
 
 ## DBMS
 
-<a name="dicts-external_dicts_dict_sources-mysql"></a>
 
-### MySQL
+### MySQL {#dicts-external_dicts_dict_sources-mysql}
 
 Example of settings:
 
@@ -371,9 +364,8 @@ Example of settings:
 </source>
 ```
 
-<a name="dicts-external_dicts_dict_sources-clickhouse"></a>
 
-### ClickHouse
+### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Example of settings:
 
@@ -402,9 +394,8 @@ Setting fields:
 - `where ` – The selection criteria. May be omitted.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
 
-<a name="dicts-external_dicts_dict_sources-mongodb"></a>
 
-### MongoDB
+### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
 Example of settings:
 

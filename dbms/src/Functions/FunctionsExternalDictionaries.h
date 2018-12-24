@@ -346,11 +346,8 @@ private:
         String attr_name = attr_name_col->getValue<String>();
 
         const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
-        ColumnPtr key_col = key_col_with_type.column;
-
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
-            key_col = key_col_materialized;
+        ColumnPtr key_col = key_col_with_type.column->convertToFullColumnIfConst();
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
@@ -578,11 +575,8 @@ private:
         String attr_name = attr_name_col->getValue<String>();
 
         const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
-        ColumnPtr key_col = key_col_with_type.column;
-
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
-            key_col = key_col_materialized;
+        ColumnPtr key_col = key_col_with_type.column->convertToFullColumnIfConst();
 
         const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
@@ -813,11 +807,9 @@ private:
         String attr_name = attr_name_col->getValue<String>();
 
         const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
-        ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
-            key_col = key_col_materialized;
+        ColumnPtr key_col = key_col_with_type.column->convertToFullColumnIfConst();
 
         if (checkColumn<ColumnTuple>(key_col.get()))
         {
@@ -1079,11 +1071,9 @@ private:
         String attr_name = attr_name_col->getValue<String>();
 
         const ColumnWithTypeAndName & key_col_with_type = block.getByPosition(arguments[2]);
-        ColumnPtr key_col = key_col_with_type.column;
 
         /// Functions in external dictionaries only support full-value (not constant) columns with keys.
-        if (ColumnPtr key_col_materialized = key_col_with_type.column->convertToFullColumnIfConst())
-            key_col = key_col_materialized;
+        ColumnPtr key_col = key_col_with_type.column->convertToFullColumnIfConst();
 
         const auto & key_columns = typeid_cast<const ColumnTuple &>(*key_col).getColumns();
         const auto & key_types = static_cast<const DataTypeTuple &>(*key_col_with_type.type).getElements();
@@ -1691,7 +1681,7 @@ static const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & c
         }
     }
 
-    const auto full_column = column.isColumnConst() ? column.convertToFullColumnIfConst() : column.getPtr();
+    const auto full_column = column.convertToFullColumnIfConst();
 
     // With type conversion and const columns we need to use backup storage here
     const auto size = full_column->size();

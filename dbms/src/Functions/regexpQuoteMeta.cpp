@@ -81,7 +81,7 @@ public:
 
             while (true)
             {
-                const char * next_src_pos = find_first_symbols<'\0', '\\', '|', '(', ')', '^', '$', '.', '[', '?', '*', '+', '{', ':', '-'>(src_pos, src_end);
+                const char * next_src_pos = find_first_symbols<'\0', '\\', '|', '(', ')', '^', '$', '.', '[', ']', '?', '*', '+', '{', ':', '-'>(src_pos, src_end);
 
                 size_t bytes_to_copy = next_src_pos - src_pos;
                 size_t old_dst_size = dst_data.size();
