@@ -28,7 +28,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (p_on.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
         return false;
 
-    if (p_where.ignore(pos, expected) && !p_where_expression.parse(pos, query->where_expression, expected))
+    if (!p_where.ignore(pos, expected) || !p_where_expression.parse(pos, query->where_expression, expected))
         return false;
 
     if (p_sync.ignore(pos, expected))
@@ -39,8 +39,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->test = true;
 
     query->cluster = cluster_str;
-    if (query->where_expression)
-        query->children.emplace_back(query->where_expression);
+    query->children.emplace_back(query->where_expression);
     node = std::move(query);
     return true;
 }
