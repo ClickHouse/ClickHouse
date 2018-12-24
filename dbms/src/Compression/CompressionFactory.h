@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <ext/singleton.h>
 #include <Common/IFactoryWithAliases.h>

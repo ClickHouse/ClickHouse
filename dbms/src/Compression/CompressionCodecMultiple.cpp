@@ -106,7 +106,8 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {
-    factory.registerSimpleCompressionCodec("Multiple", static_cast<UInt8>(CompressionMethodByte::Multiple), [&](){
+    factory.registerSimpleCompressionCodec("Multiple", static_cast<UInt8>(CompressionMethodByte::Multiple), [&] ()
+    {
         return std::make_shared<CompressionCodecMultiple>();
     });
 }

@@ -29,7 +29,8 @@ void CompressionCodecNone::doDecompressData(const char * source, UInt32 /*source
 
 void registerCodecNone(CompressionCodecFactory & factory)
 {
-    factory.registerSimpleCompressionCodec("NONE", static_cast<char>(CompressionMethodByte::NONE), [&](){
+    factory.registerSimpleCompressionCodec("NONE", static_cast<char>(CompressionMethodByte::NONE), [&] ()
+    {
         return std::make_shared<CompressionCodecNone>();
     });
 }
