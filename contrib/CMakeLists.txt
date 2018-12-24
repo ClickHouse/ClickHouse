@@ -145,6 +145,10 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # cmake -DUSE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE=1 -DUSE_STATIC_LIBRARIES=0
     # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> /contrib/arrow-cmake/cpp/src/parquet/
 
+    # Also useful parquet reader:
+    # cd contrib/arrow/cpp/build && mkdir -p build && cmake .. -DPARQUET_BUILD_EXECUTABLES=1 && make -j8
+    # contrib/arrow/cpp/build/debug/parquet-reader some_file.parquet
+
     set (ARROW_COMPUTE ON CACHE INTERNAL "")
     set (ARROW_PARQUET ON CACHE INTERNAL "")
     set (ARROW_VERBOSE_THIRDPARTY_BUILD ON CACHE INTERNAL "")
@@ -152,6 +156,8 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     set (ARROW_BOOST_HEADER_ONLY ON CACHE INTERNAL "")
     #set (BOOST_INCLUDEDIR Boost_INCLUDE_DIRS)
     set (Boost_FOUND 1 CACHE INTERNAL "")
+    #set (ZLIB_HOME ${ZLIB_INCLUDE_DIR})
+    #set (ZLIB_FOUND 1)
     if (MAKE_STATIC_LIBRARIES)
         set (PARQUET_ARROW_LINKAGE "static" CACHE INTERNAL "")
         set (ARROW_TEST_LINKAGE "static" CACHE INTERNAL "")

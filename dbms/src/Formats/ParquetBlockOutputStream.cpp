@@ -273,7 +273,7 @@ void ParquetBlockOutputStream::write(const Block & block)
             = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
-DUMP(column_nested_type_name, internal_type_to_arrow_type.at(column_nested_type_name));
+DUMP(column_nested_type_name, internal_type_to_arrow_type.at(column_nested_type_name), internal_type_to_arrow_type.at(column_nested_type_name)->id());
         // TODO: use typeid_cast
         if ("String" == column_nested_type_name)
         {
