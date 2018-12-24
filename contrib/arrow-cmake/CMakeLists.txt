@@ -83,6 +83,15 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/array.cc
   ${LIBRARY_DIR}/buffer.cc
   ${LIBRARY_DIR}/builder.cc
+
+  ${LIBRARY_DIR}/array/builder_adaptive.cc
+  ${LIBRARY_DIR}/array/builder_base.cc
+  ${LIBRARY_DIR}/array/builder_binary.cc
+  ${LIBRARY_DIR}/array/builder_decimal.cc
+  ${LIBRARY_DIR}/array/builder_dict.cc
+  ${LIBRARY_DIR}/array/builder_nested.cc
+  ${LIBRARY_DIR}/array/builder_primitive.cc
+
   ${LIBRARY_DIR}/compare.cc
   ${LIBRARY_DIR}/memory_pool.cc
   ${LIBRARY_DIR}/pretty_print.cc

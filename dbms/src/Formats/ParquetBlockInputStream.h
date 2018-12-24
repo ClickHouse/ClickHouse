@@ -6,6 +6,7 @@
 #    include <DataStreams/IProfilingBlockInputStream.h>
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    if defined(__clang__) && __clang_major__ >= 7
 #        pragma GCC diagnostic ignored "-Wc++98-compat-extra-semi"
 #    endif
