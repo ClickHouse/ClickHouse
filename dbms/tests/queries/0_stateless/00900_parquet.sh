@@ -62,28 +62,26 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" 
 
 
 # TODO! fix uint32
-#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types1"
-#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types2"
-#${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types1       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15), date Date, datetime DateTime) ENGINE = Memory"
-#${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types2       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15), date Date, datetime DateTime) ENGINE = Memory"
-#${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,          1132,       -1064,          1164,          -1.032,          -1.064,      'string', 'fixedstring',            '2000-01-01', '2018-01-01 01:01:01')"
-#${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types1"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types2"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types1       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15), date Date, datetime DateTime) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types2       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15), date Date, datetime DateTime) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,          1132,       -1064,          1164,          -1.032,          -1.064,      'string', 'fixedstring',            '2001-02-03', '2018-01-01 01:01:01')"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1" | tee ${CLICKHOUSE_TMP}/parquet1.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types2" | tee ${CLICKHOUSE_TMP}/parquet2.parquet
 
 diff ${CLICKHOUSE_TMP}/parquet1.parquet ${CLICKHOUSE_TMP}/parquet2.parquet
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types1"
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types2"
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types2"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types1       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32,                int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String,                                         datetime DateTime) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types2       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32,                int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String,                                         datetime DateTime) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,                      -1064,          1164,          -1.032,          -1.064,      'string',                              '2018-01-01 01:01:01')"
-#${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,                      -1064,          1164,          -1.032,          -1.064,      'string',                              '2018-02-03 04:05:06')"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
 
 # THIS! SHOULD WORK:
 # TODO: add nullable
@@ -92,5 +90,9 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types2"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types1       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15)                              ) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types2       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15)                              ) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,          1132,       -1064,          1164,          -1.032,          -1.064,      'string', 'fixedstring'                                                )"
-#${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
 
+
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types1"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types2"

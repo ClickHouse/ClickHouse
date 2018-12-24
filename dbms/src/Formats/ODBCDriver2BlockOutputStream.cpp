@@ -4,10 +4,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
-
-#include <Core/iostream_debug_helpers.h>
-
-
 namespace DB
 {
 ODBCDriver2BlockOutputStream::ODBCDriver2BlockOutputStream(

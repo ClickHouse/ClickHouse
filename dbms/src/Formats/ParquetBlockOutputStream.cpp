@@ -28,6 +28,7 @@
 #    include <parquet/util/memory.h>
 #    pragma GCC diagnostic pop
 
+#include <Core/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -122,21 +123,45 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
-    arrow::Date32Builder date32_builder;
+    arrow::Date32Builder date_builder;
     arrow::Status append_status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
     {
         if (null_bytemap && (*null_bytemap)[value_i])
-            append_status = date32_builder.AppendNull();
+            append_status = date_builder.AppendNull();
         else
             /// Implicitly converts UInt16 to Int32
-            append_status = date32_builder.Append(internal_data[value_i]);
+            append_status = date_builder.Append(internal_data[value_i]);
+DUMP(internal_data[value_i]);
 
         checkAppendStatus(append_status, write_column->getName());
     }
 
-    arrow::Status finish_status = date32_builder.Finish(&arrow_array);
+    arrow::Status finish_status = date_builder.Finish(&arrow_array);
+    checkFinishStatus(finish_status, write_column->getName());
+}
+
+void ParquetBlockOutputStream::fillArrowArrayWithDateTimeColumnData(
+    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+{
+    auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
+    arrow::Date64Builder date_builder;
+    arrow::Status append_status;
+
+    for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
+    {
+        if (null_bytemap && (*null_bytemap)[value_i])
+            append_status = date_builder.AppendNull();
+        else
+            /// Implicitly converts UInt16 to Int32
+            append_status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
+DUMP(static_cast<int64_t>(internal_data[value_i]) * 1000);
+
+        checkAppendStatus(append_status, write_column->getName());
+    }
+
+    arrow::Status finish_status = date_builder.Finish(&arrow_array);
     checkFinishStatus(finish_status, write_column->getName());
 }
 
@@ -165,7 +190,8 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockO
     {"Float64", arrow::float64()},
 
     //{"Date", arrow::date64()},
-    {"Date", arrow::uint16()}, // CHECK
+    {"Date", arrow::date32()},
+    //{"Date", arrow::uint16()}, // CHECK
     {"DateTime", arrow::date64()},
 
     // TODO: ClickHouse can actually store non-utf8 strings!
@@ -247,6 +273,7 @@ void ParquetBlockOutputStream::write(const Block & block)
             = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
+DUMP(column_nested_type_name, internal_type_to_arrow_type.at(column_nested_type_name));
         // TODO: use typeid_cast
         if ("String" == column_nested_type_name)
         {
@@ -258,9 +285,13 @@ void ParquetBlockOutputStream::write(const Block & block)
             //fillArrowArrayWithFixedStringColumnData(nested_column, arrow_array, null_bytemap);
             fillArrowArrayWithStringColumnData<ColumnFixedString>(nested_column, arrow_array, null_bytemap);
         }
-        else if ("Date" == column_nested_type_name || "DateTime" == column_nested_type_name)
+        else if ("Date" == column_nested_type_name)
         {
             fillArrowArrayWithDateColumnData(nested_column, arrow_array, null_bytemap);
+        }
+        else if ("DateTime" == column_nested_type_name)
+        {
+            fillArrowArrayWithDateTimeColumnData(nested_column, arrow_array, null_bytemap);
         }
 #    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
         else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
