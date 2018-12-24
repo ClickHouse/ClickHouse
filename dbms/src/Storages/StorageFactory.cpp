@@ -13,8 +13,6 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Core/FieldVisitors.h>
-#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -86,9 +84,7 @@ StoragePtr StorageFactory::get(
         if (query.storage)
             throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageLiveView::create(
-            table_name, database_name, local_context, query, columns,
-            materialized_columns, alias_columns, column_defaults);
+        name = "LiveView";
     }
     else if (query.is_live_channel)
     {
@@ -96,9 +92,7 @@ StoragePtr StorageFactory::get(
         if (query.storage)
             throw Exception("Specifying ENGINE is not allowed for a LiveChannel", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageLiveChannel::create(
-            table_name, database_name, local_context, query, columns,
-            materialized_columns, alias_columns, column_defaults);
+        name = "LiveChannel";
     }
     else
     {

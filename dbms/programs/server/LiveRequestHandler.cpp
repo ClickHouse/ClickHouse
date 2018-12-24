@@ -39,7 +39,7 @@ std::vector<std::string> LiveRequestHandler::splitURI(std::string str, std::stri
     std::vector<std::string> result;
 
     while(str.size()){
-        int index = str.find(token);
+        auto index = str.find(token);
 
         if(index != std::string::npos)
         {
@@ -109,7 +109,7 @@ void LiveRequestHandler::handleRequest(
                 out.flush();
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-                if ( out.bad() == true ) {
+                if (out.bad()) {
                     LOG_TRACE(log, "Bad output stream exiting...");
                     break;
                 }

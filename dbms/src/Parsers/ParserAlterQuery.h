@@ -59,7 +59,7 @@ protected:
 public:
     bool is_channel;
 
-    ParserAlterCommandList(bool is_channel) : is_channel(is_channel) {}
+    ParserAlterCommandList(bool is_channel = false) : is_channel(is_channel) {}
 };
 
 
@@ -72,7 +72,7 @@ protected:
 public:
     bool is_channel;
 
-    ParserAlterCommand(bool is_channel) : is_channel(is_channel) {}
+    ParserAlterCommand(bool is_channel = false) : is_channel(is_channel) {}
 };
 
 

@@ -86,7 +86,7 @@ BlockIO InterpreterAlterQuery::execute()
         table->alterPartition(query_ptr, partition_commands, context);
     }
 
-    parameter_commands.validate(table.get());
+    parameter_commands.validate(*table);
     for (const ParameterCommand & command : parameter_commands)
     {
         switch (command.type)
@@ -105,7 +105,7 @@ BlockIO InterpreterAlterQuery::execute()
         }
     }
 
-    channel_commands.validate(table.get());
+    channel_commands.validate(*table);
     for (const ChannelCommand & command : channel_commands)
     {
         auto channel = std::dynamic_pointer_cast<StorageLiveChannel>(table);
@@ -146,31 +146,14 @@ BlockIO InterpreterAlterQuery::execute()
     return {};
 }
 
-void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
-{
-    for (const PartitionCommand & command : *this)
-    {
-        if (command.type == PartitionCommand::CLEAR_COLUMN)
-        {
-            String column_name = command.column_name.safeGet<String>();
-
-            if (!table->hasRealColumn(column_name))
-            {
-                throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
-                    DB::ErrorCodes::ILLEGAL_COLUMN);
-            }
-        }
-    }
-}
-
-void InterpreterAlterQuery::ParameterCommands::validate(const IStorage * table)
+void ParameterCommands::validate(const IStorage & /*table*/)
 {
     //FIXME: add check
 }
 
-void InterpreterAlterQuery::ChannelCommands::validate(const IStorage * table)
+void ChannelCommands::validate(const IStorage & table)
 {
-    if ( !dynamic_cast<const StorageLiveChannel *>(table))
+    if ( !dynamic_cast<const StorageLiveChannel *>(&table))
         throw Exception("Wrong storage type. Must be StorageLiveChannel", DB::ErrorCodes::UNKNOWN_STORAGE);
 }
 

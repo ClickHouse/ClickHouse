@@ -86,7 +86,7 @@ public:
         hash_key = "";
     }
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
     void drop() override;
     void startup() override;
     void shutdown() override;
@@ -97,7 +97,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -116,6 +116,8 @@ public:
     /// Read new data blocks that store query result
     bool getNewBlocks();
 
+    Block getHeader() const;
+
 private:
     String select_database_name;
     String select_table_name;
@@ -123,8 +125,8 @@ private:
     String database_name;
     ASTPtr inner_query;
     Context & global_context;
-    NamesAndTypesListPtr columns;
     bool is_temporary {false};
+    mutable Block sample_block;
 
     /// Active users
     std::shared_ptr<bool> active_ptr;
@@ -147,10 +149,8 @@ private:
         const String & database_name_,
         Context & local_context,
         const ASTCreateQuery & query,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
+        const ColumnsDescription & columns
+    );
 };
 
 class LiveBlockOutputStream : public IBlockOutputStream
@@ -177,6 +177,8 @@ public:
             storage.condition.broadcast();
         }
     }
+
+    Block getHeader() const override { return storage.getHeader(); }
 
 private:
     BlocksPtr new_blocks;

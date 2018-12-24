@@ -8,6 +8,7 @@ add_library (clickhouse-server-lib ${LINK_MODE}
     RootRequestHandler.cpp
     Server.cpp
     TCPHandler.cpp
+    LiveRequestHandler.cpp
     )
 
 target_link_libraries (clickhouse-server-lib PRIVATE clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})

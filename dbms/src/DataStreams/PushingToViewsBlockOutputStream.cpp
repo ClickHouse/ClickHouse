@@ -34,7 +34,8 @@ namespace ErrorCodes
 class ProxyStorage : public IStorage
 {
 public:
-    ProxyStorage(StoragePtr storage, BlockInputStreams streams) : storage(std::move(storage)), streams(std::move(streams)) {}
+    ProxyStorage(StoragePtr storage, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
+    : storage(std::move(storage)), streams(std::move(streams)), to_stage(to_stage) {}
 
 public:
     std::string getName() const override { return "ProxyStorage(" + storage->getName() + ")"; }
@@ -48,7 +49,7 @@ public:
     bool supportsReplication() const override { return storage->supportsReplication(); }
     bool supportsDeduplication() const override { return storage->supportsDeduplication(); }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override { return storage->getQueryProcessingStage(context); }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & /*context*/) const override { return to_stage; }
 
     BlockInputStreams read(
             const Names & /*column_names*/,
@@ -73,10 +74,21 @@ public:
     Names getColumnsRequiredForSampling() const override { return storage->getColumnsRequiredForSampling(); }
     Names getColumnsRequiredForFinal() const override { return storage->getColumnsRequiredForFinal(); }
 
+    const ColumnsDescription & getColumns() const override { return storage->getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return storage->setColumns(columns_); }
+    NameAndTypePair getColumn(const String & column_name) const override { return storage->getColumn(column_name); }
+    bool hasColumn(const String & column_name) const override { return storage->hasColumn(column_name); }
+
 private:
     StoragePtr storage;
     BlockInputStreams streams;
+    QueryProcessingStage::Enum to_stage;
 };
+
+StoragePtr createProxyStorage(StoragePtr storage, BlockInputStreams streams, QueryProcessingStage::Enum to_stage)
+{
+    return std::make_shared<ProxyStorage>(std::move(storage), std::move(streams), to_stage);
+}
 
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
     const String & database, const String & table, const StoragePtr & storage_,
@@ -109,12 +121,17 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         for (const auto & database_table : dependencies)
         {
             auto dependent_table = context.getTable(database_table.first, database_table.second);
-            auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
-            if (StoragePtr inner_table = materialized_view.tryGetTargetTable())
-                addTableLock(inner_table->lockStructure(true));
+            ASTPtr query;
 
-            auto query = materialized_view.getInnerQuery();
+            if (auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(dependent_table.get()))
+            {
+                if (StoragePtr inner_table = materialized_view->tryGetTargetTable())
+                    addTableLock(inner_table->lockStructure(true));
+
+                query = materialized_view->getInnerQuery();
+            }
+
             BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
             views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
@@ -156,7 +173,7 @@ static void writeIntoLiveView(StorageLiveView & live_view,
     {
         auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
         BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
-        auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(streams));
+        auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(streams), QueryProcessingStage::FetchColumns);
         InterpreterSelectQuery select_block(live_view.getInnerQuery(), context, proxy_storage,
                                             QueryProcessingStage::WithMergeableState);
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(select_block.execute().in);
@@ -187,7 +204,7 @@ static void writeIntoLiveView(StorageLiveView & live_view,
         {
             auto sample_block = mergeable_blocks->front()->front();
             auto sample_new_block = new_mergeable_blocks->front();
-            for (auto col : sample_new_block.getColumns())
+            for (auto col : sample_new_block)
             {
                 for (auto & new_block : *new_mergeable_blocks)
                 {
@@ -202,13 +219,14 @@ static void writeIntoLiveView(StorageLiveView & live_view,
         /// Create from blocks streams
         for (auto & blocks : *mergeable_blocks)
         {
-            BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks));
+            auto sample_block = mergeable_blocks->front()->front().cloneEmpty();
+            BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
             from.push_back(std::move(stream));
         }
     }
 
     auto parent_storage = context.getTable(live_view.getSelectDatabaseName(), live_view.getSelectTableName());
-    auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(from));
+    auto proxy_storage = std::make_shared<ProxyStorage>(parent_storage, std::move(from), QueryProcessingStage::WithMergeableState);
     InterpreterSelectQuery select(live_view.getInnerQuery(), context, proxy_storage, QueryProcessingStage::Complete);
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
     while (Block this_block = data->read())
@@ -231,7 +249,8 @@ static void writeIntoLiveView(StorageLiveView & live_view,
             blocks->front().info.is_start_frame = true;
             blocks->front().info.hash = key.toHexString();
         }
-        BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks));
+        auto sample_block = blocks->front().cloneEmpty();
+        BlockInputStreamPtr new_data = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks), sample_block);
         {
             Poco::FastMutex::ScopedLock lock(live_view.mutex);
             copyData(*new_data, *output);
@@ -248,16 +267,9 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
       */
     Nested::validateArraySizes(block);
 
-    if (auto * live_view = typeid_cast<StorageLiveView *>(storage.get()))
+    if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
-        writeIntoLiveView(*live_view, block, *views_context, output);
-    }
-    else if (auto * live_channel = typeid_cast<const StorageLiveChannel *>(storage.get()))
-    {
-        /// Send only end of frame block to channel to signal that
-        /// new data is available
-        if (block.info.is_end_frame)
-            output->write(block);
+        writeIntoLiveView(*live_view, block, context, output);
     }
     else
     {
@@ -352,8 +364,12 @@ void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_n
     try
     {
         BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-        InterpreterSelectQuery select(view.query, *views_context, from);
-        BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+        BlockInputStreamPtr in = from;
+        if (view.query)
+        {
+            InterpreterSelectQuery select(view.query, *views_context, from);
+            in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+        }
         /// Squashing is needed here because the materialized view query can generate a lot of blocks
         /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
         /// and two-level aggregation is triggered).

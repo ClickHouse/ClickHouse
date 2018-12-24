@@ -47,7 +47,6 @@ public:
 
     void setSampleBlock(const Block & sample_) override {
         sample = sample_;
-        setFields();
     }
 
     void setRowsBeforeLimit(size_t rows_before_limit_) override
@@ -74,7 +73,6 @@ protected:
     virtual void writeTotals();
     virtual void writeExtremes();
     void writeStatistics();
-    bool setFields();
 
     WriteBuffer & dst_ostr;
     std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.

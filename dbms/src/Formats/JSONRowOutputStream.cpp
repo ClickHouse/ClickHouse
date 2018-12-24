@@ -67,7 +67,7 @@ void JSONRowOutputStream::writePrefix()
     {
         writeCString("\"table\":", *ostr);
         writeCString(getSpaceChar(), *ostr);
-        writeJSONString(sample.info.table, *ostr);
+        writeJSONString(sample.info.table, *ostr, settings);
         writeChar(',', *ostr);
         writeCString(getNewlineChar(), *ostr);
         writeCString(getNewlineChar(), *ostr);
@@ -78,7 +78,7 @@ void JSONRowOutputStream::writePrefix()
     {
         writeCString("\"hash\":", *ostr);
         writeCString(getSpaceChar(), *ostr);
-        writeJSONString(sample.info.hash, *ostr);
+        writeJSONString(sample.info.hash, *ostr, settings);
         writeChar(',', *ostr);
         writeCString(getNewlineChar(), *ostr);
         writeCString(getNewlineChar(), *ostr);
@@ -115,7 +115,7 @@ void JSONRowOutputStream::writePrefix()
 
         writeCString("\"type\":", *ostr);
         writeCString(getSpaceChar(), *ostr);
-        writeJSONString(fields[i].type->getName(), *ostr);
+        writeJSONString(fields[i].type->getName(), *ostr, settings);
         writeCString(getNewlineChar(), *ostr);
 
         writeCString(getIndentChar(), *ostr);
@@ -147,7 +147,7 @@ void JSONRowOutputStream::writeField(const String & name, const IColumn & column
     writeCString(getIndentChar(), *ostr);
     writeCString(getIndentChar(), *ostr);
     writeCString(getIndentChar(), *ostr);
-    writeJSONString(name, *ostr);
+    writeJSONString(name, *ostr, settings);
     writeChar(':', *ostr);
     writeCString(getSpaceChar(), *ostr);
     type.serializeTextJSON(column, row_num, *ostr, settings);
@@ -259,7 +259,7 @@ void JSONRowOutputStream::writeTotals()
             }
             writeCString(getIndentChar(), *ostr);
             writeCString(getIndentChar(), *ostr);
-            writeJSONString(column.name, *ostr);
+            writeJSONString(column.name, *ostr, settings);
             writeChar(':', *ostr);
             writeCString(getSpaceChar(), *ostr);
             column.type->serializeTextJSON(*column.column.get(), 0, *ostr, settings);
@@ -300,7 +300,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
         writeCString(indent_char, ostr);
         writeCString(indent_char, ostr);
         writeCString(indent_char, ostr);
-        writeJSONString(column.name, ostr);
+        writeJSONString(column.name, ostr, settings);
         writeChar(':', ostr);
         writeCString(space_char, ostr);
         column.type->serializeTextJSON(*column.column.get(), row_num, ostr, settings);
@@ -384,10 +384,10 @@ void JSONRowOutputStream::onHeartbeat(const Heartbeat & heartbeat)
         writeCString(getIndentChar(), *ostr);
         writeCString(getIndentChar(), *ostr);
         writeCString(getIndentChar(), *ostr);
-        writeJSONString(it->first, *ostr);
+        writeJSONString(it->first, *ostr, settings);
         writeChar(':', *ostr);
         writeCString(getSpaceChar(), *ostr);
-        writeJSONString(it->second, *ostr);
+        writeJSONString(it->second, *ostr, settings);
         ++it;
         if (it != heartbeat.hashmap.end())
             writeChar(',', *ostr);

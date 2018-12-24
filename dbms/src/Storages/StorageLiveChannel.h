@@ -40,7 +40,6 @@ public:
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
-    bool supportsParallelReplicas() const override { return true; }
 
     /// Mutex for the blocks and ready condition
     Poco::FastMutex mutex;
@@ -94,13 +93,12 @@ public:
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned num_streams);
+        unsigned num_streams) override;
 
 private:
     String table_name;
     String database_name;
     Context & global_context;
-    NamesAndTypesListPtr columns;
     LiveChannelTables tables;
     bool is_temporary {false};
 
@@ -125,10 +123,7 @@ private:
         const String & database_name_,
         Context & local_context,
         const ASTCreateQuery & query,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
+        const ColumnsDescription & columns);
 
     using StorageList = std::list<StoragePtr>;
     using StorageListPtr = std::shared_ptr<StorageList>;
@@ -148,13 +143,16 @@ class LiveChannelBlockOutputStream : public IBlockOutputStream
 public:
     explicit LiveChannelBlockOutputStream(StorageLiveChannel & storage_) : storage(storage_) {}
 
-    void write(const Block & block) override
+    void write(const Block & /*block*/) override
     {
         Poco::FastMutex::ScopedLock lock(storage.mutex);
         ++(*storage.version);
         /// notify all readers
         storage.condition.broadcast();
     }
+
+    Block getHeader() const override { return {}; }
+
 private:
     StorageLiveChannel & storage;
 };

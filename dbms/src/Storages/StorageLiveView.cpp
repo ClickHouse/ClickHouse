@@ -23,6 +23,11 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 
 #include <Storages/StorageLiveView.h>
+#include <Storages/StorageFactory.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 namespace DB
 {
@@ -32,36 +37,65 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
 
-static void extractDependentTable(const ASTSelectQuery & query, String & select_database_name, String & select_table_name)
+static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
-    auto query_table = query.table();
+    auto db_and_table = getDatabaseAndTable(query, 0);
+    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
 
-    if (!query_table)
+    if (!db_and_table && !subquery)
         return;
 
-    if (auto ast_id = typeid_cast<const ASTIdentifier *>(query_table.get()))
+    if (db_and_table)
     {
-        auto query_database = query.database();
+        select_table_name = db_and_table->table;
 
-        if (!query_database)
-            throw Exception("Logical error while creating StorageLiveView."
-                " Could not retrieve database name from select query.",
-                DB::ErrorCodes::LOGICAL_ERROR);
-
-        select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
-        select_table_name = ast_id->name;
+        if (db_and_table->database.empty())
+        {
+            db_and_table->database = select_database_name;
+            AddDefaultDatabaseVisitor visitor(select_database_name);
+            visitor.visit(query);
+        }
+        else
+            select_database_name = db_and_table->database;
     }
-    else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(subquery.get()))
     {
-        extractDependentTable(*ast_select, select_database_name, select_table_name);
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        extractDependentTable(typeid_cast<ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
     }
     else
         throw Exception("Logical error while creating StorageLiveView."
-            " Could not retrieve table name from select query.",
-            DB::ErrorCodes::LOGICAL_ERROR);
+                        " Could not retrieve table name from select query.",
+                        DB::ErrorCodes::LOGICAL_ERROR);
+}
+
+
+static void checkAllowedQueries(const ASTSelectQuery & query)
+{
+    if (query.prewhere_expression || query.final() || query.sample_size())
+        throw Exception("LIVE VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    if (!subquery)
+        return;
+
+    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(subquery.get()))
+    {
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        const auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        checkAllowedQueries(typeid_cast<const ASTSelectQuery &>(*inner_query));
+    }
 }
 
 
@@ -70,29 +104,46 @@ StorageLiveView::StorageLiveView(
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
+    const ColumnsDescription & columns)
+    : IStorage(columns), table_name(table_name_),
+    database_name(database_name_), global_context(local_context.getGlobalContext())
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
 
-    extractDependentTable(*query.select, select_database_name, select_table_name);
+    /// Default value, if only table name exist in the query
+    select_database_name = local_context.getCurrentDatabase();
+    if (query.select->list_of_selects->children.size() != 1)
+        throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    inner_query = query.select->list_of_selects->children.at(0);
+
+    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*inner_query);
+    extractDependentTable(select_query, select_database_name, select_table_name);
 
     if (!select_table_name.empty())
         global_context.addDependency(
             DatabaseAndTableName(select_database_name, select_table_name),
             DatabaseAndTableName(database_name, table_name));
 
-    inner_query = query.select->ptr();
-    is_temporary = query.is_temporary;
+    is_temporary = query.temporary;
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     active_ptr = std::make_shared<bool>(true);
 }
+
+Block StorageLiveView::getHeader() const
+{
+    if (!sample_block)
+    {
+        auto storage = global_context.getTable(select_database_name, select_table_name);
+        sample_block = InterpreterSelectQuery(inner_query, global_context, storage).getSampleBlock();
+    }
+
+    return sample_block;
+}
+
+extern StoragePtr createProxyStorage(StoragePtr storage, BlockInputStreams streams, QueryProcessingStage::Enum to_stage);
 
 bool StorageLiveView::getNewBlocks()
 {
@@ -102,7 +153,7 @@ bool StorageLiveView::getNewBlocks()
     BlocksPtr new_blocks = std::make_shared<Blocks>();
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
-    InterpreterSelectQuery interpreter{inner_query->clone(), global_context, QueryProcessingStage::WithMergeableState};
+    InterpreterSelectQuery interpreter{inner_query->clone(), global_context, Names(), QueryProcessingStage::WithMergeableState};
     auto mergeable_stream = std::make_shared<MaterializingBlockInputStream>(interpreter.execute().in);
 
     while (Block block = mergeable_stream->read())
@@ -111,8 +162,9 @@ bool StorageLiveView::getNewBlocks()
     mergeable_blocks = std::make_shared<std::vector<BlocksPtr>>();
     mergeable_blocks->push_back(new_mergeable_blocks);
 
-    BlockInputStreamPtr from = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(new_mergeable_blocks));
-    InterpreterSelectQuery select(inner_query->clone(), global_context, QueryProcessingStage::Complete, 0, from, {}, QueryProcessingStage::WithMergeableState);
+    BlockInputStreamPtr from = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(new_mergeable_blocks), mergeable_stream->getHeader());
+    auto proxy_storage = createProxyStorage(global_context.getTable(select_database_name, select_table_name), {from}, QueryProcessingStage::WithMergeableState);
+    InterpreterSelectQuery select(inner_query->clone(), global_context, proxy_storage, QueryProcessingStage::Complete);
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
     while (Block block = data->read())
@@ -148,7 +200,7 @@ bool StorageLiveView::getNewBlocks()
     return updated;
 }
 
-bool StorageLiveView::checkTableCanBeDropped() const
+void StorageLiveView::checkTableCanBeDropped() const
 {
     Dependencies dependencies = global_context.getDependencies(database_name, table_name);
     if (!dependencies.empty())
@@ -156,7 +208,6 @@ bool StorageLiveView::checkTableCanBeDropped() const
         DatabaseAndTableName database_and_table_name = dependencies.front();
         throw Exception("Table has dependency " + database_and_table_name.first + "." + database_and_table_name.second, ErrorCodes::TABLE_WAS_NOT_DROPPED);
     }
-    return true;
 }
 
 void StorageLiveView::noUsersThread()
@@ -275,12 +326,12 @@ void StorageLiveView::drop()
 }
 
 BlockInputStreams StorageLiveView::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t max_block_size,
-    const unsigned num_streams)
+    const Names & /*column_names*/,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     /// add user to the blocks_ptr
     std::shared_ptr<BlocksPtr> stream_blocks_ptr = blocks_ptr;
@@ -291,17 +342,16 @@ BlockInputStreams StorageLiveView::read(
         if ( getNewBlocks() )
             condition.broadcast();
     }
-    processed_stage = QueryProcessingStage::Complete;
-    return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr) };
+    return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr, getHeader()) };
 }
 
 BlockInputStreams StorageLiveView::watch(
-    const Names & column_names,
+    const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
-    const Context & context,
+    const Context & /*context*/,
     QueryProcessingStage::Enum & processed_stage,
-    size_t max_block_size,
-    const unsigned num_streams)
+    size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
 {
     ASTWatchQuery & query = typeid_cast<ASTWatchQuery &>(*query_info.query);
 
@@ -334,9 +384,17 @@ BlockInputStreams StorageLiveView::watch(
     return { reader };
 }
 
-BlockOutputStreamPtr StorageLiveView::write(const ASTPtr & query, const Settings & settings)
+BlockOutputStreamPtr StorageLiveView::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<LiveBlockOutputStream>(*this);
+}
+
+void registerStorageLiveView(StorageFactory & factory)
+{
+    factory.registerStorage("LiveView", [](const StorageFactory::Arguments & args)
+    {
+        return StorageLiveView::create(args.table_name, args.database_name, args.local_context, args.query, args.columns);
+    });
 }
 
 }

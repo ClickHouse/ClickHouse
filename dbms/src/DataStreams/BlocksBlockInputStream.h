@@ -23,10 +23,12 @@ class BlocksBlockInputStream : public IProfilingBlockInputStream
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksBlockInputStream(std::shared_ptr<BlocksPtr> blocks_ptr_)
-        : blocks_ptr(blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()) {}
+    BlocksBlockInputStream(std::shared_ptr<BlocksPtr> blocks_ptr_, Block header)
+        : blocks_ptr(blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()), header(header) {}
 
     String getName() const override { return "Blocks"; }
+
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override
@@ -43,6 +45,7 @@ private:
     std::shared_ptr<BlocksPtr> blocks_ptr;
     Blocks::iterator it;
     const Blocks::iterator end;
+    Block header;
 };
 
 }

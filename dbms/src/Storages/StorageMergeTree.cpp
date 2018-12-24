@@ -13,7 +13,6 @@ limitations under the License. */
 #include <Common/FieldVisitors.h>
 #include <Common/localBackup.h>
 #include <experimental/optional>
-#include <Core/FieldVisitors.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
