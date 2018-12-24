@@ -331,6 +331,9 @@ private:
         auto result = ColumnFloat64::create(column_size);
         auto result_buf = result->getData().data();
 
+        if (!column_size)
+            return result;
+
         /// Prepare float features.
         PODArray<const float *> float_features(column_size);
         auto float_features_buf = float_features.data();

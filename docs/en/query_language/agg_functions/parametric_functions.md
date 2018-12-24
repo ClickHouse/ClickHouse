@@ -1,6 +1,4 @@
-<a name="aggregate_functions_parametric"></a>
-
-# Parametric aggregate functions
+# Parametric aggregate functions {#aggregate_functions_parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
@@ -61,7 +59,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Parameters:**
 
 - `window` — Length of the sliding window in seconds.
-- `timestamp` — Name of the column containing the timestamp. Data type: [DateTime](../../data_types/datetime.md#data_type-datetime) or [UInt32](../../data_types/int_uint.md).
+- `timestamp` — Name of the column containing the timestamp. Data type: [DateTime](../../data_types/datetime.md) or [UInt32](../../data_types/int_uint.md).
 - `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
 
 **Algorithm**

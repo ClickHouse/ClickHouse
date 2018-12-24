@@ -1,6 +1,4 @@
-<a name="table_engines-replication"></a>
-
-# Data Replication
+# Data Replication {#table_engines-replication}
 
 Replication is only supported for tables in the MergeTree family:
 

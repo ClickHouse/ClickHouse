@@ -19,12 +19,12 @@ namespace DB
 
 /** Query like this:
   * ALTER TABLE [db.]name [ON CLUSTER cluster]
-  *     [ADD COLUMN col_name type [AFTER col_after],]
-  *     [DROP COLUMN col_to_drop, ...]
-  *     [CLEAR COLUMN col_to_clear [IN PARTITION partition],]
-  *     [MODIFY COLUMN col_to_modify type, ...]
+  *     [ADD COLUMN [IF NOT EXISTS] col_name type [AFTER col_after],]
+  *     [DROP COLUMN [IF EXISTS] col_to_drop, ...]
+  *     [CLEAR COLUMN [IF EXISTS] col_to_clear [IN PARTITION partition],]
+  *     [MODIFY COLUMN [IF EXISTS] col_to_modify type, ...]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
-  *     [COMMENT COLUMN col_name string]
+  *     [COMMENT COLUMN [IF EXISTS] col_name string]
   *     [ADD TO PARAMETER param_name value, ...]
   *     [DROP FROM PARAMETER param_name value, ...]
   *     [MODIFY PARAMETER param_name value, ...]

@@ -371,19 +371,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     }
 
     /// Send block to the client - table structure.
-    Block block = state.io.out->getHeader();
-
-    /// Support insert from old clients without low cardinality type.
-    if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
-    {
-        for (auto & col : block)
-        {
-            col.type = recursiveRemoveLowCardinality(col.type);
-            col.column = recursiveRemoveLowCardinality(col.column);
-        }
-    }
-
-    sendData(block);
+    sendData(state.io.out->getHeader());
 
     readData(global_settings);
     state.io.out->writeSuffix();
@@ -399,16 +387,6 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
-
-            /// Send data to old clients without low cardinality type.
-            if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
-            {
-                for (auto & column : header)
-                {
-                    column.column = recursiveRemoveLowCardinality(column.column);
-                    column.type = recursiveRemoveLowCardinality(column.type);
-                }
-            }
 
             if (header)
                 sendData(header);
@@ -783,7 +761,8 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision);
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -804,7 +783,8 @@ void TCPHandler::initBlockOutput(const Block & block)
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -816,7 +796,8 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 

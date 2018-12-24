@@ -738,6 +738,7 @@ DEFINE_NAME_TO_INTERVAL(Hour)
 DEFINE_NAME_TO_INTERVAL(Day)
 DEFINE_NAME_TO_INTERVAL(Week)
 DEFINE_NAME_TO_INTERVAL(Month)
+DEFINE_NAME_TO_INTERVAL(Quarter)
 DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
@@ -1138,6 +1139,9 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
+        if (!type.isValueRepresentedByNumber())
+            return {};
+
         size_t size_of_type = type.getSizeOfValueInMemory();
 
         /// If type is expanding

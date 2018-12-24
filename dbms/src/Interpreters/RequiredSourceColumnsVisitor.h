@@ -8,6 +8,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/typeid_cast.h>
+#include "InDepthNodeVisitor.h"
 
 namespace DB
 {

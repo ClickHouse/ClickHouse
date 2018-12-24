@@ -1,6 +1,4 @@
-<a name="query_language_queries_alter"></a>
-
-## ALTER
+## ALTER {#query_language_queries_alter}
 Запрос `ALTER` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
 
 ### Манипуляции со столбцами
@@ -227,9 +225,7 @@ ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 Для запросов `ALTER ... ATTACH|DETACH|DROP` можно настроить ожидание, с помощью настройки `replication_alter_partitions_sync`.
 Возможные значения: `0` - не ждать, `1` - ждать выполнения только у себя (по умолчанию), `2` - ждать всех.
 
-<a name="query_language_queries_show_databases"></a>
-
-### Мутации
+### Мутации {#query_language_queries_show_databases}
 
 Мутации - разновидность запроса ALTER, позволяющая изменять или удалять данные в таблице. В отличие от стандартных запросов `DELETE` и `UPDATE`, рассчитанных на точечное изменение данных, область применения мутаций - достаточно тяжёлые изменения, затрагивающие много строк в таблице.
 
