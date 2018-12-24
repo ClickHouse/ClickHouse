@@ -20,7 +20,6 @@ DROP TABLE IF EXISTS test.compression_codec;
 
 DROP TABLE IF EXISTS test.bad_codec;
 DROP TABLE IF EXISTS test.params_when_no_params;
-DROP TABLE IF EXISTS test.params_zstd;
 DROP TABLE IF EXISTS test.too_many_params;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification_1;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification_2;
@@ -28,13 +27,11 @@ DROP TABLE IF EXISTS test.codec_multiple_direct_specification_2;
 CREATE TABLE test.bad_codec(id UInt64 CODEC(adssadads)) ENGINE = MergeTree() order by tuple(); -- { serverError 432 }
 CREATE TABLE test.too_many_params(id UInt64 CODEC(ZSTD(2,3,4,5))) ENGINE = MergeTree() order by tuple(); -- { serverError 431 }
 CREATE TABLE test.params_when_no_params(id UInt64 CODEC(LZ4(1))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 378 }
-CREATE TABLE test.params_zstd(id UInt64 CODEC(LZ4HC(0))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 433 }
 CREATE TABLE test.codec_multiple_direct_specification_1(id UInt64 CODEC(MULTIPLE(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 432 }
 CREATE TABLE test.codec_multiple_direct_specification_2(id UInt64 CODEC(multiple(LZ4, ZSTD))) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError 432 }
 
 DROP TABLE IF EXISTS test.bad_codec;
 DROP TABLE IF EXISTS test.params_when_no_params;
-DROP TABLE IF EXISTS test.params_zstd;
 DROP TABLE IF EXISTS test.too_many_params;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification_1;
 DROP TABLE IF EXISTS test.codec_multiple_direct_specification_2;
