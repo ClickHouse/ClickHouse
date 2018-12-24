@@ -87,7 +87,7 @@ struct IntegerRoundingComputation
         return scale;
     }
 
-    static ALWAYS_INLINE T computeImpl(T x, size_t scale)
+    static ALWAYS_INLINE T computeImpl(T x, T scale)
     {
         switch (rounding_mode)
         {
@@ -122,7 +122,7 @@ struct IntegerRoundingComputation
         }
     }
 
-    static ALWAYS_INLINE T compute(T x, size_t scale)
+    static ALWAYS_INLINE T compute(T x, T scale)
     {
         switch (scale_mode)
         {
@@ -139,7 +139,10 @@ struct IntegerRoundingComputation
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        *out = compute(*in, scale);
+        if (scale > size_t(std::numeric_limits<T>::max()))
+            *out = 0;
+        else
+            *out = compute(*in, scale);
     }
 
 };
