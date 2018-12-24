@@ -39,7 +39,8 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->test = true;
 
     query->cluster = cluster_str;
-    query->children.emplace_back(query->where_expression);
+    if (query->where_expression)
+        query->children.emplace_back(query->where_expression);
     node = std::move(query);
     return true;
 }
