@@ -1,6 +1,4 @@
-<a name="data_type-array"></a>
-
-# Array(T)
+# Array(T) {#data_type-array}
 
 由 `T` 类型元素组成的数组。
 

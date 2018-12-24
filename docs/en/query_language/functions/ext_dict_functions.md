@@ -1,6 +1,4 @@
-<a name="ext_dict_functions"></a>
-
-# Functions for working with external dictionaries
+# Functions for working with external dictionaries {#ext_dict_functions}
 
 For information on connecting and configuring external dictionaries, see "[External dictionaries](../dicts/external_dicts.md)".
 

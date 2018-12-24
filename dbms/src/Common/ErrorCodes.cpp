@@ -403,9 +403,11 @@ namespace ErrorCodes
     extern const int NULL_POINTER_DEREFERENCE = 426;
     extern const int CANNOT_COMPILE_REGEXP = 427;
     extern const int UNKNOWN_LOG_LEVEL = 428;
-    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 429;
-    extern const int UNKNOWN_CODEC = 430;
-    extern const int ILLEGAL_CODEC_PARAMETER = 431;
+    extern const int FAILED_TO_GETPWUID = 429;
+    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA = 430;
+    extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 431;
+    extern const int UNKNOWN_CODEC = 432;
+    extern const int ILLEGAL_CODEC_PARAMETER = 433;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
