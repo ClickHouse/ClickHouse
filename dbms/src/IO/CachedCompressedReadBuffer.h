@@ -19,7 +19,7 @@ namespace DB
   * Disadvantages:
   * - in case you need to read a lot of data in a row, but of them only a part is cached, you have to do seek-and.
   */
-class CachedCompressedReadBuffer : public CompressedReadBufferBase,  public ReadBuffer
+class CachedCompressedReadBuffer : public CompressedReadBufferBase, public ReadBuffer
 {
 private:
     const std::string path;
