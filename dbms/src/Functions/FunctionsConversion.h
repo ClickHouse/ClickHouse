@@ -1161,6 +1161,10 @@ struct ToIntMonotonicity
             checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
 
+        /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
+        if (left.isNull() || right.isNull())
+            return {};
+
         /// If converting from float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
         {
