@@ -221,8 +221,11 @@ BlockIO InterpreterKillQueryQuery::execute()
 
 Block InterpreterKillQueryQuery::getSelectFromSystemProcessesResult()
 {
-    String system_processes_query = "SELECT query_id, user, query FROM system.processes WHERE "
-        + queryToString(static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression);
+    String system_processes_query = "SELECT query_id, user, query FROM system.processes";
+    auto & where_expression = static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression;
+    if (where_expression)
+        system_processes_query += " WHERE " + queryToString(where_expression);
+
 
     BlockIO system_processes_io = executeQuery(system_processes_query, context, true);
     Block res = system_processes_io.in->read();
