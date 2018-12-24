@@ -46,12 +46,7 @@ void NativeBlockOutputStream::writeData(const IDataType & type, const ColumnPtr 
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
       */
-    ColumnPtr full_column;
-
-    if (ColumnPtr converted = column->convertToFullColumnIfConst())
-        full_column = converted;
-    else
-        full_column = column;
+    ColumnPtr full_column = column->convertToFullColumnIfConst();
 
     IDataType::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](IDataType::SubstreamPath) -> WriteBuffer * { return &ostr; };

@@ -19,6 +19,9 @@
 - Object storages
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- Configuration management
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 - Monitoring
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
@@ -33,9 +36,6 @@
 - Logging
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (for [Kubernetes](https://kubernetes.io))
-- Configuration management
-    - [puppet](https://puppet.com)
-        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 
 ## Programming Language Ecosystems
 
@@ -49,7 +49,7 @@
         - [RClickhouse](https://github.com/IMSMWU/RClickhouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 - Java
     - [Hadoop](http://hadoop.apache.org)
-        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../jdbc.md))
+        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../query_language/table_functions/jdbc.md))
 - Scala
     - [Akka](https://akka.io)
         - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
