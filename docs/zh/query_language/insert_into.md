@@ -16,7 +16,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 如果[strict_insert_defaults=1](../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
 
-数据可以以ClickHouse支持的任何[输入输出格式](../interfaces/formats.md#formats)传递给INSERT。格式的名称必须显示的指定在查询中：
+数据可以以ClickHouse支持的任何 [输入输出格式](../interfaces/formats.md#formats) 传递给INSERT。格式的名称必须显示的指定在查询中：
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set

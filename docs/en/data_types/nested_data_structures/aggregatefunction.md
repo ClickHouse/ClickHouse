@@ -23,7 +23,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) and [quantiles](../../query_language/agg_functions/reference.md) are the aggregate functions supported in ClickHouse.
+[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any) + [If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) and [quantiles](../../query_language/agg_functions/reference.md) are the aggregate functions supported in ClickHouse.
 
 ## Usage
 

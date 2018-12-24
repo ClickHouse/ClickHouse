@@ -267,7 +267,7 @@ This parameter is useful when you are using formats that require a schema defini
 
 ## stream_flush_interval_ms
 
-Works for tables with streaming in the case of a timeout, or when a thread generates[max_insert_block_size](#settings-max_insert_block_size) rows.
+Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#settings-max_insert_block_size) rows.
 
 The default value is 7500.
 
@@ -373,7 +373,7 @@ The default value is 0.
 
 All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
 
-When reading the data written from the `insert_quorum`, you can use the[select_sequential_consistency](#select-sequential-consistency) option.
+When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#select-sequential-consistency) option.
 
 **ClickHouse generates an exception**
 

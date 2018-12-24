@@ -23,7 +23,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../query_language/agg_functions/reference.md) — агрегатные функции, поддержанные в ClickHouse.
+[uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any) + [If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../query_language/agg_functions/reference.md) — агрегатные функции, поддержанные в ClickHouse.
 
 ## Особенности использования
 

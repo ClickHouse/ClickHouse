@@ -358,7 +358,7 @@ The default value is 0.
 
 All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
 
-When reading the data written from the `insert_quorum`, you can use the[select_sequential_consistency](#select-sequential-consistency) option.
+When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#select-sequential-consistency) option.
 
 **ClickHouse generates an exception**
 
