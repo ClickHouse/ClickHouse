@@ -119,7 +119,7 @@ public:
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
         typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
@@ -370,7 +370,7 @@ public:
         auto & column_array = static_cast<ColumnArray &>(to);
 
         auto & offsets = column_array.getOffsets();
-        offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + data(place).elems);
+        offsets.push_back(offsets.back() + data(place).elems);
 
         auto & column_data = column_array.getData();
 
