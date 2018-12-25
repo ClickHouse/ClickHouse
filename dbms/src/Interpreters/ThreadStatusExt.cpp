@@ -5,7 +5,12 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
+#include <common/logger_useful.h>
 
+#include <csignal>
+#include <time.h>
+#include <signal.h>
+#include <sys/syscall.h>
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 namespace DB
@@ -92,6 +97,10 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
     }
 
     initPerformanceCounters();
+
+    LOG_INFO(&Logger::get("laplab"), "Attaching");
+    initQueryProfiler();
+    
     thread_state = ThreadState::AttachedToQuery;
 }
 
@@ -119,6 +128,49 @@ void ThreadStatus::finalizePerformanceCounters()
     }
 }
 
+namespace {
+    void queryProfilerTimerHandler(int /* signal */) {
+        LOG_INFO(&Logger::get("laplab"), "Hello from handler!");
+    }
+}
+
+void ThreadStatus::initQueryProfiler() {
+    sigevent sev;
+    sev.sigev_notify = SIGEV_THREAD_ID;
+    sev.sigev_signo = SIGALRM;
+    sev._sigev_un._tid = os_thread_id;
+    // TODO(laplab): get clock type from settings
+    if (timer_create(CLOCK_REALTIME, &sev, &query_profiler_timer_id)) {
+        LOG_ERROR(log, "Failed to create query profiler timer");
+        return;
+    }
+    
+    // TODO(laplab): get period from settings
+    timespec period{.tv_sec = 10, .tv_nsec = 0};
+    itimerspec timer_spec = {.it_interval = period, .it_value = period};
+    if (timer_settime(query_profiler_timer_id, 0, &timer_spec, nullptr)) {
+        LOG_ERROR(log, "Failed to set query profiler timer");
+        return;
+    }
+
+    std::signal(SIGALRM, queryProfilerTimerHandler);
+
+    has_query_profiler = true;
+}
+
+void ThreadStatus::finalizeQueryProfiler() {
+    if (!has_query_profiler) {
+        return;
+    }
+
+    if (timer_delete(query_profiler_timer_id)) {
+        LOG_ERROR(log, "Failed to delete query profiler timer");
+        return;
+    }
+
+    has_query_profiler = false;
+}
+
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
@@ -128,6 +180,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     }
 
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
+
+    finalizeQueryProfiler();
     finalizePerformanceCounters();
 
     /// Detach from thread group
@@ -139,6 +193,8 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 
     query_context = nullptr;
     thread_group.reset();
+
+    LOG_INFO(&Logger::get("laplab"), "Detaching");
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
 }
