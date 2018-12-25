@@ -139,7 +139,7 @@ struct IntegerRoundingComputation
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        if (scale > std::make_unsigned_t<T>(std::numeric_limits<T>::max()))
+        if (sizeof(T) <= sizeof(scale) && scale > size_t(std::numeric_limits<T>::max()))
             *out = 0;
         else
             *out = compute(*in, scale);
