@@ -149,6 +149,12 @@ public:
         } while (true);
     }
 
+    template <typename T>
+    T * alloc()
+    {
+        return reinterpret_cast<T *>(alignedAlloc(sizeof(T), alignof(T)));
+    }
+
     /** Rollback just performed allocation.
       * Must pass size not more that was just allocated.
       */
