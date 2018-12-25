@@ -291,11 +291,12 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
     auto new_columns = Nested::flattenWithMapping(columns, mapping);
     for (const auto & [old_name, new_names] : mapping)
     {
-        if (new_names.size() == 1 && old_name == new_names.back())
+        auto codec_it = codecs.find(old_name);
+        if ((new_names.size() == 1 && old_name == new_names.back()) || codec_it == codecs.end())
             continue;
 
-        auto codec = codecs[old_name];
-        codecs.erase(old_name);
+        auto codec = codec_it->second;
+        codecs.erase(codec_it);
         for (const auto & new_name : new_names)
             codecs.emplace(new_name, codec);
     }

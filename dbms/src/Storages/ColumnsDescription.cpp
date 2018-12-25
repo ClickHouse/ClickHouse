@@ -214,17 +214,18 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
         result.defaults.emplace(column_name, std::move(*column_default));
     }
 
+    auto comment = parseComment(buf);
+    if (!comment.empty())
+    {
+        result.comments.emplace(column_name, std::move(comment));
+    }
+
     auto codec = parseCodec(buf);
     if (codec)
     {
         result.codecs.emplace(column_name, std::move(codec));
     }
 
-    auto comment = parseComment(buf);
-    if (!comment.empty())
-    {
-        result.comments.emplace(column_name, std::move(comment));
-    }
 
     assertChar('\n', buf);
 }
