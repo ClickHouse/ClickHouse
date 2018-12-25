@@ -123,7 +123,7 @@ protected:
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
         if (pad_left)
-            *(t_start() - 1) = {};
+            t_start()[-1] = {};
     }
 
     bool isInitialized() const
