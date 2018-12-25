@@ -178,11 +178,12 @@ def build_single_page_version(lang, args, cfg):
                     single_page_output_path
                 )
 
-                single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
-                single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
-                create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
-                logging.debug(' '.join(create_pdf_command))
-                subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                if not args.skip_pdf:
+                    single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
+                    single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                    create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                    logging.debug(' '.join(create_pdf_command))
+                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
                 with temp_dir() as test_dir:
                     cfg.load_dict({
@@ -229,6 +230,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--skip-single-page', action='store_true')
+    arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--verbose', action='store_true')
 

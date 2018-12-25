@@ -1504,7 +1504,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false);
+        auto transaction = data.alterDataPart(part, columns_for_parts, false);
         if (!transaction)
             continue;
 
@@ -2160,7 +2160,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         }
         else
         {
-            size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize(
                 data.settings.max_replicated_merges_in_queue, merges_and_mutations_queued);
 
             if (max_source_parts_size > 0)
@@ -3058,12 +3058,6 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
         data.checkAlter(params);
-
-        for (const AlterCommand & param : params)
-        {
-            if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-                throw Exception("Modification of primary key is not supported for replicated tables", ErrorCodes::NOT_IMPLEMENTED);
-        }
 
         ColumnsDescription new_columns = data.getColumns();
         ASTPtr new_order_by_ast = data.order_by_ast;

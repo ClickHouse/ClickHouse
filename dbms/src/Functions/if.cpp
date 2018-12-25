@@ -638,9 +638,7 @@ private:
 
     static ColumnPtr materializeColumnIfConst(const ColumnPtr & column)
     {
-        if (ColumnPtr res = column->convertToFullColumnIfConst())
-            return res;
-        return column;
+        return column->convertToFullColumnIfConst();
     }
 
     static ColumnPtr makeNullableColumnIfNot(const ColumnPtr & column)

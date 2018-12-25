@@ -26,7 +26,6 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
-        MODIFY_PRIMARY_KEY,
         MODIFY_ORDER_BY,
 
         DROP_PARTITION,
@@ -55,10 +54,6 @@ public:
      */
     ASTPtr column;
 
-    /** For MODIFY PRIMARY KEY
-     */
-    ASTPtr primary_key;
-
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
@@ -82,6 +77,10 @@ public:
     bool part = false;          /// true for ATTACH PART
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
+
+    bool if_not_exists = false;  /// option for ADD_COLUMN
+
+    bool if_exists = false;  /// option for DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
 
     /** For FETCH PARTITION - the path in ZK to the shard, from which to download the partition.
      */

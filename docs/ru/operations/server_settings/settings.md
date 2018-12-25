@@ -120,7 +120,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## format_schema_path
 
-Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#format_capnproto).
+Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#capnproto).
 
 **Пример**
 
@@ -222,9 +222,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </http_server_default_response>
 ```
 
-<a name="server_settings-include_from"></a>
-
-## include_from
+## include_from {#server_settings-include_from}
 
 Путь к файлу с подстановками.
 
@@ -643,7 +641,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path
+## user_files_path {#server_settings-user_files_path}
 
 Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../query_language/table_functions/file.md).
 
@@ -683,7 +681,20 @@ ClickHouse использует ZooKeeper для хранения метадан
 **Пример**
 
 ```xml
-<zookeeper incl="zookeeper-servers" optional="true" />
+<zookeeper>
+    <node index="1">
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node index="2">
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node index="3">
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
 ```
 
 [Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/server_settings/settings/) <!--hide-->
