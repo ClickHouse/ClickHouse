@@ -199,7 +199,24 @@ protected:
 };
 
 
-/** ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...] */
+/**
+  * INDEX name(column1, column2, ...) TYPE typename(arg1, arg2, ...)
+  */
+class ParserIndexDeclaration : public IParserBase
+{
+public:
+    ParserIndexDeclaration() {}
+
+protected:
+    const char * getName() const override { return "INDEX query"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+/**
+  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr]
+  * [INDEX name(expr) TYPE type(args) ...] [SETTINGS name = value, ...]
+  */
 class ParserStorage : public IParserBase
 {
 protected:

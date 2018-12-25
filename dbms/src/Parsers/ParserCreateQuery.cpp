@@ -1,5 +1,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -90,6 +91,43 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
         .parse(pos, node, expected);
 }
 
+bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_by("BY");
+    ParserKeyword s_type("TYPE");
+
+    ParserIdentifier name_p;
+    ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
+    ParserExpression expression_p;
+
+    ASTPtr name;
+    ASTPtr expr;
+    ASTPtr type;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!s_by.ignore(pos, expected))
+        return false;
+
+    if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (!ident_with_optional_params_p.parse(pos, type, expected))
+        return false;
+
+    auto index = std::make_shared<ASTIndexDeclaration>();
+    index->name = typeid_cast<const ASTIdentifier &>(*name).name;
+    index->set(index->expr, expr);
+    index->set(index->type, type);
+    node = index;
+
+    return true;
+}
+
 
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -99,17 +137,20 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
+    ParserKeyword s_index("INDEX");
     ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
+    ParserIndexDeclaration index_p;
 
     ASTPtr engine;
     ASTPtr partition_by;
     ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
+    ASTs indexes;
     ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
@@ -154,6 +195,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        if (s_index.ignore(pos, expected)) {
+            indexes.emplace_back(nullptr);
+            if (index_p.parse(pos, indexes.back(), expected))
+                continue;
+            else
+                return false;
+        }
+
         if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
@@ -169,6 +218,12 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
+
+    for (const auto& index : indexes) {
+        storage->indexes.emplace_back(nullptr);
+        storage->set(storage->indexes.back(), index);
+    }
+
     storage->set(storage->settings, settings);
 
     node = storage;
