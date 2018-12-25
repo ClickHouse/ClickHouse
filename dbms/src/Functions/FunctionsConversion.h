@@ -40,8 +40,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -1174,22 +1172,19 @@ struct ToIntMonotonicity
 
         /// Integer cases.
 
-        bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
-        bool to_is_unsigned = std::is_unsigned_v<T>;
+        const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
+        const bool to_is_unsigned = std::is_unsigned_v<T>;
 
-        size_t size_of_from = type.getSizeOfValueInMemory();
-        size_t size_of_to = sizeof(T);
+        const size_t size_of_from = type.getSizeOfValueInMemory();
+        const size_t size_of_to = sizeof(T);
 
-        bool left_in_first_half = left.isNull()
+        const bool left_in_first_half = left.isNull()
             ? from_is_unsigned
-            : left.get<Int64>() >= 0;
+            : (left.get<Int64>() >= 0);
 
-        bool right_in_first_half = right.isNull()
+        const bool right_in_first_half = right.isNull()
             ? !from_is_unsigned
-            : right.get<Int64>() >= 0;
-
-        DUMP(left, right);
-        DUMP(from_is_unsigned, to_is_unsigned, size_of_from, size_of_to, left_in_first_half, right_in_first_half)
+            : (right.get<Int64>() >= 0);
 
         /// Size of type is the same.
         if (size_of_from == size_of_to)
@@ -1215,6 +1210,8 @@ struct ToIntMonotonicity
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
                 return {true};
+
+            return {};
         }
 
         /// Size of type is shrinked.
