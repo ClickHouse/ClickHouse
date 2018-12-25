@@ -31,10 +31,10 @@ private:
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
     Chars chars;
 
-    size_t ALWAYS_INLINE offsetAt(size_t i) const { return i == 0 ? 0 : offsets[i - 1]; }
+    size_t ALWAYS_INLINE offsetAt(size_t i) const { return offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t ALWAYS_INLINE sizeAt(size_t i) const { return i == 0 ? offsets[0] : (offsets[i] - offsets[i - 1]); }
+    size_t ALWAYS_INLINE sizeAt(size_t i) const { return offsets[i] - offsets[i - 1]; }
 
     template <bool positive>
     struct less;
@@ -203,7 +203,7 @@ public:
     void insertDefault() override
     {
         chars.push_back(0);
-        offsets.push_back(offsets.size() == 0 ? 1 : (offsets.back() + 1));
+        offsets.push_back(offsets.back() + 1);
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override
