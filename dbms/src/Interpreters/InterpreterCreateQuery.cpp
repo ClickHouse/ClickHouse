@@ -287,7 +287,20 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
         }
     }
 
-    return {Nested::flatten(columns), defaults, codecs, comments};
+    std::unordered_map<std::string, std::vector<std::string>> mapping;
+    auto new_columns = Nested::flattenWithMapping(columns, mapping);
+    for (const auto & [old_name, new_names] : mapping)
+    {
+        if (new_names.size() == 1 && old_name == new_names.back())
+            continue;
+
+        auto codec = codecs[old_name];
+        codecs.erase(old_name);
+        for (const auto & new_name : new_names)
+            codecs.emplace(new_name, codec);
+    }
+
+    return {new_columns, defaults, codecs, comments};
 }
 
 
