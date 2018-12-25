@@ -139,7 +139,7 @@ struct IntegerRoundingComputation
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        if (scale > size_t(std::numeric_limits<T>::max()))
+        if (scale > std::make_unsigned_t<T>(std::numeric_limits<T>::max()))
             *out = 0;
         else
             *out = compute(*in, scale);
@@ -331,10 +331,10 @@ public:
     template <size_t scale>
     static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
     {
-        const T* end_in = in.data() + in.size();
+        const T * end_in = in.data() + in.size();
 
-        const T* __restrict p_in = in.data();
-        T* __restrict p_out = out.data();
+        const T * __restrict p_in = in.data();
+        T * __restrict p_out = out.data();
 
         while (p_in < end_in)
         {
