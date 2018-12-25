@@ -9,6 +9,8 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Common/typeid_cast.h>
 
 
