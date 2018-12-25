@@ -36,7 +36,7 @@ private:
     static constexpr size_t pad_right = 15;
 
     /// Contiguous chunk of memory and pointer to free space inside it. Member of single-linked list.
-    struct Chunk : private Allocator<false>    /// empty base optimization
+    struct alignas(16) Chunk : private Allocator<false>    /// empty base optimization
     {
         char * begin;
         char * pos;
