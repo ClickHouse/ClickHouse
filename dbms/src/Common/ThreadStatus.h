@@ -144,6 +144,10 @@ protected:
 
     void initPerformanceCounters();
 
+    void initQueryProfiler();
+
+    void finalizeQueryProfiler();
+
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr);
@@ -164,6 +168,9 @@ protected:
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
     size_t queries_started = 0;
+
+    bool has_query_profiler = false;
+    timer_t query_profiler_timer_id = 0;
 
     Poco::Logger * log = nullptr;
 
