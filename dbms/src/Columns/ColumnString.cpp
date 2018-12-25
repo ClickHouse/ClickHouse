@@ -148,7 +148,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = perm[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -219,7 +219,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
