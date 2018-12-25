@@ -94,7 +94,8 @@ StoragePtr StorageFactory::get(
                     ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
+            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by
+                 || storage_def->sample_by || !storage_def->indexes.empty())
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
