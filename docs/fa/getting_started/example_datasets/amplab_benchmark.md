@@ -1,6 +1,6 @@
 <div dir="rtl" markdown="1">
 
-#  بنچمارک AMPLab Big Data
+$1 $3نچمارک AMPLab Big Data
 
 ببینید <https://amplab.cs.berkeley.edu/benchmark/>
 
