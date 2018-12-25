@@ -58,13 +58,20 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
     else if (method != codec->getMethodByte())
-        throw Exception("Data compressed with different method, given method byte " + getHexUIntLowercase(method) + ", previous method byte " + getHexUIntLowercase(codec->getMethodByte()), ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Data compressed with different methods, given method byte "
+                        + getHexUIntLowercase(method)
+                        + ", previous method byte "
+                        + getHexUIntLowercase(codec->getMethodByte()),
+                        ErrorCodes::CANNOT_DECOMPRESS);
 
     size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
     size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
-        throw Exception("Too large size_compressed_without_checksum: " + toString(size_compressed_without_checksum) + ". Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+        throw Exception("Too large size_compressed_without_checksum: "
+                        + toString(size_compressed_without_checksum)
+                        + ". Most likely corrupted data.",
+                        ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + CHECKSUM_SIZE);
 
@@ -95,7 +102,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
 
 
-    return size_compressed_without_checksum + sizeof(checksum);
+    return size_compressed_without_checksum + CHECKSUM_SIZE;
 }
 
 
@@ -109,7 +116,11 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
     else if (codec->getMethodByte() != method)
-        throw Exception("Data compressed with different method, given method byte " + getHexUIntLowercase(method) + ", previous method byte " + getHexUIntLowercase(codec->getMethodByte()), ErrorCodes::CANNOT_DECOMPRESS);
+        throw Exception("Data compressed with different methods, given method byte "
+                        + getHexUIntLowercase(method)
+                        + ", previous method byte "
+                        + getHexUIntLowercase(codec->getMethodByte()),
+                        ErrorCodes::CANNOT_DECOMPRESS);
 
     codec->decompress(compressed_buffer, size_compressed_without_checksum, to);
 }
