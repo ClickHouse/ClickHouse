@@ -114,7 +114,7 @@ $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
 drwxrwxrwx 2 clickhouse clickhouse 20480 May 5 02:58 20140317_20140323_2_2_0
 drwxrwxrwx 2 clickhouse clickhouse 20480 May 5 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse 4096 May 5 02:55 detached
+drwxrwxrwx 2 clickhouse clickhouse  4096 May 5 02:55 detached
 -rw-rw-rw- 1 clickhouse clickhouse     2 May 5 02:58 increment.txt
 ```
 
