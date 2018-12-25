@@ -51,15 +51,19 @@ namespace DB
   */
 static constexpr size_t EmptyPODArraySize = 1024;
 extern const char EmptyPODArray[EmptyPODArraySize];
+
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>, size_t pad_right_ = 0, size_t pad_left_ = 0>
 class PODArray : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
 protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = (pad_right_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
+    
     static constexpr size_t pad_left_unaligned = (pad_left_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
-    static constexpr size_t pad_left = pad_left_unaligned ? pad_left_unaligned + 15 - (pad_left_unaligned - 1) % 16 : 0;
+    static constexpr size_t pad_left = pad_left_unaligned ? (pad_left_unaligned + 15) / 16 * 16 : 0;
+
     static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
+
     static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Element size too large?");
 
     char * c_start          = null;    /// Does not include pad_left.
