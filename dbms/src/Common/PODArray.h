@@ -95,7 +95,7 @@ protected:
         c_start = c_end = reinterpret_cast<char *>(TAllocator::alloc(bytes, std::forward<TAllocatorParams>(allocator_params)...)) + pad_left;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
         if (pad_left)
-            *(t_start() - 1) = {};
+            t_start()[-1] = {};
     }
 
     void dealloc()
