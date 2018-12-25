@@ -158,6 +158,7 @@ public:
          const std::string & user_ = "",
          const std::string & password_ = "",
          unsigned port_ = 0,
+         const std::string & initialize_query_ = "",
          const std::string & socket_ = "",
          unsigned connect_timeout_ = MYSQLXX_DEFAULT_TIMEOUT,
          unsigned rw_timeout_ = MYSQLXX_DEFAULT_RW_TIMEOUT,
@@ -165,15 +166,15 @@ public:
          unsigned max_connections_ = MYSQLXX_POOL_DEFAULT_MAX_CONNECTIONS,
          unsigned enable_local_infile_ = MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE)
     : default_connections(default_connections_), max_connections(max_connections_),
-    db(db_), server(server_), user(user_), password(password_), port(port_), socket(socket_),
-    connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_) {}
+    db(db_), server(server_), user(user_), password(password_), port(port_), initialize_query(initialize_query_),
+    socket(socket_), connect_timeout(connect_timeout_), rw_timeout(rw_timeout_), enable_local_infile(enable_local_infile_) {}
 
     Pool(const Pool & other)
         : default_connections{other.default_connections},
           max_connections{other.max_connections},
           db{other.db}, server{other.server},
           user{other.user}, password{other.password},
-          port{other.port}, socket{other.socket},
+          port{other.port}, initialize_query(other.initialize_query), socket{other.socket},
           connect_timeout{other.connect_timeout}, rw_timeout{other.rw_timeout},
           enable_local_infile{other.enable_local_infile}
     {}
@@ -220,6 +221,7 @@ private:
     std::string user;
     std::string password;
     unsigned port;
+    std::string initialize_query;
     std::string socket;
     unsigned connect_timeout;
     unsigned rw_timeout;

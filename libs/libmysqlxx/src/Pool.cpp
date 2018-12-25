@@ -200,6 +200,12 @@ void Pool::Entry::forceConnected() const
             pool->connect_timeout,
             pool->rw_timeout,
             pool->enable_local_infile);
+
+        if (!pool->initialize_query.empty())
+        {
+            Query query = data->conn.query(pool->initialize_query);
+            query.execute();
+        }
     }
     while (!data->conn.ping());
 }
@@ -242,6 +248,12 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             connect_timeout,
             rw_timeout,
             enable_local_infile);
+
+        if (!initialize_query.empty())
+        {
+            auto query = conn->conn.query(initialize_query);
+            query.execute();
+        }
     }
     catch (mysqlxx::ConnectionFailed & e)
     {

@@ -15,6 +15,9 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <mysqlxx/Transaction.h>
+#include <Storages/MySQL/MySQLSettings.h>
+#include <Parsers/queryToString.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -188,47 +191,23 @@ void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
+        MySQLSettings settings(*args.storage_def, args.local_context, args.context.getConfigRef(), args.database_name, args.table_name);
 
-        if (engine_args.size() < 5 || engine_args.size() > 7)
+        if (settings.remote_address.value.empty() || settings.user.value.empty() || settings.password.value.empty())
             throw Exception(
                 "Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+        if (settings.replace_query && !settings.on_duplicate_clause.value.empty())
+            throw Exception("Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them",
+                            ErrorCodes::BAD_ARGUMENTS);
 
-        /// 3306 is the default MySQL port.
-        auto parsed_host_port = parseAddress(static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>(), 3306);
+        const auto host_and_port = parseAddress(settings.remote_address.value, 3306);
+        mysqlxx::Pool pool(settings.remote_database.value, host_and_port.first, settings.user.value, settings.password.value,
+                           host_and_port.second, settings.genSessionVariablesQuery());
 
-        const String & remote_database = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
-        const String & remote_table = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
-        const String & username = static_cast<const ASTLiteral &>(*engine_args[3]).value.safeGet<String>();
-        const String & password = static_cast<const ASTLiteral &>(*engine_args[4]).value.safeGet<String>();
-
-        mysqlxx::Pool pool(remote_database, parsed_host_port.first, username, password, parsed_host_port.second);
-
-        bool replace_query = false;
-        std::string on_duplicate_clause;
-        if (engine_args.size() >= 6)
-            replace_query = static_cast<const ASTLiteral &>(*engine_args[5]).value.safeGet<UInt64>() > 0;
-        if (engine_args.size() == 7)
-            on_duplicate_clause = static_cast<const ASTLiteral &>(*engine_args[6]).value.safeGet<String>();
-
-        if (replace_query && !on_duplicate_clause.empty())
-            throw Exception(
-                "Only one of 'replace_query' and 'on_duplicate_clause' can be specified, or none of them",
-                ErrorCodes::BAD_ARGUMENTS);
-
-        return StorageMySQL::create(
-            args.table_name,
-            std::move(pool),
-            remote_database,
-            remote_table,
-            replace_query,
-            on_duplicate_clause,
-            args.columns,
-            args.context);
+        return StorageMySQL::create(args.table_name, std::move(pool), settings.remote_database.value, settings.remote_table_name.value,
+                                    bool(settings.replace_query.value), settings.on_duplicate_clause.value, args.columns, args.context);
     });
 }
 

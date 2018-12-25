@@ -9,4 +9,14 @@
             </shard>
         </test_cluster>
     </remote_servers>
+
+    <mysql_test_database>
+        <replace_query>1</replace_query>
+    </mysql_test_database>
+
+    <mysql_test_database_duplicate_table_name>
+        <replace_query>0</replace_query>
+        <on_duplicate_clause>update money = money + values(money)</on_duplicate_clause>
+    </mysql_test_database_duplicate_table_name>
+
 </yandex>

@@ -70,6 +70,7 @@ add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/Kafka)
 add_headers_and_sources(dbms src/Storages/MergeTree)
+add_headers_and_sources(dbms src/Storages/MySQL)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Formats)
 
