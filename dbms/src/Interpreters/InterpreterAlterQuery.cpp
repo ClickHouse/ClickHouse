@@ -153,7 +153,7 @@ void ParameterCommands::validate(const IStorage & /*table*/)
 
 void ChannelCommands::validate(const IStorage & table)
 {
-    if ( !dynamic_cast<const StorageLiveChannel *>(&table))
+    if (!empty() && !dynamic_cast<const StorageLiveChannel *>(&table))
         throw Exception("Wrong storage type. Must be StorageLiveChannel", DB::ErrorCodes::UNKNOWN_STORAGE);
 }
 

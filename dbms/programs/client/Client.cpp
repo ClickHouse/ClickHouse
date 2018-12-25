@@ -1215,8 +1215,6 @@ private:
                 current_format = "Vertical";
 
             block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
-            block_out_stream->writePrefix();
-            open_frame = false;
         }
     }
 
@@ -1264,15 +1262,16 @@ private:
         processed_rows += block.rows();
         initBlockOutputStream(block);
 
-        /// The header block containing zero rows was used to initialize block_out_stream, do not output it.
-        if (block.rows() != 0 || block.info.is_start_frame)
+        if (!open_frame || block.info.is_start_frame)
         {
-            if (!open_frame || block.info.is_start_frame)
-            {
-                block_out_stream->setSampleBlock(block);
-                block_out_stream->writePrefix();
-                open_frame = true;
-            }
+            block_out_stream->setSampleBlock(block);
+            block_out_stream->writePrefix();
+            open_frame = true;
+        }
+
+        /// The header block containing zero rows was used to initialize block_out_stream, do not output it.
+        if (block.rows() != 0)
+        {
             block_out_stream->write(block);
             written_first_block = true;
         }
@@ -1457,11 +1456,12 @@ private:
 
     void onEndOfStream()
     {
-        if (block_out_stream && !processed_rows)
+        if (block_out_stream && !open_frame && !processed_rows) /// No data
         {
             block_out_stream->writePrefix();
             open_frame = true;
         }
+
         if (block_out_stream && open_frame)
         {
             block_out_stream->writeSuffix();

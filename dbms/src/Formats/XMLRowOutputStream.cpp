@@ -82,14 +82,14 @@ void XMLRowOutputStream::writePrefix()
 }
 
 
-void XMLRowOutputStream::writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num)
+void XMLRowOutputStream::writeField(const String & /*name*/, const IColumn & column, const IDataType & type, size_t row_num)
 {
     writeCString("\t\t\t<", *ostr);
-    writeString(name, *ostr);
+    writeString(field_tag_names[field_number], *ostr);
     writeCString(">", *ostr);
     type.serializeTextXML(column, row_num, *ostr, format_settings);
     writeCString("</", *ostr);
-    writeString(name, *ostr);
+    writeString(field_tag_names[field_number], *ostr);
     writeCString(">\n", *ostr);
     ++field_number;
 }

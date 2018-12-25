@@ -453,6 +453,20 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
+        // TO [db.]table
+        if (ParserKeyword{"TO"}.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, to_table, expected))
+                return false;
+
+            if (s_dot.ignore(pos, expected))
+            {
+                to_database = to_table;
+                if (!name_p.parse(pos, to_table, expected))
+                    return false;
+            }
+        }
+
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {

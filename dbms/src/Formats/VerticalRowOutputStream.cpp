@@ -56,13 +56,13 @@ void VerticalRowOutputStream::flush()
 }
 
 
-void VerticalRowOutputStream::writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num)
+void VerticalRowOutputStream::writeField(const String & /*name*/, const IColumn & column, const IDataType & type, size_t row_num)
 {
     if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeString(names_and_paddings[field_number], ostr);
-    writeString(name, ostr);
+    /// writeString(name, ostr);
     writeValue(column, type, row_num);
     writeChar('\n', ostr);
 

@@ -34,9 +34,9 @@ JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, cons
 }
 
 
-void JSONEachRowRowOutputStream::writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num)
+void JSONEachRowRowOutputStream::writeField(const String & /*name*/, const IColumn & column, const IDataType & type, size_t row_num)
 {
-    writeString(name, ostr);
+    writeString(fields[field_number], ostr);
     writeChar(':', ostr);
     type.serializeTextJSON(column, row_num, ostr, settings);
     ++field_number;
