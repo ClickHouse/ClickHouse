@@ -8,6 +8,11 @@
 #include <murmurhash2.h>
 #include <murmurhash3.h>
 
+#include <Common/config.h>
+#if USE_XXHASH
+    #include <xxhash.h>
+#endif
+
 #include <Poco/ByteOrder.h>
 
 #include <Common/SipHash.h>
@@ -41,6 +46,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -116,6 +122,7 @@ struct HalfMD5Impl
 
     /// If true, it will use intHash32 or intHash64 to hash POD types. This behaviour is intended for better performance of some functions.
     /// Otherwise it will hash bytes in memory as a string using corresponding hash function.
+
     static constexpr bool use_int_hash_for_pods = false;
 };
 
@@ -298,6 +305,51 @@ struct MurmurHash3Impl64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+/// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
+/// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
+///  but obtain the same result as it is done in singed integers with two's complement arithmetic.
+struct JavaHashImpl
+{
+    static constexpr auto name = "javaHash";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        UInt32 h = 0;
+        for (size_t i = 0; i < size; ++i)
+            h = 31 * h + static_cast<UInt32>(static_cast<Int8>(data[i]));
+        return static_cast<Int32>(h);
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Java hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+/// This is just JavaHash with zeroed out sign bit.
+/// This function is used in Hive for versions before 3.0,
+///  after 3.0, Hive uses murmur-hash3.
+struct HiveHashImpl
+{
+    static constexpr auto name = "hiveHash";
+    using ReturnType = Int32;
+
+    static Int32 apply(const char * data, const size_t size)
+    {
+        return static_cast<Int32>(0x7FFFFFFF & static_cast<UInt32>(JavaHashImpl::apply(data, size)));
+    }
+
+    static Int32 combineHashes(Int32, Int32)
+    {
+        throw Exception("Hive hash is not combineable for multiple arguments", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct MurmurHash3Impl128
 {
     static constexpr auto name = "murmurHash3_128";
@@ -354,6 +406,49 @@ struct ImplMetroHash64
 
     static constexpr bool use_int_hash_for_pods = true;
 };
+
+
+#if USE_XXHASH
+
+struct ImplXxHash32
+{
+    static constexpr auto name = "xxHash32";
+    using ReturnType = UInt32;
+
+    static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
+    /**
+      *  With current implementation with more than 1 arguments it will give the results
+      *  non-reproducable from outside of CH.
+      *
+      *  Proper way of combining several input is to use streaming mode of hash function
+      *  https://github.com/Cyan4973/xxHash/issues/114#issuecomment-334908566
+      *
+      *  In common case doable by init_state / update_state / finalize_state
+      */
+    static auto combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+
+struct ImplXxHash64
+{
+    static constexpr auto name = "xxHash64";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto apply(const char * s, const size_t len) { return XXH64(s, len, 0); }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducable from outside of CH. (see comment on ImplXxHash32).
+     */
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+#endif
 
 
 template <typename Impl>
@@ -978,4 +1073,12 @@ using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
+using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
+
+#if USE_XXHASH
+    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+#endif
+
 }

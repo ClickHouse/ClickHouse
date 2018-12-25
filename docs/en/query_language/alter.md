@@ -1,6 +1,4 @@
-<a name="query_language_queries_alter"></a>
-
-## ALTER
+## ALTER {#query_language_queries_alter}
 
 The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`and`Distributed`. The query has several variations.
 
@@ -230,9 +228,7 @@ For non-replicatable tables, all `ALTER` queries are performed synchronously. Fo
 For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the `replication_alter_partitions_sync` setting to set up waiting.
 Possible values: `0` – do not wait; `1` – only wait for own execution (default); `2` – wait for all.
 
-<a name="query_language_queries_show_databases"></a>
-
-### Mutations
+### Mutations {#query_language_queries_show_databases}
 
 Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
 
