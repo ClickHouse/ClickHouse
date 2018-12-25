@@ -6,7 +6,6 @@
 #include <IO/CompressedReadBufferBase.h>
 #include <IO/UncompressedCache.h>
 #include <port/clock.h>
-#include <Compression/ICompressionCodec.h>
 
 
 namespace DB
@@ -43,7 +42,8 @@ private:
 
 public:
     CachedCompressedReadBuffer(
-        const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        const std::string & path_, UncompressedCache * cache_, size_t estimated_size_, size_t aio_threshold_,
+        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
