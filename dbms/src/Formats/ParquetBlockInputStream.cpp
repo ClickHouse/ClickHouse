@@ -144,7 +144,6 @@ void ParquetBlockInputStream::fillColumnWithBooleanData(std::shared_ptr<arrow::C
 void ParquetBlockInputStream::fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<UInt16> & column_data = static_cast<ColumnVector<UInt16> &>(*internal_column).getData();
-DUMP(arrow_column->length(), arrow_column->data()->num_chunks());
     column_data.reserve(arrow_column->length());
 
     for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
@@ -154,7 +153,6 @@ DUMP(arrow_column->length(), arrow_column->data()->num_chunks());
         for (size_t value_i = 0; value_i != static_cast<size_t>(chunk.length()); ++value_i)
         {
             UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
-DUMP(days_num);
             if (days_num > DATE_LUT_MAX_DAY_NUM)
             {
                 // TODO: will it rollback correctly?
@@ -183,18 +181,6 @@ void ParquetBlockInputStream::fillColumnWithDate64Data(std::shared_ptr<arrow::Co
         for (size_t value_i = 0; value_i != static_cast<size_t>(chunk.length()); ++value_i)
         {
             auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000) ; // ms! TODO: check other 's' 'ns' ...
-DUMP(timestamp);
-
-            /*if (days_num > DATE_LUT_MAX_DAY_NUM)
-            {
-                // TODO: will it rollback correctly?
-                throw Exception{"Input value " + std::to_string(days_num) + " of a column \"" + arrow_column->name()
-                                    + "\" is greater than "
-                                      "max allowed Date value, which is "
-                                    + std::to_string(DATE_LUT_MAX_DAY_NUM),
-                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE};
-            }*/
-
             column_data.emplace_back(timestamp);
         }
     }
@@ -337,28 +323,6 @@ Block ParquetBlockInputStream::readImpl()
 
         const std::string column_nested_type_name = column_nested_type->getName();
 
-//DUMP(arrow_type, header_column.type, internal_nested_type_name, column_nested_type_name );
-
-        // TODO: can it be done with typeid_cast?
-        if (internal_nested_type_name != column_nested_type_name)
-        {
-
-//DUMP("should convert ", internal_nested_type_name, column_nested_type_name);
-
-         // possible:
-         // Field value = convertFieldToType(value_raw.first, type, value_raw.second.get());
-         // column.column = castColumn(column, dst_col.type, context);
-
-/*
-             throw Exception{"Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name
-                                + "\""
-                                  " is not compatible with a column type \""
-                                + column_nested_type_name + "\"",
-                            ErrorCodes::CANNOT_CONVERT_TYPE};
-*/
-        }
-
-
         ColumnWithTypeAndName column;
         column.name = header_column.name;
         column.type = internal_type;
@@ -375,11 +339,9 @@ Block ParquetBlockInputStream::readImpl()
                 fillColumnWithBooleanData(arrow_column, read_column);
                 break;
             case arrow::Type::DATE32:
-//DUMP("fill date 32");
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
             case arrow::Type::DATE64:
-//DUMP("fill date 64");
                 fillColumnWithDate64Data(arrow_column, read_column);
                 break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -407,13 +369,8 @@ Block ParquetBlockInputStream::readImpl()
             column.column = std::move(read_column);
         }
 
-
-//DUMP(column.name, arrow_type, column);
-
         column.column = castColumn(column, column_type, context);
-if (column.type->getName() != column_type->getName()) DUMP("convert ", column.type->getName(), column_type->getName());
         column.type = column_type;
-//DUMP(column.name, arrow_type, column);
 
         res.insert(std::move(column));
     }

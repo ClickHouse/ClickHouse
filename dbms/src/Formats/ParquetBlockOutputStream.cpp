@@ -123,7 +123,8 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
-    arrow::Date32Builder date_builder;
+    //arrow::Date32Builder date_builder;
+    arrow::UInt16Builder date_builder;
     arrow::Status append_status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
@@ -133,8 +134,6 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
         else
             /// Implicitly converts UInt16 to Int32
             append_status = date_builder.Append(internal_data[value_i]);
-//DUMP(internal_data[value_i]);
-
         checkAppendStatus(append_status, write_column->getName());
     }
 
@@ -157,7 +156,6 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateTimeColumnData(
         else
             /// Implicitly converts UInt16 to Int32
             //append_status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
-            //DUMP(static_cast<int64_t>(internal_data[value_i]) * 1000);
             append_status = date_builder.Append(internal_data[value_i]);
 
         checkAppendStatus(append_status, write_column->getName());
@@ -192,18 +190,14 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockO
     {"Float64", arrow::float64()},
 
     //{"Date", arrow::date64()},
-    {"Date", arrow::date32()},
-    //{"Date", arrow::uint16()}, // CHECK
+    //{"Date", arrow::date32()},
+    {"Date", arrow::uint16()}, // CHECK
     //{"DateTime", arrow::date64()}, // BUG! saves as date32
     {"DateTime", arrow::uint32()},
 
     // TODO: ClickHouse can actually store non-utf8 strings!
     {"String", arrow::utf8()},
     {"FixedString", arrow::utf8()},
-
-    // TODO: add other types:
-    // 1. FixedString
-    // 2. DateTime
 };
 
 const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
@@ -276,16 +270,12 @@ void ParquetBlockOutputStream::write(const Block & block)
             = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
-//DUMP(column_nested_type_name, internal_type_to_arrow_type.at(column_nested_type_name), internal_type_to_arrow_type.at(column_nested_type_name)->id());
-        // TODO: use typeid_cast
         if ("String" == column_nested_type_name)
         {
-            //fillArrowArrayWithStringColumnData(nested_column, arrow_array, null_bytemap);
             fillArrowArrayWithStringColumnData<ColumnString>(nested_column, arrow_array, null_bytemap);
         }
         else if ("FixedString" == column_nested_type_name)
         {
-            //fillArrowArrayWithFixedStringColumnData(nested_column, arrow_array, null_bytemap);
             fillArrowArrayWithStringColumnData<ColumnFixedString>(nested_column, arrow_array, null_bytemap);
         }
         else if ("Date" == column_nested_type_name)
@@ -304,9 +294,6 @@ void ParquetBlockOutputStream::write(const Block & block)
 
         FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
-        // TODO: there are also internal types that are convertable to parquet/arrow once:
-        // 1. FixedString(N)
-        // 2. DateTime
         else
         {
             throw Exception{"Internal type \"" + column_nested_type_name + "\" of a column \"" + column.name
