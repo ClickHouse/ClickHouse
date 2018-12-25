@@ -40,6 +40,8 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -1185,6 +1187,9 @@ struct ToIntMonotonicity
         bool right_in_first_half = right.isNull()
             ? !from_is_unsigned
             : right.get<Int64>() >= 0;
+
+        DUMP(left, right);
+        DUMP(from_is_unsigned, to_is_unsigned, size_of_from, size_of_to, left_in_first_half, right_in_first_half)
 
         /// Size of type is the same.
         if (size_of_from == size_of_to)
