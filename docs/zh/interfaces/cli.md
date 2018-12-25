@@ -77,7 +77,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 ### 命令行参数
 
-- `--host, -h` -– 服务端的 host 名称, 默认是 'localhost'。  您可以选择使用 host 名称或者 IPv4 或 IPv6 地址。
+- `--host, -h` -– 服务端的 host 名称, 默认是 'localhost'。 您可以选择使用 host 名称或者 IPv4 或 IPv6 地址。
 - `--port` – 连接的端口，默认值： 9000。注意 HTTP 接口以及 TCP 原生接口是使用不同端口的。
 - `--user, -u` – 用户名。 默认值： default。
 - `--password` – 密码。 默认值： 空字符串。
@@ -93,7 +93,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 ### 配置文件
 
-`clickhouse-client`  使用一下第一个存在的文件：
+`clickhouse-client` 使用一下第一个存在的文件：
 
 - 通过 `-config-file` 参数指定的文件.
 - `./clickhouse-client.xml`
