@@ -1,3 +1,5 @@
+# === thrift
+
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp)
 # contrib/thrift/lib/cpp/CMakeLists.txt
 set(thriftcpp_SOURCES
@@ -43,6 +45,77 @@ set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE aft
 target_include_directories(${THRIFT_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src PRIVATE ${Boost_INCLUDE_DIRS})
 
 
+
+# === arrow
+
+set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow)
+# arrow/cpp/src/arrow/CMakeLists.txt
+set(ARROW_SRCS
+  ${LIBRARY_DIR}/array.cc
+
+  ${LIBRARY_DIR}/builder.cc
+  ${LIBRARY_DIR}/array/builder_adaptive.cc
+  ${LIBRARY_DIR}/array/builder_base.cc
+  ${LIBRARY_DIR}/array/builder_binary.cc
+  ${LIBRARY_DIR}/array/builder_decimal.cc
+  ${LIBRARY_DIR}/array/builder_dict.cc
+  ${LIBRARY_DIR}/array/builder_nested.cc
+  ${LIBRARY_DIR}/array/builder_primitive.cc
+
+  ${LIBRARY_DIR}/buffer.cc
+  ${LIBRARY_DIR}/compare.cc
+  ${LIBRARY_DIR}/memory_pool.cc
+  ${LIBRARY_DIR}/pretty_print.cc
+  ${LIBRARY_DIR}/record_batch.cc
+  ${LIBRARY_DIR}/status.cc
+  ${LIBRARY_DIR}/table.cc
+  ${LIBRARY_DIR}/table_builder.cc
+  ${LIBRARY_DIR}/tensor.cc
+  ${LIBRARY_DIR}/type.cc
+  ${LIBRARY_DIR}/visitor.cc
+
+  ${LIBRARY_DIR}/csv/converter.cc
+  ${LIBRARY_DIR}/csv/chunker.cc
+  ${LIBRARY_DIR}/csv/column-builder.cc
+  ${LIBRARY_DIR}/csv/options.cc
+  ${LIBRARY_DIR}/csv/parser.cc
+  ${LIBRARY_DIR}/csv/reader.cc
+
+  ${LIBRARY_DIR}/io/buffered.cc
+  ${LIBRARY_DIR}/io/compressed.cc
+  ${LIBRARY_DIR}/io/file.cc
+  ${LIBRARY_DIR}/io/interfaces.cc
+  ${LIBRARY_DIR}/io/memory.cc
+  ${LIBRARY_DIR}/io/readahead.cc
+
+  ${LIBRARY_DIR}/util/bit-util.cc
+  ${LIBRARY_DIR}/util/compression.cc
+  ${LIBRARY_DIR}/util/cpu-info.cc
+  ${LIBRARY_DIR}/util/decimal.cc
+  ${LIBRARY_DIR}/util/int-util.cc
+  ${LIBRARY_DIR}/util/io-util.cc
+  ${LIBRARY_DIR}/util/logging.cc
+  ${LIBRARY_DIR}/util/key_value_metadata.cc
+  ${LIBRARY_DIR}/util/task-group.cc
+  ${LIBRARY_DIR}/util/thread-pool.cc
+  ${LIBRARY_DIR}/util/trie.cc
+  ${LIBRARY_DIR}/util/utf8.cc
+)
+
+set(ARROW_SRCS ${ARROW_SRCS}
+    ${LIBRARY_DIR}/compute/context.cc
+    ${LIBRARY_DIR}/compute/kernels/boolean.cc
+    ${LIBRARY_DIR}/compute/kernels/cast.cc
+    ${LIBRARY_DIR}/compute/kernels/hash.cc
+    ${LIBRARY_DIR}/compute/kernels/util-internal.cc
+)
+add_library(${ARROW_LIBRARY} ${LINK_MODE} ${ARROW_SRCS})
+target_include_directories(${ARROW_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} Threads::Threads)
+
+
+# === parquet
+
 set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/parquet)
 # arrow/cpp/src/parquet/CMakeLists.txt
 set(PARQUET_SRCS
@@ -73,69 +146,15 @@ list(APPEND PARQUET_SRCS
 add_library(${PARQUET_LIBRARY} ${LINK_MODE} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src)
 include(${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake) # makes config.h
-target_link_libraries(${PARQUET_LIBRARY} PRIVATE ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
+target_link_libraries(${PARQUET_LIBRARY} PRIVATE ${ARROW_LIBRARY} ${THRIFT_LIBRARY} ${Boost_REGEX_LIBRARY})
 target_include_directories(${PARQUET_LIBRARY} PRIVATE ${Boost_INCLUDE_DIRS})
 
 
-set(LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow)
-# arrow/cpp/src/arrow/CMakeLists.txt
-set(ARROW_SRCS
-  ${LIBRARY_DIR}/array.cc
-  ${LIBRARY_DIR}/buffer.cc
-  ${LIBRARY_DIR}/builder.cc
+# === tools
 
-  ${LIBRARY_DIR}/array/builder_adaptive.cc
-  ${LIBRARY_DIR}/array/builder_base.cc
-  ${LIBRARY_DIR}/array/builder_binary.cc
-  ${LIBRARY_DIR}/array/builder_decimal.cc
-  ${LIBRARY_DIR}/array/builder_dict.cc
-  ${LIBRARY_DIR}/array/builder_nested.cc
-  ${LIBRARY_DIR}/array/builder_primitive.cc
-
-  ${LIBRARY_DIR}/compare.cc
-  ${LIBRARY_DIR}/memory_pool.cc
-  ${LIBRARY_DIR}/pretty_print.cc
-  ${LIBRARY_DIR}/record_batch.cc
-  ${LIBRARY_DIR}/status.cc
-  ${LIBRARY_DIR}/table.cc
-  ${LIBRARY_DIR}/table_builder.cc
-  ${LIBRARY_DIR}/tensor.cc
-  ${LIBRARY_DIR}/type.cc
-  ${LIBRARY_DIR}/visitor.cc
-
-  ${LIBRARY_DIR}/csv/converter.cc
-  ${LIBRARY_DIR}/csv/chunker.cc
-  ${LIBRARY_DIR}/csv/column-builder.cc
-  ${LIBRARY_DIR}/csv/options.cc
-  ${LIBRARY_DIR}/csv/parser.cc
-  ${LIBRARY_DIR}/csv/reader.cc
-
-  ${LIBRARY_DIR}/io/buffered.cc
-  ${LIBRARY_DIR}/io/compressed.cc
-  ${LIBRARY_DIR}/io/file.cc
-  ${LIBRARY_DIR}/io/interfaces.cc
-  ${LIBRARY_DIR}/io/memory.cc
-  ${LIBRARY_DIR}/io/readahead.cc
-
-  ${LIBRARY_DIR}/util/bit-util.cc
-  ${LIBRARY_DIR}/util/compression.cc
-  ${LIBRARY_DIR}/util/cpu-info.cc
-  ${LIBRARY_DIR}/util/decimal.cc
-  ${LIBRARY_DIR}/util/io-util.cc
-  ${LIBRARY_DIR}/util/logging.cc
-  ${LIBRARY_DIR}/util/key_value_metadata.cc
-  ${LIBRARY_DIR}/util/task-group.cc
-  ${LIBRARY_DIR}/util/thread-pool.cc
-  ${LIBRARY_DIR}/util/utf8.cc
-)
-
-set(ARROW_SRCS ${ARROW_SRCS}
-    ${LIBRARY_DIR}/compute/context.cc
-    ${LIBRARY_DIR}/compute/kernels/boolean.cc
-    ${LIBRARY_DIR}/compute/kernels/cast.cc
-    ${LIBRARY_DIR}/compute/kernels/hash.cc
-    ${LIBRARY_DIR}/compute/kernels/util-internal.cc
-)
-add_library(${ARROW_LIBRARY} ${LINK_MODE} ${ARROW_SRCS})
-target_include_directories(${ARROW_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
-target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES})
+set(TOOLS_DIR ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/tools/parquet)
+set(PARQUET_TOOLS parquet-dump-schema parquet-reader parquet-scan)
+foreach(TOOL ${PARQUET_TOOLS})
+    add_executable(${TOOL} ${TOOLS_DIR}/${TOOL}.cc)
+    target_link_libraries(${TOOL} ${PARQUET_LIBRARY})
+endforeach()

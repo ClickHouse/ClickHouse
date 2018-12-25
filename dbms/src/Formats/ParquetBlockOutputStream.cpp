@@ -133,7 +133,7 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(
         else
             /// Implicitly converts UInt16 to Int32
             append_status = date_builder.Append(internal_data[value_i]);
-DUMP(internal_data[value_i]);
+//DUMP(internal_data[value_i]);
 
         checkAppendStatus(append_status, write_column->getName());
     }
@@ -146,7 +146,8 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateTimeColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
-    arrow::Date64Builder date_builder;
+    //arrow::Date64Builder date_builder;
+    arrow::UInt32Builder date_builder;
     arrow::Status append_status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
@@ -155,8 +156,9 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateTimeColumnData(
             append_status = date_builder.AppendNull();
         else
             /// Implicitly converts UInt16 to Int32
-            append_status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
-DUMP(static_cast<int64_t>(internal_data[value_i]) * 1000);
+            //append_status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
+            //DUMP(static_cast<int64_t>(internal_data[value_i]) * 1000);
+            append_status = date_builder.Append(internal_data[value_i]);
 
         checkAppendStatus(append_status, write_column->getName());
     }
@@ -192,7 +194,8 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockO
     //{"Date", arrow::date64()},
     {"Date", arrow::date32()},
     //{"Date", arrow::uint16()}, // CHECK
-    {"DateTime", arrow::date64()},
+    //{"DateTime", arrow::date64()}, // BUG! saves as date32
+    {"DateTime", arrow::uint32()},
 
     // TODO: ClickHouse can actually store non-utf8 strings!
     {"String", arrow::utf8()},
@@ -273,7 +276,7 @@ void ParquetBlockOutputStream::write(const Block & block)
             = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
 
-DUMP(column_nested_type_name, internal_type_to_arrow_type.at(column_nested_type_name), internal_type_to_arrow_type.at(column_nested_type_name)->id());
+//DUMP(column_nested_type_name, internal_type_to_arrow_type.at(column_nested_type_name), internal_type_to_arrow_type.at(column_nested_type_name)->id());
         // TODO: use typeid_cast
         if ("String" == column_nested_type_name)
         {

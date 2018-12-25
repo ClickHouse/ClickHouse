@@ -171,7 +171,7 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
         set(_save_build_type ${CMAKE_BUILD_TYPE})
         set(CMAKE_BUILD_TYPE RELEASE)
     endif()
-    
+
     # Because Arrow uses CMAKE_SOURCE_DIR as a project path
     # Hopefully will be fixed in https://github.com/apache/arrow/pull/2676
     set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/cmake_modules")

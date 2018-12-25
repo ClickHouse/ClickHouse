@@ -337,7 +337,7 @@ Block ParquetBlockInputStream::readImpl()
 
         const std::string column_nested_type_name = column_nested_type->getName();
 
-DUMP(arrow_type, header_column.type, internal_nested_type_name, column_nested_type_name );
+//DUMP(arrow_type, header_column.type, internal_nested_type_name, column_nested_type_name );
 
         // TODO: can it be done with typeid_cast?
         if (internal_nested_type_name != column_nested_type_name)
@@ -375,11 +375,11 @@ DUMP(arrow_type, header_column.type, internal_nested_type_name, column_nested_ty
                 fillColumnWithBooleanData(arrow_column, read_column);
                 break;
             case arrow::Type::DATE32:
-DUMP("fill date 32");
+//DUMP("fill date 32");
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
             case arrow::Type::DATE64:
-DUMP("fill date 64");
+//DUMP("fill date 64");
                 fillColumnWithDate64Data(arrow_column, read_column);
                 break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -408,13 +408,12 @@ DUMP("fill date 64");
         }
 
 
-DUMP(column.name, arrow_type, column);
+//DUMP(column.name, arrow_type, column);
 
         column.column = castColumn(column, column_type, context);
 if (column.type->getName() != column_type->getName()) DUMP("convert ", column.type->getName(), column_type->getName());
         column.type = column_type;
-
-DUMP(column.name, arrow_type, column);
+//DUMP(column.name, arrow_type, column);
 
         res.insert(std::move(column));
     }

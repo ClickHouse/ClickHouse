@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
+set -x
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CUR_DIR/../shell_config.sh
@@ -75,40 +76,42 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types3       (int8 Int8,
 # convert max type
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types4       (int8 Int64, uint8 Int64, int16 Int64, uint16 Int64, int32 Int64,  uint32 Int64, int64 Int64,  uint64 Int64,   float32 Int64,    float64 Int64, string String,         fixedstring String, date DateTime, datetime DateTime) ENGINE = Memory"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,          1132,       -1064,          1164,          -1.032,          -1.064,       'string',           'fixedstring', '2001-02-03', '2018-02-03 04:05:06')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,          1132,       -1064,          1164,          -1.032,          -1.064,       'string',              'fixedstring', '2001-02-03', '2002-02-03 04:05:06')"
+
+# min
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -128,           0,      -32768,             0, -2147483648,             0, -9223372036854775808, 0,             -1.032,          -1.064,     'string-1',            'fixedstring-1', '2001-02-03', '2002-02-03 04:05:06')"
+
+# max
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (      127,         255,       32767,         65535,  2147483647,    2147483647, -9223372036854775808, 18446744073709551615,-1.032,    -1.064,     'string-2',            'fixedstring-2', '2001-02-03', '2002-02-03 04:05:06')"
+
+# say Data::Dumper::Dumper prepare_execute_hash 'SELECT -127,-128,-129,126,127,128,255,256,257,-32767,-32768,-32769,32766,32767,32768,65535,65536,65537,  -2147483647,-2147483648,-2147483649,2147483646,2147483647,2147483648,4294967295,4294967296,4294967297,   -9223372036854775807,-9223372036854775808,9223372036854775806,9223372036854775807,9223372036854775808,18446744073709551615';                             
+
+
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
-
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types3 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str1',                  'str2', '2001-03-04', '2018-05-06')"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types3 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
-
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types4 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str1',                  'str2', '2018-03-04 05:06:07', '2018-08-09 10:11:12')"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types4 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
-
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1" | tee ${CLICKHOUSE_TMP}/parquet_all_types_1.dump
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types2" | tee ${CLICKHOUSE_TMP}/parquet_all_types_2.dump
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" > ${CLICKHOUSE_TMP}/parquet_all_types_1.parquet
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types2 FORMAT Parquet" > ${CLICKHOUSE_TMP}/parquet_all_types_2.parquet
-
 diff ${CLICKHOUSE_TMP}/parquet_all_types_1.dump ${CLICKHOUSE_TMP}/parquet_all_types_2.dump
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types1"
-${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types2"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types1       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32,                int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String,                                         datetime DateTime) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types2       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32,                int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String,                                         datetime DateTime) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,                      -1064,          1164,          -1.032,          -1.064,      'string',                              '2018-02-03 04:05:06')"
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.parquet_types2"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types3 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str01',                  'str2', '2003-03-04', '2004-05-06')"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types3 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types3 FORMAT Parquet"
 
-# THIS! SHOULD WORK:
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types4 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str02',                  'str2', '2005-03-04 05:06:07', '2006-08-09 10:11:12')"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types4 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types4 FORMAT Parquet"
+
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types2"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types3"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types4"
+
 # TODO: add nullable
-#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types1"
-#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_types2"
-#${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types1       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15)                              ) ENGINE = Memory"
-#${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_types2       (int8 Int8, uint8 UInt8, int16 Int16, uint16 UInt16, int32 Int32, uint32 UInt32, int64 Int64, uint64 UInt64, float32 Float32, float64 Float64, string String, fixedstring FixedString(15)                              ) ENGINE = Memory"
-#${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types1 values (     -108,         108,       -1016,          1116,       -1032,          1132,       -1064,          1164,          -1.032,          -1.064,      'string', 'fixedstring'                                                )"
-#${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
-
 
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types2"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types3"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_types4"
