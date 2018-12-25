@@ -4,7 +4,7 @@ The engine differs from [MergeTree](mergetree.md) in that it removes duplicate e
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, don't count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
-Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data  in the background in order to save space, but it doesn't guarantee the absence of duplicates.
+Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the background in order to save space, but it doesn't guarantee the absence of duplicates.
 
 ## Creating a Table
 
@@ -33,7 +33,7 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md)  are required, as when creating a `MergeTree`  table.
+When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1"><summary>Deprecated Method for Creating a Table</summary>
 

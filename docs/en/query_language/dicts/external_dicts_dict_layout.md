@@ -95,7 +95,7 @@ Configuration example:
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
-This storage method works the same way as hashed and allows using date/time ranges  in addition to the key, if they appear in the dictionary.
+This storage method works the same way as hashed and allows using date/time ranges in addition to the key, if they appear in the dictionary.
 
 Example: The table contains discounts for each advertiser in the format:
 
