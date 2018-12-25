@@ -19,6 +19,7 @@ public:
     IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
+    std::vector<IAST *> indexes;
     ASTSetQuery * settings = nullptr;
 
     String getID(char) const override { return "Storage definition"; }
@@ -38,6 +39,12 @@ public:
             res->set(res->order_by, order_by->clone());
         if (sample_by)
             res->set(res->sample_by, sample_by->clone());
+
+        for (const auto& index : indexes) {
+            res->indexes.emplace_back(nullptr);
+            res->set(res->indexes.back(), index->clone());
+        }
+
         if (settings)
             res->set(res->settings, settings->clone());
 
@@ -70,6 +77,10 @@ public:
         {
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
             sample_by->formatImpl(s, state, frame);
+        }
+        for (const auto& index : indexes) {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "INDEX " << (s.hilite ? hilite_none : "");
+            index->formatImpl(s, state, frame);
         }
         if (settings)
         {

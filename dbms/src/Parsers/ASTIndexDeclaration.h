@@ -11,40 +11,37 @@
 namespace DB
 {
 
-
 /** Index name(expr) TYPE typename(args) in create query
   */
-class ASTIndexQuery : public IAST
+class ASTIndexDeclaration : public IAST
 {
 public:
-    struct Index
-    {
-        String name;
-        ASTPtr expression_list;
-        ASTFunction type;
-    };
-
-    using Indexes = std::vector<Index>;
-    Indexes indexes;
+    String name;
+    IAST * expr;
+    ASTFunction * type;
+    //TODO: params (GRANULARITY number or SETTINGS a=b, c=d, ..)?
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTIndexQuery>(*this); }
+    ASTPtr clone() const override {
+        auto res = std::make_shared<ASTIndexDeclaration>(*this);
+        res->children.clear();
+
+        if (expr)
+            res->set(res->expr, expr->clone());
+        if (type)
+            res->set(res->type, type->clone());
+        return res;
+    }
 
     void formatImpl(const FormatSettings & s, FormatState &state, FormatStateStacked frame) const override
     {
-        for (ASTIndexQuery::Indexes::const_iterator it = indexes.begin(); it != indexes.end(); ++it)
-        {
-            if (it != indexes.begin())
-                s.ostr << s.nl_or_ws;
-
-            s.ostr << (s.hilite ? hilite_keyword : "") << "INDEX" << (s.hilite ? hilite_none : "") << " " <<  it->name;
-            s.ostr << "(";
-            it->expression_list->formatImpl(s, state, frame);
-            s.ostr << ") " << (s.hilite ? hilite_keyword : "") << "TYPE" << (s.hilite ? hilite_none : "");
-            it->type.formatImpl(s, state, frame);
-        }
+        s.ostr << name;
+        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
+        expr->formatImpl(s, state, frame);
+        s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
+        type->formatImpl(s, state, frame);
     }
 };
 
