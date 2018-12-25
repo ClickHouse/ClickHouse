@@ -70,7 +70,7 @@ Block ParquetBlockInputStream::getHeader() const
 
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType>
-void ParquetBlockInputStream::fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+void /*ParquetBlockInputStream::*/fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<NumericType> & column_data = static_cast<ColumnVector<NumericType> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -89,7 +89,7 @@ void ParquetBlockInputStream::fillColumnWithNumericData(std::shared_ptr<arrow::C
 /// Inserts chars and offsets right into internal column data to reduce an overhead.
 /// Internal offsets are shifted by one to the right in comparison with Arrow ones. So the last offset should map to the end of all chars.
 /// Also internal strings are null terminated.
-void ParquetBlockInputStream::fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+void /*ParquetBlockInputStream::*/fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<UInt8> & column_chars_t = static_cast<ColumnString &>(*internal_column).getChars();
     PaddedPODArray<UInt64> & column_offsets = static_cast<ColumnString &>(*internal_column).getOffsets();
@@ -104,6 +104,7 @@ void ParquetBlockInputStream::fillColumnWithStringData(std::shared_ptr<arrow::Co
         chars_t_size += chunk_length; /// additional space for null bytes
     }
 
+//DUMP(chars_t_size, arrow_column->length());
     column_chars_t.reserve(chars_t_size);
     column_offsets.reserve(arrow_column->length());
 
@@ -113,10 +114,16 @@ void ParquetBlockInputStream::fillColumnWithStringData(std::shared_ptr<arrow::Co
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
         const size_t chunk_length = chunk.length();
 
+//DUMP(chunk_i, chunk_length);
+
         for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            const UInt8 * raw_data = buffer->data() + chunk.value_offset(offset_i);
-            column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+//DUMP(offset_i, chunk.IsNull(offset_i), chunk.value_length(offset_i));
+            if (!chunk.IsNull(offset_i))
+            {
+                const UInt8 * raw_data = buffer->data() + chunk.value_offset(offset_i);
+                column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
+            }
             column_chars_t.emplace_back('\0');
 
             column_offsets.emplace_back(column_chars_t.size());
@@ -124,7 +131,7 @@ void ParquetBlockInputStream::fillColumnWithStringData(std::shared_ptr<arrow::Co
     }
 }
 
-void ParquetBlockInputStream::fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+void /*ParquetBlockInputStream::*/fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<UInt8> & column_data = static_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.resize(arrow_column->length());
@@ -141,7 +148,7 @@ void ParquetBlockInputStream::fillColumnWithBooleanData(std::shared_ptr<arrow::C
 }
 
 /// Arrow stores Parquet::DATE in Int32, while ClickHouse stores Date in UInt16. Therefore, it should be checked before saving
-void ParquetBlockInputStream::fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+void /*ParquetBlockInputStream::*/fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     PaddedPODArray<UInt16> & column_data = static_cast<ColumnVector<UInt16> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -169,7 +176,7 @@ void ParquetBlockInputStream::fillColumnWithDate32Data(std::shared_ptr<arrow::Co
 }
 
 /// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
-void ParquetBlockInputStream::fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+void /*ParquetBlockInputStream::*/fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -187,7 +194,7 @@ void ParquetBlockInputStream::fillColumnWithDate64Data(std::shared_ptr<arrow::Co
 }
 
 /// Creates a null bytemap from arrow's null bitmap
-void ParquetBlockInputStream::fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
+void /*ParquetBlockInputStream::*/fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
 {
     PaddedPODArray<UInt8> & bytemap_data = static_cast<ColumnVector<UInt8> &>(*bytemap).getData();
     bytemap_data.reserve(arrow_column->length());

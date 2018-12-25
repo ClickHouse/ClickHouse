@@ -30,6 +30,7 @@ private:
     WriteBuffer & ostr;
     Block header;
 
+/*
     static void fillArrowArrayWithDateColumnData(
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);
     static void fillArrowArrayWithDateTimeColumnData(
@@ -42,8 +43,9 @@ private:
     template <typename NumericType, typename ArrowBuilderType>
     static void fillArrowArrayWithNumericColumnData(
         ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap);
+*/
 
-    static const std::unordered_map<String, std::shared_ptr<arrow::DataType>> internal_type_to_arrow_type;
+    //static const std::unordered_map<String, std::shared_ptr<arrow::DataType>> internal_type_to_arrow_type;
 
     std::unique_ptr<parquet::arrow::FileWriter> file_writer;
 };

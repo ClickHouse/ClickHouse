@@ -9,7 +9,7 @@ namespace DB
 {
 
 class WriteBuffer;
-class FormatSettings;
+struct FormatSettings;
 
 /** A data format designed to simplify the implementation of the ODBC driver.
   * ODBC driver is designed to be build for different platforms without dependencies from the main code,
