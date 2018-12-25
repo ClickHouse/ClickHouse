@@ -1,5 +1,6 @@
 #include <Storages/StorageNull.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Databases/IDatabase.h>
