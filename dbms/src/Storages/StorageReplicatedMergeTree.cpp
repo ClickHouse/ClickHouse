@@ -3,6 +3,7 @@
 
 #include <Common/FieldVisitors.h>
 
+#include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
