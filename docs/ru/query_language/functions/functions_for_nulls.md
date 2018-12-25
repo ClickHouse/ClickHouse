@@ -227,7 +227,7 @@ assumeNotNull(x)
 SHOW CREATE TABLE t_null
 
 ┌─statement─────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE default.t_null ( x Int8, y Nullable(Int8)) ENGINE = TinyLog │
+│ CREATE TABLE default.t_null ( x Int8,  y Nullable(Int8)) ENGINE = TinyLog │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 ```

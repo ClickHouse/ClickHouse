@@ -207,7 +207,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull
 
-Results in a value of type [Nullable](../../data_types/nullable.md) i for a non- `Nullable`, if the value is not `NULL`.
+Results in a value of type [Nullable](../../data_types/nullable.md) for a non- `Nullable`, if the value is not `NULL`.
 
 ```
 assumeNotNull(x)
@@ -230,7 +230,7 @@ Consider the `t_null` table.
 SHOW CREATE TABLE t_null
 
 ┌─statement─────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE default.t_null ( x Int8, y Nullable(Int8)) ENGINE = TinyLog │
+│ CREATE TABLE default.t_null ( x Int8,  y Nullable(Int8)) ENGINE = TinyLog │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
