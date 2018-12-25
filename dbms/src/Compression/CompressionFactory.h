@@ -31,17 +31,22 @@ protected:
     using CompressionCodecsCodeDictionary = std::unordered_map<UInt8, Creator>;
 public:
 
+    /// Return default codec (currently LZ4)
     CompressionCodecPtr getDefaultCodec() const;
 
+    /// Get codec by AST
     CompressionCodecPtr get(const ASTPtr & ast) const;
 
+    /// Get codec by method byte (no params available)
     CompressionCodecPtr get(const UInt8 byte_code) const;
 
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
+    /// Register codec with parameters
     void registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator);
 
+    /// Register codec without parameters
     void registerSimpleCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, SimpleCreator creator);
 
 protected:

@@ -73,6 +73,8 @@ CREATE TABLE test.compression_codec_multiple_more_types (
     ddd Nested (age UInt8, Name String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD)
 ) ENGINE = MergeTree() ORDER BY tuple();
 
+SHOW CREATE TABLE test.compression_codec_multiple_more_types;
+
 INSERT INTO test.compression_codec_multiple_more_types VALUES(1.5555555555555, 'hello world!', [77], ['John']);
 INSERT INTO test.compression_codec_multiple_more_types VALUES(7.1, 'xxxxxxxxxxxx', [127], ['Henry']);
 
