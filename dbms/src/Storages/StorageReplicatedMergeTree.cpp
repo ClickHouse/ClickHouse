@@ -2079,7 +2079,16 @@ bool StorageReplicatedMergeTree::queueTask()
     LogEntryPtr & entry = selected.first;
 
     if (!entry)
-        return false;
+    {
+        /// Nothing to do, we can sleep for some time, just not to
+        /// abuse background pool scheduling policy
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        /// If we return false, than background pool for this task
+        /// will accumulate exponential backoff and after empty replication queue
+        /// we will sleep for a long time
+        return true;
+    }
 
     time_t prev_attempt_time = entry->last_attempt_time;
 
