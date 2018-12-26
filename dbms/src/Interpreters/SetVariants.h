@@ -30,15 +30,14 @@ struct SetMethodOneNumber
     /// To use one `Method` in different threads, use different `State`.
     struct State
     {
-        const FieldType * vec;
+        const char * vec;
 
         /** Called at the start of each block processing.
           * Sets the variables required for the other methods called in inner loops.
           */
         void init(const ColumnRawPtrs & key_columns)
         {
-            /// We may interpret ColumnInt32 as ColumnUInt32. This breaks strict aliasing but compiler doesn't see it.
-            vec = reinterpret_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData().data();
+           vec = key_columns[0]->getRawData().data;
         }
 
         /// Get key from key columns for insertion into hash table.
@@ -48,7 +47,7 @@ struct SetMethodOneNumber
             size_t i,                             /// From what row of the block I get the key.
             const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
         {
-            return unionCastToUInt64(vec[i]);
+            return unalignedLoad<Key>(vec + i * sizeof(Key));
         }
     };
 
