@@ -31,7 +31,7 @@ public:
 };
 
 class IDataType;
-using DataTypePtr = std::shared_ptr<IDataType>;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 /// General ML model evaluator interface.
 class IModel : public IExternalLoadable
