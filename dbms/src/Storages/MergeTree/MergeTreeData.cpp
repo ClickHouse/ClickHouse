@@ -94,7 +94,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
-    const ASTs &,
+    const ASTs & indexes_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -186,6 +186,12 @@ MergeTreeData::MergeTreeData(
         throw Exception(
             "MergeTree data format version on disk doesn't support custom partitioning",
             ErrorCodes::METADATA_MISMATCH);
+
+    for (const auto & index_ast : indexes_ast_) {
+        indexes.push_back(
+                std::move(MergeTreeIndexFactory::instance().get(
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast))));
+    }
 }
 
 
