@@ -121,8 +121,11 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-        data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        }
     }
 
     bool allocatesMemoryInArena() const override
