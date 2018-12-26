@@ -137,7 +137,7 @@ private:
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
-    bool backgroundTask();
+    BackgroundProcessingPoolTaskResult backgroundTask();
 
     Int64 getCurrentMutationVersion(
         const MergeTreeData::DataPartPtr & part,
