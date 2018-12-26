@@ -398,7 +398,7 @@ public:
     const char * getRawDataBegin() const
     {
         /// Assumes data layout of ColumnVector, ColumnFixedString and PODArray.
-        return reinterpret_cast<const char *>(this);
+        return reinterpret_cast<const char *>(this) + sizeof(*this);
     }
 };
 
