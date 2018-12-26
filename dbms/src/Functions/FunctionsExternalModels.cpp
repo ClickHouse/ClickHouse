@@ -26,17 +26,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments) const
+DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (arguments.size() < 2)
         throw Exception("Function " + getName() + " expects at least 2 arguments",
                         ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
 
-    if (!isString(arguments[0]))
-        throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
+    if (!isString(arguments[0].type))
+        throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName()
                         + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeFloat64>();
+    const auto name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+    if (!name_col)
+        throw Exception("First argument of function " + getName() + " must be a constant string",
+                        ErrorCodes::ILLEGAL_COLUMN);
+
+    auto model = models.getModel(name_col->getValue<String>());
+    return model->getReturnType();
 }
 
 void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
