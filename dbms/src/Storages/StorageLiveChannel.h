@@ -27,7 +27,7 @@ using LiveChannelTables = std::set<std::pair<String, String>>;
 
 class StorageLiveChannel : public ext::shared_ptr_helper<StorageLiveChannel>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageLiveChannel>;
+friend struct ext::shared_ptr_helper<StorageLiveChannel>;
 friend class LiveChannelBlockOutputStream;
 
 public:

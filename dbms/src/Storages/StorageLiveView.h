@@ -26,7 +26,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
-friend class ext::shared_ptr_helper<StorageLiveView>;
+friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveBlockOutputStream;
 
 public:
