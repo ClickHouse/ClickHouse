@@ -5,6 +5,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/MergeTreeIndexes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -306,6 +307,7 @@ public:
                   const ASTPtr & order_by_ast_,
                   const ASTPtr & primary_key_ast_,
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
+                  const ASTs & indexes_ast_,
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
                   bool require_part_metadata_,
@@ -577,6 +579,9 @@ public:
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
+
+    /// Secondary indexes for MergeTree
+    MergeTreeIndexes indexes;
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;
