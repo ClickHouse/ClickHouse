@@ -76,7 +76,7 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -d ${CLICKHOUSE_CONFDIR} ]; then
-        rm -v ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
+        rm -fv ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
     fi
 
     ln -s ${CLICKHOUSE_DATADIR}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:

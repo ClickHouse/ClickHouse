@@ -141,7 +141,7 @@ Formats:
 
 - active (UInt8) – Indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
 
-- marks (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply ``marks``  by the index granularity (usually 8192).
+- marks (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply ``marks`` by the index granularity (usually 8192).
 
 - marks_size (UInt64) – The size of the file with marks.
 
@@ -373,7 +373,7 @@ If the path specified in 'path' doesn't exist, an exception will be thrown.
 
 Columns:
 
-- `name String` — The name of the  node.
+- `name String` — The name of the node.
 - `path String` — The path to the node.
 - `value String` — Node value.
 - `dataLength Int32` — Size of the value.

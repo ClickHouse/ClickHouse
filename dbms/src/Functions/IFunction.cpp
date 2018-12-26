@@ -157,10 +157,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
     if (!result_null_map_column)
         return makeNullable(src);
 
-    if (src_not_nullable->isColumnConst())
-        return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
-    else
-        return ColumnNullable::create(src_not_nullable, result_null_map_column);
+    return ColumnNullable::create(src_not_nullable->convertToFullColumnIfConst(), result_null_map_column);
 }
 
 
@@ -431,9 +428,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
             executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, block_without_low_cardinality.rows(), dry_run);
 
-            auto & keys = block_without_low_cardinality.safeGetByPosition(result).column;
-            if (auto full_column = keys->convertToFullColumnIfConst())
-                keys = full_column;
+            auto keys = block_without_low_cardinality.safeGetByPosition(result).column->convertToFullColumnIfConst();
 
             auto res_mut_dictionary = DataTypeLowCardinality::createColumnUnique(*res_low_cardinality_type->getDictionaryType());
             ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
