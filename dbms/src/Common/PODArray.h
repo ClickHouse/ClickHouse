@@ -20,6 +20,11 @@
 namespace DB
 {
 
+inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
+{
+    return ((value + dividend - 1) / dividend) * dividend;
+}
+
 /** A dynamic array for POD types.
   * Designed for a small number of large arrays (rather than a lot of small ones).
   * To be more precise - for use in ColumnVector.
@@ -36,6 +41,10 @@ namespace DB
   *
   * The template parameter `pad_right` - always allocate at the end of the array as many unused bytes.
   * Can be used to make optimistic reading, writing, copying with unaligned SIMD instructions.
+  *
+  * The template parameter `pad_left` - always allocate memory before 0th element of the array (rounded up to the whole number of elements)
+  *  and zero initialize -1th element. It allows to use -1th element that will have value 0.
+  * This gives performance benefits when converting an array of offsets to array of sizes.
   *
   * Some methods using allocator have TAllocatorParams variadic arguments.
   * These arguments will be passed to corresponding methods of TAllocator.
@@ -57,14 +66,13 @@ class PODArray : private boost::noncopyable, private TAllocator    /// empty bas
 {
 protected:
     /// Round padding up to an whole number of elements to simplify arithmetic.
-    static constexpr size_t pad_right = (pad_right_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
-    
-    static constexpr size_t pad_left_unaligned = (pad_left_ + sizeof(T) - 1) / sizeof(T) * sizeof(T);
-    static constexpr size_t pad_left = pad_left_unaligned ? (pad_left_unaligned + 15) / 16 * 16 : 0;
-
+    static constexpr size_t pad_right = integerRoundUp(pad_right_, sizeof(T));
+    /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
+    static constexpr size_t pad_left = integerRoundUp(integerRoundUp(pad_left_, sizeof(T)), 16);
+    /// Empty array will point to this static memory as padding.
     static constexpr char * null = pad_left ? const_cast<char *>(EmptyPODArray) + EmptyPODArraySize : nullptr;
 
-    static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Element size too large?");
+    static_assert(pad_left <= EmptyPODArraySize && "Left Padding exceeds EmptyPODArraySize. Is the element size too large?");
 
     char * c_start          = null;    /// Does not include pad_left.
     char * c_end            = null;
@@ -521,13 +529,7 @@ void swap(PODArray<T, INITIAL_SIZE, TAllocator, pad_right_> & lhs, PODArray<T, I
 template <typename T, size_t INITIAL_SIZE = 4096, typename TAllocator = Allocator<false>>
 using PaddedPODArray = PODArray<T, INITIAL_SIZE, TAllocator, 15, 16>;
 
-
-inline constexpr size_t integerRound(size_t value, size_t dividend)
-{
-    return ((value + dividend - 1) / dividend) * dividend;
-}
-
 template <typename T, size_t stack_size_in_bytes>
-using PODArrayWithStackMemory = PODArray<T, 0, AllocatorWithStackMemory<Allocator<false>, integerRound(stack_size_in_bytes, sizeof(T))>>;
+using PODArrayWithStackMemory = PODArray<T, 0, AllocatorWithStackMemory<Allocator<false>, integerRoundUp(stack_size_in_bytes, sizeof(T))>>;
 
 }
