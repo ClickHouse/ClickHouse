@@ -30,34 +30,4 @@ public:
     virtual ~IConfigRepository() = default;
 };
 
-
-class InternalConfigRepository : IConfigRepository
-{
-public:
-    InternalConfigRepository(Context & context)
-    {
-        (void)context;
-    }
-
-    Files list(const Poco::Util::AbstractConfiguration & config, const String & path) const override
-    {
-        (void)config;
-        (void)path;
-        return {};
-    }
-
-
-    String getSource() const override
-    {
-        return "Memory";
-    }
-private:
-    void loadConfigurations();
-    void reloadConfigurations();
-
-
-    using Object = int;
-    std::unordered_map<String, Object> map;
-};
-
 }
