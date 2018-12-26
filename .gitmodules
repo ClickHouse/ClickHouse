@@ -67,3 +67,6 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
+[submodule "contrib/snappy"]
+	path = contrib/snappy
+	url = https://github.com/google/snappy

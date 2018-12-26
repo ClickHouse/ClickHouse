@@ -10,6 +10,9 @@ alltypes_plain.parquet
 3	0	1	1	1	10	1.1	10.1	02/01/09	1	572065536
 0	1	0	0	0	0	0	0	01/01/09	0	2171658240
 1	0	1	1	1	10	1.1	10.1	01/01/09	1	2231658240
+alltypes_plain.snappy.parquet
+6	1	0	0	0	0	0	0	04/01/09	0	4280852480
+7	0	1	1	1	10	1.1	10.1	04/01/09	1	45885184
 nation.dict-malformed.parquet
 0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
 1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon

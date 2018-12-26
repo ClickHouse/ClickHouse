@@ -182,6 +182,8 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     endif()
 
 else()
+    # TODO! USE FIND*
+    add_subdirectory(snappy)
     add_subdirectory(arrow-cmake)
 endif()
 endif()

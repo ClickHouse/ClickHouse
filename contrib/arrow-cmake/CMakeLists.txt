@@ -109,9 +109,36 @@ set(ARROW_SRCS ${ARROW_SRCS}
     ${LIBRARY_DIR}/compute/kernels/hash.cc
     ${LIBRARY_DIR}/compute/kernels/util-internal.cc
 )
+
+set(ARROW_WITH_LZ4 1)
+set(ARROW_WITH_SNAPPY 1)
+set(ARROW_WITH_ZLIB 1)
+set(ARROW_WITH_ZSTD 1)
+
+if (ARROW_WITH_LZ4)
+  add_definitions(-DARROW_WITH_LZ4)
+  SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_lz4.cc ${ARROW_SRCS})
+endif()
+
+if (ARROW_WITH_SNAPPY)
+  add_definitions(-DARROW_WITH_SNAPPY)
+  SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_snappy.cc ${ARROW_SRCS})
+endif()
+
+if (ARROW_WITH_ZLIB)
+  add_definitions(-DARROW_WITH_ZLIB)
+  SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_zlib.cc ${ARROW_SRCS})
+endif()
+
+if (ARROW_WITH_ZSTD)
+  add_definitions(-DARROW_WITH_ZSTD)
+  SET(ARROW_SRCS ${LIBRARY_DIR}/util/compression_zstd.cc ${ARROW_SRCS})
+endif()
+
+
 add_library(${ARROW_LIBRARY} ${LINK_MODE} ${ARROW_SRCS})
 target_include_directories(${ARROW_LIBRARY} PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/cpp/src ${Boost_INCLUDE_DIRS})
-target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} Threads::Threads)
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} snappy ${ZSTD_LIBRARY} ${LZ4_LIBRARY} Threads::Threads)
 
 
 # === parquet

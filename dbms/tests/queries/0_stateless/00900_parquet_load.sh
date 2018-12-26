@@ -32,8 +32,9 @@ DATA_DIR=$CUR_DIR/data
 # nulls.snappy.parquet
 # repeated_no_annotation.parquet
 
-# byte_array_decimal.parquet
-for NAME in alltypes_dictionary.parquet alltypes_plain.parquet nation.dict-malformed.parquet; do 
+# BUG! nulls.snappy.parquet
+# why? repeated_no_annotation.parquet
+ for NAME in alltypes_dictionary.parquet alltypes_plain.parquet alltypes_plain.snappy.parquet nation.dict-malformed.parquet; do 
     echo $NAME
 
     [ ! -f "$DATA_DIR/$NAME" ] && DATA_DIR=$DATA_SOURCE_DIR
