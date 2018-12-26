@@ -46,7 +46,7 @@ public:
     {
         /// Start storage no users thread
         /// if we are the last active user
-        if ( !storage.is_dropped && version_ptr.use_count() < 3 )
+        if (!storage.is_dropped && version_ptr.use_count() < 3)
             storage.startNoUsersThread();
     }
 
@@ -98,7 +98,8 @@ public:
         end = selected_streams->end();
     }
 
-    Block getHeader() const override {
+    Block getHeader() const override
+    {
         Block header; /// TODO
         header.info.is_multiplexed = true;
         return header;
@@ -115,11 +116,13 @@ public:
         condition.broadcast();
     }
 
-    void setHeartbeatCallback(const HeartbeatCallback & callback) {
+    void setHeartbeatCallback(const HeartbeatCallback & callback)
+    {
         heartbeat_callback = callback;
     }
 
-    void setHeartbeatDelay(const UInt64 & delay) {
+    void setHeartbeatDelay(const UInt64 & delay)
+    {
         heartbeat_delay = delay;
     }
 
@@ -279,7 +282,7 @@ protected:
                 /// No new version so we need to sleep until there is an update
                 if (it == end)
                 {
-                    while(1)
+                    while (true)
                     {
                         bool signaled = condition.tryWait(mutex, std::max(0, heartbeat_delay - ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
 
@@ -305,17 +308,17 @@ protected:
 
         res  = it->second.second->tryRead();
 
-        if ( !res.second )
+        if (!res.second)
         {
             ++it;
 
-            if ( length > 0 )
+            if (length > 0)
                 --length;
 
             return readImpl();
         }
 
-        if ( res.first.info.is_start_frame )
+        if (res.first.info.is_start_frame)
         {
             res.first.info.table = it->first;
             hashmap[it->first] = res.first.info.hash;

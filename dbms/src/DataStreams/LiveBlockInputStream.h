@@ -37,7 +37,7 @@ public:
     {
         /// Start storage no users thread
         /// if we are the last active user
-        if ( !storage.is_dropped && blocks_ptr.use_count() < 3 )
+        if (!storage.is_dropped && blocks_ptr.use_count() < 3)
             storage.startNoUsersThread();
     }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
@@ -164,11 +164,11 @@ protected:
                 /// No new blocks available wait for new ones
                 else
                 {
-                    if ( !blocking )
+                    if (!blocking)
                     {
                         return { Block(), false };
                     }
-                    while(1)
+                    while (true)
                     {
                         bool signaled = condition.tryWait(mutex, std::max(0, heartbeat_delay - ((UInt64)timestamp.epochMicroseconds() - last_event_timestamp)) / 1000);
 

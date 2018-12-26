@@ -24,14 +24,15 @@ class ChannelBlocksBlockInputStream : public IProfilingBlockInputStream
 public:
     /// Acquires shared ownership of blocks pointers
     ChannelBlocksBlockInputStream(std::vector<std::shared_ptr<BlocksPtr>>& blocks_ptrs_)
-        : blocks_ptrs(blocks_ptrs_), it(blocks_ptrs.begin()), end(blocks_ptrs.end()) {
-            /// If there are any streams set blocks iterators to the first stream
-            if (it != end)
-            {
-                blocks_it = (**it)->begin();
-                blocks_end = (**it)->end();
-            }
+        : blocks_ptrs(blocks_ptrs_), it(blocks_ptrs.begin()), end(blocks_ptrs.end())
+    {
+        /// If there are any streams set blocks iterators to the first stream
+        if (it != end)
+        {
+            blocks_it = (**it)->begin();
+            blocks_end = (**it)->end();
         }
+    }
 
     String getName() const override { return "Blocks"; }
 

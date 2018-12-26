@@ -45,7 +45,8 @@ public:
             dst_ostr.next();
     }
 
-    void setSampleBlock(const Block & sample_) override {
+    void setSampleBlock(const Block & sample_) override
+    {
         sample = sample_;
     }
 

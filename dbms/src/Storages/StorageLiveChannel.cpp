@@ -53,10 +53,10 @@ StorageLiveChannel::StorageLiveChannel(
     {
         auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-        if ( table_identifier.children.size() > 2 )
+        if (table_identifier.children.size() > 2)
             throw Exception("Invalid table identifier; must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-        if ( table_identifier.children.size() > 1 )
+        if (table_identifier.children.size() > 1)
         {
             view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
             view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -107,7 +107,7 @@ void StorageLiveChannel::noUsersThread()
     }
     if (drop_table)
     {
-        if ( global_context.tryGetTable(database_name, table_name) )
+        if (global_context.tryGetTable(database_name, table_name))
         {
             try
             {
@@ -119,7 +119,7 @@ void StorageLiveChannel::noUsersThread()
                 InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
                 drop_interpreter.execute();
             }
-            catch(...)
+            catch (...)
             {
             }
         }
@@ -208,7 +208,7 @@ void StorageLiveChannel::setSelectedTables()
         for (auto & table : tables)
         {
             auto storage = global_context.getTable(table.first, table.second);
-            if ( storage.get() != this )
+            if (storage.get() != this)
                 selected_tables->emplace_back(storage, storage->lockStructure(false));
         }
 
@@ -285,10 +285,10 @@ void StorageLiveChannel::addToChannel(const ASTPtr & values, const Context & con
         {
             auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-            if ( table_identifier.children.size() > 2 )
+            if (table_identifier.children.size() > 2)
                 throw Exception("Incorrect ALTER query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-            if ( table_identifier.children.size() > 1 )
+            if (table_identifier.children.size() > 1)
             {
                 view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
                 view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -301,7 +301,7 @@ void StorageLiveChannel::addToChannel(const ASTPtr & values, const Context & con
 
             auto storage = global_context.getTable(view_database_name, view_table_name);
 
-            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+            if (!(std::dynamic_pointer_cast<StorageLiveView>(storage)))
                 throw Exception("Invalid table storage, must be StorageLiveView", ErrorCodes::INCORRECT_QUERY);
 
             new_tables.emplace(std::make_pair(view_database_name, view_table_name));
@@ -317,7 +317,7 @@ void StorageLiveChannel::addToChannel(const ASTPtr & values, const Context & con
         {
             auto storage = global_context.getTable(table.first, table.second);
 
-            if ( storage.get() != this )
+            if (storage.get() != this)
                 new_selected_tables->emplace_back(storage, storage->lockStructure(false));
 
             auto & columns_descr = storage->getColumns();
@@ -378,7 +378,7 @@ void StorageLiveChannel::addToChannel(const ASTPtr & values, const Context & con
         for (auto & table : new_tables)
         {
             /// if new table is not in tables then add it as dependency
-            if ( tables.find(table) == tables.end() )
+            if (tables.find(table) == tables.end())
             {
                 global_context.addDependency(
                     DatabaseAndTableName(table.first, table.second),
@@ -433,10 +433,10 @@ void StorageLiveChannel::dropFromChannel(const ASTPtr & values, const Context & 
         {
             auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-            if ( table_identifier.children.size() > 2 )
+            if (table_identifier.children.size() > 2)
                 throw Exception("Incorrect ALTER query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-            if ( table_identifier.children.size() > 1 )
+            if (table_identifier.children.size() > 1)
             {
                 view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
                 view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -449,16 +449,16 @@ void StorageLiveChannel::dropFromChannel(const ASTPtr & values, const Context & 
 
             auto storage = global_context.getTable(view_database_name, view_table_name);
 
-            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+            if (!(std::dynamic_pointer_cast<StorageLiveView>(storage)))
                 throw Exception("Incorrect ALTER query: invalid table storage, must be StorageLiveView", ErrorCodes::INCORRECT_QUERY);
 
             auto database_table_pair = std::make_pair(view_database_name, view_table_name);
 
-            if ( tables.find(database_table_pair) != tables.end() )
+            if (tables.find(database_table_pair) != tables.end())
                 remove_tables.emplace(database_table_pair);
         }
 
-        if ( remove_tables.size() == tables.size() )
+        if (remove_tables.size() == tables.size())
             throw Exception("Incorrect ALTER query: channel would become empty, use DROP TABLE instead", ErrorCodes::INCORRECT_QUERY);
 
         for (auto & table : remove_tables)
@@ -472,7 +472,7 @@ void StorageLiveChannel::dropFromChannel(const ASTPtr & values, const Context & 
         {
             auto storage = global_context.getTable(table.first, table.second);
 
-            if ( storage.get() != this )
+            if (storage.get() != this)
                 new_selected_tables->emplace_back(storage, storage->lockStructure(false));
 
             auto & columns_descr = storage->getColumns();
@@ -576,10 +576,10 @@ void StorageLiveChannel::modifyChannel(const ASTPtr & values, const Context & co
         {
             auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-            if ( table_identifier.children.size() > 2 )
+            if (table_identifier.children.size() > 2)
                 throw Exception("Incorrect ALTER query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-            if ( table_identifier.children.size() > 1 )
+            if (table_identifier.children.size() > 1)
             {
                 view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
                 view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -592,7 +592,7 @@ void StorageLiveChannel::modifyChannel(const ASTPtr & values, const Context & co
 
             auto storage = global_context.getTable(view_database_name, view_table_name);
 
-            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+            if (!(std::dynamic_pointer_cast<StorageLiveView>(storage)))
                 throw Exception("Invalid table storage, must be StorageLiveView", ErrorCodes::INCORRECT_QUERY);
 
             new_tables.emplace(std::make_pair(view_database_name, view_table_name));
@@ -611,7 +611,8 @@ void StorageLiveChannel::modifyChannel(const ASTPtr & values, const Context & co
         {
             auto storage = global_context.getTable(table.first, table.second);
 
-            if ( storage.get() != this ) {
+            if (storage.get() != this)
+            {
                 new_selected_tables->emplace_back(storage, storage->lockStructure(false));
                 new_refresh_tables->emplace_back(storage);
             }
@@ -673,7 +674,7 @@ void StorageLiveChannel::modifyChannel(const ASTPtr & values, const Context & co
         for (auto & table : new_tables)
         {
             /// if new table is not in tables then add it as dependency
-            if ( tables.find(table) == tables.end() )
+            if (tables.find(table) == tables.end())
             {
                 global_context.addDependency(
                     DatabaseAndTableName(table.first, table.second),
@@ -733,10 +734,10 @@ void StorageLiveChannel::refreshInChannel(const ASTPtr & values, const Context &
         {
             auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-            if ( table_identifier.children.size() > 2 )
+            if (table_identifier.children.size() > 2)
                 throw Exception("Incorrect ALTER query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-            if ( table_identifier.children.size() > 1 )
+            if (table_identifier.children.size() > 1)
             {
                 view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
                 view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -749,12 +750,12 @@ void StorageLiveChannel::refreshInChannel(const ASTPtr & values, const Context &
 
             auto storage = global_context.getTable(view_database_name, view_table_name);
 
-            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+            if (!(std::dynamic_pointer_cast<StorageLiveView>(storage)))
                 throw Exception("Invalid table storage, must be StorageLiveView", ErrorCodes::INCORRECT_QUERY);
 
             auto database_table_pair = std::make_pair(view_database_name, view_table_name);
 
-            if ( tables.find(database_table_pair) != tables.end() )
+            if (tables.find(database_table_pair) != tables.end())
                 new_refresh_tables->emplace_back(storage);
         }
 
@@ -797,10 +798,10 @@ void StorageLiveChannel::suspendInChannel(const ASTPtr & values, const Context &
         {
             auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-            if ( table_identifier.children.size() > 2 )
+            if (table_identifier.children.size() > 2)
                 throw Exception("Incorrect ALTER query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-            if ( table_identifier.children.size() > 1 )
+            if (table_identifier.children.size() > 1)
             {
                 view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
                 view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -813,12 +814,12 @@ void StorageLiveChannel::suspendInChannel(const ASTPtr & values, const Context &
 
             auto storage = global_context.getTable(view_database_name, view_table_name);
 
-            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+            if (!(std::dynamic_pointer_cast<StorageLiveView>(storage)))
                 throw Exception("Invalid table storage, must be StorageLiveView", ErrorCodes::INCORRECT_QUERY);
 
             auto database_table_pair = std::make_pair(view_database_name, view_table_name);
 
-            if ( tables.find(database_table_pair) != tables.end() )
+            if (tables.find(database_table_pair) != tables.end())
                 new_suspend_tables.emplace_back(storage);
 
             auto it = std::find(new_resume_tables.begin(), new_resume_tables.end(), storage);
@@ -865,10 +866,10 @@ void StorageLiveChannel::resumeInChannel(const ASTPtr & values, const Context & 
         {
             auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
 
-            if ( table_identifier.children.size() > 2 )
+            if (table_identifier.children.size() > 2)
                 throw Exception("Incorrect ALTER query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
 
-            if ( table_identifier.children.size() > 1 )
+            if (table_identifier.children.size() > 1)
             {
                 view_database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
                 view_table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
@@ -881,12 +882,12 @@ void StorageLiveChannel::resumeInChannel(const ASTPtr & values, const Context & 
 
             auto storage = global_context.getTable(view_database_name, view_table_name);
 
-            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+            if (!(std::dynamic_pointer_cast<StorageLiveView>(storage)))
                 throw Exception("Invalid table storage, must be StorageLiveView", ErrorCodes::INCORRECT_QUERY);
 
             auto database_table_pair = std::make_pair(view_database_name, view_table_name);
 
-            if ( tables.find(database_table_pair) != tables.end() )
+            if (tables.find(database_table_pair) != tables.end())
                 new_resume_tables.emplace_back(storage);
 
             auto it = std::find(new_suspend_tables.begin(), new_suspend_tables.end(), storage);

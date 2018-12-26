@@ -238,7 +238,7 @@ void StorageLiveView::noUsersThread()
 
     if (drop_table)
     {
-        if ( global_context.tryGetTable(database_name, table_name) )
+        if (global_context.tryGetTable(database_name, table_name))
         {
             try
             {
@@ -250,7 +250,7 @@ void StorageLiveView::noUsersThread()
                 InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
                 drop_interpreter.execute();
             }
-            catch(...)
+            catch (...)
             {
             }
         }
@@ -339,7 +339,7 @@ BlockInputStreams StorageLiveView::read(
         Poco::FastMutex::ScopedLock lock(mutex);
         /// Always trigger new read of the blocks so that SELECT can be used
         /// to force blocks refresh if needed
-        if ( getNewBlocks() )
+        if (getNewBlocks())
             condition.broadcast();
     }
     return { std::make_shared<BlocksBlockInputStream>(stream_blocks_ptr, getHeader()) };

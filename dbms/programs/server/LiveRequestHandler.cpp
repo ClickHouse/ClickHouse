@@ -35,17 +35,20 @@ namespace DB
 //@app.route('/live/<cid>/<qid>/resume', methods=['GET']) resume query
 //@app.route('/live/<cid>/<qid>/update', methods=['GET']) update query
 
-std::vector<std::string> LiveRequestHandler::splitURI(std::string str, std::string token){
+std::vector<std::string> LiveRequestHandler::splitURI(std::string str, std::string token)
+{
     std::vector<std::string> result;
 
-    while(str.size()){
+    while (str.size())
+    {
         auto index = str.find(token);
 
-        if(index != std::string::npos)
+        if (index != std::string::npos)
         {
             result.push_back(str.substr(0,index));
             str = str.substr(index + token.size());
-            if(str.size() == 0) result.push_back(str);
+            if (str.size() == 0)
+                result.push_back(str);
         }
         else
         {
@@ -78,18 +81,22 @@ void LiveRequestHandler::handleRequest(
         std::vector<std::string> uri_parts = splitURI(uri, "/");
 
         // route('/live', methods=['GET'])
-        if (uri_parts.size() == 2 && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET) {
+        if (uri_parts.size() == 2 && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+        {
             response.send() << "Ok." << "\n";
         }
         // route('/live/<cid>', methods=['GET'])
-        else if (uri_parts.size() == 3 && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET) {
+        else if (uri_parts.size() == 3 && request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET)
+        {
             response.setContentLength(Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH);
 
             /// For keep-alive to work we need HTTP 1.1
-            if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1) {
+            if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
+            {
                 response.setChunkedTransferEncoding(true);
             }
-            else {
+            else
+            {
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_VERSION_NOT_SUPPORTED);
                 response.send();
                 return;
@@ -98,7 +105,8 @@ void LiveRequestHandler::handleRequest(
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
             std::ostream & out = response.send();
 
-            while (true) {
+            while (true)
+            {
                 Poco::Timestamp timestamp = Poco::Timestamp();
                 // timestamp in seconds
                 double d_timestamp = (double)timestamp.epochMicroseconds()/1000000;
@@ -109,19 +117,22 @@ void LiveRequestHandler::handleRequest(
                 out.flush();
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-                if (out.bad()) {
+                if (out.bad())
+                {
                     LOG_TRACE(log, "Bad output stream exiting...");
                     break;
                 }
             }
         }
         // route('/live/<cid>', methods=['DELETE'])
-        else if (uri_parts.size() == 3 && request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE) {
+        else if (uri_parts.size() == 3 && request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
+        {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED, Poco::Net::HTTPResponse::HTTP_REASON_NOT_IMPLEMENTED);
             response.send();
         }
         // invalid handle
-        else {
+        else
+        {
             response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
             response.send() << "There is no handle " << request.getURI() << "\n";
         }

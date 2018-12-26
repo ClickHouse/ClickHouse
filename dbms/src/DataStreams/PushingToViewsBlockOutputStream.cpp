@@ -156,7 +156,7 @@ static void writeIntoLiveView(StorageLiveView & live_view,
     /// When first reader comes the blocks will be read.
     {
         Poco::FastMutex::ScopedLock lock(live_view.mutex);
-        if ( !live_view.hasActiveUsers() )
+        if (!live_view.hasActiveUsers())
         {
             live_view.reset();
             return;
