@@ -76,7 +76,7 @@ There is no `DETACH DATABASE` query.
 
 ## DROP
 
-This query has two types: `DROP DATABASE`  and `DROP TABLE`.
+This query has two types: `DROP DATABASE` and `DROP TABLE`.
 
 ``` sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]

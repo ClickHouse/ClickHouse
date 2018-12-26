@@ -4,8 +4,8 @@
 
 ClickHouse поддерживает также:
 
--  [Параметрические агрегатные функции](parametric_functions.md#aggregate_functions_parametric), которые помимо столбцов принимаю и другие параметры.
--  [Комбинаторы](combinators.md#aggregate_functions_combinators), которые изменяют поведение агрегатных фунций.
+- [Параметрические агрегатные функции](parametric_functions.md#aggregate_functions_parametric), которые помимо столбцов принимаю и другие параметры.
+- [Комбинаторы](combinators.md#aggregate_functions_combinators), которые изменяют поведение агрегатных фунций.
 
 ## Обработка NULL
 

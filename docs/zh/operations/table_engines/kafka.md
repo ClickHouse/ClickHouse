@@ -121,7 +121,7 @@ Kafka SETTINGS
 与 `GraphiteMergeTree` 类似，Kafka 引擎支持使用ClickHouse配置文件进行扩展配置。可以使用两个配置键：全局 (`kafka`) 和 主题级别 (`kafka_*`)。首先应用全局配置，然后应用主题级配置（如果存在）。
 
 ```xml
-  <!--  Global configuration options for all tables of Kafka engine type -->
+  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>

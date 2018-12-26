@@ -135,7 +135,7 @@ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 Если вы указали в URL decompress=1, то сервер будет разжимать те данные, которые вы передаёте ему POST-ом.
 
 Также имеется возможность использования стандартного сжатия HTTP, на основе gzip. Чтобы отправить POST-запрос, сжатый с помощью gzip, добавьте к запросу заголовок `Content-Encoding: gzip`.
-Чтобы ClickHouse сжимал ответ на запрос с помощью gzip, необходимо добавить `Accept-Encoding: gzip` к заголовкам запроса, и включить настройку ClickHouse  `enable_http_compression`.
+Чтобы ClickHouse сжимал ответ на запрос с помощью gzip, необходимо добавить `Accept-Encoding: gzip` к заголовкам запроса, и включить настройку ClickHouse `enable_http_compression`.
 
 Это может быть использовано для уменьшения трафика по сети при передаче большого количества данных, а также для создания сразу сжатых дампов.
 
@@ -159,13 +159,13 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 
 Имя пользователя и пароль могут быть указаны в одном из двух вариантов:
 
-1.  С использованием HTTP Basic Authentification. Пример:
+1. С использованием HTTP Basic Authentification. Пример:
 
 ```bash
 echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-2.  В параметрах URL user и password. Пример:
+2. В параметрах URL user и password. Пример:
 
 ```bash
 echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
