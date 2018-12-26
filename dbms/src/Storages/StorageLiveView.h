@@ -107,7 +107,7 @@ public:
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
-        unsigned num_streams);
+        unsigned num_streams) override;
 
     std::shared_ptr<BlocksPtr> getBlocksPtr() { return blocks_ptr; }
     BlocksPtrs getMergeableBlocks() { return mergeable_blocks; }
