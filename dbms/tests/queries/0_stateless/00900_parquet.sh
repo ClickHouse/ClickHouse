@@ -97,11 +97,11 @@ echo diff:
 diff ${CLICKHOUSE_TMP}/parquet_all_types_1.dump ${CLICKHOUSE_TMP}/parquet_all_types_2.dump
 
 ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.parquet_types2"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types3 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str01',                  'str2', '2003-03-04', '2004-05-06')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types3 values (       79,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str01',                  'fstr1', '2003-03-04', '2004-05-06')"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types3 ORDER BY int8 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 ORDER BY int8 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types3 FORMAT Parquet"
 
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types4 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str02',                  'str2', '2005-03-04 05:06:07', '2006-08-09 10:11:12')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types4 values (       80,          81,          82,            83,          84,            85,          86,            87,              88,              89,         'str02',                  'fstr2', '2005-03-04 05:06:07', '2006-08-09 10:11:12')"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types4 ORDER BY int8 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types2 FORMAT Parquet"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_types1 ORDER BY int8 FORMAT Parquet" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_types4 FORMAT Parquet"
 

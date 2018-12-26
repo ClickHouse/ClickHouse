@@ -66,7 +66,7 @@ void checkFinishStatus(arrow::Status & finish_status, const std::string & column
 }
 
 template <typename NumericType, typename ArrowBuilderType>
-void /*ParquetBlockOutputStream::*/fillArrowArrayWithNumericColumnData(
+void fillArrowArrayWithNumericColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
@@ -93,7 +93,7 @@ void /*ParquetBlockOutputStream::*/fillArrowArrayWithNumericColumnData(
 }
 
 template <typename ColumnType>
-void /*ParquetBlockOutputStream::*/fillArrowArrayWithStringColumnData(
+void fillArrowArrayWithStringColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const auto & internal_column = static_cast<const ColumnType &>(*write_column);
@@ -119,7 +119,7 @@ void /*ParquetBlockOutputStream::*/fillArrowArrayWithStringColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
-void /*ParquetBlockOutputStream::*/fillArrowArrayWithDateColumnData(
+void fillArrowArrayWithDateColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();

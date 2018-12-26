@@ -238,12 +238,21 @@ const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> ParquetB
     {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
     //{arrow::Type::DATE32, std::make_shared<DataTypeDateTime>()},
     {arrow::Type::DATE64, std::make_shared<DataTypeDateTime>()},
+    {arrow::Type::TIMESTAMP, std::make_shared<DataTypeDateTime>()},
+    //{arrow::Type::TIME32, std::make_shared<DataTypeDateTime>()},
+
 
     {arrow::Type::STRING, std::make_shared<DataTypeString>()},
+    {arrow::Type::BINARY, std::make_shared<DataTypeString>()},
+
+    //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
+    
     // TODO: add other types that are convertable to internal ones:
     // 0. ENUM?
     // 1. UUID -> String
     // 2. JSON -> String
+    // 3. DECIMAL
+    // Full list of types: contrib/arrow/cpp/src/arrow/type.h
 };
 
 
@@ -338,6 +347,8 @@ Block ParquetBlockInputStream::readImpl()
         switch (arrow_type)
         {
             case arrow::Type::STRING:
+            case arrow::Type::BINARY:
+            //case arrow::Type::FIXED_SIZE_BINARY:
                 fillColumnWithStringData(arrow_column, read_column);
                 break;
             case arrow::Type::BOOL:
@@ -347,6 +358,7 @@ Block ParquetBlockInputStream::readImpl()
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
             case arrow::Type::DATE64:
+            case arrow::Type::TIMESTAMP:
                 fillColumnWithDate64Data(arrow_column, read_column);
                 break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
