@@ -262,4 +262,25 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     }
 }
 
+
+String ASTKeyValueFunction::getID(char delim) const
+{
+    return "KeyValueFunction " + (delim + name);
+}
+
+
+ASTPtr ASTKeyValueFunction::clone() const
+{
+    auto res = std::make_shared<ASTKeyValueFunction>(*this);
+    res->children.clear();
+
+    if (elements)
+    {
+        res->elements->clone();
+        res->children.push_back(res->elements);
+    }
+
+    return res;
+}
+
 }
