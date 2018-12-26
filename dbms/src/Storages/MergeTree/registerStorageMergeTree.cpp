@@ -336,7 +336,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         */
 
     bool is_extended_storage_def =
-        args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by || args.storage_def->sample_by || args.storage_def->settings;
+        args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by
+        || args.storage_def->sample_by || !args.storage_def->indexes.empty() || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -559,6 +560,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
+    ASTs indexes_ast;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
     if (is_extended_storage_def)
@@ -578,6 +580,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
+
+        for (auto& index : args.storage_def->indexes) {
+            indexes_ast.push_back(index->ptr());
+        }
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
@@ -615,13 +621,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, merging_params, storage_settings,
+            sample_by_ast, indexes_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.data_path, args.database_name, args.table_name, args.columns, args.attach,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, merging_params, storage_settings,
+            sample_by_ast, indexes_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }
 
