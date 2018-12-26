@@ -15,15 +15,15 @@ void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creat
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-IMergeTreeIndex MergeTreeIndexFactory::get(const ASTIndexDeclaration & node) const {
-    if (!node.type)
+std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(std::shared_ptr<ASTIndexDeclaration> node) const {
+    if (!node->type)
         throw Exception(
                 "for INDEX TYPE is required",
                 ErrorCodes::INCORRECT_QUERY);
-    auto it = indexes.find(node.type->name);
+    auto it = indexes.find(node->type->name);
     if (it == indexes.end())
         throw Exception(
-                "Unknown Index type '" + node.type->name + "'",
+                "Unknown Index type '" + node->type->name + "'",
                 ErrorCodes::INCORRECT_QUERY);
     return it->second(node);
 }
