@@ -190,7 +190,7 @@ struct AggregationMethodOneNumber
             StringRefs & /*keys*/,        /// Here references to key data in columns can be written. They can be used in the future.
             Arena & /*pool*/) const
         {
-            return unalignedLoad<Key>(vec + i * sizeof(Key));
+            return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
         }
     };
 

@@ -44,7 +44,7 @@ struct JoinKeyGetterOneNumber
         size_t i,                             /// row number to get key from.
         const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
     {
-        return unalignedLoad<Key>(vec + i * sizeof(Key));
+        return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
     }
 
     /// Place additional data into memory pool, if needed, when new key was inserted into hash table.
