@@ -109,7 +109,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     /// Delete the unnecessary from `source_columns` list. Form `columns_added_by_join`.
     collectUsedColumns();
 
-    /// external_tables, subqueries_for_sets for global subqueries.f
+    /// external_tables, subqueries_for_sets for global subqueries.
     /// Replaces global subqueries with the generated names of temporary tables that will be sent to remote servers.
     initGlobalSubqueriesAndExternalTables();
 
