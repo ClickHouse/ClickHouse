@@ -47,7 +47,7 @@ struct SetMethodOneNumber
             size_t i,                             /// From what row of the block I get the key.
             const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
         {
-            return unalignedLoad<Key>(vec + i * sizeof(Key));
+            return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
         }
     };
 
