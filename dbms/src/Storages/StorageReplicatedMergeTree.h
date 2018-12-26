@@ -427,7 +427,7 @@ private:
 
     /** Performs actions from the queue.
       */
-    bool queueTask();
+    BackgroundProcessingPoolTaskResult queueTask();
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
