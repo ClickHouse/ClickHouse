@@ -34,7 +34,7 @@ For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'y
 
 ### path
 
-Returns the path. Example: `/top/news.html`  The path does not include the query string.
+Returns the path. Example: `/top/news.html` The path does not include the query string.
 
 ### pathFull
 
@@ -42,7 +42,7 @@ The same as above, but including query string and fragment. Example: /top/news.h
 
 ### queryString
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \#  and everything after \#.
+Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \# and everything after \#.
 
 ### fragment
 

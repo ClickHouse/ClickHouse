@@ -21,6 +21,9 @@
 - فروشگاه شی
     - [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         - [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+- مدیریت تنظیمات
+    - [puppet](https://puppet.com)
+        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 - نظارت بر
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
@@ -30,12 +33,11 @@
     - [Prometheus](https://prometheus.io/)
         - [clickhouse_exporter](https://github.com/f1yegor/clickhouse_exporter)
         - [PromHouse](https://github.com/Percona-Lab/PromHouse)
+    - [Nagios](https://www.nagios.org/)
+        - [check_clickhouse](https://github.com/exogroup/check_clickhouse/)
 - ثبت نام
     - [fluentd](https://www.fluentd.org)
         - [loghouse](https://github.com/flant/loghouse) (برای [Kubernetes](https://kubernetes.io))
-- مدیریت تنظیمات
-    - [puppet](https://puppet.com)
-        - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
 
 ## اکوسیستم زبان برنامه نویسی
 
@@ -49,7 +51,7 @@
         - [RClickhouse](https://github.com/IMSMWU/RClickhouse) (استفاده می کند [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 - Java
     - [Hadoop](http://hadoop.apache.org)
-        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده می کند [JDBC](../jdbc.md))
+        - [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (استفاده می کند [JDBC](../../query_language/table_functions/jdbc.md))
 - Scala
     - [Akka](https://akka.io)
         - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)

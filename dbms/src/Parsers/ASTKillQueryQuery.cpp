@@ -13,10 +13,12 @@ void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatS
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "KILL QUERY";
 
     formatOnCluster(settings);
-    settings.ostr << " WHERE " << (settings.hilite ? hilite_none : "");
 
     if (where_expression)
+    {
+        settings.ostr << " WHERE " << (settings.hilite ? hilite_none : "");
         where_expression->formatImpl(settings, state, frame);
+    }
 
     settings.ostr << " " << (settings.hilite ? hilite_keyword : "") << (test ? "TEST" : (sync ? "SYNC" : "ASYNC")) << (settings.hilite ? hilite_none : "");
 }

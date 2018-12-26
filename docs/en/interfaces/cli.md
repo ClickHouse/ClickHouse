@@ -65,9 +65,7 @@ You can cancel a long query by pressing Ctrl+C. However, you will still need to 
 
 The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-<a name="interfaces_cli_configuration"></a>
-
-## Configuring
+## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 
@@ -81,7 +79,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 ### Command Line Options
 
-- `--host, -h` -– The server name, 'localhost' by default.  You can use either the name or the IPv4 or IPv6 address.
+- `--host, -h` -– The server name, 'localhost' by default. You can use either the name or the IPv4 or IPv6 address.
 - `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 - `--user, -u` – The username. Default value: default.
 - `--password` – The password. Default value: empty string.
@@ -97,7 +95,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
 ### Configuration Files
 
-`clickhouse-client`  uses the first existing file of the following:
+`clickhouse-client` uses the first existing file of the following:
 
 - Defined in the `-config-file` parameter.
 - `./clickhouse-client.xml`

@@ -738,6 +738,7 @@ DEFINE_NAME_TO_INTERVAL(Hour)
 DEFINE_NAME_TO_INTERVAL(Day)
 DEFINE_NAME_TO_INTERVAL(Week)
 DEFINE_NAME_TO_INTERVAL(Month)
+DEFINE_NAME_TO_INTERVAL(Quarter)
 DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
@@ -1138,32 +1139,27 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        size_t size_of_type = type.getSizeOfValueInMemory();
+        if (!type.isValueRepresentedByNumber())
+            return {};
 
-        /// If type is expanding
-        if (sizeof(T) > size_of_type)
-        {
-            /// If convert signed -> signed or unsigned -> signed, then function is monotonic.
-            if (std::is_signed_v<T> || type.isValueRepresentedByUnsignedInteger())
-                return {true, true, true};
-
-            /// If arguments from the same half, then function is monotonic.
-            if ((left.get<Int64>() >= 0) == (right.get<Int64>() >= 0))
-                return {true, true, true};
-        }
-
-        /// If type is same, too. (Enum has separate case, because it is different data type)
+        /// If type is same, the conversion is always monotonic.
+        /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
 
-        /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
-        if (left.isNull() || right.isNull())
-            return {};
+        /// Float cases.
 
-        /// If converting from float, for monotonicity, arguments must fit in range of result type.
+        /// When converting to Float, the conversion is always monotonic.
+        if (std::is_floating_point_v<T>)
+            return {true, true, true};
+
+        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
         {
+            if (left.isNull() || right.isNull())
+                return {};
+
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
@@ -1174,18 +1170,79 @@ struct ToIntMonotonicity
             return {};
         }
 
-        /// If signedness of type is changing, or converting from Date, DateTime, then arguments must be from same half,
-        ///  and after conversion, resulting values must be from same half.
-        /// Just in case, it is required in rest of cases too.
-        if ((left.get<Int64>() >= 0) != (right.get<Int64>() >= 0)
-            || (T(left.get<Int64>()) >= 0) != (T(right.get<Int64>()) >= 0))
-            return {};
+        /// Integer cases.
 
-        /// If type is shrinked, then for monotonicity, all bits other than that fits, must be same.
-        if (divideByRangeOfType(left.get<UInt64>()) != divideByRangeOfType(right.get<UInt64>()))
-            return {};
+        const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
+        const bool to_is_unsigned = std::is_unsigned_v<T>;
 
-        return { true };
+        const size_t size_of_from = type.getSizeOfValueInMemory();
+        const size_t size_of_to = sizeof(T);
+
+        const bool left_in_first_half = left.isNull()
+            ? from_is_unsigned
+            : (left.get<Int64>() >= 0);
+
+        const bool right_in_first_half = right.isNull()
+            ? !from_is_unsigned
+            : (right.get<Int64>() >= 0);
+
+        /// Size of type is the same.
+        if (size_of_from == size_of_to)
+        {
+            if (from_is_unsigned == to_is_unsigned)
+                return {true, true, true};
+
+            if (left_in_first_half == right_in_first_half)
+                return {true};
+
+            return {};
+        }
+
+        /// Size of type is expanded.
+        if (size_of_from < size_of_to)
+        {
+            if (from_is_unsigned == to_is_unsigned)
+                return {true, true, true};
+
+            if (!to_is_unsigned)
+                return {true, true, true};
+
+            /// signed -> unsigned. If arguments from the same half, then function is monotonic.
+            if (left_in_first_half == right_in_first_half)
+                return {true};
+
+            return {};
+        }
+
+        /// Size of type is shrinked.
+        if (size_of_from > size_of_to)
+        {
+            /// Function cannot be monotonic on unbounded ranges.
+            if (left.isNull() || right.isNull())
+                return {};
+
+            if (from_is_unsigned == to_is_unsigned)
+            {
+                /// all bits other than that fits, must be same.
+                if (divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
+                    return {true};
+
+                return {};
+            }
+            else
+            {
+                /// When signedness is changed, it's also required for arguments to be from the same half.
+                /// And they must be in the same half after converting to the result type.
+                if (left_in_first_half == right_in_first_half
+                    && (T(left.get<Int64>()) >= 0) == (T(right.get<Int64>()) >= 0)
+                    && divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
+                    return {true};
+
+                return {};
+            }
+        }
+
+        __builtin_unreachable();
     }
 };
 

@@ -2,7 +2,11 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <errno.h>
+#include <pwd.h>
+#include <unistd.h>
 #include <Poco/Version.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
@@ -70,6 +74,8 @@ namespace ErrorCodes
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
+    extern const int FAILED_TO_GETPWUID;
+    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
 }
 
 
@@ -81,6 +87,26 @@ static std::string getCanonicalPath(std::string && path)
     if (path.back() != '/')
         path += '/';
     return std::move(path);
+}
+
+static std::string getUserName(uid_t user_id)
+{
+    /// Try to convert user id into user name.
+    auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (buffer_size <= 0)
+        buffer_size = 1024;
+    std::string buffer;
+    buffer.reserve(buffer_size);
+
+    struct passwd passwd_entry;
+    struct passwd * result = nullptr;
+    const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
+
+    if (error)
+        throwFromErrno("Failed to find user name for " + toString(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
+    else if (result)
+        return result->pw_name;
+    return toString(user_id);
 }
 
 void Server::uninitialize()
@@ -165,6 +191,26 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
+
+    /// Check that the process' user id matches the owner of the data.
+    const auto effective_user_id = geteuid();
+    struct stat statbuf;
+    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    {
+        const auto effective_user = getUserName(effective_user_id);
+        const auto data_owner = getUserName(statbuf.st_uid);
+        std::string message = "Effective user of the process (" + effective_user +
+            ") does not match the owner of the data (" + data_owner + ").";
+        if (effective_user_id == 0)
+        {
+            message += " Run under 'sudo -u " + data_owner + "'.";
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+        }
+        else
+        {
+            LOG_WARNING(log, message);
+        }
+    }
 
     global_context->setPath(path);
 

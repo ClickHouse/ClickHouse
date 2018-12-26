@@ -225,7 +225,7 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
                 {
                     size_t j_reversed = array_size - j - 1;
 
-                    auto src_pos = src_array_prev_offset + j_reversed == 0 ? 0 : src_string_offsets[src_array_prev_offset + j_reversed - 1];
+                    auto src_pos = src_string_offsets[src_array_prev_offset + j_reversed - 1];
                     size_t string_size = src_string_offsets[src_array_prev_offset + j_reversed] - src_pos;
 
                     memcpySmallAllowReadWriteOverflow15(&res_chars[res_string_prev_offset], &src_data[src_pos], string_size);

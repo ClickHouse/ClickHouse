@@ -24,7 +24,7 @@ There may be any number of space symbols between syntactical constructions (incl
 
 SQL-style and C-style comments are supported.
 SQL-style comments: from `--` to the end of the line. The space after `--` can be omitted.
-Comments in C-style: from `/*`  to `*/`. These comments can be multiline. Spaces are not required here, either.
+Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces are not required here, either.
 
 ## Keywords
 
@@ -71,9 +71,7 @@ For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
 
-<a name="null-literal"></a>
-
-### NULL Literal
+### NULL Literal {#null-literal}
 
 Indicates that the value is missing.
 

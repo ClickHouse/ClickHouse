@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
+
 namespace
 {
 
@@ -44,6 +45,8 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
         throw Exception("Illegal type " + arguments[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
+
+    return nullptr;
 }
 
 }

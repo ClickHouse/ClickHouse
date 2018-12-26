@@ -166,7 +166,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     if (pos != end)
         throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
 
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + elems);
+    getOffsets().push_back(getOffsets().back() + elems);
 }
 
 
@@ -194,7 +194,7 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
     for (size_t i = 0; i < array_size; ++i)
         pos = getData().deserializeAndInsertFromArena(pos);
 
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + array_size);
+    getOffsets().push_back(getOffsets().back() + array_size);
     return pos;
 }
 
@@ -216,7 +216,7 @@ void ColumnArray::insert(const Field & x)
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+    getOffsets().push_back(getOffsets().back() + size);
 }
 
 
@@ -227,13 +227,13 @@ void ColumnArray::insertFrom(const IColumn & src_, size_t n)
     size_t offset = src.offsetAt(n);
 
     getData().insertRangeFrom(src.getData(), offset, size);
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+    getOffsets().push_back(getOffsets().back() + size);
 }
 
 
 void ColumnArray::insertDefault()
 {
-    getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
+    getOffsets().push_back(getOffsets().back());
 }
 
 
@@ -322,16 +322,10 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 
 ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
-    ColumnPtr new_data;
-
-    if (ColumnPtr full_column = getData().convertToFullColumnIfConst())
-        new_data = full_column;
-    else
-        new_data = data;
-
-    return ColumnArray::create(new_data, offsets);
+    /// It is possible to have an array with constant data and non-constant offsets.
+    /// Example is the result of expression: replicate('hello', [1])
+    return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
 }
-
 
 void ColumnArray::getExtremes(Field & min, Field & max) const
 {

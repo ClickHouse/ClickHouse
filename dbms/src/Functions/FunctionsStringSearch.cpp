@@ -1080,7 +1080,7 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionReplaceAll>();
     factory.registerFunction<FunctionReplaceRegexpOne>();
     factory.registerFunction<FunctionReplaceRegexpAll>();
-    factory.registerFunction<FunctionPosition>();
+    factory.registerFunction<FunctionPosition>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionPositionUTF8>();
     factory.registerFunction<FunctionPositionCaseInsensitive>();
     factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();

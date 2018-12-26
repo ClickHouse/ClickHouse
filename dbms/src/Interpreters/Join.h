@@ -75,7 +75,7 @@ struct JoinKeyGetterString
         const Sizes &) const
     {
         return StringRef(
-            &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
+            &(*chars)[(*offsets)[i - 1]],
             (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
     }
 

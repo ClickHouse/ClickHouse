@@ -16,7 +16,7 @@ endif ()
 
 if (HDFS3_LIBRARY AND HDFS3_INCLUDE_DIR)
     set(USE_HDFS 1)
-elseif (LIBGSASL_LIBRARY)
+elseif (LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
     set(HDFS3_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
     set(HDFS3_LIBRARY hdfs3)
     set(USE_HDFS 1)
