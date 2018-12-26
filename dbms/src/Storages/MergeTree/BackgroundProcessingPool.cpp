@@ -25,6 +25,7 @@ namespace DB
 
 static constexpr double thread_sleep_seconds = 10;
 static constexpr double thread_sleep_seconds_random_part = 1.0;
+static constexpr double thread_sleep_seconds_if_nothing_to_do = 0.1;
 
 /// For exponential backoff.
 static constexpr double task_sleep_seconds_when_no_work_min = 10;
@@ -146,7 +147,7 @@ void BackgroundProcessingPool::threadFunction()
 
     while (!shutdown)
     {
-        bool done_work = false;
+        TaskResult task_result = TaskResult::ERROR;
         TaskHandle task;
 
         try
@@ -198,7 +199,7 @@ void BackgroundProcessingPool::threadFunction()
 
             {
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundPoolTask};
-                done_work = task->function();
+                task_result = task->function();
             }
         }
         catch (...)
@@ -216,7 +217,7 @@ void BackgroundProcessingPool::threadFunction()
             if (task->removed)
                 continue;
 
-            if (done_work)
+            if (task_result == TaskResult::SUCCESS)
                 task->count_no_work_done = 0;
             else
                 ++task->count_no_work_done;
@@ -225,11 +226,13 @@ void BackgroundProcessingPool::threadFunction()
             /// If not, add delay before next run.
 
             Poco::Timestamp next_time_to_execute;   /// current time
-            if (!done_work)
+            if (task_result == TaskResult::ERROR)
                 next_time_to_execute += 1000000 * (std::min(
                         task_sleep_seconds_when_no_work_max,
                         task_sleep_seconds_when_no_work_min * std::pow(task_sleep_seconds_when_no_work_multiplier, task->count_no_work_done))
                     + std::uniform_real_distribution<double>(0, task_sleep_seconds_when_no_work_random_part)(rng));
+            else if (task_result == TaskResult::NOTHING_TO_DO)
+                next_time_to_execute += 1000000 * thread_sleep_seconds_if_nothing_to_do;
 
             tasks.erase(task->iterator);
             task->iterator = tasks.emplace(next_time_to_execute, task);
