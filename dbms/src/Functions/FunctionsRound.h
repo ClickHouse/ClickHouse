@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
-#include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
