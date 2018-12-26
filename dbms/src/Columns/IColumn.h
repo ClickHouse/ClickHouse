@@ -398,7 +398,7 @@ class ColumnVectorHelper : public IColumn
 public:
     const char * getRawDataBegin() const
     {
-        return reinterpret_cast<const char *>(this) + sizeof(*this);
+        return *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(this) + sizeof(*this));
     }
 
     template <size_t ELEMENT_SIZE>
