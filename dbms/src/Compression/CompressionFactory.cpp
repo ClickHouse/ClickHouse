@@ -44,6 +44,18 @@ CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, std
     }
 }
 
+CompressionCodecPtr CompressionCodecFactory::get(const std::vector<CodecNameWithLevel> & codecs) const
+{
+    Codecs result;
+    for (const auto & [codec_name, level] : codecs)
+        result.push_back(get(codec_name, level));
+
+    if (result.size() == 1)
+        return result.back();
+
+    return std::make_shared<CompressionCodecMultiple>(result);
+}
+
 CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(ast.get()))

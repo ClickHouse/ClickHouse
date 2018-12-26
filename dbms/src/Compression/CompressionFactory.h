@@ -16,6 +16,8 @@ class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
+using CodecNameWithLevel = std::pair<String, std::optional<int>>;
+
 class IAST;
 
 using ASTPtr = std::shared_ptr<IAST>;
@@ -43,6 +45,7 @@ public:
     /// For backward compatibility with config settings
     CompressionCodecPtr get(const String & family_name, std::optional<int> level) const;
 
+    CompressionCodecPtr get(const std::vector<CodecNameWithLevel> & codecs) const;
     /// Register codec with parameters
     void registerCompressionCodec(const String & family_name, std::optional<UInt8> byte_code, Creator creator);
 
