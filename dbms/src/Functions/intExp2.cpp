@@ -11,7 +11,7 @@ struct IntExp2Impl
 {
     using ResultType = UInt64;
 
-    static inline __attribute__((no_sanitize("shift-exponent"))) ResultType apply(A a)
+    static inline ResultType apply(A a)
     {
         return intExp2(a);
     }
