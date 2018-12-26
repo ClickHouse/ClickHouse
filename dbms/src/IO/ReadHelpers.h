@@ -348,6 +348,7 @@ void readIntTextUnsafe(T & x, ReadBuffer & buf)
     if (*buf.position() == '0') /// There are many zeros in real datasets.
     {
         ++buf.position();
+        x = 0;
         return;
     }
 
