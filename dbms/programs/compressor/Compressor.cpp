@@ -124,7 +124,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             codec = DB::CompressionCodecFactory::instance().get(codec_names);
         }
         else
-            codec = DB::CompressionCodecFactory::instance().get(method_family, levels.empty() ? std::nullopt : std::optional(levels.back()));
+            codec = DB::CompressionCodecFactory::instance().get(method_family, levels.empty() ? std::nullopt : std::optional<int>(levels.back()));
 
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
