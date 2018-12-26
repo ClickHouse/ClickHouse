@@ -273,8 +273,9 @@ public:
     T * data() { return t_start(); }
     const T * data() const { return t_start(); }
 
-    T & operator[] (size_t n)                 { return t_start()[n]; }
-    const T & operator[] (size_t n) const     { return t_start()[n]; }
+    /// The index is signed to access -1th element without pointer overflow.
+    T & operator[] (ssize_t n)                 { return t_start()[n]; }
+    const T & operator[] (ssize_t n) const     { return t_start()[n]; }
 
     T & front()             { return t_start()[0]; }
     T & back()              { return t_end()[-1]; }

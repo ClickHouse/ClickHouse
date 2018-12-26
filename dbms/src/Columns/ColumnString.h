@@ -31,10 +31,10 @@ private:
     /// For convenience, every string ends with terminating zero byte. Note that strings could contain zero bytes in the middle.
     Chars chars;
 
-    size_t ALWAYS_INLINE offsetAt(size_t i) const { return offsets[i - 1]; }
+    size_t ALWAYS_INLINE offsetAt(ssize_t i) const { return offsets[i - 1]; }
 
     /// Size of i-th element, including terminating zero.
-    size_t ALWAYS_INLINE sizeAt(size_t i) const { return offsets[i] - offsets[i - 1]; }
+    size_t ALWAYS_INLINE sizeAt(ssize_t i) const { return offsets[i] - offsets[i - 1]; }
 
     template <bool positive>
     struct less;
