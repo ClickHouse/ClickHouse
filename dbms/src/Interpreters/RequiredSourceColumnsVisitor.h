@@ -38,7 +38,7 @@ private:
 };
 
 /// Extracts all the information about columns and tables from ASTSelectQuery block into ColumnNamesContext object.
-/// It doesn't use anithing but AST. It visits nodes from bottom to top except ASTFunction content to get aliases in right manner.
+/// It doesn't use anything but AST. It visits nodes from bottom to top except ASTFunction content to get aliases in right manner.
 /// @note There's some ambiguousness with nested columns names that can't be solved without schema.
 using RequiredSourceColumnsVisitor = InDepthNodeVisitor<RequiredSourceColumnsMatcher, false>;
 
