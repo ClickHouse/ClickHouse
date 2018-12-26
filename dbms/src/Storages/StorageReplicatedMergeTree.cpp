@@ -2080,7 +2080,7 @@ bool StorageReplicatedMergeTree::queueTask()
     {
         /// Nothing to do, we can sleep for some time, just not to
         /// abuse background pool scheduling policy
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
         /// If we return false, than background pool for this task
         /// will accumulate exponential backoff and after empty replication queue
