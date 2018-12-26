@@ -17,6 +17,7 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int TOO_LARGE_SIZE_COMPRESSED;
+        extern const int BAD_ARGUMENTS;
     }
 }
 
@@ -62,7 +63,8 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("block-size,b", boost::program_options::value<unsigned>()->default_value(DBMS_DEFAULT_BUFFER_SIZE), "compress in blocks of specified size")
         ("hc", "use LZ4HC instead of LZ4")
         ("zstd", "use ZSTD instead of LZ4")
-        ("level", boost::program_options::value<int>(), "compression level")
+        ("codec", boost::program_options::value<std::vector<std::string>>()->multitoken(), "use codecs combination instead of LZ4")
+        ("level", boost::program_options::value<std::vector<int>>()->multitoken(), "compression levels for codecs specified via --codec")
         ("none", "use no compression instead of LZ4")
         ("stat", "print block statistics of compressed data")
     ;
@@ -85,6 +87,12 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
         unsigned block_size = options["block-size"].as<unsigned>();
+        std::vector<std::string> codecs;
+        if (options.count("codec"))
+            codecs = options["codec"].as<std::vector<std::string>>();
+
+        if ((use_lz4hc || use_zstd || use_none) && !codecs.empty())
+            throw DB::Exception("Wrong options, codec flags like --zstd and --codec options are mutually exclusive", DB::ErrorCodes::BAD_ARGUMENTS);
 
         std::string method_family = "LZ4";
 
@@ -95,11 +103,29 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (use_none)
             method_family = "NONE";
 
-        std::optional<int> level;
+        std::vector<int> levels;
         if (options.count("level"))
-            level = options["level"].as<int>();
+            levels = options["level"].as<std::vector<int>>();
 
-        DB::CompressionCodecPtr codec = DB::CompressionCodecFactory::instance().get(method_family, level);
+        DB::CompressionCodecPtr codec;
+        if (!codecs.empty())
+        {
+            if (levels.size() > codecs.size())
+                throw DB::Exception("Specified more levels than codecs", DB::ErrorCodes::BAD_ARGUMENTS);
+
+            std::vector<DB::CodecNameWithLevel> codec_names;
+            for (size_t i = 0; i < codecs.size(); ++i)
+            {
+                if (i < levels.size())
+                    codec_names.emplace_back(codecs[i], levels[i]);
+                else
+                    codec_names.emplace_back(codecs[i], std::nullopt);
+            }
+            codec = DB::CompressionCodecFactory::instance().get(codec_names);
+        }
+        else
+            codec = DB::CompressionCodecFactory::instance().get(method_family, levels.empty() ? std::nullopt : std::optional(levels.back()));
+
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
         DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);
