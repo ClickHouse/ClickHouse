@@ -389,4 +389,17 @@ struct IsMutableColumns<Arg, Args ...>
 template <>
 struct IsMutableColumns<> { static const bool value = true; };
 
+
+/// Allows to access internal array of ColumnVector or ColumnFixedString without cast to concrete type.
+/// Inherit ColumnVector and ColumnFixedString from this class instead of IColumn.
+class ColumnVectorHelper : public IColumn
+{
+public:
+    const char * getRawDataBegin() const
+    {
+        /// Assumes data layout of ColumnVector, ColumnFixedString and PODArray.
+        return reinterpret_cast<const char *>(this);
+    }
+};
+
 }
