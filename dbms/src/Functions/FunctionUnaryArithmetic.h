@@ -37,14 +37,14 @@ struct UnaryOperationImpl
     using ArrayA = typename ColVecA::Container;
     using ArrayC = typename ColVecC::Container;
 
-    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    static void NO_INLINE __attribute__((no_sanitize("shift-exponent"))) vector(const ArrayA & a, ArrayC & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::apply(a[i]);
     }
 
-    static void constant(A a, ResultType & c)
+    static void __attribute__((no_sanitize("shift-exponent"))) constant(A a, ResultType & c)
     {
         c = Op::apply(a);
     }
