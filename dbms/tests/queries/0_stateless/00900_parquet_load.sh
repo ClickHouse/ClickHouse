@@ -10,7 +10,10 @@ CB_DIR=$(dirname "$CLICKHOUSE_CLIENT_BINARY")
 [ "$CB_DIR" == "." ] && ROOT_DIR=$CUR_DIR/../../../..
 [ "$CB_DIR" != "." ] && BUILD_DIR=$CB_DIR/../..
 [ -z "$ROOT_DIR" ] && ROOT_DIR=$CB_DIR/../../..
-DATA_DIR=$ROOT_DIR/contrib/arrow/cpp/submodules/parquet-testing/data/
+DATA_SOURCE_DIR=$ROOT_DIR/contrib/arrow/cpp/submodules/parquet-testing/data/
+DATA_DIR=$CUR_DIR/data
+
+# TODO: copy data files via cmake to build_dir (and pack to package)
 
 # alltypes_dictionary.parquet
 # alltypes_plain.parquet
@@ -31,9 +34,11 @@ DATA_DIR=$ROOT_DIR/contrib/arrow/cpp/submodules/parquet-testing/data/
 
 # byte_array_decimal.parquet
 for NAME in alltypes_dictionary.parquet alltypes_plain.parquet nation.dict-malformed.parquet; do 
-    #echo $DATA_DIR / $NAME
     echo $NAME
+
+    [ ! -f "$DATA_DIR/$NAME" ] && DATA_DIR=$DATA_SOURCE_DIR
     JSON=$DATA_DIR/$NAME.json
+
     [ -n "$BUILD_DIR" ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader --json $DATA_DIR/$NAME > $JSON
     [ -n "$BUILD_DIR" ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader $DATA_DIR/$NAME > $DATA_DIR/$NAME.dump
 
@@ -43,5 +48,4 @@ for NAME in alltypes_dictionary.parquet alltypes_plain.parquet nation.dict-malfo
     cat $DATA_DIR/$NAME | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_load FORMAT Parquet"
     ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_load"
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_load"
-
 done
