@@ -171,15 +171,14 @@ struct AggregationMethodOneNumber
     /// To use one `Method` in different threads, use different `State`.
     struct State
     {
-        const FieldType * vec;
+        const char * vec;
 
         /** Called at the start of each block processing.
           * Sets the variables needed for the other methods called in inner loops.
           */
         void init(ColumnRawPtrs & key_columns)
         {
-            /// We may interpret ColumnInt32 as ColumnUInt32. This breaks strict aliasing but compiler doesn't see it.
-            vec = &reinterpret_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+            vec = key_columns[0]->getRawData().data;
         }
 
         /// Get the key from the key columns for insertion into the hash table.
@@ -191,7 +190,7 @@ struct AggregationMethodOneNumber
             StringRefs & /*keys*/,        /// Here references to key data in columns can be written. They can be used in the future.
             Arena & /*pool*/) const
         {
-            return unionCastToUInt64(vec[i]);
+            return unalignedLoad<Key>(vec + i * sizeof(Key));
         }
     };
 
