@@ -10,7 +10,7 @@ struct BitShiftLeftImpl
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static inline __attribute__((no_sanitize("shift-exponent"))) Result apply(A a, B b)
     {
         return static_cast<Result>(a) << static_cast<Result>(b);
     }
