@@ -588,13 +588,13 @@ bool StorageMergeTree::tryMutatePart()
 }
 
 
-bool StorageMergeTree::backgroundTask()
+BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 {
     if (shutdown_called)
-        return false;
+        return BackgroundProcessingPoolTaskResult::ERROR;
 
     if (merger_mutator.actions_blocker.isCancelled())
-        return false;
+        return BackgroundProcessingPoolTaskResult::ERROR;
 
     try
     {
@@ -608,16 +608,19 @@ bool StorageMergeTree::backgroundTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
-            return true;
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        return tryMutatePart();
+        if (tryMutatePart())
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+        else
+            return BackgroundProcessingPoolTaskResult::ERROR;
     }
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
             LOG_INFO(log, e.message());
-            return false;
+            return BackgroundProcessingPoolTaskResult::ERROR;
         }
 
         throw;
