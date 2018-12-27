@@ -280,7 +280,8 @@ struct AggregationMethodString
 
     static ALWAYS_INLINE void onNewKey(typename Data::value_type & value, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & pool)
     {
-        value.first.data = pool.insert(value.first.data, value.first.size);
+        if (value.first.size)
+            value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
     static ALWAYS_INLINE void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
