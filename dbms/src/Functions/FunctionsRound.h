@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/castColumn.h>
 
-#include <common/intExp.h>
+#include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
