@@ -188,12 +188,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!internal)
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 
-#if 1
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data;
-        JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
-        if (join_to_subs_data.done)
-            logQuery(queryToString(*ast), context);
-#endif
+        if (settings.allow_experimental_multiple_joins_emulation)
+        {
+            JoinToSubqueryTransformVisitor::Data join_to_subs_data;
+            JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
+            if (join_to_subs_data.done)
+                logQuery(queryToString(*ast), context);
+        }
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
