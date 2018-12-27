@@ -716,7 +716,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merge_entry->bytes_written_uncompressed = merged_stream->getProfileInfo().bytes;
 
         /// Reservation updates is not performed yet, during the merge it may lead to higher free space requirements
-        if (disk_reservation)
+        if (disk_reservation && sum_input_rows_upper_bound)
         {
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
             /// But now we are using inaccurate row-based estimation in Horizontal case for backward compability
