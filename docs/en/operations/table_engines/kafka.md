@@ -24,7 +24,7 @@ Kafka SETTINGS
   kafka_topic_list = 'topic1,topic2',
   kafka_group_name = 'group1',
   kafka_format = 'JSONEachRow',
-  kafka_row_delimiter = '\n'
+  kafka_row_delimiter = '\n',
   kafka_schema = '',
   kafka_num_consumers = 2
 ```
@@ -39,7 +39,7 @@ Required parameters:
 Optional parameters:
 
 - `kafka_row_delimiter` - Character-delimiter of records (rows), which ends the message.
-- `kafka_schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `kafka_schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
 
 Examples:
@@ -106,7 +106,7 @@ Example:
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../settings/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../settings/settings.md#settings-max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../settings/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -122,7 +122,7 @@ If you want to change the target table by using `ALTER`, we recommend disabling 
 Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ```xml
-  <!--  Global configuration options for all tables of Kafka engine type -->
+  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>

@@ -236,7 +236,7 @@ BlockInputStreams StorageMerge::read(
         else
         {
             source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(
-                header, [=, &real_column_names, &modified_context]() -> BlockInputStreamPtr
+                header, [=]() mutable -> BlockInputStreamPtr
                 {
                     BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
                                                                     header, storage, struct_lock, real_column_names,
