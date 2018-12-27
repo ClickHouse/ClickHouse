@@ -949,7 +949,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
     {
         if (negative)
-            res = -static_cast<Int64>(uint_value);
+            res = static_cast<Int64>(-uint_value);
         else
             res = uint_value;
     }

@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
-#include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 
-#include <common/intExp.h>
+#include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
