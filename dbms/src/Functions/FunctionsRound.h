@@ -5,6 +5,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 
