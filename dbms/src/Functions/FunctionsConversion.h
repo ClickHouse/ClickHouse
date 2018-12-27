@@ -177,7 +177,7 @@ struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
-    static inline ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
     }
