@@ -446,16 +446,19 @@ public:
         UInt64 & watch_prev_elapsed_, MergeTreeDataMergerMutator::MergeAlgorithm merge_alg_ = MergeAlgorithm::Vertical)
     : merge_entry(merge_entry_), watch_prev_elapsed(watch_prev_elapsed_), merge_alg(merge_alg_)
     {
-        average_elem_progress = (merge_alg == MergeAlgorithm::Horizontal)
-            ? 1.0 / num_total_rows
-            : column_sizes.keyColumnsProgress(1, num_total_rows);
+        if (num_total_rows)
+        {
+            average_elem_progress = (merge_alg == MergeAlgorithm::Horizontal)
+                ? 1.0 / num_total_rows
+                : column_sizes.keyColumnsProgress(1, num_total_rows);
+        }
 
         updateWatch();
     }
 
     MergeList::Entry & merge_entry;
     UInt64 & watch_prev_elapsed;
-    Float64 average_elem_progress;
+    Float64 average_elem_progress = 0;
     const MergeAlgorithm merge_alg{MergeAlgorithm::Vertical};
 
     void updateWatch()
