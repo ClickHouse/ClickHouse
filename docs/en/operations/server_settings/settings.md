@@ -42,7 +42,7 @@ Block field `<case>`:
 - ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
 - ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
 
-ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
+ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
 
 **Example**
 
@@ -456,7 +456,7 @@ Keys for server/client settings:
 - requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name>  </invalidCertificateHandler>`` .
+- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
 - disableProtocols – Protocols that are not allowed to use.
 - preferServerCiphers – Preferred server ciphers on the client.
 
@@ -641,7 +641,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ## user_files_path {#server_settings-user_files_path}
 
-The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md).
+The directory with user files. Used in the table function [file()](../../query_language/table_functions/file.md).
 
 **Example**
 
