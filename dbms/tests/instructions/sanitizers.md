@@ -53,8 +53,10 @@ sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-tsan server --con
 # How to use Undefined Behaviour Sanitizer
 
 ```
-mkdir build_ubsan && cd build_ubsan
+CC=clang CXX=clang++ mkdir build_ubsan && cd build_ubsan
 ```
+
+Note: clang is mandatory, because gcc (in version 8) has false positives due to devirtualization and it has less amount of checks.
 
 ```
 cmake -D SANITIZE=undefined ..
