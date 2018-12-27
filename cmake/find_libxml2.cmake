@@ -9,8 +9,9 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libxml2/libxml.h")
 endif ()
 
 if (NOT USE_INTERNAL_LIBXML2_LIBRARY)
-    find_library (LIBXML2_LIBRARY libxml2)
-    find_path (LIBXML2_INCLUDE_DIR NAMES libxml.h PATHS ${LIBXML2_INCLUDE_PATHS})
+    find_package (LibXml2)
+    #find_library (LIBXML2_LIBRARY libxml2)
+    #find_path (LIBXML2_INCLUDE_DIR NAMES libxml.h PATHS ${LIBXML2_INCLUDE_PATHS})
 endif ()
 
 if (LIBXML2_LIBRARY AND LIBXML2_INCLUDE_DIR)

@@ -138,6 +138,7 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
     target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
 
+
 if (USE_INTERNAL_PARQUET_LIBRARY)
 if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     # if use arrow's cmakefiles they wants too lot depends, downloads some libs
@@ -182,8 +183,15 @@ if (USE_INTERNAL_PARQUET_LIBRARY_NATIVE_CMAKE)
     endif()
 
 else()
-    # TODO! USE FIND*
-    add_subdirectory(snappy)
+
+    if(USE_INTERNAL_SNAPPY_LIBRARY)
+        set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
+        if (NOT MAKE_STATIC_LIBRARIES)
+            set(BUILD_SHARED_LIBS 1) # TODO: set at root dir
+        endif()
+        add_subdirectory(snappy)
+    endif()
+
     add_subdirectory(arrow-cmake)
 endif()
 endif()
