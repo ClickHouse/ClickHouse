@@ -6,7 +6,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include "MySQLSettings.h"
 
 
 namespace DB
