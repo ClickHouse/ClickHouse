@@ -59,6 +59,7 @@ struct CatBoostWrapperAPI
     size_t (* GetFloatFeaturesCount)(ModelCalcerHandle* calcer);
     size_t (* GetCatFeaturesCount)(ModelCalcerHandle* calcer);
     size_t (* GetTreeCount)(ModelCalcerHandle* modelHandle);
+    size_t (* GetDimensionsCount)(ModelCalcerHandle* modelHandle);
 
     bool (* CheckModelMetadataHasKey)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
     size_t (*GetModelInfoValueSize)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
@@ -102,8 +103,8 @@ public:
         float_features_count = api->GetFloatFeaturesCount(handle_->get());
         cat_features_count = api->GetCatFeaturesCount(handle_->get());
         tree_count = 1;
-        //if (api->GetTreeCount)
-        //    tree_count = api->GetTreeCount(handle_->get());
+        if (api->GetDimensionsCount)
+            tree_count = api->GetDimensionsCount(handle_->get());
 
         handle = std::move(handle_);
     }
@@ -474,6 +475,7 @@ void CatBoostLibHolder::initAPI()
     tryLoad(api.GetModelInfoValueSize, "GetModelInfoValueSize");
     tryLoad(api.GetModelInfoValue, "GetModelInfoValue");
     tryLoad(api.GetTreeCount, "GetTreeCount");
+    tryLoad(api.GetDimensionsCount, "GetDimensionsCount");
 }
 
 std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
