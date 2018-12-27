@@ -45,7 +45,7 @@ public:
                 size_t pos_end = full_comment.find('}', pos_start);
                 if (pos_end != String::npos)
                 {
-                    String hint(full_comment.begin() + pos_start, full_comment.begin() + pos_end);
+                    String hint(full_comment.begin() + pos_start + 1, full_comment.begin() + pos_end);
                     parse(hint);
                 }
             }
