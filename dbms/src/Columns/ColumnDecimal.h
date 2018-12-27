@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVectorHelper.h>
 
 
 namespace DB
