@@ -67,15 +67,15 @@ struct SetMethodString
 
     struct State
     {
-        const ColumnString::Offsets * offsets;
-        const ColumnString::Chars * chars;
+        const IColumn::Offset * offsets;
+        const UInt8 * chars;
 
         void init(const ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = &column_string.getOffsets();
-            chars = &column_string.getChars();
+            offsets = column_string.getOffsets().data();
+            chars = column_string.getChars().data();
         }
 
         Key getKey(
@@ -85,8 +85,8 @@ struct SetMethodString
             const Sizes &) const
         {
             return StringRef(
-                &(*chars)[(*offsets)[i - 1]],
-                ((*offsets)[i] - (*offsets)[i - 1]) - 1);
+                chars + offsets[i - 1],
+                offsets[i] - offsets[i - 1] - 1);
         }
     };
 
