@@ -80,7 +80,8 @@ struct JoinKeyGetterString
 
     static void onNewKey(Key & key, Arena & pool)
     {
-        key.data = pool.insert(key.data, key.size);
+        if (key.size)
+            key.data = pool.insert(key.data, key.size);
     }
 };
 
