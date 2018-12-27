@@ -12,15 +12,13 @@
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
 
+#include <cppkafka/cppkafka.h>
 #include <mutex>
-
-struct rd_kafka_s;
-struct rd_kafka_conf_s;
 
 namespace DB
 {
 
-class StorageKafka;
+using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -55,22 +53,6 @@ public:
     void updateDependencies() override;
 
 private:
-    /// Each engine typically has one consumer (able to process 1..N partitions)
-    /// It is however possible to create multiple consumers per table, as long
-    /// as the total number of consumers is <= number of partitions.
-    struct Consumer
-    {
-        Consumer(struct rd_kafka_conf_s * conf);
-        ~Consumer();
-
-        void subscribe(const Names & topics);
-        void unsubscribe();
-        void close();
-
-        struct rd_kafka_s * stream = nullptr;
-    };
-    using ConsumerPtr = std::shared_ptr<Consumer>;
-
     // Configuration and state
     String table_name;
     String database_name;
@@ -102,7 +84,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
-    void consumerConfiguration(struct rd_kafka_conf_s * conf);
+    cppkafka::Configuration createConsumerConfiguration();
     ConsumerPtr claimConsumer();
     ConsumerPtr tryClaimConsumer(long wait_ms);
     void pushConsumer(ConsumerPtr c);
