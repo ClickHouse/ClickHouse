@@ -53,7 +53,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
+#if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_ODBC_BRIDGE || !defined(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -102,7 +102,7 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
     {"copier", mainEntryClickHouseClusterCopier},
 #endif
-#if ENABLE_CLICKHOUSE_OBFUSCATOR
+#if ENABLE_CLICKHOUSE_OBFUSCATOR || !defined(ENABLE_CLICKHOUSE_OBFUSCATOR)
     {"obfuscator", mainEntryClickHouseObfuscator},
 #endif
 #if ENABLE_CLICKHOUSE_ODBC_BRIDGE || !defined(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
