@@ -1,9 +1,10 @@
 #pragma once
 
-#include <string.h> // memcpy
+#include <string.h> // memcmp
 
 #include <Common/PODArray.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVectorHelper.h>
 
 
 namespace DB
