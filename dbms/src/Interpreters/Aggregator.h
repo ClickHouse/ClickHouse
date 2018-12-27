@@ -264,7 +264,7 @@ struct AggregationMethodString
         ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,
-            size_t i,
+            ssize_t i,
             const Sizes & /*key_sizes*/,
             StringRefs & /*keys*/,
             Arena & /*pool*/) const
