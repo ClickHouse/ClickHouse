@@ -99,7 +99,7 @@ struct ConvertImpl
     using ToFieldType = typename ToDataType::FieldType;
 
     template <typename Additions = void *>
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
+    static void NO_SANITIZE_UNDEFINED execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
                         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = block.getByPosition(arguments[0]);
