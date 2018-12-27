@@ -2053,13 +2053,13 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
 }
 
 
-bool StorageReplicatedMergeTree::queueTask()
+BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
 {
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        return true;
+        return BackgroundProcessingPoolTaskResult::SUCCESS;
     }
 
     /// This object will mark the element of the queue as running.
@@ -2077,7 +2077,7 @@ bool StorageReplicatedMergeTree::queueTask()
     LogEntryPtr & entry = selected.first;
 
     if (!entry)
-        return false;
+        return BackgroundProcessingPoolTaskResult::NOTHING_TO_DO;
 
     time_t prev_attempt_time = entry->last_attempt_time;
 
@@ -2125,7 +2125,7 @@ bool StorageReplicatedMergeTree::queueTask()
     bool need_sleep = !res && (entry->last_attempt_time - prev_attempt_time < 10);
 
     /// If there was no exception, you do not need to sleep.
-    return !need_sleep;
+    return need_sleep ? BackgroundProcessingPoolTaskResult::ERROR : BackgroundProcessingPoolTaskResult::SUCCESS;
 }
 
 
