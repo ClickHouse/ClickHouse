@@ -121,6 +121,7 @@ endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     add_subdirectory (librdkafka-cmake)
+    add_subdirectory (cppkafka-cmake)
     target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
     target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
