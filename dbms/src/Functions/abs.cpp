@@ -11,7 +11,7 @@ struct AbsImpl
 {
     using ResultType = std::conditional_t<IsDecimalNumber<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
 
-    static inline ResultType apply(A a)
+    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         if constexpr (IsDecimalNumber<A>)
             return a < 0 ? A(-a) : a;
