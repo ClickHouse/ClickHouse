@@ -345,6 +345,8 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             {odbc_ini_path}
         entrypoint: {entrypoint_cmd}
+        cap_add:
+            - SYS_PTRACE
         depends_on: {depends_on}
         env_file:
             - {env_file}
