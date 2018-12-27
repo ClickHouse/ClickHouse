@@ -337,56 +337,6 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
     }
 }
 
-bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
-{
-    if (typeid_cast<ASTIdentifier *>(ast.get()))
-    {
-        return false;
-    }
-    else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
-    {
-        if (node->name == "arrayJoin")
-        {
-            return true;
-        }
-        if (functionIsInOrGlobalInOperator(node->name))
-        {
-            return isThereArrayJoin(node->arguments->children.at(0));
-        }
-        if (node->name == "indexHint")
-        {
-            return false;
-        }
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
-        {
-            return false;
-        }
-        for (auto & child : node->arguments->children)
-        {
-            if (isThereArrayJoin(child))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-    else if (typeid_cast<ASTLiteral *>(ast.get()))
-    {
-        return false;
-    }
-    else
-    {
-        for (auto & child : ast->children)
-        {
-            if (isThereArrayJoin(child))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-}
-
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, ExpressionActionsPtr & actions, bool only_consts)
 {
@@ -1188,10 +1138,5 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 }
 
-
-Names ExpressionAnalyzer::getRequiredSourceColumns() const
-{
-    return source_columns.getNames();
-}
 
 }
