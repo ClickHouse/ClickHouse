@@ -7,6 +7,7 @@
 #include <Poco/URI.h>
 #include <hdfs/hdfs.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <string>
 
 #ifndef O_DIRECT
 #define O_DIRECT 00040000
@@ -52,7 +53,7 @@ namespace DB
 
                 if (fs == nullptr)
                 {
-                    throw Exception("Unable to connect to HDFS: " + String(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
+                    throw Exception("Unable to connect to HDFS: " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
                 }
 
                 fin = hdfsOpenFile(fs, path.c_str(), O_RDONLY, 0, 0, 0);
@@ -77,7 +78,7 @@ namespace DB
                 int bytes_read = hdfsRead(fs, fin, internal_buffer.begin(), internal_buffer.size());
                 if (bytes_read < 0)
                 {
-                    throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + String(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
+                    throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
                 }
 
                 if (bytes_read)
