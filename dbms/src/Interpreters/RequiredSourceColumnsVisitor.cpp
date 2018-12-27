@@ -99,7 +99,6 @@ std::vector<ASTPtr *> RequiredSourceColumnsMatcher::visit(ASTPtr & ast, Data & d
         data.addTableAliasIfAny(*ast);
         return visit(*t, ast, data);
     }
-
     if (typeid_cast<ASTSubquery *>(ast.get()))
     {
         data.addTableAliasIfAny(*ast);
