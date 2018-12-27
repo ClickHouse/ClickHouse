@@ -1,7 +1,7 @@
-alltypes_dictionary.parquet
+=== Try load data from alltypes_dictionary.parquet
 0	1	0	0	0	0	0	0	01/01/09	0	2171658240
 1	0	1	1	1	10	1.1	10.1	01/01/09	1	2231658240
-alltypes_plain.parquet
+=== Try load data from alltypes_plain.parquet
 4	1	0	0	0	0	0	0	03/01/09	0	1645477888
 5	0	1	1	1	10	1.1	10.1	03/01/09	1	1705477888
 6	1	0	0	0	0	0	0	04/01/09	0	4280852480
@@ -10,10 +10,28 @@ alltypes_plain.parquet
 3	0	1	1	1	10	1.1	10.1	02/01/09	1	572065536
 0	1	0	0	0	0	0	0	01/01/09	0	2171658240
 1	0	1	1	1	10	1.1	10.1	01/01/09	1	2231658240
-alltypes_plain.snappy.parquet
+=== Try load data from alltypes_plain.snappy.parquet
 6	1	0	0	0	0	0	0	04/01/09	0	4280852480
 7	0	1	1	1	10	1.1	10.1	04/01/09	1	45885184
-nation.dict-malformed.parquet
+=== Try load data from byte_array_decimal.parquet
+Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
+
+=== Try load data from datapage_v2.snappy.parquet
+Code: 33. DB::Ex---tion: Error while reading parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
+
+=== Try load data from fixed_length_decimal_legacy.parquet
+Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
+
+=== Try load data from fixed_length_decimal.parquet
+Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
+
+=== Try load data from int32_decimal.parquet
+Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
+
+=== Try load data from int64_decimal.parquet
+Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
+
+=== Try load data from nation.dict-malformed.parquet
 0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
 1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
 2	BRAZIL	1	y alongside of the pending deposits. carefully special packages are about the ironic forges. slyly special 
@@ -39,3 +57,58 @@ nation.dict-malformed.parquet
 22	RUSSIA	3	 requests against the platelets use never according to the quickly regular pint
 23	UNITED KINGDOM	3	eans boost carefully special requests. accounts are. carefull
 24	UNITED STATES	1	y final packages. slow foxes cajole quickly. quickly silent platelets breach ironic accounts. unusual pinto be
+=== Try load data from nested_lists.snappy.parquet
+Code: 8. DB::Ex---tion: Column "element" is not presented in input data
+
+=== Try load data from nested_maps.snappy.parquet
+Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: lists with structs are not supported.
+
+=== Try load data from nonnullable.impala.parquet
+Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: lists with structs are not supported.
+
+=== Try load data from nullable.impala.parquet
+Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: lists with structs are not supported.
+
+=== Try load data from nulls.snappy.parquet
+Code: 8. DB::Ex---tion: Column "b_c_int" is not presented in input data
+
+=== Try load data from repeated_no_annotation.parquet
+Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: lists with structs are not supported.
+
+=== Try load data from v0.7.1.all-named-index.parquet
+0.22	65.1	61	337	3.87	3.78	2.49	Fair	E	VS2
+0.23	56.9	65	327	4.05	4.07	2.31	Good	E	VS1
+0.31	63.3	58	335	4.34	4.35	2.75	Good	J	SI2
+0.23	61.5	55	326	3.95	3.98	2.43	Ideal	E	SI2
+0.21	59.8	61	326	3.89	3.84	2.31	Premium	E	SI1
+0.29	62.4	58	334	4.2	4.23	2.63	Premium	I	VS2
+0.26	61.9	55	337	4.07	4.11	2.53	Very Good	H	SI1
+0.23	59.4	61	338	4	4.05	2.39	Very Good	H	VS1
+0.24	62.3	57	336	3.95	3.98	2.47	Very Good	I	VVS1
+0.24	62.8	57	336	3.94	3.96	2.48	Very Good	J	VVS2
+=== Try load data from v0.7.1.column-metadata-handling.parquet
+1	0.1	1461482880	a	1461482880
+2	0.2	1547882880	b	1547882880
+3	0.3	1634282880	c	1634282880
+=== Try load data from v0.7.1.parquet
+0.23	Ideal	E	SI2	61.5	55	326	3.95	3.98	2.43	0
+0.21	Premium	E	SI1	59.8	61	326	3.89	3.84	2.31	1
+0.23	Good	E	VS1	56.9	65	327	4.05	4.07	2.31	2
+0.29	Premium	I	VS2	62.4	58	334	4.2	4.23	2.63	3
+0.31	Good	J	SI2	63.3	58	335	4.34	4.35	2.75	4
+0.24	Very Good	J	VVS2	62.8	57	336	3.94	3.96	2.48	5
+0.24	Very Good	I	VVS1	62.3	57	336	3.95	3.98	2.47	6
+0.26	Very Good	H	SI1	61.9	55	337	4.07	4.11	2.53	7
+0.22	Fair	E	VS2	65.1	61	337	3.87	3.78	2.49	8
+0.23	Very Good	H	VS1	59.4	61	338	4	4.05	2.39	9
+=== Try load data from v0.7.1.some-named-index.parquet
+0.22	65.1	61	337	3.87	3.78	2.49	Fair	E	VS2
+0.23	56.9	65	327	4.05	4.07	2.31	Good	E	VS1
+0.31	63.3	58	335	4.34	4.35	2.75	Good	J	SI2
+0.23	61.5	55	326	3.95	3.98	2.43	Ideal	E	SI2
+0.21	59.8	61	326	3.89	3.84	2.31	Premium	E	SI1
+0.29	62.4	58	334	4.2	4.23	2.63	Premium	I	VS2
+0.26	61.9	55	337	4.07	4.11	2.53	Very Good	H	SI1
+0.23	59.4	61	338	4	4.05	2.39	Very Good	H	VS1
+0.24	62.3	57	336	3.95	3.98	2.47	Very Good	I	VVS1
+0.24	62.8	57	336	3.94	3.96	2.48	Very Good	J	VVS2

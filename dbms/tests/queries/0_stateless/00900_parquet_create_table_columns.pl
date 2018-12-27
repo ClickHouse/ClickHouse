@@ -21,6 +21,7 @@ our $type_parquet_to_clickhouse = {
     FLOAT      => 'Float32',
     DOUBLE     => 'Float64',
     BYTE_ARRAY => 'String',
+    FIXED_LEN_BYTE_ARRAY => 'String', # Maybe FixedString?
     INT96      => 'Int64',     # TODO!
 };
 
