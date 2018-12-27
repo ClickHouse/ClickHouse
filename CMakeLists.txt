@@ -25,11 +25,6 @@ endif ()
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-
-set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "")
-set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "")
-include (cmake/limit_jobs.cmake)
-
 include (cmake/find_ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
