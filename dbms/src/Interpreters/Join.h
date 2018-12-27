@@ -75,7 +75,7 @@ struct JoinKeyGetterString
     {
         return StringRef(
             &(*chars)[(*offsets)[i - 1]],
-            (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+            ((*offsets)[i] - (*offsets)[i - 1]) - 1);
     }
 
     static void onNewKey(Key & key, Arena & pool)

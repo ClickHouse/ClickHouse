@@ -86,7 +86,7 @@ struct SetMethodString
         {
             return StringRef(
                 &(*chars)[(*offsets)[i - 1]],
-                (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+                ((*offsets)[i] - (*offsets)[i - 1]) - 1);
         }
     };
 
