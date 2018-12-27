@@ -1,16 +1,18 @@
 #pragma once
+
 #include <Common/config.h>
+
 #if USE_RDKAFKA
 
-#include <mutex>
-
-#include <ext/shared_ptr_helper.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Storages/IStorage.h>
+#include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/IStorage.h>
 #include <Poco/Event.h>
 #include <Poco/Semaphore.h>
+#include <ext/shared_ptr_helper.h>
+
+#include <mutex>
 
 struct rd_kafka_s;
 struct rd_kafka_conf_s;

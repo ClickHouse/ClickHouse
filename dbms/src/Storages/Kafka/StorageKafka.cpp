@@ -1,39 +1,35 @@
-#include <Common/config.h>
-#include <Common/config_version.h>
+#include <Storages/Kafka/StorageKafka.h>
+
 #if USE_RDKAFKA
 
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Common/Macros.h>
-#include <Common/Exception.h>
-#include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
-#include <Formats/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
+#include <Formats/FormatFactory.h>
+#include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/StorageKafka.h>
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
-#include <IO/ReadBuffer.h>
+#include <Storages/StorageMaterializedView.h>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Exception.h>
+#include <Common/Macros.h>
+#include <Common/config_version.h>
+#include <Common/setThreadName.h>
+#include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 
-#if __has_include(<rdkafka.h>) // maybe bundled
-#include <rdkafka.h> // Y_IGNORE
-#else // system
-#include <librdkafka/rdkafka.h>
-#endif
+#include <cppkafka/cppkafka.h>
 
 
 namespace DB
