@@ -134,12 +134,12 @@ StringRef ColumnArray::getDataAt(size_t n) const
       *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t array_size = sizeAt(n);
-    if (array_size == 0)
-        return StringRef();
-
     size_t offset_of_first_elem = offsetAt(n);
     StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+
+    size_t array_size = sizeAt(n);
+    if (array_size == 0)
+        return StringRef(first.data, 0);
 
     size_t offset_of_last_elem = getOffsets()[n] - 1;
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);

@@ -44,10 +44,10 @@ struct AlterCommand
     String after_column;
 
     /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
-    bool if_exists;
+    bool if_exists = false;
 
     /// For ADD_COLUMN
-    bool if_not_exists;
+    bool if_not_exists = false;
 
     /// For MODIFY_ORDER_BY
     ASTPtr order_by;

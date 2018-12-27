@@ -946,7 +946,9 @@ public:
 
                 auto & data = source_block.getByPosition(0);
                 data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
-                data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
+                data.type = std::make_shared<DataTypeArray>(
+                    static_cast<const DataTypeNullable &>(
+                        *static_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType());
 
                 auto & null_map = source_block.getByPosition(2);
                 null_map.column = nullable_col.getNullMapColumnPtr();

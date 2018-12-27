@@ -28,15 +28,14 @@ struct JoinKeyGetterOneNumber
 {
     using Key = FieldType;
 
-    const FieldType * vec;
+    const char * vec;
 
     /** Created before processing of each block.
       * Initialize some members, used in another methods, called in inner loops.
       */
     JoinKeyGetterOneNumber(const ColumnRawPtrs & key_columns)
     {
-        /// We may interpret ColumnInt32 as ColumnUInt32. This breaks strict aliasing but compiler doesn't see it.
-        vec = &reinterpret_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+        vec = key_columns[0]->getRawData().data;
     }
 
     Key getKey(
@@ -45,7 +44,7 @@ struct JoinKeyGetterOneNumber
         size_t i,                             /// row number to get key from.
         const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
     {
-        return unionCastToUInt64(vec[i]);
+        return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
     }
 
     /// Place additional data into memory pool, if needed, when new key was inserted into hash table.

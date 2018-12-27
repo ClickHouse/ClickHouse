@@ -185,7 +185,6 @@ namespace detail
         writeUIntText(static_cast<std::make_unsigned_t<T>>(x), buf);
     }
 
-#if 1
     inline void writeSIntText(__int128 x, WriteBuffer & buf)
     {
         static const __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
@@ -204,7 +203,6 @@ namespace detail
 
         writeUIntText(static_cast<unsigned __int128>(x), buf);
     }
-#endif
 }
 
 
