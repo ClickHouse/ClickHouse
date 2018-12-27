@@ -21,6 +21,12 @@ namespace DB
 class BackgroundProcessingPool;
 class BackgroundProcessingPoolTaskInfo;
 
+enum class BackgroundProcessingPoolTaskResult
+{
+    SUCCESS,
+    ERROR,
+    NOTHING_TO_DO,
+};
 /** Using a fixed number of threads, perform an arbitrary number of tasks in an infinite loop.
   * In this case, one task can run simultaneously from different threads.
   * Designed for tasks that perform continuous background work (for example, merge).
@@ -31,9 +37,11 @@ class BackgroundProcessingPool
 {
 public:
     /// Returns true, if some useful work was done. In that case, thread will not sleep before next run of this task.
-    using Task = std::function<bool()>;
+    using TaskResult = BackgroundProcessingPoolTaskResult;
+    using Task = std::function<TaskResult()>;
     using TaskInfo = BackgroundProcessingPoolTaskInfo;
     using TaskHandle = std::shared_ptr<TaskInfo>;
+
 
 
     BackgroundProcessingPool(int size_);

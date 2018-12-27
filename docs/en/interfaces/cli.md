@@ -91,7 +91,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as '--format=Vertical'. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
 - `--time, -t` – If specified, print the query execution time to 'stderr' in non-interactive mode.
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
-- `-config-file` – The name of the configuration file.
+- `--config-file` – The name of the configuration file.
 
 ### Configuration Files
 
