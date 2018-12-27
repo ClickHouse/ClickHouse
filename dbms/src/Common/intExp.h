@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 
-#include <Common/Defines.h>
+#include <Core/Defines.h>
 
 
 /// On overlow, the function returns unspecified value.
