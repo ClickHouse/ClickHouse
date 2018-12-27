@@ -92,7 +92,8 @@ struct SetMethodString
 
     static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
     {
-        value.data = pool.insert(value.data, value.size);
+        if (value.size)
+            value.data = pool.insert(value.data, value.size);
     }
 };
 
