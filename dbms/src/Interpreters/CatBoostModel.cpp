@@ -100,7 +100,9 @@ public:
 
         float_features_count = api->GetFloatFeaturesCount(handle_->get());
         cat_features_count = api->GetCatFeaturesCount(handle_->get());
-        tree_count = api.GetTreeCount == nullptr ? 1 : api->GetTreeCount(handle_->get());
+        tree_count = 1;
+        if (api->GetTreeCount)
+            tree_count = api->GetTreeCount(handle_->get());
 
         handle = std::move(handle_);
     }
