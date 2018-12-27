@@ -83,7 +83,7 @@ public:
         const typename State::Set & set = this->data(place).value;
         size_t size = set.size();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
         typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
         size_t old_size = data_to.size();
@@ -207,7 +207,7 @@ public:
         IColumn & data_to = arr_to.getData();
 
         auto & set = this->data(place).value;
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + set.size());
+        offsets_to.push_back(offsets_to.back() + set.size());
 
         for (auto & elem : set)
         {

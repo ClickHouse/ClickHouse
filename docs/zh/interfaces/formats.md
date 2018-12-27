@@ -159,7 +159,7 @@ x=1	y=\N
 clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-&ast;默认情况下间隔符是 `,` ，在[format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter)中可以了解更多间隔符配置。
+&ast;默认情况下间隔符是 `,` ，在 [format_csv_delimiter](../operations/settings/settings.md#format_csv_delimiter) 中可以了解更多间隔符配置。
 
 解析的时候，可以使用或不使用引号来解析所有值。支持双引号和单引号。行也可以不用引号排列。 在这种情况下，它们被解析为逗号或换行符（CR 或 LF）。在解析不带引号的行时，若违反 RFC 规则，会忽略前导和尾随的空格和制表符。 对于换行，全部支持 Unix（LF），Windows（CR LF）和 Mac OS Classic（CR LF）。
 
@@ -256,7 +256,7 @@ JSON 与 JavaScript 兼容。为了确保这一点，一些字符被另外转义
 
 该格式仅适用于输出查询结果，但不适用于解析输入（将数据插入到表中）。
 
-ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null`  输出来表示.
+ClickHouse 支持 [NULL](../query_language/syntax.md), 在 JSON 格式中以 `null` 输出来表示.
 
 参考 JSONEachRow 格式。
 
@@ -428,10 +428,10 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 整数使用固定长度的小端表示法。 例如，UInt64 使用8个字节。
 DateTime 被表示为 UInt32 类型的Unix 时间戳值。
 Date 被表示为 UInt16 对象，它的值为 1970-01-01以来的天数。
-字符串表示为 varint 长度（无符号[LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟字符串的字节数。
+字符串表示为 varint 长度（无符号 [LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟字符串的字节数。
 FixedString 被简单地表示为一个字节序列。
 
-数组表示为 varint 长度（无符号[LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
+数组表示为 varint 长度（无符号 [LEB128](https://en.wikipedia.org/wiki/LEB128)），后跟有序的数组元素。
 
 对于 [NULL](../query_language/syntax.md#null-literal) 的支持， 一个为 1 或 0 的字节会加在每个 [Nullable](../data_types/nullable.md) 值前面。如果为 1, 那么该值就是 `NULL`。 如果为 0，则不为 `NULL`。
 
@@ -587,7 +587,7 @@ struct Message {
 }
 ```
 
-格式文件存储的目录可以在服务配置中的[ format_schema_path ](../operations/server_settings/settings.md) 指定。
+格式文件存储的目录可以在服务配置中的 [ format_schema_path ](../operations/server_settings/settings.md) 指定。
 
 Cap'n Proto 反序列化是很高效的，通常不会增加系统的负载。
 

@@ -61,7 +61,7 @@ For a description of request parameters, see [request description](../../query_l
     By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause).
     Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
-- `SAMPLE BY` — An  expression for sampling.
+- `SAMPLE BY` — An expression for sampling.
 
     If a sampling expression is used, the primary key must contain it. Example:  
     `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
