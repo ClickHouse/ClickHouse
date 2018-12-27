@@ -104,3 +104,13 @@
 #elif defined(__SANITIZE_THREAD__)
     #define THREAD_SANITIZER 1
 #endif
+
+/// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
+/// It is useful in case when compiler cannot see (and exploit) it, but UBSan can.
+/// Example: multiplication of signed integers with possibility of overflow when both sides are from user input.
+#if defined(__clang__)
+    #define NO_SANITIZE_UNDEFINED __attribute__((__no_sanitize__("undefined")))
+#else
+    /// It does not work in GCC. GCC 7 cannot recognize this attribute and GCC 8 simply ignores it.
+    #define NO_SANITIZE_UNDEFINED
+#endif
