@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 
