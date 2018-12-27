@@ -81,7 +81,7 @@ struct SetMethodString
         Key getKey(
             const ColumnRawPtrs &,
             size_t,
-            size_t i,
+            ssize_t i,
             const Sizes &) const
         {
             return StringRef(
