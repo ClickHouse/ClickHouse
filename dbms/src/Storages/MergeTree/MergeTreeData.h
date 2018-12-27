@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -24,6 +23,8 @@
 
 namespace DB
 {
+
+class AlterCommands;
 
 namespace ErrorCodes
 {

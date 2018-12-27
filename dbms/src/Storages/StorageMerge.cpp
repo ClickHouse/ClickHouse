@@ -9,6 +9,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/AlterCommands.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>

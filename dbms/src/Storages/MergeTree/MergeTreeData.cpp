@@ -174,7 +174,9 @@ MergeTreeData::MergeTreeData(
     else if (Poco::File(version_file_path).exists())
     {
         ReadBufferFromFile buf(version_file_path);
-        readIntText(format_version, buf);
+        UInt32 read_format_version;
+        readIntText(read_format_version, buf);
+        format_version = read_format_version;
         if (!buf.eof())
             throw Exception("Bad version file: " + version_file_path, ErrorCodes::CORRUPTED_DATA);
     }

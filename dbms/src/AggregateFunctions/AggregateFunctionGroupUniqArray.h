@@ -195,7 +195,7 @@ public:
         for (auto & rhs_elem : rhs_set)
         {
             cur_set.emplace(rhs_elem, it, inserted);
-            if (inserted)
+            if (inserted && it->size)
                 it->data = arena->insert(it->data, it->size);
         }
     }
