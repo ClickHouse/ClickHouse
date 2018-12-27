@@ -24,7 +24,7 @@ Kafka SETTINGS
   kafka_topic_list = 'topic1,topic2',
   kafka_group_name = 'group1',
   kafka_format = 'JSONEachRow',
-  kafka_row_delimiter = '\n'
+  kafka_row_delimiter = '\n',
   kafka_schema = '',
   kafka_num_consumers = 2
 ```
