@@ -110,6 +110,7 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
     extern const int REPLICA_STATUS_CHANGED;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace ActionLocks
@@ -225,6 +226,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 {
     if (path_.empty())
         throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
+    if (!indexes_ast_.empty()) {
+        throw Exception("ReplicatedMergeTree storages do not support indexes", ErrorCodes::INCORRECT_QUERY);
+    }
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
