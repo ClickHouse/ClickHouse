@@ -565,10 +565,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
             }
         }
         else
-        {
-            LOG_ERROR(log, "Fetching missing part " << missing_name);
             parts_to_fetch.push_back(missing_name);
-        }
     }
 
     for (const String & name : parts_to_fetch)
@@ -685,7 +682,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     for (size_t i = 0; i < parts_to_fetch.size(); ++i)
     {
         const String & part_name = parts_to_fetch[i];
-        LOG_ERROR(log, "Removing missing part from ZooKeeper and queueing a fetch: " << part_name);
+        LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: " << part_name);
 
         Coordination::Requests ops;
 
