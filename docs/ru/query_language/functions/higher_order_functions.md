@@ -1,6 +1,4 @@
-<a name="higher_order_functions"></a>
-
-# Функции высшего порядка
+# Функции высшего порядка {#higher_order_functions}
 
 ## Оператор `->`, функция lambda(params, expr)
 

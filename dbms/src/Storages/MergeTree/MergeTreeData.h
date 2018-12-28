@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -24,6 +23,8 @@
 
 namespace DB
 {
+
+class AlterCommands;
 
 namespace ErrorCodes
 {
@@ -479,13 +480,11 @@ public:
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.
-    /// If new_primary_key_expr_list is not nullptr, will prepare the new primary.idx file.
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
-        const ASTPtr & new_primary_key_expr_list,
         bool skip_sanity_checks);
 
     /// Freezes all parts.
@@ -578,6 +577,7 @@ public:
     Names minmax_idx_columns;
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
+    Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;

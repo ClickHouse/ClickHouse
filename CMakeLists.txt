@@ -25,18 +25,6 @@ endif ()
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-set(PARALLEL_COMPILE_JOBS "" CACHE STRING "Define the maximum number of concurrent compilation jobs")
-if (PARALLEL_COMPILE_JOBS)
-    set_property(GLOBAL APPEND PROPERTY JOB_POOLS compile_job_pool="${PARALLEL_COMPILE_JOBS}")
-    set(CMAKE_JOB_POOL_COMPILE compile_job_pool)
-endif ()
-
-set(PARALLEL_LINK_JOBS "" CACHE STRING "Define the maximum number of concurrent link jobs")
-if (LLVM_PARALLEL_LINK_JOBS)
-    set_property(GLOBAL APPEND PROPERTY JOB_POOLS link_job_pool=${PARALLEL_LINK_JOBS})
-    set(CMAKE_JOB_POOL_LINK link_job_pool)
-endif ()
-
 include (cmake/find_ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -127,7 +115,10 @@ endif ()
 
 include (cmake/test_cpu.cmake)
 
-option (ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
+if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
+    option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
+endif()
+
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -march=native")
 endif ()
@@ -159,43 +150,8 @@ set (CMAKE_C_FLAGS                       "${CMAKE_C_FLAGS} ${COMPILER_FLAGS} -fn
 set (CMAKE_C_FLAGS_RELWITHDEBINFO        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -O3 ${CMAKE_C_FLAGS_ADD}")
 set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 -fno-inline ${CMAKE_C_FLAGS_ADD}")
 
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package (Threads)
 
-include (cmake/test_compiler.cmake)
-
-if (OS_LINUX AND COMPILER_CLANG)
-    option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++ (only make sense on Linux with Clang)" ${HAVE_LIBCXX})
-
-    if (USE_LIBCXX)
-        set (CMAKE_CXX_FLAGS             "${CMAKE_CXX_FLAGS} -stdlib=libc++") # Ok for clang6, for older can cause 'not used option' warning
-        set (CMAKE_CXX_FLAGS_DEBUG       "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.
-        if (MAKE_STATIC_LIBRARIES)
-            execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
-            link_libraries (-nodefaultlibs -Wl,-Bstatic -stdlib=libc++ c++ c++abi gcc_eh ${BUILTINS_LIB_PATH} rt -Wl,-Bdynamic dl pthread m c)
-        else ()
-            link_libraries (-stdlib=libc++ c++ c++abi)
-        endif ()
-    endif ()
-endif ()
-
-if (COMPILER_GCC)
-    set (STATIC_STDLIB_FLAGS "-static-libgcc -static-libstdc++")
-else ()
-    set (STATIC_STDLIB_FLAGS "")
-endif ()
-
-if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (COMPILER_CLANG AND OS_FREEBSD))
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
-
-    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${STATIC_STDLIB_FLAGS}")
-endif ()
-
-if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
-    set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
-    set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
-endif ()
+include (cmake/use_libcxx.cmake)
 
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -257,6 +213,7 @@ include (cmake/find_odbc.cmake)
 # openssl, zlib, odbc before poco
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
+include (cmake/find_xxhash.cmake)
 include (cmake/find_sparsehash.cmake)
 include (cmake/find_rt.cmake)
 include (cmake/find_execinfo.cmake)

@@ -26,7 +26,7 @@ namespace
         Block block;
 
         if (dict_struct.id)
-            block.insert(ColumnWithTypeAndName {ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
+            block.insert(ColumnWithTypeAndName{ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
 
         if (dict_struct.key)
         {
@@ -35,7 +35,7 @@ namespace
                 auto column = attribute.type->createColumn();
                 column->insertDefault();
 
-                block.insert(ColumnWithTypeAndName {std::move(column), attribute.type, attribute.name});
+                block.insert(ColumnWithTypeAndName{std::move(column), attribute.type, attribute.name});
             }
         }
 
@@ -47,7 +47,7 @@ namespace
                 auto column = type->createColumn();
                 column->insertDefault();
 
-                block.insert(ColumnWithTypeAndName {std::move(column), type, attribute->name});
+                block.insert(ColumnWithTypeAndName{std::move(column), type, attribute->name});
             }
         }
 
@@ -56,7 +56,7 @@ namespace
             auto column = attribute.type->createColumn();
             column->insert(attribute.null_value);
 
-            block.insert(ColumnWithTypeAndName {std::move(column), attribute.type, attribute.name});
+            block.insert(ColumnWithTypeAndName{std::move(column), attribute.type, attribute.name});
         }
 
         return block;
@@ -71,7 +71,6 @@ DictionarySourceFactory::DictionarySourceFactory() : log(&Poco::Logger::get("Dic
 
 void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
 {
-    LOG_DEBUG(log, "Register dictionary source type `" + source_type + "`");
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
         throw Exception("DictionarySourceFactory: the source name '" + source_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
@@ -86,8 +85,8 @@ DictionarySourcePtr DictionarySourceFactory::create(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
     if (keys.size() != 1)
-        throw Exception {name + ": element dictionary.source should have exactly one child element",
-                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
+        throw Exception{name + ": element dictionary.source should have exactly one child element",
+                        ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
     auto sample_block = createSampleBlock(dict_struct);
 
@@ -102,7 +101,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
         }
     }
 
-    throw Exception {name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
+    throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
 }

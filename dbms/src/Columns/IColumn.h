@@ -45,7 +45,7 @@ public:
     /** If column isn't constant, returns nullptr (or itself).
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       */
-    virtual Ptr convertToFullColumnIfConst() const { return {}; }
+    virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
     /// If column isn't ColumnLowCardinality, return itself.
     /// If column is ColumnLowCardinality, transforms is to full column.
@@ -142,13 +142,6 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     /// Parameter length could be ignored if column values have fixed size.
     virtual void insertData(const char * pos, size_t length) = 0;
-
-    /// Like getData, but has special behavior for columns that contain variable-length strings.
-    /// In this special case inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
-    virtual void insertDataWithTerminatingZero(const char * pos, size_t length)
-    {
-        insertData(pos, length);
-    }
 
     /// Appends "default value".
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.

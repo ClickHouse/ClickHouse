@@ -3,12 +3,11 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-extern const int TOO_MANY_COLUMNS;
-extern const int TOO_MANY_ROWS;
-extern const int RECEIVED_EMPTY_DATA;
+    extern const int TOO_MANY_COLUMNS;
+    extern const int TOO_MANY_ROWS;
+    extern const int RECEIVED_EMPTY_DATA;
 }
 
 std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)

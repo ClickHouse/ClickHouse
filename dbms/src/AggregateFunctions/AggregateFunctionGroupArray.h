@@ -36,7 +36,7 @@ template <typename T>
 struct GroupArrayNumericData
 {
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedArenaAllocator<4096>;
+    using Allocator = MixedAlignedArenaAllocator<alignof(T), 4096>;
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;
@@ -77,12 +77,14 @@ public:
 
         if (!limit_num_elems)
         {
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+            if (rhs_elems.value.size())
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
         }
         else
         {
             UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+            if (elems_to_insert)
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
         }
     }
 
@@ -119,10 +121,13 @@ public:
         ColumnArray & arr_to = static_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
-        offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+        offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-        data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        }
     }
 
     bool allocatesMemoryInArena() const override
@@ -370,7 +375,7 @@ public:
         auto & column_array = static_cast<ColumnArray &>(to);
 
         auto & offsets = column_array.getOffsets();
-        offsets.push_back((offsets.size() == 0 ? 0 : offsets.back()) + data(place).elems);
+        offsets.push_back(offsets.back() + data(place).elems);
 
         auto & column_data = column_array.getData();
 

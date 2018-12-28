@@ -1,23 +1,30 @@
-#include <optional>
+#include <Databases/IDatabase.h>
+
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
 #include <Common/localBackup.h>
+
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/PartLog.h>
+
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/queryToString.h>
+
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Databases/IDatabase.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/PartLog.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Parsers/queryToString.h>
+
+#include <optional>
 
 
 namespace DB
@@ -210,24 +217,12 @@ void StorageMergeTree::alter(
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
 
-    ASTPtr primary_expr_list_for_altering_parts;
-    for (const AlterCommand & param : params)
-    {
-        if (param.type == AlterCommand::MODIFY_PRIMARY_KEY)
-        {
-            if (supportsSampling())
-                throw Exception("MODIFY PRIMARY KEY only supported for tables without sampling key", ErrorCodes::BAD_ARGUMENTS);
-
-            primary_expr_list_for_altering_parts = MergeTreeData::extractKeyExpressionList(param.primary_key);
-        }
-    }
-
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, primary_expr_list_for_altering_parts, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
             transactions.push_back(std::move(transaction));
     }
 
@@ -238,19 +233,7 @@ void StorageMergeTree::alter(
         auto & storage_ast = typeid_cast<ASTStorage &>(ast);
 
         if (new_order_by_ast.get() != data.order_by_ast.get())
-        {
-            if (storage_ast.order_by)
-            {
-                /// The table was created using the "new" syntax (with key expressions in separate clauses).
-                storage_ast.set(storage_ast.order_by, new_order_by_ast);
-            }
-            else
-            {
-                /// Primary key is in the second place in table engine description and can be represented as a tuple.
-                /// TODO: Not always in second place. If there is a sampling key, then the third one. Fix it.
-                storage_ast.engine->arguments->children.at(1) = new_order_by_ast;
-            }
-        }
+            storage_ast.set(storage_ast.order_by, new_order_by_ast);
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
@@ -266,9 +249,6 @@ void StorageMergeTree::alter(
 
     /// Columns sizes could be changed
     data.recalculateColumnSizes();
-
-    if (primary_expr_list_for_altering_parts)
-        data.loadDataParts(false);
 }
 
 
@@ -418,13 +398,13 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+            UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
             if (max_source_parts_size > 0)
                 selected = merger_mutator.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
         }
         else
         {
-            size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
+            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
@@ -608,13 +588,13 @@ bool StorageMergeTree::tryMutatePart()
 }
 
 
-bool StorageMergeTree::backgroundTask()
+BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 {
     if (shutdown_called)
-        return false;
+        return BackgroundProcessingPoolTaskResult::ERROR;
 
     if (merger_mutator.actions_blocker.isCancelled())
-        return false;
+        return BackgroundProcessingPoolTaskResult::ERROR;
 
     try
     {
@@ -628,16 +608,19 @@ bool StorageMergeTree::backgroundTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
-            return true;
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        return tryMutatePart();
+        if (tryMutatePart())
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+        else
+            return BackgroundProcessingPoolTaskResult::ERROR;
     }
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
             LOG_INFO(log, e.message());
-            return false;
+            return BackgroundProcessingPoolTaskResult::ERROR;
         }
 
         throw;
@@ -725,7 +708,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, nullptr, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);

@@ -55,26 +55,6 @@ public:
         return locus;
     }
 
-    void readText(ReadBuffer & in)
-    {
-        for (size_t i = 0; i < BITSET_SIZE; ++i)
-        {
-            if (i != 0)
-                assertChar(',', in);
-            readIntText(bitset[i], in);
-        }
-    }
-
-    void writeText(WriteBuffer & out) const
-    {
-        for (size_t i = 0; i < BITSET_SIZE; ++i)
-        {
-            if (i != 0)
-                writeCString(",", out);
-            writeIntText(bitset[i], out);
-        }
-    }
-
 private:
     /// number of bytes in bitset
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
@@ -165,7 +145,9 @@ private:
     bool fits_in_byte;
 };
 
-/** The `Locus` structure contains the necessary information to find for each cell
+/** TODO This code looks very suboptimal.
+  *
+  * The `Locus` structure contains the necessary information to find for each cell
   * the corresponding byte and offset, in bits, from the beginning of the cell. Since in general
   * case the size of one byte is not divisible by the size of one cell, cases possible
   * when one cell overlaps two bytes. Therefore, the `Locus` structure contains two
@@ -219,13 +201,20 @@ private:
 
     void ALWAYS_INLINE init(BucketIndex bucket_index)
     {
+        /// offset in bits to the leftmost bit
         size_t l = static_cast<size_t>(bucket_index) * content_width;
-        index_l = l >> 3;
-        offset_l = l & 7;
 
-        size_t r = static_cast<size_t>(bucket_index + 1) * content_width;
-        index_r = r >> 3;
-        offset_r = r & 7;
+        /// offset of byte that contains the leftmost bit
+        index_l = l / 8;
+
+        /// offset in bits to the leftmost bit at that byte
+        offset_l = l % 8;
+
+        /// offset of byte that contains the rightmost bit
+        index_r = (l + content_width - 1) / 8;
+
+        /// offset in bits to the next to the rightmost bit at that byte; or zero if the rightmost bit is the rightmost bit in that byte.
+        offset_r = (l + content_width) % 8;
     }
 
     UInt8 ALWAYS_INLINE read(UInt8 value_l) const

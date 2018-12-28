@@ -4,12 +4,13 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <DataStreams/AddingDefaultBlockInputStream.h>
+#include <DataStreams/AddingMissedBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -198,7 +199,7 @@ BlockInputStreams StorageBuffer::read(
                 streams_from_dst = destination->read(columns_intersection, query_info, context, processed_stage, max_block_size, num_streams);
                 for (auto & stream : streams_from_dst)
                 {
-                    stream = std::make_shared<AddingDefaultBlockInputStream>(
+                    stream = std::make_shared<AddingMissedBlockInputStream>(
                                 stream, header_after_adding_defaults, getColumns().defaults, context);
                     stream = std::make_shared<ConvertingBlockInputStream>(
                                 context, stream, header, ConvertingBlockInputStream::MatchColumnsMode::Name);

@@ -31,6 +31,18 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using ASTs = std::vector<ASTPtr>;
 
+class ISemantic;
+using SemanticPtr = std::shared_ptr<ISemantic>;
+
+/// Interfase to set additional information to IAST. Derived classes should be named according to their AST nodes' types:
+/// ASTIdentifier => SemanticIdentifer, ASTSome => SemanticSome, ...
+class ISemantic
+{
+public:
+    virtual ~ISemantic() = default;
+    virtual SemanticPtr clone() const = 0;
+};
+
 class WriteBuffer;
 
 
@@ -44,6 +56,7 @@ public:
 
     /// This pointer does not allow it to be deleted while the range refers to it.
     StringPtr owned_string;
+    SemanticPtr semantic;
 
     virtual ~IAST() = default;
 
@@ -67,7 +80,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID() const = 0;
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 

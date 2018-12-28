@@ -174,7 +174,9 @@ MergeTreeData::MergeTreeData(
     else if (Poco::File(version_file_path).exists())
     {
         ReadBufferFromFile buf(version_file_path);
-        readIntText(format_version, buf);
+        UInt32 read_format_version;
+        readIntText(read_format_version, buf);
+        format_version = read_format_version;
         if (!buf.eof())
             throw Exception("Bad version file: " + version_file_path, ErrorCodes::CORRUPTED_DATA);
     }
@@ -410,6 +412,25 @@ void MergeTreeData::initPartitionKey()
             {
                 /// There is more than one Date column in partition key and we don't know which one to choose.
                 minmax_idx_date_column_pos = -1;
+            }
+        }
+    }
+    if (!encountered_date_column)
+    {
+        for (size_t i = 0; i < minmax_idx_column_types.size(); ++i)
+        {
+            if (typeid_cast<const DataTypeDateTime *>(minmax_idx_column_types[i].get()))
+            {
+                if (!encountered_date_column)
+                {
+                    minmax_idx_time_column_pos = i;
+                    encountered_date_column = true;
+                }
+                else
+                {
+                    /// There is more than one DateTime column in partition key and we don't know which one to choose.
+                   minmax_idx_time_column_pos = -1;
+                }
             }
         }
     }
@@ -1210,7 +1231,6 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
-    const ASTPtr & new_primary_key_expr_list,
     bool skip_sanity_checks)
 {
     ExpressionActionsPtr expression;
@@ -1271,63 +1291,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
 
     DataPart::Checksums add_checksums;
 
-    /// Update primary key if needed.
-    size_t new_primary_key_file_size{};
-    MergeTreeDataPartChecksum::uint128 new_primary_key_hash{};
-
-    if (new_primary_key_expr_list)
-    {
-        ASTPtr query = new_primary_key_expr_list;
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, new_columns);
-        ExpressionActionsPtr new_primary_expr = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
-        Block new_primary_key_sample = new_primary_expr->getSampleBlock();
-        size_t new_key_size = new_primary_key_sample.columns();
-
-        Columns new_index(new_key_size);
-
-        /// Copy the existing primary key columns. Fill new columns with default values.
-        /// NOTE default expressions are not supported.
-
-        ssize_t prev_position_of_existing_column = -1;
-        for (size_t i = 0; i < new_key_size; ++i)
-        {
-            const String & column_name = new_primary_key_sample.safeGetByPosition(i).name;
-
-            if (primary_key_sample.has(column_name))
-            {
-                ssize_t position_of_existing_column = primary_key_sample.getPositionByName(column_name);
-
-                if (position_of_existing_column < prev_position_of_existing_column)
-                    throw Exception("Permuting of columns of primary key is not supported", ErrorCodes::BAD_ARGUMENTS);
-
-                new_index[i] = part->index.at(position_of_existing_column);
-                prev_position_of_existing_column = position_of_existing_column;
-            }
-            else
-            {
-                const IDataType & type = *new_primary_key_sample.safeGetByPosition(i).type;
-                new_index[i] = type.createColumnConstWithDefaultValue(part->marks_count)->convertToFullColumnIfConst();
-            }
-        }
-
-        if (prev_position_of_existing_column == -1)
-            throw Exception("No common columns while modifying primary key", ErrorCodes::BAD_ARGUMENTS);
-
-        String index_tmp_path = full_path + part->name + "/primary.idx.tmp";
-        WriteBufferFromFile index_file(index_tmp_path);
-        HashingWriteBuffer index_stream(index_file);
-
-        for (size_t i = 0, marks_count = part->marks_count; i < marks_count; ++i)
-            for (size_t j = 0; j < new_key_size; ++j)
-                new_primary_key_sample.getByPosition(j).type->serializeBinary(*new_index[j].get(), i, index_stream);
-
-        transaction->rename_map["primary.idx.tmp"] = "primary.idx";
-
-        index_stream.next();
-        new_primary_key_file_size = index_stream.count();
-        new_primary_key_hash = index_stream.getHash();
-    }
-
     if (transaction->rename_map.empty() && !force_update_metadata)
     {
         transaction->clear();
@@ -1374,12 +1337,6 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
             new_checksums.files.erase(it.first);
         else
             new_checksums.files[it.second] = add_checksums.files[it.first];
-    }
-
-    if (new_primary_key_file_size)
-    {
-        new_checksums.files["primary.idx"].file_size = new_primary_key_file_size;
-        new_checksums.files["primary.idx"].file_hash = new_primary_key_hash;
     }
 
     /// Write the checksums to the temporary file.
@@ -1451,7 +1408,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
                 file.remove();
         }
 
-        mutable_part.bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(path);
+        mutable_part.bytes_on_disk = new_checksums.getTotalSizeOnDisk();
 
         /// TODO: we can skip resetting caches when the column is added.
         data_part->storage.context.dropCaches();
@@ -2274,7 +2231,8 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
         MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
-        if (!input_stream.read(columns))
+        RowReadExtension unused;
+        if (!input_stream.read(columns, unused))
             throw Exception(
                 "Could not parse partition value: `" + partition_ast.fields_str.toString() + "`",
                 ErrorCodes::INVALID_PARTITION_VALUE);

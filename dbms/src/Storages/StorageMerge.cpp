@@ -9,6 +9,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/AlterCommands.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -236,7 +237,7 @@ BlockInputStreams StorageMerge::read(
         else
         {
             source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(
-                header, [=, &real_column_names, &modified_context]() -> BlockInputStreamPtr
+                header, [=]() mutable -> BlockInputStreamPtr
                 {
                     BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
                                                                     header, storage, struct_lock, real_column_names,
