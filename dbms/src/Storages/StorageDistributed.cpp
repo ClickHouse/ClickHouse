@@ -11,6 +11,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>

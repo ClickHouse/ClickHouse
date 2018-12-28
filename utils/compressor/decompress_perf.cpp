@@ -10,7 +10,7 @@
 #include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/LZ4_decompress_faster.h>
 #include <IO/copyData.h>

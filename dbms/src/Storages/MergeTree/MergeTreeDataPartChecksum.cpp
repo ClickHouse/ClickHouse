@@ -201,7 +201,7 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 {
     writeString("checksums format version: 4\n", to);
 
-    CompressedWriteBuffer out{to, CompressionSettings(CompressionMethod::LZ4), 1 << 16};
+    CompressedWriteBuffer out{to, CompressionCodecFactory::instance().getDefaultCodec(), 1 << 16};
 
     writeVarUInt(files.size(), out);
 

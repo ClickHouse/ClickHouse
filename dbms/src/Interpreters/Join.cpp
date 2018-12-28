@@ -354,7 +354,7 @@ namespace
                  * We will insert each time the element into the second place.
                  * That is, the former second element, if it was, will be the third, and so on.
                  */
-                auto elem = reinterpret_cast<typename Map::mapped_type *>(pool.alloc(sizeof(typename Map::mapped_type)));
+                auto elem = pool.alloc<typename Map::mapped_type>();
 
                 elem->next = it->second.next;
                 it->second.next = elem;

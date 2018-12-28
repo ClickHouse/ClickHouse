@@ -666,6 +666,12 @@ private:
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
+            {   /// disable logs if expects errors
+                TestHint test_hint(test_mode, text);
+                if (test_hint.clientError() || test_hint.serverError())
+                    process("SET send_logs_level = 'none'");
+            }
+
             /// Several queries separated by ';'.
             /// INSERT data is ended by the end of line, not ';'.
 
