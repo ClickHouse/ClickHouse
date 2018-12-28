@@ -5,6 +5,7 @@
 #include <iostream>
 #include <Core/Types.h>
 #include <Common/Exception.h>
+#include <Parsers/Lexer.h>
 
 
 namespace DB
@@ -27,25 +28,26 @@ public:
         if (!enabled_)
             return;
 
-        /// TODO: This is absolutely wrong. Fragment may be contained inside string literal.
-        size_t pos = query.find("--");
+        String full_comment;
+        Lexer lexer(query.data(), query.data() + query.size());
 
-        if (pos != String::npos && query.find("--", pos + 2) != String::npos)
-            return; /// It's not last comment. Hint belongs to commented query. /// TODO Absolutely wrong: there maybe the following comment for the next query.
-
-        if (pos != String::npos)
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
         {
-            /// TODO: This is also wrong. Comment may already have ended by line break.
-            pos = query.find('{', pos + 2);
+            if (token.type == TokenType::Comment)
+                full_comment += String(token.begin, token.begin + token.size()) + ' ';
+        }
 
-            if (pos != String::npos)
+        if (!full_comment.empty())
+        {
+            size_t pos_start = full_comment.find('{', 0);
+            if (pos_start != String::npos)
             {
-                String hint = query.substr(pos + 1);
-
-                /// TODO: And this is wrong for the same reason.
-                pos = hint.find('}');
-                hint.resize(pos);
-                parse(hint);
+                size_t pos_end = full_comment.find('}', pos_start);
+                if (pos_end != String::npos)
+                {
+                    String hint(full_comment.begin() + pos_start + 1, full_comment.begin() + pos_end);
+                    parse(hint);
+                }
             }
         }
     }
