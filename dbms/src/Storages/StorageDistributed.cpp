@@ -360,7 +360,7 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::truncate(const ASTPtr &)
+void StorageDistributed::truncate(const ASTPtr &, const Context &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
