@@ -58,7 +58,7 @@ class ClickHouseTable:
         result = self.client.query(query.format(model_name, columns, self.table_name))
 
         def parse_row(row):
-            values = tuple(map(float, filter(len, map(str.strip, row))))
+            values = tuple(map(float, filter(len, map(str.strip, row.split()))))
             return values if len(values) != 1 else values[0]
 
         return tuple(map(parse_row, filter(len, map(str.strip, result.split('\n')))))
