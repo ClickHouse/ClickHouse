@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
+#include <common/unaligned.h>
 #include <ext/range.h>
 #include <stdint.h>
 #include <string.h>
@@ -121,9 +122,9 @@ protected:
     CRTP & self() { return static_cast<CRTP &>(*this); }
     const CRTP & self() const { return const_cast<VolnitskyBase *>(this)->self(); }
 
-    static const Ngram & toNGram(const UInt8 * const pos)
+    static Ngram toNGram(const UInt8 * const pos)
     {
-        return *reinterpret_cast<const Ngram *>(pos);
+        return unalignedLoad<Ngram>(pos);
     }
 
     void putNGramBase(const Ngram ngram, const int offset)

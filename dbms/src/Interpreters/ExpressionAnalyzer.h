@@ -232,8 +232,7 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
-      * as well as the columns added by JOIN (`columns_added_by_join`).
+      * At the same time, form a set of columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
 
