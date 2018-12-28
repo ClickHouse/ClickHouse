@@ -77,12 +77,14 @@ public:
 
         if (!limit_num_elems)
         {
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
+            if (rhs_elems.value.size())
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.end(), arena);
         }
         else
         {
             UInt64 elems_to_insert = std::min(static_cast<size_t>(max_elems) - cur_elems.value.size(), rhs_elems.value.size());
-            cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
+            if (elems_to_insert)
+                cur_elems.value.insert(rhs_elems.value.begin(), rhs_elems.value.begin() + elems_to_insert, arena);
         }
     }
 
@@ -121,8 +123,11 @@ public:
 
         offsets_to.push_back(offsets_to.back() + size);
 
-        typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-        data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        if (size)
+        {
+            typename ColumnVector<T>::Container & data_to = static_cast<ColumnVector<T> &>(arr_to.getData()).getData();
+            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+        }
     }
 
     bool allocatesMemoryInArena() const override

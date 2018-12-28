@@ -10,7 +10,7 @@ struct NegateImpl
 {
     using ResultType = std::conditional_t<IsDecimalNumber<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
 
-    static inline ResultType apply(A a)
+    static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
         return -static_cast<ResultType>(a);
     }

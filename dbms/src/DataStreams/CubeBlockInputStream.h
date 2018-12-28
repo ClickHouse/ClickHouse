@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Common/Arena.h>
 #include <Interpreters/Aggregator.h>
 #include <Core/ColumnNumbers.h>
 

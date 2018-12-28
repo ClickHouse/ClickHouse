@@ -1,9 +1,10 @@
-#include <IO/CompressedStream.h>
-#include <IO/CompressionSettings.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/CompressionInfo.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ namespace ErrorCodes
             <min_part_size>10000000000</min_part_size>         <!-- The minimum size of a part in bytes. -->
             <min_part_size_ratio>0.01</min_part_size_ratio>    <!-- The minimum size of the part relative to all the data in the table. -->
 
-            <! - Which compression method to choose. ->
+            <!-- Which compression method to choose. -->
             <method>zstd</method>
             <level>2</level>
         </case>
@@ -37,35 +38,25 @@ namespace ErrorCodes
         </case>
     </compression>
   */
-class CompressionSettingsSelector
+class CompressionCodecSelector
 {
 private:
     struct Element
     {
         size_t min_part_size = 0;
         double min_part_size_ratio = 0;
-        CompressionSettings settings = CompressionSettings(CompressionMethod::LZ4);
+        std::string family_name;
+        std::optional<int> level;
 
-        static CompressionMethod compressionMethodFromString(const std::string & name)
-        {
-            if (name == "lz4")
-                return CompressionMethod::LZ4;
-            else if (name == "zstd")
-                return CompressionMethod::ZSTD;
-            else if (name == "none")
-                return CompressionMethod::NONE;
-            else
-                throw Exception("Unknown compression method " + name, ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        }
 
         Element(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
         {
             min_part_size = config.getUInt64(config_prefix + ".min_part_size", 0);
             min_part_size_ratio = config.getDouble(config_prefix + ".min_part_size_ratio", 0);
 
-            CompressionMethod method = compressionMethodFromString(config.getString(config_prefix + ".method"));
-            int level = config.getInt64(config_prefix + ".level", CompressionSettings::getDefaultLevel(method));
-            settings = CompressionSettings(method, level);
+            family_name = config.getString(config_prefix + ".method", "lz4");
+            if (config.has(config_prefix + ".level"))
+                level = config.getInt64(config_prefix + ".level");
         }
 
         bool check(size_t part_size, double part_size_ratio) const
@@ -78,9 +69,9 @@ private:
     std::vector<Element> elements;
 
 public:
-    CompressionSettingsSelector() {}    /// Always returns the default method.
+    CompressionCodecSelector() {}    /// Always returns the default method.
 
-    CompressionSettingsSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    CompressionCodecSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
@@ -94,13 +85,14 @@ public:
         }
     }
 
-    CompressionSettings choose(size_t part_size, double part_size_ratio) const
+    CompressionCodecPtr choose(size_t part_size, double part_size_ratio) const
     {
-        CompressionSettings res = CompressionSettings(CompressionMethod::LZ4);
+        const auto & factory = CompressionCodecFactory::instance();
+        CompressionCodecPtr res = factory.getDefaultCodec();
 
         for (const auto & element : elements)
             if (element.check(part_size, part_size_ratio))
-                res = element.settings;
+                res = factory.get(element.family_name, element.level);
 
         return res;
     }

@@ -102,7 +102,10 @@ public:
     }
 
 protected:
+    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
+
     const char * getName() const { return "column declaration"; }
+
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 
     bool require_type = true;
@@ -120,8 +123,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
     ParserKeyword s_comment{"COMMENT"};
+    ParserKeyword s_codec{"CODEC"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
+    ParserCodec codec_parser;
 
     /// mandatory column name
     ASTPtr name;
@@ -135,11 +140,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     String default_specifier;
     ASTPtr default_expression;
     ASTPtr comment_expression;
+    ASTPtr codec_expression;
 
     if (!s_default.check_without_moving(pos, expected) &&
         !s_materialized.check_without_moving(pos, expected) &&
         !s_alias.check_without_moving(pos, expected) &&
-        !s_comment.check_without_moving(pos, expected))
+        !s_comment.check_without_moving(pos, expected) &&
+        !s_codec.check_without_moving(pos, expected))
     {
         if (!type_parser.parse(pos, type, expected))
             return false;
@@ -166,9 +173,16 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    if (s_codec.ignore(pos, expected))
+    {
+        if (!codec_parser.parse(pos, codec_expression, expected))
+            return false;
+    }
+
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
     column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
+
     if (type)
     {
         column_declaration->type = type;
@@ -186,6 +200,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->comment = comment_expression;
         column_declaration->children.push_back(std::move(comment_expression));
+    }
+
+    if (codec_expression)
+    {
+        column_declaration->codec = codec_expression;
+        column_declaration->children.push_back(std::move(codec_expression));
     }
 
     return true;

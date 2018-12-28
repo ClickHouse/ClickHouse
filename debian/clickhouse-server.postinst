@@ -79,7 +79,7 @@ Please fix this and reinstall this package." >&2
         rm -fv ${CLICKHOUSE_CONFDIR}/*-preprocessed.xml ||:
     fi
 
-    ln -s ${CLICKHOUSE_DATADIR}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:
+    [ -e ${CLICKHOUSE_CONFDIR}/preprocessed ] || ln -s ${CLICKHOUSE_DATADIR}/preprocessed_configs ${CLICKHOUSE_CONFDIR}/preprocessed ||:
 
     if [ ! -d ${CLICKHOUSE_LOGDIR} ]; then
         mkdir -p ${CLICKHOUSE_LOGDIR}

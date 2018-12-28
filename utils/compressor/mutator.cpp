@@ -8,7 +8,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/PODArray.h>
