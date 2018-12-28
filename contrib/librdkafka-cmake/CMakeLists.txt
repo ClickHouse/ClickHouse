@@ -14,7 +14,7 @@ ${RDKAFKA_SOURCE_DIR}/rdkafka_cgrp.c
 ${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c
 ${RDKAFKA_SOURCE_DIR}/rdkafka_event.c
 ${RDKAFKA_SOURCE_DIR}/rdkafka_feature.c
-${RDKAFKA_SOURCE_DIR}/rdkafka_lz4.c
+#${RDKAFKA_SOURCE_DIR}/rdkafka_lz4.c
 ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata.c
 ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata_cache.c
 ${RDKAFKA_SOURCE_DIR}/rdkafka_msg.c
@@ -47,10 +47,10 @@ ${RDKAFKA_SOURCE_DIR}/rdunittest.c
 ${RDKAFKA_SOURCE_DIR}/rdvarint.c
 ${RDKAFKA_SOURCE_DIR}/snappy.c
 ${RDKAFKA_SOURCE_DIR}/tinycthread.c
-${RDKAFKA_SOURCE_DIR}/xxhash.c
-${RDKAFKA_SOURCE_DIR}/lz4.c
-${RDKAFKA_SOURCE_DIR}/lz4frame.c
-${RDKAFKA_SOURCE_DIR}/lz4hc.c
+#${RDKAFKA_SOURCE_DIR}/xxhash.c
+#${RDKAFKA_SOURCE_DIR}/lz4.c
+#${RDKAFKA_SOURCE_DIR}/lz4frame.c
+#${RDKAFKA_SOURCE_DIR}/lz4hc.c
 ${RDKAFKA_SOURCE_DIR}/rdgz.c
 )
 
