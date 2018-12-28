@@ -2,7 +2,8 @@
 #include <iomanip>
 #include <limits>
 
-#include <IO/CachedCompressedReadBuffer.h>
+#include <Compression/CompressionFactory.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 

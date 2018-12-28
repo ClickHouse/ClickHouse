@@ -1,8 +1,9 @@
+#include "CachedCompressedReadBuffer.h"
+
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/CachedCompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressedStream.h>
-#include <IO/LZ4_decompress_faster.h>
+#include <Compression/CompressionInfo.h>
+#include <Compression/LZ4_decompress_faster.h>
 
 
 namespace DB
@@ -30,7 +31,6 @@ void CachedCompressedReadBuffer::initInput()
 bool CachedCompressedReadBuffer::nextImpl()
 {
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
-
     UInt128 key = cache->hash(path, file_pos);
     owned_cell = cache->get(key);
 
@@ -42,14 +42,15 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         owned_cell = std::make_shared<UncompressedCacheCell>();
 
+
         size_t size_decompressed;
         size_t size_compressed_without_checksum;
         owned_cell->compressed_size = readCompressedData(size_decompressed, size_compressed_without_checksum);
 
         if (owned_cell->compressed_size)
         {
-            owned_cell->data.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-            decompress(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
+            owned_cell->data.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+            decompress(owned_cell->data.data(), size_decompressed, owned_cell->compressed_size);
 
             /// Put data into cache.
             cache->set(key, owned_cell);
@@ -62,7 +63,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         return false;
     }
 
-    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - codec->getAdditionalSizeAtTheEndOfBuffer());
 
     file_pos += owned_cell->compressed_size;
 
