@@ -95,6 +95,20 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
+
+
+
+if (USE_LIBCXX)
+    if (MAKE_STATIC_LIBRARIES)
+        execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a
+            OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        set (DEFAULT_LIBS -nodefaultlibs
+            -Wl,-Bstatic -stdlib=libc++ ${LIBCXX_LIBRARY} ${LIBCXXABI_LIBRARY} gcc_eh ${BUILTINS_LIB_PATH} rt
+            -Wl,-Bdynamic dl pthread m c)
+    endif ()
+endif()
+
+
 target_link_libraries (common
         PRIVATE
     pocoext
@@ -107,9 +121,11 @@ target_link_libraries (common
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
+    ${DEFAULT_LIBS}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${MEMCPY_LIBRARIES})
+    ${MEMCPY_LIBRARIES}
+)
 
 if (RT_LIBRARY)
     target_link_libraries (common PRIVATE ${RT_LIBRARY})
