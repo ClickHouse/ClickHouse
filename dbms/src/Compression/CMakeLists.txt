@@ -4,6 +4,13 @@ add_library(clickhouse_compression ${LINK_MODE} ${clickhouse_compression_headers
 target_link_libraries(clickhouse_compression PRIVATE clickhouse_parsers clickhouse_common_io ${ZSTD_LIBRARY} ${LZ4_LIBRARY})
 target_include_directories(clickhouse_compression PUBLIC ${DBMS_INCLUDE_DIR})
 
-#if(ENABLE_TESTS)
-#    add_subdirectory(tests)
-#endif()
+if (NOT USE_INTERNAL_LZ4_LIBRARY)
+    target_include_directories(clickhouse_compression SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+endif ()
+if (NOT USE_INTERNAL_ZSTD_LIBRARY)
+    target_include_directories(clickhouse_compression SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+endif ()
+
+if(ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()

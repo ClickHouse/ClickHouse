@@ -157,8 +157,6 @@ target_link_libraries (clickhouse_common_io
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
-    #${LZ4_LIBRARY}
-    #${ZSTD_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     pocoext
         PUBLIC
@@ -277,13 +275,6 @@ if (USE_HDFS)
     target_link_libraries (dbms PRIVATE ${HDFS3_LIBRARY})
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
 endif()
-
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
-endif ()
-if (NOT USE_INTERNAL_ZSTD_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
-endif ()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
