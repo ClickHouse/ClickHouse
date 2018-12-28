@@ -7,36 +7,44 @@
 #include <Core/Block.h>
 #include <ext/singleton.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
 namespace DB
 {
 
+class MergeTreeIndexPart
+{
+public:
+    virtual ~MergeTreeIndexPart() {};
 
-/// Interface for secondary MergeTree indexes
+    virtual void update(const Block & block, const Names & column_names) = 0;
+    virtual void merge(const MergeTreeIndexPart & other) = 0;
+};
+
+using MergeTreeIndexPartPtr = std::unique_ptr<MergeTreeIndexPart>;
+using MergeTreeIndexParts = std::vector<MergeTreeIndexPartPtr>;
+
+
 class MergeTreeIndex
 {
 public:
+    MergeTreeIndex(String name, ExpressionActionsPtr expr, Block key)
+            : name(name), expr(expr), sample(key) {}
+
     virtual ~MergeTreeIndex() {};
 
-    virtual void load(const String & part_path) = 0;
-    virtual void store(const String & part_path, MergeTreeDataPartChecksums & checksums) const = 0;
-
-    virtual void update(const Block & block, const Names & column_names) = 0;
-    virtual void merge(const MergeTreeIndex & other) = 0;
-
     virtual bool alwaysUnknownOrTrue() const = 0;
-    virtual bool maybeTrue() const = 0;
+    virtual bool maybeTrue(/* args */) const = 0;
+
+    virtual MergeTreeIndexPartPtr createEmptyIndexPart() const = 0;
 
     String name;
     ExpressionActionsPtr expr;
-    Block header;
+    Block sample;
 };
 
 using MergeTreeIndexPtr = std::unique_ptr<MergeTreeIndex>;
 using MergeTreeIndexes = std::vector<MergeTreeIndexPtr>;
-
 
 class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
 {
