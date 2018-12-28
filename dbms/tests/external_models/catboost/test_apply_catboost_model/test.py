@@ -281,7 +281,7 @@ def test_apply_multiclass():
     }
 
     model = train_catboost_model(train_df, train_target, ['c', 'd'], params)
-    pred_python = model.predict(test_df)
+    pred_python = model.predict(test_df)[:,0].astype(int)
 
     server = ClickHouseServerWithCatboostModels(name, CLICKHOUSE_TESTS_SERVER_BIN_PATH, PORT)
     server.add_model(name, model)
