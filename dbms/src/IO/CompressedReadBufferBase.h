@@ -2,6 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <IO/LZ4_decompress_faster.h>
+#include <Compression/ICompressionCodec.h>
 
 
 namespace DB
@@ -25,9 +26,6 @@ protected:
     /// Don't checksum on decompressing.
     bool disable_checksum = false;
 
-    LZ4::PerformanceStatistics lz4_stat;
-
-
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     /// Returns number of compressed bytes read.
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum);
@@ -47,6 +45,9 @@ public:
     {
         disable_checksum = true;
     }
+
+public:
+    CompressionCodecPtr codec;
 };
 
 }

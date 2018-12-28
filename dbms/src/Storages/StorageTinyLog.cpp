@@ -26,6 +26,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/typeid_cast.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -136,7 +137,7 @@ private:
     {
         Stream(const std::string & data_path, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionSettings(CompressionMethod::LZ4), max_compress_block_size)
+            compressed(plain, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size)
         {
         }
 
