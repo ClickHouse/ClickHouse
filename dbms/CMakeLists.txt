@@ -159,7 +159,6 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
     common
         PRIVATE
-    clickhouse_parsers
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
