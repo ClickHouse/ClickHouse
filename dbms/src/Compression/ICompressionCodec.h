@@ -9,8 +9,7 @@
 #include <DataTypes/IDataType.h>
 #include <boost/noncopyable.hpp>
 #include <IO/UncompressedCache.h>
-#include <IO/LZ4_decompress_faster.h>
-
+#include <Compression/LZ4_decompress_faster.h>
 #include <Compression/CompressionInfo.h>
 
 namespace DB

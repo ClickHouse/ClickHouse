@@ -4,7 +4,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Parsers/StringRange.h>
-#include <IO/LZ4_decompress_faster.h>
+#include <Compression/LZ4_decompress_faster.h>
 
 namespace DB
 {

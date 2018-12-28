@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/NamesAndTypes.h>
 #include <port/clock.h>
 
