@@ -16,7 +16,7 @@ if (LIBCXX_LIBRARY AND LIBCXX_INCLUDE_DIR)
 else ()
     set (LIBCXX_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcxx/include)
     set (USE_INTERNAL_LIBCXX_LIBRARY 1)
-    set (LIBCXX_LIBRARY cxx)
+    set (LIBCXX_LIBRARY cxx_static)
 endif ()
 
 message (STATUS "Using libcxx: ${LIBCXX_INCLUDE_DIR} : ${LIBCXX_LIBRARY}")
