@@ -156,7 +156,36 @@ public:
             }
         }
 
-        return evalImpl(columns, float_features_count, cat_features_count, tree_count, cat_features_are_strings);
+        auto result = evalImpl(columns, float_features_count, cat_features_count, tree_count, cat_features_are_strings);
+
+        if (tree_count == 1)
+            return result;
+
+        size_t column_size = columns.front()->size();
+        auto result_buf = result->getData().data();
+
+        /// Multiple trees case. Copy data to several columns.
+        MutableColumns mutable_columns(tree_count);
+        std::vector<Float64 *> column_ptrs(tree_count);
+        for (size_t i = 0; i < tree_count; ++i)
+        {
+            auto col = ColumnFloat64::create(column_size);
+            column_ptrs[i] = col->getData().data();
+            mutable_columns[i] = std::move(col);
+        }
+
+        Float64 * data = result_buf;
+        for (size_t row = 0; row < column_size; ++row)
+        {
+            for (size_t i = 0; i < tree_count; ++i)
+            {
+                *column_ptrs[i] = *data;
+                ++column_ptrs[i];
+                ++data;
+            }
+        }
+
+        return ColumnTuple::create(std::move(mutable_columns));
     }
 
     size_t getFloatFeaturesCount() const override { return float_features_count; }
@@ -334,7 +363,7 @@ private:
     ///  * CalcModelPredictionFlat if no cat features
     ///  * CalcModelPrediction if all cat features are strings
     ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
-    ColumnPtr evalImpl(
+    ColumnFloat64::MutablePtr evalImpl(
         const ColumnRawPtrs & columns,
         size_t float_features_count_current,
         size_t cat_features_count_current,
@@ -406,31 +435,7 @@ private:
             }
         }
 
-        if (tree_count == 1)
-            return result;
-
-        /// Multiple trees case. Copy data to several columns.
-        MutableColumns mutable_columns(tree_count);
-        std::vector<Float64 *> column_ptrs(tree_count);
-        for (size_t i = 0; i < tree_count; ++i)
-        {
-            auto col = ColumnFloat64::create(column_size);
-            column_ptrs[i] = col->getData().data();
-            mutable_columns[i] = std::move(col);
-        }
-
-        Float64 * data = result_buf;
-        for (size_t row = 0; row < column_size; ++row)
-        {
-            for (size_t i = 0; i < tree_count; ++i)
-            {
-                *column_ptrs[i] = *data;
-                ++column_ptrs[i];
-                ++data;
-            }
-        }
-
-        return ColumnTuple::create(std::move(mutable_columns));
+        return result;
     }
 };
 
