@@ -1,6 +1,6 @@
 #include <common/demangle.h>
 
-#if _MSC_VER
+#if _MSC_VER || (defined(__has_feature) && __has_feature(memory_sanitizer))
 
 std::string demangle(const char * name, int & status)
 {
