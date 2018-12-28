@@ -19,7 +19,7 @@
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/HexWriteBuffer.h>

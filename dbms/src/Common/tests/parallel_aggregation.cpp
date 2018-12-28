@@ -13,7 +13,7 @@
 //#include <Common/HashTable/HashTableMerge.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 
 #include <Common/Stopwatch.h>
 #include <common/ThreadPool.h>

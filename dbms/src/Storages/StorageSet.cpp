@@ -1,9 +1,9 @@
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <Common/escapeForFileName.h>

@@ -6,7 +6,7 @@
 #include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataStreams/NativeBlockOutputStream.h>

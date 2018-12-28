@@ -1,12 +1,11 @@
+#include "LZ4_decompress_faster.h"
+
 #include <string.h>
 #include <iostream>
 #include <random>
 #include <algorithm>
-
-#include <IO/LZ4_decompress_faster.h>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
-
 #include <common/likely.h>
 #include <common/Types.h>
 #include <common/unaligned.h>
