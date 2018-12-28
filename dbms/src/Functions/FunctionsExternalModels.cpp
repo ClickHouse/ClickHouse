@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <DataTypes/DataTypeTuple.h>
 
 namespace DB
 {
@@ -50,7 +51,22 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
 
     auto model = models.getModel(name_col->getValue<String>());
     auto type = model->getReturnType();
-    return has_nullable ? makeNullable(type) : type;
+
+    if (has_nullable)
+    {
+        if (auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            auto elements = tuple->getElements();
+            for (auto & element : elements)
+                element = makeNullable(element);
+
+            type = std::make_shared<DataTypeTuple>(elements);
+        }
+        else
+            type = makeNullable(type);
+    }
+
+    return type;
 }
 
 void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
