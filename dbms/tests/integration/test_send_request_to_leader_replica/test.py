@@ -7,8 +7,10 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users_local_default.xml'], with_zookeeper=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users_local_default.xml'], with_zookeeper=True)
+node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_restricted.xml'], with_zookeeper=True)
+node2 = cluster.add_instance('node2', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_restricted.xml'], with_zookeeper=True)
+node3 = cluster.add_instance('node3', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_allowed.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', main_configs=['configs/remote_servers.xml'], user_configs=['configs/user_good_allowed.xml'], with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -22,42 +24,51 @@ def started_cluster():
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/sometable', '{replica}', date, id, 8192);
                 '''.format(replica=node.name), user='awesome')
 
+        for node in [node3, node4]:
+            node.query('''
+            CREATE TABLE someothertable(date Date, id UInt32, value Int32)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/someothertable', '{replica}', date, id, 8192);
+                '''.format(replica=node.name), user='good')
+
 
         yield cluster
 
     finally:
         cluster.shutdown()
 
-@pytest.mark.parametrize("query,expected", [
-    ("ALTER TABLE sometable DROP PARTITION 201706", '1'),
-    ("TRUNCATE TABLE sometable", '0'),
-    ("OPTIMIZE TABLE sometable", '4'),
+@pytest.mark.parametrize("table,query,expected,n1,n2", [
+    ("sometable","ALTER TABLE sometable DROP PARTITION 201706", '1', node1, node2),
+    ("sometable","TRUNCATE TABLE sometable", '0', node1, node2),
+    ("sometable", "OPTIMIZE TABLE sometable", '4', node1, node2),
+    ("someothertable","ALTER TABLE someothertable DROP PARTITION 201706", '1', node3, node4),
+    ("someothertable","TRUNCATE TABLE someothertable", '0', node3, node4),
+    ("someothertable", "OPTIMIZE TABLE someothertable", '4', node3, node4),
 ])
-def test_alter_table_drop_partition(started_cluster, query, expected):
+def test_alter_table_drop_partition(started_cluster, table, query, expected, n1, n2):
     to_insert = '''\
 2017-06-16	111	0
 2017-06-16	222	1
 2017-06-16	333	2
 2017-07-16	444	3
 '''
-    node1.query("INSERT INTO sometable FORMAT TSV", stdin=to_insert, user='awesome')
+    n1.query("INSERT INTO {} FORMAT TSV".format(table), stdin=to_insert, user='good')
 
-    assert_eq_with_retry(node1, "SELECT COUNT(*) from sometable", '4', user='awesome')
-    assert_eq_with_retry(node2, "SELECT COUNT(*) from sometable", '4', user='awesome')
+    assert_eq_with_retry(n1, "SELECT COUNT(*) from {}".format(table), '4', user='good')
+    assert_eq_with_retry(n2, "SELECT COUNT(*) from {}".format(table), '4', user='good')
 
     ### It maybe leader and everything will be ok
-    node1.query(query, user='awesome')
+    n1.query(query, user='good')
 
-    assert_eq_with_retry(node1, "SELECT COUNT(*) from sometable", expected, user='awesome')
-    assert_eq_with_retry(node2, "SELECT COUNT(*) from sometable", expected, user='awesome')
+    assert_eq_with_retry(n1, "SELECT COUNT(*) from {}".format(table), expected, user='good')
+    assert_eq_with_retry(n2, "SELECT COUNT(*) from {}".format(table), expected, user='good')
 
-    node1.query("INSERT INTO sometable FORMAT TSV", stdin=to_insert, user='awesome')
+    n1.query("INSERT INTO {} FORMAT TSV".format(table), stdin=to_insert, user='good')
 
-    assert_eq_with_retry(node1, "SELECT COUNT(*) from sometable", '4', user='awesome')
-    assert_eq_with_retry(node2, "SELECT COUNT(*) from sometable", '4', user='awesome')
+    assert_eq_with_retry(n1, "SELECT COUNT(*) from {}".format(table), '4', user='good')
+    assert_eq_with_retry(n2, "SELECT COUNT(*) from {}".format(table), '4', user='good')
 
     ### If node1 is leader than node2 will be slave
-    node2.query(query, user='awesome')
+    n2.query(query, user='good')
 
-    assert_eq_with_retry(node1, "SELECT COUNT(*) from sometable", expected, user='awesome')
-    assert_eq_with_retry(node2, "SELECT COUNT(*) from sometable", expected, user='awesome')
+    assert_eq_with_retry(n1, "SELECT COUNT(*) from {}".format(table), expected, user='good')
+    assert_eq_with_retry(n2, "SELECT COUNT(*) from {}".format(table), expected, user='good')
