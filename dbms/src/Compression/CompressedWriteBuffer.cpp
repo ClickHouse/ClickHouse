@@ -8,7 +8,7 @@
 #include <common/unaligned.h>
 #include <Core/Types.h>
 
-#include <IO/CompressedWriteBuffer.h>
+#include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>
 
 

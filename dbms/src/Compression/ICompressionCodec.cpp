@@ -1,5 +1,6 @@
-#include <Compression/ICompressionCodec.h>
-#include <IO/LZ4_decompress_faster.h>
+#include "ICompressionCodec.h"
+
+#include <Compression/LZ4_decompress_faster.h>
 #include <common/unaligned.h>
 #include <Common/hex.h>
 #include <IO/WriteHelpers.h>
