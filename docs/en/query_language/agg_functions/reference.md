@@ -1,7 +1,7 @@
 
 # Function reference
 
-## count()
+## count() {#agg_function-count}
 
 Counts the number of rows. Accepts zero arguments and returns UInt64.
 The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate function exists for this purpose.
@@ -179,11 +179,11 @@ binary     decimal
 01101000 = 104
 ```
 
-## min(x)
+## min(x) {#agg_function-min}
 
 Calculates the minimum.
 
-## max(x)
+## max(x) {#agg_function-max}
 
 Calculates the maximum.
 
