@@ -1,4 +1,5 @@
-#include <IO/CompressedReadBufferFromFile.h>
+#include "CompressedReadBufferFromFile.h"
+
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressionInfo.h>

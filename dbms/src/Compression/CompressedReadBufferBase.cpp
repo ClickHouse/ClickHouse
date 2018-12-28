@@ -1,4 +1,4 @@
-#include <IO/CompressedReadBufferBase.h>
+#include "CompressedReadBufferBase.h"
 
 #include <vector>
 
