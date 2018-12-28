@@ -127,7 +127,7 @@ void StorageMemory::drop()
     data.clear();
 }
 
-void StorageMemory::truncate(const ASTPtr &)
+void StorageMemory::truncate(const ASTPtr &, const Context &)
 {
     std::lock_guard<std::mutex> lock(mutex);
     data.clear();
