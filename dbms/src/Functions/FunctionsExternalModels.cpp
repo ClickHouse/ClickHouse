@@ -10,6 +10,9 @@
 #include <ext/range.h>
 #include <string>
 #include <memory>
+#include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 
 namespace DB
 {
@@ -41,8 +44,13 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const ColumnsWithTypeAndNam
         throw Exception("First argument of function " + getName() + " must be a constant string",
                         ErrorCodes::ILLEGAL_COLUMN);
 
+    bool has_nullable = false;
+    for (size_t i = 1; i < arguments.size(); ++i)
+        has_nullable = has_nullable || arguments[i].type->isNullable();
+
     auto model = models.getModel(name_col->getValue<String>());
-    return model->getReturnType();
+    auto type = model->getReturnType();
+    return has_nullable ? makeNullable(type) : type;
 }
 
 void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
@@ -55,11 +63,58 @@ void FunctionModelEvaluate::executeImpl(Block & block, const ColumnNumbers & arg
     auto model = models.getModel(name_col->getValue<String>());
 
     ColumnRawPtrs columns;
-    columns.reserve(arguments.size());
-    for (auto i : ext::range(1, arguments.size()))
-        columns.push_back(block.getByPosition(arguments[i]).column.get());
+    Columns materialized_columns;
+    ColumnPtr null_map;
 
-    block.getByPosition(result).column = model->evaluate(columns);
+    columns.reserve(arguments.size());
+    for (auto arg : ext::range(1, arguments.size()))
+    {
+        auto & column = block.getByPosition(arguments[arg]).column;
+        columns.push_back(column.get());
+        if (auto full_column = column->convertToFullColumnIfConst())
+        {
+            materialized_columns.push_back(full_column);
+            columns.back() = full_column.get();
+        }
+        if (auto * col_nullable = typeid_cast<const ColumnNullable *>(columns.back()))
+        {
+            if (!null_map)
+                null_map = col_nullable->getNullMapColumnPtr();
+            else
+            {
+                auto mut_null_map = (*std::move(null_map)).mutate();
+
+                NullMap & result_null_map = static_cast<ColumnUInt8 &>(*mut_null_map).getData();
+                const NullMap & src_null_map = col_nullable->getNullMapColumn().getData();
+
+                for (size_t i = 0, size = result_null_map.size(); i < size; ++i)
+                    if (src_null_map[i])
+                        result_null_map[i] = 1;
+
+                null_map = std::move(mut_null_map);
+            }
+
+            columns.back() = &col_nullable->getNestedColumn();
+        }
+    }
+
+    auto res = model->evaluate(columns);
+
+    if (null_map)
+    {
+        if (auto * tuple = typeid_cast<const ColumnTuple *>(res.get()))
+        {
+            auto nested = tuple->getColumns();
+            for (auto & col : nested)
+                col = ColumnNullable::create(col, null_map);
+
+            res = ColumnTuple::create(nested);
+        }
+        else
+            res = ColumnNullable::create(res, null_map);
+    }
+
+    block.getByPosition(result).column = res;
 }
 
 void registerFunctionsExternalModels(FunctionFactory & factory)
