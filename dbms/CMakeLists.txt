@@ -2,15 +2,23 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
+set (MAX_COMPILER_MEMORY 2500 CACHE INTERNAL "")
+if (MAKE_STATIC_LIBRARIES)
+    set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "")
+else()
+    set (MAX_LINKER_MEMORY 2500 CACHE INTERNAL "")
+endif ()
+include (../cmake/limit_jobs.cmake)
+
+include(cmake/find_vectorclass.cmake)
 
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
 include (cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL}")
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config.h.in ${CONFIG_COMMON})
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (src/Common/config.h.in ${CONFIG_COMMON})
+configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
 
 if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
@@ -53,9 +61,10 @@ add_subdirectory (src)
 set(dbms_headers)
 set(dbms_sources)
 
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
+include(../cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_common_io src/Common)
+add_headers_and_sources(clickhouse_common_io src/Compression)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
@@ -150,6 +159,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
     common
         PRIVATE
+    clickhouse_parsers
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}

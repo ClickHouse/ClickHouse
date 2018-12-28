@@ -1,30 +1,24 @@
 #pragma once
 
-#include <cmath>
-
-#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Common/Arena.h>
+#include <IO/WriteHelpers.h>
+
 #include <Common/typeid_cast.h>
-#include <common/StringRef.h>
-#include <Common/HashTable/HashMap.h>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 

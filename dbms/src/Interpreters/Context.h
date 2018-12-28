@@ -17,7 +17,6 @@
 #include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
-#include <IO/CompressionSettings.h>
 
 
 namespace Poco
@@ -80,6 +79,7 @@ using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
+class ICompressionCodec;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -406,8 +406,8 @@ public:
     void setMaxPartitionSizeToDrop(size_t max_size);
     void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size);
 
-    /// Lets you select the compression settings according to the conditions described in the configuration file.
-    CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
+    /// Lets you select the compression codec according to the conditions described in the configuration file.
+    std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;

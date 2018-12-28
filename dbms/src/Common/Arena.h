@@ -36,7 +36,7 @@ private:
     static constexpr size_t pad_right = 15;
 
     /// Contiguous chunk of memory and pointer to free space inside it. Member of single-linked list.
-    struct Chunk : private Allocator<false>    /// empty base optimization
+    struct alignas(16) Chunk : private Allocator<false>    /// empty base optimization
     {
         char * begin;
         char * pos;
@@ -147,6 +147,12 @@ public:
 
             addChunk(size + alignment);
         } while (true);
+    }
+
+    template <typename T>
+    T * alloc()
+    {
+        return reinterpret_cast<T *>(alignedAlloc(sizeof(T), alignof(T)));
     }
 
     /** Rollback just performed allocation.

@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
@@ -20,7 +21,7 @@
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/CompressionSettingsSelector.h>
+#include <Storages/CompressionCodecSelector.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
@@ -143,7 +144,7 @@ struct ContextShared
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable std::unique_ptr<CompressionSettingsSelector> compression_settings_selector;
+    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -1585,22 +1586,22 @@ PartLog * Context::getPartLog(const String & part_database)
 }
 
 
-CompressionSettings Context::chooseCompressionSettings(size_t part_size, double part_size_ratio) const
+CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
 
-    if (!shared->compression_settings_selector)
+    if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
         auto & config = getConfigRef();
 
         if (config.has(config_name))
-            shared->compression_settings_selector = std::make_unique<CompressionSettingsSelector>(config, "compression");
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
         else
-            shared->compression_settings_selector = std::make_unique<CompressionSettingsSelector>();
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
     }
 
-    return shared->compression_settings_selector->choose(part_size, part_size_ratio);
+    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
 
 
