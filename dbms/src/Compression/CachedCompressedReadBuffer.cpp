@@ -1,9 +1,9 @@
+#include "CachedCompressedReadBuffer.h"
+
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/CachedCompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/CompressionInfo.h>
-#include <IO/LZ4_decompress_faster.h>
-#include "CachedCompressedReadBuffer.h"
+#include <Compression/LZ4_decompress_faster.h>
 
 
 namespace DB
