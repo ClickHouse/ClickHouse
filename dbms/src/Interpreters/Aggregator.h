@@ -250,28 +250,28 @@ struct AggregationMethodString
 
     struct State
     {
-        const ColumnString::Offsets * offsets;
-        const ColumnString::Chars * chars;
+        const IColumn::Offset * offsets;
+        const UInt8 * chars;
 
         void init(ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = &column_string.getOffsets();
-            chars = &column_string.getChars();
+            offsets = column_string.getOffsets().data();
+            chars = column_string.getChars().data();
         }
 
         ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,
-            size_t i,
+            ssize_t i,
             const Sizes & /*key_sizes*/,
             StringRefs & /*keys*/,
             Arena & /*pool*/) const
         {
             return StringRef(
-                &(*chars)[(*offsets)[i - 1]],
-                (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+                chars + offsets[i - 1],
+                offsets[i] - offsets[i - 1] - 1);
         }
     };
 
@@ -280,7 +280,8 @@ struct AggregationMethodString
 
     static ALWAYS_INLINE void onNewKey(typename Data::value_type & value, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & pool)
     {
-        value.first.data = pool.insert(value.first.data, value.first.size);
+        if (value.first.size)
+            value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
     static ALWAYS_INLINE void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}

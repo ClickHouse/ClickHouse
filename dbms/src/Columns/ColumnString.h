@@ -153,7 +153,8 @@ public:
         const size_t new_size = old_size + length + 1;
 
         chars.resize(new_size);
-        memcpy(&chars[old_size], pos, length);
+        if (length)
+            memcpy(&chars[old_size], pos, length);
         chars[old_size + length] = 0;
         offsets.push_back(new_size);
     }

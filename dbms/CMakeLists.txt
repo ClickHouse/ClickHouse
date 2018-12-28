@@ -64,6 +64,7 @@ set(dbms_sources)
 include(../cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_common_io src/Common)
+add_headers_and_sources(clickhouse_common_io src/Compression)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
 add_headers_and_sources(clickhouse_common_io src/IO)
 
@@ -158,6 +159,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
     common
         PRIVATE
+    clickhouse_parsers
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}

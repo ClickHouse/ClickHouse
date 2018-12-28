@@ -1,0 +1,16 @@
+1	hello	2018-12-14	1.1	aaa
+2	world	2018-12-15	2.2	bbb
+3	!	2018-12-16	3.3	ccc
+2
+1	world	2018-10-05	1.1
+2	hello	2018-10-01	2.2
+3	buy	2018-10-11	3.3
+10003
+10003
+274972506.6
+9175437371954010821
+CREATE TABLE test.compression_codec_multiple_more_types ( id Decimal(38, 13) CODEC(ZSTD, LZ4, ZSTD, ZSTD, LZ4HC),  data FixedString(12) CODEC(ZSTD, ZSTD, NONE, NONE, NONE, LZ4HC),  `ddd.age` Array(UInt8) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD),  `ddd.Name` Array(String) CODEC(LZ4, LZ4HC, NONE, NONE, NONE, ZSTD)) ENGINE = MergeTree() ORDER BY tuple() SETTINGS index_granularity = 8192
+1.5555555555555	hello world!	[77]	['John']
+7.1000000000000	xxxxxxxxxxxx	[127]	['Henry']
+!
+222

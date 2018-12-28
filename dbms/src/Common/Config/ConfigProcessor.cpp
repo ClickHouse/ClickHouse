@@ -447,6 +447,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(
             merge(config, with);
             contributing_files.push_back(merge_file);
         }
+        catch (Exception & e)
+        {
+            e.addMessage("while merging config '" + path + "' with '" + merge_file + "'");
+            throw;
+        }
         catch (Poco::Exception & e)
         {
             throw Poco::Exception("Failed to merge config with '" + merge_file + "': " + e.displayText());
@@ -478,6 +483,11 @@ XMLDocumentPtr ConfigProcessor::processConfig(
         }
 
         doIncludesRecursive(config, include_from, getRootNode(config.get()), zk_node_cache, zk_changed_event, contributing_zk_paths);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("while preprocessing config '" + path + "'");
+        throw;
     }
     catch (Poco::Exception & e)
     {

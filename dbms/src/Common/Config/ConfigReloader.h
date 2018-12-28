@@ -75,6 +75,7 @@ private:
     std::string preprocessed_dir;
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;
+    bool need_reload_from_zk = false;
     zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
