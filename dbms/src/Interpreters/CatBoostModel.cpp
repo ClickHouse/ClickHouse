@@ -156,7 +156,7 @@ public:
             }
         }
 
-        return evalImpl(columns, float_features_count, cat_features_count, cat_features_are_strings, tree_count);
+        return evalImpl(columns, float_features_count, cat_features_count, tree_count, cat_features_are_strings);
     }
 
     size_t getFloatFeaturesCount() const override { return float_features_count; }
