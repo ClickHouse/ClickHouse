@@ -288,7 +288,7 @@ bool StorageStripeLog::checkData() const
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &)
+void StorageStripeLog::truncate(const ASTPtr &, const Context &)
 {
     if (name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
