@@ -3920,17 +3920,23 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
     else
         throw Exception("Can't proxy this query. Unsupported query type", ErrorCodes::NOT_IMPLEMENTED);
 
-    const Cluster::Address & address = findClusterAddress(leader_address);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
 
     const auto & query_settings = query_context.getSettingsRef();
     const auto & query_client_info = query_context.getClientInfo();
+    String user = query_client_info.current_user;
+    String password = query_client_info.current_password;
+    if (auto address = findClusterAddress(leader_address); address)
+    {
+        user = address->user;
+        password = address->password;
+    }
 
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        query_client_info.current_user, query_client_info.current_password, timeouts, "ClickHouse replica");
+        user, password, timeouts, "ClickHouse replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);
@@ -3942,7 +3948,7 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 }
 
 
-const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const
+std::optional<Cluster::Address> StorageReplicatedMergeTree::findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const
 {
     for (auto & iter : context.getClusters().getContainer())
     {
@@ -3953,15 +3959,12 @@ const Cluster::Address & StorageReplicatedMergeTree::findClusterAddress(const Re
             for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
             {
                 const Cluster::Address & address = shards[shard_num][replica_num];
-
                 if (address.host_name == leader_address.host && address.port == leader_address.queries_port)
-                {
                     return address;
-                }
             }
         }
     }
-    throw Exception("Not found replicate leader host " + leader_address.host + ":" + DB::toString(leader_address.queries_port) + ". Please check the 'remote_servers' section in your configuration file (config.xml, config.d, metrika.xml).", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
+    return {};
 }
 
 void StorageReplicatedMergeTree::getQueue(LogEntriesData & res, String & replica_name_)
