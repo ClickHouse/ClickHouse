@@ -157,7 +157,7 @@ void StorageMergeTree::drop()
     data.dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &)
+void StorageMergeTree::truncate(const ASTPtr &, const Context &)
 {
     {
         /// Asks to complete merges and does not allow them to start.

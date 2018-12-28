@@ -1,8 +1,9 @@
-#include <IO/CompressedReadBufferFromFile.h>
+#include "CompressedReadBufferFromFile.h"
+
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressedStream.h>
-#include <IO/LZ4_decompress_faster.h>
+#include <Compression/CompressionInfo.h>
+#include <Compression/LZ4_decompress_faster.h>
 
 
 namespace DB

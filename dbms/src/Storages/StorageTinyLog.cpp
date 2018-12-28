@@ -13,8 +13,8 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -26,6 +26,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <Common/typeid_cast.h>
+#include <Compression/CompressionFactory.h>
 
 #include <Interpreters/Context.h>
 
@@ -136,7 +137,7 @@ private:
     {
         Stream(const std::string & data_path, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionSettings(CompressionMethod::LZ4), max_compress_block_size)
+            compressed(plain, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size)
         {
         }
 
@@ -406,7 +407,7 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &)
+void StorageTinyLog::truncate(const ASTPtr &, const Context &)
 {
     if (name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);

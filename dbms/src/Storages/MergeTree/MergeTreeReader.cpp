@@ -2,8 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
-#include <IO/CachedCompressedReadBuffer.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
