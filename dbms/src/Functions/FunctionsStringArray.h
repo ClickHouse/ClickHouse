@@ -308,8 +308,17 @@ public:
         if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
-        token_begin = pos + matches[capture].offset;
-        token_end = token_begin + matches[capture].length;
+        if (matches[capture].offset == std::string::npos)
+        {
+            /// Empty match.
+            token_begin = pos;
+            token_end = pos;
+        }
+        else
+        {
+            token_begin = pos + matches[capture].offset;
+            token_end = token_begin + matches[capture].length;
+        }
 
         pos += matches[0].offset + matches[0].length;
 

@@ -30,6 +30,7 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
+#include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include "TCPHandler.h"
@@ -360,20 +361,16 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       */
     state.io.out->writePrefix();
 
-    /// Send block to the client - table structure.
-    Block block = state.io.out->getHeader();
-
-    /// Support insert from old clients without low cardinality type.
-    if (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)
+    /// Send ColumnsDescription for insertion table
+    if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        for (auto & col : block)
-        {
-            col.type = recursiveRemoveLowCardinality(col.type);
-            col.column = recursiveRemoveLowCardinality(col.column);
-        }
+        const auto & db_and_table = query_context.getInsertionTable();
+        if (auto * columns = ColumnsDescription::loadFromContext(query_context, db_and_table.first, db_and_table.second))
+            sendTableColumns(*columns);
     }
 
-    sendData(block);
+    /// Send block to the client - table structure.
+    sendData(state.io.out->getHeader());
 
     readData(global_settings);
     state.io.out->writeSuffix();
@@ -389,6 +386,7 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
+
             if (header)
                 sendData(header);
         }
@@ -762,7 +760,8 @@ void TCPHandler::initBlockInput()
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
-            client_revision);
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -783,7 +782,8 @@ void TCPHandler::initBlockOutput(const Block & block)
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -795,7 +795,8 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -860,6 +861,16 @@ void TCPHandler::sendLogData(const Block & block)
     out->next();
 }
 
+void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
+{
+    writeVarUInt(Protocol::Server::TableColumns, *out);
+
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *out);
+    writeStringBinary(columns.toString(), *out);
+
+    out->next();
+}
 
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {

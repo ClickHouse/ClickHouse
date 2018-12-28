@@ -5,6 +5,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
+#include <common/unaligned.h>
+
 
 namespace DB
 {
@@ -146,7 +148,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = perm[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
@@ -176,7 +178,7 @@ StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
 {
-    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    const size_t string_size = unalignedLoad<size_t>(pos);
     pos += sizeof(string_size);
 
     const size_t old_size = chars.size();
@@ -217,7 +219,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = indexes[i];
-        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_offset = offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
         memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);

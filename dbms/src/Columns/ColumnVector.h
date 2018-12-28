@@ -1,8 +1,9 @@
 #pragma once
 
 #include <cmath>
-
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVectorHelper.h>
+#include <common/unaligned.h>
 
 
 namespace DB
@@ -86,47 +87,16 @@ template <> struct CompareHelper<Float32> : public FloatCompareHelper<Float32> {
 template <> struct CompareHelper<Float64> : public FloatCompareHelper<Float64> {};
 
 
-/** To implement `get64` function.
-  */
-template <typename T>
-inline UInt64 unionCastToUInt64(T x) { return x; }
-
-template <> inline UInt64 unionCastToUInt64(Float64 x)
-{
-    union
-    {
-        Float64 src;
-        UInt64 res;
-    };
-
-    src = x;
-    return res;
-}
-
-template <> inline UInt64 unionCastToUInt64(Float32 x)
-{
-    union
-    {
-        Float32 src;
-        UInt64 res;
-    };
-
-    res = 0;
-    src = x;
-    return res;
-}
-
-
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
+class ColumnVector final : public COWPtrHelper<ColumnVectorHelper, ColumnVector<T>>
 {
     static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWPtrHelper<IColumn, Self>;
+    friend class COWPtrHelper<ColumnVectorHelper, Self>;
 
     struct less;
     struct greater;
@@ -164,7 +134,7 @@ public:
 
     void insertData(const char * pos, size_t /*length*/) override
     {
-        data.push_back(*reinterpret_cast<const T *>(pos));
+        data.push_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override

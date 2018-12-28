@@ -30,14 +30,14 @@ struct SetMethodOneNumber
     /// To use one `Method` in different threads, use different `State`.
     struct State
     {
-        const FieldType * vec;
+        const char * vec;
 
         /** Called at the start of each block processing.
           * Sets the variables required for the other methods called in inner loops.
           */
         void init(const ColumnRawPtrs & key_columns)
         {
-            vec = static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData().data();
+           vec = key_columns[0]->getRawData().data;
         }
 
         /// Get key from key columns for insertion into hash table.
@@ -47,7 +47,7 @@ struct SetMethodOneNumber
             size_t i,                             /// From what row of the block I get the key.
             const Sizes & /*key_sizes*/) const    /// If keys of a fixed length - their lengths. Not used in methods for variable length keys.
         {
-            return unionCastToUInt64(vec[i]);
+            return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
         }
     };
 
@@ -67,32 +67,33 @@ struct SetMethodString
 
     struct State
     {
-        const ColumnString::Offsets * offsets;
-        const ColumnString::Chars * chars;
+        const IColumn::Offset * offsets;
+        const UInt8 * chars;
 
         void init(const ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = &column_string.getOffsets();
-            chars = &column_string.getChars();
+            offsets = column_string.getOffsets().data();
+            chars = column_string.getChars().data();
         }
 
         Key getKey(
             const ColumnRawPtrs &,
             size_t,
-            size_t i,
+            ssize_t i,
             const Sizes &) const
         {
             return StringRef(
-                &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
-                (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+                chars + offsets[i - 1],
+                offsets[i] - offsets[i - 1] - 1);
         }
     };
 
     static void onNewKey(typename Data::value_type & value, size_t, Arena & pool)
     {
-        value.data = pool.insert(value.data, value.size);
+        if (value.size)
+            value.data = pool.insert(value.data, value.size);
     }
 };
 

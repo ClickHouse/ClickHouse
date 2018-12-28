@@ -31,7 +31,6 @@ add_library (common ${LINK_MODE}
     include/common/ErrorHandlers.h
     include/common/preciseExp10.h
     include/common/shift10.h
-    include/common/intExp.h
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
@@ -83,10 +82,6 @@ else ()
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
-if (GLIBC_COMPATIBILITY)
-    set (GLIBC_COMPATIBILITY_LIBRARIES glibc-compatibility)
-endif ()
-
 if (USE_INTERNAL_MEMCPY)
     set (MEMCPY_LIBRARIES memcpy)
 endif ()
@@ -114,7 +109,6 @@ target_link_libraries (common
         PRIVATE
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)

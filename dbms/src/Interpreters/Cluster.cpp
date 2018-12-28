@@ -48,7 +48,7 @@ inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAdd
 
 /// Implementation of Cluster::Address class
 
-Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     UInt16 clickhouse_port = static_cast<UInt16>(config.getInt("tcp_port", 0));
 
@@ -125,7 +125,7 @@ String Cluster::Address::toStringFull() const
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
     updateClusters(config, settings, config_name);
 }
@@ -147,7 +147,7 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
 }
 
 
-void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_name, config_keys);
@@ -174,7 +174,7 @@ Clusters::Impl Clusters::getContainer() const
 
 /// Implementation of `Cluster` class
 
-Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
+Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(cluster_name, config_keys);
@@ -397,14 +397,24 @@ void Cluster::initMisc()
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(*this, index) };
+    return std::unique_ptr<Cluster>{ new Cluster(*this, {index}) };
 }
 
-Cluster::Cluster(const Cluster & from, size_t index)
-    : shards_info{from.shards_info[index]}
+std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector<size_t> & indices) const
 {
-    if (!from.addresses_with_failover.empty())
-        addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+    return std::unique_ptr<Cluster>{ new Cluster(*this, indices) };
+}
+
+Cluster::Cluster(const Cluster & from, const std::vector<size_t> & indices)
+    : shards_info{}
+{
+    for (size_t index : indices)
+    {
+        shards_info.emplace_back(from.shards_info.at(index));
+
+        if (!from.addresses_with_failover.empty())
+            addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
+    }
 
     initMisc();
 }

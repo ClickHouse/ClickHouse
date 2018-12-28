@@ -121,14 +121,9 @@ void Set::setHeader(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns.emplace_back(block.safeGetByPosition(i).column.get());
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        key_columns.emplace_back(materialized_columns.back().get());
         data_types.emplace_back(block.safeGetByPosition(i).type);
-
-        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns.back() = materialized_columns.back().get();
-        }
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -175,20 +170,8 @@ bool Set::insertFromBlock(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns.emplace_back(block.safeGetByPosition(i).column.get());
-
-        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns.back() = materialized_columns.back().get();
-        }
-
-        /// Convert low cardinality column to full.
-        if (key_columns.back()->lowCardinality())
-        {
-            materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfLowCardinality());
-            key_columns.back() = materialized_columns.back().get();
-        }
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        key_columns.emplace_back(materialized_columns.back().get());
     }
 
     size_t rows = block.rows();
@@ -365,18 +348,13 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     for (size_t i = 0; i < num_key_columns; ++i)
     {
-        key_columns.push_back(block.safeGetByPosition(i).column.get());
-
         if (!removeNullable(data_types[i])->equals(*removeNullable(block.safeGetByPosition(i).type)))
             throw Exception("Types of column " + toString(i + 1) + " in section IN don't match: "
                 + data_types[i]->getName() + " on the right, " + block.safeGetByPosition(i).type->getName() +
                 " on the left.", ErrorCodes::TYPE_MISMATCH);
 
-        if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns.back() = materialized_columns.back().get();
-        }
+        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        key_columns.emplace_back() = materialized_columns.back().get();
     }
 
     /// We will check existence in Set only for keys, where all components are not NULL.

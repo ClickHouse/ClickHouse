@@ -5,7 +5,7 @@
 Types are equivalent to types of C:
 
 - `Float32` - `float`
-- `Float64`  - `double`
+- `Float64` - `double`
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
 
@@ -67,7 +67,7 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-  See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md#query_language-queries-order_by).
+  See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md).
 
 
 [Original article](https://clickhouse.yandex/docs/en/data_types/float/) <!--hide-->
