@@ -25,7 +25,7 @@ set(SRCS
 
 add_library(cppkafka ${LINK_MODE} ${SRCS})
 
-target_link_libraries(cppkafka ${RDKAFKA_LIBRARY})
+target_link_libraries(cppkafka PRIVATE ${RDKAFKA_LIBRARY})
 target_include_directories(cppkafka PRIVATE ${CPPKAFKA_DIR}/include/cppkafka)
 target_include_directories(cppkafka PRIVATE ${Boost_INCLUDE_DIRS})
 target_include_directories(cppkafka SYSTEM PUBLIC ${CPPKAFKA_DIR}/include)

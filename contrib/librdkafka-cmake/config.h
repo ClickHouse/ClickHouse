@@ -71,4 +71,6 @@
 #define HAVE_PTHREAD_SETNAME_GNU 1
 // python
 //#define HAVE_PYTHON 1
+// C11 threads
+#define WITH_C11THREADS 1
 #endif /* _CONFIG_H_ */
