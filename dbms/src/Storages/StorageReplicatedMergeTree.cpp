@@ -2934,13 +2934,13 @@ BlockOutputStreamPtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/,
 }
 
 
-bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
+bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context)
 {
     assertNotReadonly();
 
     if (!is_leader)
     {
-        sendRequestToLeaderReplica(query, context.getSettingsRef());
+        sendRequestToLeaderReplica(query, query_context);
         return true;
     }
 
@@ -2955,7 +2955,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
         auto handle_noop = [&] (const String & message)
         {
-            if (context.getSettingsRef().optimize_throw_if_noop)
+            if (query_context.getSettingsRef().optimize_throw_if_noop)
                 throw Exception(message, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
             return false;
         };
@@ -2993,7 +2993,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             else
             {
                 UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-                String partition_id = data.getPartitionIDFromQuery(partition, context);
+                String partition_id = data.getPartitionIDFromQuery(partition, query_context);
                 selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
             }
@@ -3010,7 +3010,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
     }
 
     /// TODO: Bad setting name for such purpose
-    if (context.getSettingsRef().replication_alter_partitions_sync != 0)
+    if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
         waitForAllReplicasToProcessLogEntry(merge_entry);
 
     return true;
@@ -3018,7 +3018,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
 
 void StorageReplicatedMergeTree::alter(const AlterCommands & params,
-    const String & /*database_name*/, const String & /*table_name*/, const Context & context)
+    const String & /*database_name*/, const String & /*table_name*/, const Context & query_context)
 {
     assertNotReadonly();
 
@@ -3113,7 +3113,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     std::set<String> inactive_replicas;
     std::set<String> timed_out_replicas;
 
-    time_t replication_alter_columns_timeout = context.getSettingsRef().replication_alter_columns_timeout;
+    time_t replication_alter_columns_timeout = query_context.getSettingsRef().replication_alter_columns_timeout;
 
     for (const String & replica : replicas)
     {
@@ -3277,7 +3277,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     LOG_DEBUG(log, "ALTER finished");
 }
 
-void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context)
+void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context)
 {
     for (const PartitionCommand & command : commands)
     {
@@ -3285,46 +3285,46 @@ void StorageReplicatedMergeTree::alterPartition(const ASTPtr & query, const Part
         {
             case PartitionCommand::DROP_PARTITION:
                 checkPartitionCanBeDropped(command.partition);
-                dropPartition(query, command.partition, command.detach, context);
+                dropPartition(query, command.partition, command.detach, query_context);
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                attachPartition(command.partition, command.part, context);
+                attachPartition(command.partition, command.part, query_context);
                 break;
 
             case PartitionCommand::REPLACE_PARTITION:
             {
                 checkPartitionCanBeDropped(command.partition);
-                String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
-                auto from_storage = context.getTable(from_database, command.from_table);
-                replacePartitionFrom(from_storage, command.partition, command.replace, context);
+                String from_database = command.from_database.empty() ? query_context.getCurrentDatabase() : command.from_database;
+                auto from_storage = query_context.getTable(from_database, command.from_table);
+                replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
             break;
 
             case PartitionCommand::FETCH_PARTITION:
-                fetchPartition(command.partition, command.from_zookeeper_path, context);
+                fetchPartition(command.partition, command.from_zookeeper_path, query_context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
             {
                 auto lock = lockStructure(false);
-                data.freezePartition(command.partition, command.with_name, context);
+                data.freezePartition(command.partition, command.with_name, query_context);
             }
             break;
 
             case PartitionCommand::CLEAR_COLUMN:
-                clearColumnInPartition(command.partition, command.column_name, context);
+                clearColumnInPartition(command.partition, command.column_name, query_context);
                 break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
                 auto lock = lockStructure(false);
-                data.freezeAll(command.with_name, context);
+                data.freezeAll(command.with_name, query_context);
             }
             break;
 
             default:
-                IStorage::alterPartition(query, commands, context); // should throw an exception.
+                IStorage::alterPartition(query, commands, query_context); // should throw an exception.
         }
     }
 }
@@ -3382,13 +3382,13 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
 
 void StorageReplicatedMergeTree::clearColumnInPartition(
-    const ASTPtr & partition, const Field & column_name, const Context & context)
+    const ASTPtr & partition, const Field & column_name, const Context & query_context)
 {
     assertNotReadonly();
 
     /// We don't block merges, so anyone can manage this task (not only leader)
 
-    String partition_id = data.getPartitionIDFromQuery(partition, context);
+    String partition_id = data.getPartitionIDFromQuery(partition, query_context);
     MergeTreePartInfo drop_range_info;
 
     if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
@@ -3409,9 +3409,9 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     /// If necessary, wait until the operation is performed on itself or on all replicas.
-    if (context.getSettingsRef().replication_alter_partitions_sync != 0)
+    if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
     {
-        if (context.getSettingsRef().replication_alter_partitions_sync == 1)
+        if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
             waitForReplicaToProcessLogEntry(replica_name, entry);
         else
             waitForAllReplicasToProcessLogEntry(entry);
@@ -3419,7 +3419,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
 }
 
 
-void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context)
 {
     assertNotReadonly();
 
@@ -3429,19 +3429,19 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
     {
         // TODO: we can manually reconstruct the query from outside the |dropPartition()| and remove the |query| argument from interface.
         //       It's the only place where we need this argument.
-        sendRequestToLeaderReplica(query, context.getSettingsRef());
+        sendRequestToLeaderReplica(query, query_context);
         return;
     }
 
-    String partition_id = data.getPartitionIDFromQuery(partition, context);
+    String partition_id = data.getPartitionIDFromQuery(partition, query_context);
 
     LogEntry entry;
     if (dropPartsInPartition(*zookeeper, partition_id, entry, detach))
     {
         /// If necessary, wait until the operation is performed on itself or on all replicas.
-        if (context.getSettingsRef().replication_alter_partitions_sync != 0)
+        if (query_context.getSettingsRef().replication_alter_partitions_sync != 0)
         {
-            if (context.getSettingsRef().replication_alter_partitions_sync == 1)
+            if (query_context.getSettingsRef().replication_alter_partitions_sync == 1)
                 waitForReplicaToProcessLogEntry(replica_name, entry);
             else
                 waitForAllReplicasToProcessLogEntry(entry);
@@ -3450,7 +3450,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 }
 
 
-void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
+void StorageReplicatedMergeTree::truncate(const ASTPtr & query, const Context & query_context)
 {
     assertNotReadonly();
 
@@ -3458,7 +3458,7 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 
     if (!is_leader)
     {
-        sendRequestToLeaderReplica(query, context.getSettingsRef());
+        sendRequestToLeaderReplica(query, query_context);
         return;
     }
 
@@ -3474,7 +3474,7 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
 }
 
 
-void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
+void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & query_context)
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 
@@ -3485,7 +3485,7 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
     if (attach_part)
         partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
     else
-        partition_id = data.getPartitionIDFromQuery(partition, context);
+        partition_id = data.getPartitionIDFromQuery(partition, query_context);
 
     String source_dir = "detached/";
 
@@ -3886,7 +3886,7 @@ void StorageReplicatedMergeTree::getStatus(Status & res, bool with_zk_fields)
 
 
 /// TODO: Probably it is better to have queue in ZK with tasks for leader (like DDL)
-void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings)
+void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context)
 {
     auto live_replicas = getZooKeeper()->getChildren(zookeeper_path + "/leader_election");
     if (live_replicas.empty())
@@ -3922,15 +3922,19 @@ void StorageReplicatedMergeTree::sendRequestToLeaderReplica(const ASTPtr & query
 
     const Cluster::Address & address = findClusterAddress(leader_address);
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context.getSettingsRef());
+
+    const auto & query_settings = query_context.getSettingsRef();
+    const auto & query_client_info = query_context.getClientInfo();
+
     Connection connection(
         leader_address.host,
         leader_address.queries_port,
         leader_address.database,
-        context.getClientInfo().current_user, context.getClientInfo().current_password, timeouts, "ClickHouse replica");
+        query_client_info.current_user, query_client_info.current_password, timeouts, "ClickHouse replica");
 
     std::stringstream new_query_ss;
     formatAST(*new_query, new_query_ss, false, true);
-    RemoteBlockInputStream stream(connection, new_query_ss.str(), {}, context, &settings);
+    RemoteBlockInputStream stream(connection, new_query_ss.str(), {}, context, &query_settings);
     NullBlockOutputStream output({});
 
     copyData(stream, output);
@@ -4073,9 +4077,9 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
 }
 
 
-void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const String & from_, const Context & context)
+void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const String & from_, const Context & query_context)
 {
-    String partition_id = data.getPartitionIDFromQuery(partition, context);
+    String partition_id = data.getPartitionIDFromQuery(partition, query_context);
 
     String from = from_;
     if (from.back() == '/')
@@ -4167,7 +4171,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
         if (try_no)
             LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
 
-        if (try_no >= context.getSettings().max_fetch_partition_retries_count)
+        if (try_no >= query_context.getSettings().max_fetch_partition_retries_count)
             throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
