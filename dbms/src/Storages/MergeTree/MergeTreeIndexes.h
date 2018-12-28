@@ -12,13 +12,30 @@
 namespace DB
 {
 
-class MergeTreeIndexPart
+enum class INDEX_TYPES {
+    NONE = 0
+};
+
+
+class MergeTreeIndex;
+
+
+struct MergeTreeIndexPart
 {
+    friend MergeTreeIndex;
+
 public:
     virtual ~MergeTreeIndexPart() {};
 
     virtual void update(const Block & block, const Names & column_names) = 0;
     virtual void merge(const MergeTreeIndexPart & other) = 0;
+
+    virtual INDEX_TYPES indexType() const {
+        return INDEX_TYPES::NONE;
+    }
+
+protected:
+    MergeTreeIndexPart() {};
 };
 
 using MergeTreeIndexPartPtr = std::unique_ptr<MergeTreeIndexPart>;
@@ -33,8 +50,12 @@ public:
 
     virtual ~MergeTreeIndex() {};
 
+    virtual INDEX_TYPES indexType() const {
+        return INDEX_TYPES::NONE;
+    }
+
     virtual bool alwaysUnknownOrTrue() const = 0;
-    virtual bool maybeTrue(/* args */) const = 0;
+    virtual bool maybeTrueOn(MergeTreeIndexPartPtr part) const = 0;
 
     virtual MergeTreeIndexPartPtr createEmptyIndexPart() const = 0;
 
