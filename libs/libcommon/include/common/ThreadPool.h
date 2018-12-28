@@ -56,6 +56,8 @@ private:
 
 
     void worker();
+
+    void finalize();
 };
 
 
