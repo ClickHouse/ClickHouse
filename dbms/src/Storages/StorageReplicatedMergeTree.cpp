@@ -3959,7 +3959,8 @@ std::optional<Cluster::Address> StorageReplicatedMergeTree::findClusterAddress(c
             for (size_t replica_num = 0; replica_num < shards[shard_num].size(); ++replica_num)
             {
                 const Cluster::Address & address = shards[shard_num][replica_num];
-                if (address.host_name == leader_address.host && address.port == leader_address.queries_port)
+                /// user is actually specified, not default
+                if (address.host_name == leader_address.host && address.port == leader_address.queries_port && address.user_specified)
                     return address;
             }
         }

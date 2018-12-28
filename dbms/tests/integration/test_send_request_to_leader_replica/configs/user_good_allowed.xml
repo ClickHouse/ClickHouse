@@ -5,13 +5,12 @@
             <use_uncompressed_cache>0</use_uncompressed_cache>
             <load_balancing>random</load_balancing>
         </default>
-        <awesome>
+        <good>
             <max_memory_usage>10000000000</max_memory_usage>
             <use_uncompressed_cache>0</use_uncompressed_cache>
             <load_balancing>random</load_balancing>
-        </awesome>
+        </good>
     </profiles>
-
     <users>
         <default>
             <password></password>
@@ -22,14 +21,14 @@
             <profile>default</profile>
             <quota>default</quota>
         </default>
-        <awesome>
+        <good>
             <password></password>
             <networks incl="networks" replace="replace">
                 <ip>::/0</ip>
             </networks>
-            <profile>awesome</profile>
+            <profile>good</profile>
             <quota>default</quota>
-        </awesome>
+        </good>
     </users>
 
     <quotas>
