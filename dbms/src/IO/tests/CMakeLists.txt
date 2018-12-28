@@ -44,7 +44,7 @@ add_executable (mempbrk mempbrk.cpp)
 target_link_libraries (mempbrk PRIVATE clickhouse_common_io)
 
 add_executable (cached_compressed_read_buffer cached_compressed_read_buffer.cpp)
-target_link_libraries (cached_compressed_read_buffer PRIVATE clickhouse_common_io)
+target_link_libraries (cached_compressed_read_buffer PRIVATE clickhouse_common_io dbms )
 
 add_executable (o_direct_and_dirty_pages o_direct_and_dirty_pages.cpp)
 target_link_libraries (o_direct_and_dirty_pages PRIVATE clickhouse_common_io)

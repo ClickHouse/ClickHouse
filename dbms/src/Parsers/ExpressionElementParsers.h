@@ -89,6 +89,23 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+class ParserCodecDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const { return "codec declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+/** Parse compression codec
+  * CODEC(ZSTD(2))
+  */
+class ParserCodec : public IParserBase
+{
+protected:
+    const char * getName() const { return "codec"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
 class ParserCastExpression : public IParserBase
 {
 protected:
