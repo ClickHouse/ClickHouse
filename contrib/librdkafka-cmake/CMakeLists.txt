@@ -8,12 +8,14 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdcrc32.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_assignor.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_background.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_broker.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_buf.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_cgrp.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_conf.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_event.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_feature.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_idempotence.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_lz4.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata_cache.c
@@ -47,6 +49,7 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdvarint.c
   ${RDKAFKA_SOURCE_DIR}/snappy.c
   ${RDKAFKA_SOURCE_DIR}/tinycthread.c
+  ${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c
   ${RDKAFKA_SOURCE_DIR}/xxhash.c
   ${RDKAFKA_SOURCE_DIR}/lz4.c
   ${RDKAFKA_SOURCE_DIR}/lz4frame.c
