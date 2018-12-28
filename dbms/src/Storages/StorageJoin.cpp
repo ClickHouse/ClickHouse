@@ -51,7 +51,7 @@ StorageJoin::StorageJoin(
 }
 
 
-void StorageJoin::truncate(const ASTPtr &)
+void StorageJoin::truncate(const ASTPtr &, const Context &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();

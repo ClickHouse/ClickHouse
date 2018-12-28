@@ -407,7 +407,7 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &)
+void StorageTinyLog::truncate(const ASTPtr &, const Context &)
 {
     if (name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);

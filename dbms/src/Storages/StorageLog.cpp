@@ -520,7 +520,7 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
-void StorageLog::truncate(const ASTPtr &)
+void StorageLog::truncate(const ASTPtr &, const Context &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 

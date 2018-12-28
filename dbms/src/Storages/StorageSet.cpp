@@ -119,7 +119,7 @@ void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block);
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &)
+void StorageSet::truncate(const ASTPtr &, const Context &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
