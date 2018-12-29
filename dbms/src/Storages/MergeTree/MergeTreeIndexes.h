@@ -49,6 +49,7 @@ public:
 protected:
     IndexCondition() = default;
 
+public:
     MergeTreeIndexPartPtr part;
 };
 
@@ -80,6 +81,7 @@ protected:
     virtual void updateImpl(const Block & block, const Names & column_names) = 0;
     virtual void mergeImpl(const MergeTreeIndexPart & other) = 0;
 
+public:
     MergeTreeIndexPtr index;
 };
 
