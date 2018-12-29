@@ -531,9 +531,7 @@ namespace DB
             for (const auto index_part : part->index_parts) {
                 const auto condition = index_part->createIndexConditionOnPart(
                         query_info, context, index_part->index->sample.getNames(), index_part->index->expr);
-                if (condition->alwaysUnknownOrTrue()) {
-                    continue;
-                } else {
+                if (!condition->alwaysUnknownOrTrue()) {
                     ranges.ranges = condition->filterRanges(ranges.ranges);
                 }
             }
