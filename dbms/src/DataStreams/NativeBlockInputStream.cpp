@@ -2,7 +2,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/typeid_cast.h>
