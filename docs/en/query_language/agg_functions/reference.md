@@ -295,7 +295,7 @@ Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to a
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-We don't recommend using this function. In most cases, use the  `uniq` or `uniqCombined` function.
+We don't recommend using this function. In most cases, use the `uniq` or `uniqCombined` function.
 
 ## uniqExact(x)
 
@@ -382,8 +382,8 @@ For its purpose (calculating quantiles of page loading times), using this functi
 
 ## quantileTimingWeighted(level)(x, weight)
 
-Differs from the `quantileTiming`  function in that it has a second argument, "weights". Weight is a non-negative integer.
-The result is calculated as if the `x`  value were passed `weight` number of times to the `quantileTiming` function.
+Differs from the `quantileTiming` function in that it has a second argument, "weights". Weight is a non-negative integer.
+The result is calculated as if the `x` value were passed `weight` number of times to the `quantileTiming` function.
 
 ## quantileExact(level)(x)
 
@@ -437,7 +437,7 @@ The result is equal to the square root of `varPop(x)`.
 
 Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
 
-Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
 ```
 topK(N)(column)

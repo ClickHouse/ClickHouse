@@ -11,6 +11,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -359,7 +360,7 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::truncate(const ASTPtr &)
+void StorageDistributed::truncate(const ASTPtr &, const Context &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 

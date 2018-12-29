@@ -10,7 +10,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/Operators.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>

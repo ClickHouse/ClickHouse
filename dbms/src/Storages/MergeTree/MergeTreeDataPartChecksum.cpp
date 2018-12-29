@@ -5,8 +5,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Poco/File.h>
 
 
@@ -201,7 +201,7 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 {
     writeString("checksums format version: 4\n", to);
 
-    CompressedWriteBuffer out{to, CompressionSettings(CompressionMethod::LZ4), 1 << 16};
+    CompressedWriteBuffer out{to, CompressionCodecFactory::instance().getDefaultCodec(), 1 << 16};
 
     writeVarUInt(files.size(), out);
 

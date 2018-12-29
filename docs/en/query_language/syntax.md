@@ -24,7 +24,7 @@ There may be any number of space symbols between syntactical constructions (incl
 
 SQL-style and C-style comments are supported.
 SQL-style comments: from `--` to the end of the line. The space after `--` can be omitted.
-Comments in C-style: from `/*`  to `*/`. These comments can be multiline. Spaces are not required here, either.
+Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces are not required here, either.
 
 ## Keywords
 

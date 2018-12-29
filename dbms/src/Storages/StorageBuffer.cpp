@@ -10,6 +10,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>

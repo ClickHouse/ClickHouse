@@ -31,7 +31,6 @@ add_library (common ${LINK_MODE}
     include/common/ErrorHandlers.h
     include/common/preciseExp10.h
     include/common/shift10.h
-    include/common/intExp.h
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h

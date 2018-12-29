@@ -150,7 +150,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredSourceColumns() const;
+    Names getRequiredSourceColumns() const { return source_columns.getNames(); }
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -232,8 +232,7 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
-      * as well as the columns added by JOIN (`columns_added_by_join`).
+      * At the same time, form a set of columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
 
@@ -243,8 +242,6 @@ private:
     void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
-
-    bool isThereArrayJoin(const ASTPtr & ast);
 
     /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
     void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);

@@ -2,9 +2,8 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressedStream.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
@@ -14,6 +13,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/localBackup.h>
+#include <Compression/CompressionInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
