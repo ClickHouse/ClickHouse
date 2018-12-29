@@ -39,11 +39,10 @@ public:
 
     virtual INDEX_TYPE indexType() const;
 
-    // Checks if this index is useful for query.
+    /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    // Splits it's input to ranges with length equal to index granularity (or less on the borders).
-    // Then it reads necessary ranges of the index and decides what ranges from the input should be reduced.
+    /// Drops out ranges where query is false
     virtual MarkRanges filterRanges(const MarkRanges & ranges) const = 0;
 
 protected:
