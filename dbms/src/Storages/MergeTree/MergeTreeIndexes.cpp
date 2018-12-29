@@ -10,7 +10,18 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
 }
 
+
+INDEX_TYPE IndexCondition::indexType() const {
+    return part->indexType();
+}
+
+
+INDEX_TYPE MergeTreeIndexPart::indexType() const {
+    return index->indexType();
+}
+
 void MergeTreeIndexPart::update(const Block & block, const Names & column_names) {
+    /// a few checks?
     updateImpl(block, column_names);
 }
 
@@ -20,14 +31,6 @@ void MergeTreeIndexPart::merge(const MergeTreeIndexPart & other) {
                         ErrorCodes::LOGICAL_ERROR);
     }
     mergeImpl(other);
-}
-
-INDEX_TYPE MergeTreeIndexPart::indexType() const {
-    return owner->indexType();
-}
-
-INDEX_TYPE IndexCondition::indexType() const {
-    return owner->indexType();
 }
 
 
