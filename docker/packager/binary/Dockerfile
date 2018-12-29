@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:18.10
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -11,11 +11,20 @@ RUN apt-get update -y \
             gcc-8 \
             g++-8 \
             clang-6.0 \
-            clang++-6.0 \
             lld-6.0 \
             libclang-6.0-dev \
-            libicu-dev \
             liblld-6.0-dev \
+            llvm-6.0 \
+            libllvm6.0 \
+            llvm-6.0-dev \
+            clang-7 \
+            lld-7 \
+            libclang-7-dev \
+            liblld-7-dev \
+            llvm-7 \
+            libllvm7 \
+            llvm-7-dev \
+            libicu-dev \
             libreadline-dev \
             ninja-build \
             git
