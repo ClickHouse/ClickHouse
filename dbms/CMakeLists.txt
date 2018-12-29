@@ -2,15 +2,23 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/find_vectorclass.cmake)
+set (MAX_COMPILER_MEMORY 2500 CACHE INTERNAL "")
+if (MAKE_STATIC_LIBRARIES)
+    set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "")
+else()
+    set (MAX_LINKER_MEMORY 2500 CACHE INTERNAL "")
+endif ()
+include (../cmake/limit_jobs.cmake)
+
+include(cmake/find_vectorclass.cmake)
 
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
 include (cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL}")
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config.h.in ${CONFIG_COMMON})
-configure_file (${CMAKE_CURRENT_SOURCE_DIR}/src/Common/config_version.h.in ${CONFIG_VERSION})
+configure_file (src/Common/config.h.in ${CONFIG_COMMON})
+configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
 
 if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
@@ -53,7 +61,7 @@ add_subdirectory (src)
 set(dbms_headers)
 set(dbms_sources)
 
-include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
+include(../cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_common_io src/Common)
 add_headers_and_sources(clickhouse_common_io src/Common/HashTable)
@@ -142,10 +150,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
         PROPERTIES COMPILE_FLAGS -g0)
 endif ()
 
-if (NOT ARCH_ARM AND CPUID_LIBRARY)
-    set (LINK_LIBRARIES_ONLY_ON_X86_64 ${CPUID_LIBRARY})
-endif()
-
 target_link_libraries (clickhouse_common_io
         PUBLIC
     common
@@ -153,8 +157,6 @@ target_link_libraries (clickhouse_common_io
     string_utils
     widechar_width
     ${LINK_LIBRARIES_ONLY_ON_X86_64}
-    ${LZ4_LIBRARY}
-    ${ZSTD_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     pocoext
         PUBLIC
@@ -175,8 +177,13 @@ target_link_libraries (clickhouse_common_io
     ${CMAKE_DL_LIBS}
 )
 
+if (NOT ARCH_ARM AND CPUID_LIBRARY)
+    target_link_libraries (clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+endif()
+
 target_link_libraries (dbms
         PRIVATE
+    clickhouse_compression
     clickhouse_parsers
     clickhouse_common_config
         PUBLIC
@@ -268,13 +275,6 @@ if (USE_HDFS)
     target_link_libraries (dbms PRIVATE ${HDFS3_LIBRARY})
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
 endif()
-
-if (NOT USE_INTERNAL_LZ4_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
-endif ()
-if (NOT USE_INTERNAL_ZSTD_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
-endif ()
 
 if (USE_JEMALLOC)
     target_include_directories (dbms SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp

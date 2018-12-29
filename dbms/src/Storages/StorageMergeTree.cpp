@@ -1,23 +1,30 @@
-#include <optional>
+#include <Databases/IDatabase.h>
+
+#include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 #include <Common/FieldVisitors.h>
 #include <Common/localBackup.h>
+
+#include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/PartLog.h>
+
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/queryToString.h>
+
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/PartitionCommands.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
-#include <Databases/IDatabase.h>
-#include <Common/escapeForFileName.h>
-#include <Common/typeid_cast.h>
-#include <Interpreters/InterpreterAlterQuery.h>
-#include <Interpreters/PartLog.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/ActiveDataPartSet.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Parsers/queryToString.h>
+
+#include <optional>
 
 
 namespace DB
@@ -150,7 +157,7 @@ void StorageMergeTree::drop()
     data.dropAllData();
 }
 
-void StorageMergeTree::truncate(const ASTPtr &)
+void StorageMergeTree::truncate(const ASTPtr &, const Context &)
 {
     {
         /// Asks to complete merges and does not allow them to start.
@@ -581,13 +588,13 @@ bool StorageMergeTree::tryMutatePart()
 }
 
 
-bool StorageMergeTree::backgroundTask()
+BackgroundProcessingPoolTaskResult StorageMergeTree::backgroundTask()
 {
     if (shutdown_called)
-        return false;
+        return BackgroundProcessingPoolTaskResult::ERROR;
 
     if (merger_mutator.actions_blocker.isCancelled())
-        return false;
+        return BackgroundProcessingPoolTaskResult::ERROR;
 
     try
     {
@@ -601,16 +608,19 @@ bool StorageMergeTree::backgroundTask()
 
         ///TODO: read deduplicate option from table config
         if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
-            return true;
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
 
-        return tryMutatePart();
+        if (tryMutatePart())
+            return BackgroundProcessingPoolTaskResult::SUCCESS;
+        else
+            return BackgroundProcessingPoolTaskResult::ERROR;
     }
     catch (Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)
         {
             LOG_INFO(log, e.message());
-            return false;
+            return BackgroundProcessingPoolTaskResult::ERROR;
         }
 
         throw;

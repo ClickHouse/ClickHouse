@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -113,11 +114,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
-    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
+    bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & query_context) override;
 
-    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
+    void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & query_context) override;
 
-    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & context) override;
+    void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
@@ -127,7 +128,7 @@ public:
       */
     void drop() override;
 
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -427,7 +428,7 @@ private:
 
     /** Performs actions from the queue.
       */
-    bool queueTask();
+    BackgroundProcessingPoolTaskResult queueTask();
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
@@ -502,7 +503,7 @@ private:
     void waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry);
 
     /// Choose leader replica, send requst to it and wait.
-    void sendRequestToLeaderReplica(const ASTPtr & query, const Settings & settings);
+    void sendRequestToLeaderReplica(const ASTPtr & query, const Context & query_context);
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;
@@ -526,12 +527,15 @@ private:
     bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
         StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
+    /// Find cluster address for host
+    std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
+
     // Partition helpers
-    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context);
-    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context);
-    void attachPartition(const ASTPtr & partition, bool part, const Context & context);
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
-    void fetchPartition(const ASTPtr & partition, const String & from, const Context & context);
+    void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & query_context);
+    void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
+    void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
+    void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

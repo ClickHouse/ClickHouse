@@ -336,7 +336,7 @@ toColumnTypeName(value)
 
 **Returned values**
 
-- A string with the name of the class that is used for representing the `value`  data type in RAM.
+- A string with the name of the class that is used for representing the `value` data type in RAM.
 
 **Example of the difference between` toTypeName ' and ' toColumnTypeName`**
 
@@ -376,7 +376,7 @@ dumpColumnStructure(value)
 
 **Returned values**
 
-- A string describing the structure that is used for representing the `value`  data type in RAM.
+- A string describing the structure that is used for representing the `value` data type in RAM.
 
 **Example**
 

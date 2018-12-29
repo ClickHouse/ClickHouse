@@ -1,14 +1,15 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
-#include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 
-#include <common/intExp.h>
+#include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -139,7 +140,10 @@ struct IntegerRoundingComputation
 
     static ALWAYS_INLINE void compute(const T * __restrict in, size_t scale, T * __restrict out)
     {
-        *out = compute(*in, scale);
+        if (sizeof(T) <= sizeof(scale) && scale > size_t(std::numeric_limits<T>::max()))
+            *out = 0;
+        else
+            *out = compute(*in, scale);
     }
 
 };
@@ -328,10 +332,10 @@ public:
     template <size_t scale>
     static NO_INLINE void applyImpl(const PaddedPODArray<T> & in, typename ColumnVector<T>::Container & out)
     {
-        const T* end_in = in.data() + in.size();
+        const T * end_in = in.data() + in.size();
 
-        const T* __restrict p_in = in.data();
-        T* __restrict p_out = out.data();
+        const T * __restrict p_in = in.data();
+        T * __restrict p_out = out.data();
 
         while (p_in < end_in)
         {
