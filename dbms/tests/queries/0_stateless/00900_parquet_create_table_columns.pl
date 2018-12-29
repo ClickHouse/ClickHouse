@@ -14,7 +14,10 @@ sub file_read($file) {
     return $ret;
 }
 
-our $type_parquet_to_clickhouse = {
+our $type_parquet_logical_to_clickhouse = {
+    DECIMAL    => 'Decimal128(1)',
+};
+our $type_parquet_physical_to_clickhouse = {
     BOOLEAN    => 'UInt8',
     INT32      => 'Int32',
     INT64      => 'Int64',
@@ -31,11 +34,12 @@ sub columns ($json) {
     for my $column (@{$json->{Columns}}) {
         #warn Data::Dumper::Dumper $column;
         my $name = $column->{'Name'};
-        unless (exists $type_parquet_to_clickhouse->{$column->{'PhysicalType'}}) {
-            warn "Unknown type [$column->{'PhysicalType'}] of column [$name]";
+        my $type = $type_parquet_logical_to_clickhouse->{$column->{'LogicalType'}} || $type_parquet_physical_to_clickhouse->{$column->{'PhysicalType'}};
+        unless ($type) {
+            warn "Unknown type [$column->{'PhysicalType'}:$column->{'LogicalType'}] of column [$name]";
         }
         $name .= $column->{'Id'} if $uniq{$name}++; # Names can be non-unique
-        push @list, {name => $name, type => $type_parquet_to_clickhouse->{$column->{'PhysicalType'}}};
+        push @list, {name => $name, type => $type};
     }
     print join ', ', map {"$_->{name} $_->{type}"} @list;
 }

@@ -1,0 +1,21 @@
+{
+  "FileName": "/opt/home/proller/ClickHouse2/dbms/tests/queries/0_stateless/data_parquet/nulls.snappy.parquet",
+  "Version": "0",
+  "CreatedBy": "parquet-mr version 1.8.2 (build c6522788629e590a53eb79874b95f6c3ff11f16c)",
+  "TotalRows": "8",
+  "NumberOfRowGroups": "1",
+  "NumberOfRealColumns": "1",
+  "NumberOfColumns": "1",
+  "Columns": [
+     { "Id": "0", "Name": "b_c_int", "PhysicalType": "INT32", "LogicalType": "NONE" }
+  ],
+  "RowGroups": [
+     {
+       "Id": "0",  "TotalBytes": "27",  "Rows": "8",
+       "ColumnChunks": [
+          {"Id": "0", "Values": "8", "StatsSet": "True", "Stats": {"NumNulls": "8", "DistinctValues": "0", "Max": "0", "Min": "0" },
+           "Compression": "SNAPPY", "Encodings": "PLAIN BIT_PACKED RLE ", "UncompressedSize": "27", "CompressedSize": "29" }
+        ]
+     }
+  ]
+}

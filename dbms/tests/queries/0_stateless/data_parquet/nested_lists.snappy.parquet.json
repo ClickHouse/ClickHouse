@@ -1,0 +1,24 @@
+{
+  "FileName": "/opt/home/proller/ClickHouse2/dbms/tests/queries/0_stateless/data_parquet/nested_lists.snappy.parquet",
+  "Version": "0",
+  "CreatedBy": "parquet-mr version 1.8.2 (build c6522788629e590a53eb79874b95f6c3ff11f16c)",
+  "TotalRows": "3",
+  "NumberOfRowGroups": "1",
+  "NumberOfRealColumns": "2",
+  "NumberOfColumns": "2",
+  "Columns": [
+     { "Id": "0", "Name": "element", "PhysicalType": "BYTE_ARRAY", "LogicalType": "UTF8" },
+     { "Id": "1", "Name": "b", "PhysicalType": "INT32", "LogicalType": "NONE" }
+  ],
+  "RowGroups": [
+     {
+       "Id": "0",  "TotalBytes": "155",  "Rows": "3",
+       "ColumnChunks": [
+          {"Id": "0", "Values": "18", "StatsSet": "False",
+           "Compression": "SNAPPY", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "103", "CompressedSize": "104" },
+          {"Id": "1", "Values": "3", "StatsSet": "True", "Stats": {"NumNulls": "0", "DistinctValues": "0", "Max": "1", "Min": "1" },
+           "Compression": "SNAPPY", "Encodings": "BIT_PACKED PLAIN_DICTIONARY ", "UncompressedSize": "52", "CompressedSize": "56" }
+        ]
+     }
+  ]
+}

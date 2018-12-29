@@ -1,0 +1,21 @@
+{
+  "FileName": "/opt/home/proller/ClickHouse2/dbms/tests/queries/0_stateless/data_parquet/byte_array_decimal.parquet",
+  "Version": "0",
+  "CreatedBy": "HVR 5.3.0/9 (linux_glibc2.5-x64-64bit)",
+  "TotalRows": "24",
+  "NumberOfRowGroups": "1",
+  "NumberOfRealColumns": "1",
+  "NumberOfColumns": "1",
+  "Columns": [
+     { "Id": "0", "Name": "value", "PhysicalType": "BYTE_ARRAY", "LogicalType": "DECIMAL" }
+  ],
+  "RowGroups": [
+     {
+       "Id": "0",  "TotalBytes": "168",  "Rows": "24",
+       "ColumnChunks": [
+          {"Id": "0", "Values": "24", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "", "UncompressedSize": "168", "CompressedSize": "168" }
+        ]
+     }
+  ]
+}

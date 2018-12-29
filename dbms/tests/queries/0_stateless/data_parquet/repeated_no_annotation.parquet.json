@@ -1,0 +1,27 @@
+{
+  "FileName": "/opt/home/proller/ClickHouse2/dbms/tests/queries/0_stateless/data_parquet/repeated_no_annotation.parquet",
+  "Version": "0",
+  "CreatedBy": "parquet-rs version 0.3.0 (build b45ce7cba2199f22d93269c150d8a83916c69b5e)",
+  "TotalRows": "0",
+  "NumberOfRowGroups": "1",
+  "NumberOfRealColumns": "2",
+  "NumberOfColumns": "3",
+  "Columns": [
+     { "Id": "0", "Name": "id", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "1", "Name": "number", "PhysicalType": "INT64", "LogicalType": "NONE" },
+     { "Id": "2", "Name": "kind", "PhysicalType": "BYTE_ARRAY", "LogicalType": "UTF8" }
+  ],
+  "RowGroups": [
+     {
+       "Id": "0",  "TotalBytes": "205",  "Rows": "6",
+       "ColumnChunks": [
+          {"Id": "0", "Values": "6", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "PLAIN RLE_DICTIONARY ", "UncompressedSize": "60", "CompressedSize": "60" },
+          {"Id": "1", "Values": "8", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "PLAIN RLE_DICTIONARY ", "UncompressedSize": "80", "CompressedSize": "80" },
+          {"Id": "2", "Values": "8", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "PLAIN RLE_DICTIONARY ", "UncompressedSize": "65", "CompressedSize": "65" }
+        ]
+     }
+  ]
+}

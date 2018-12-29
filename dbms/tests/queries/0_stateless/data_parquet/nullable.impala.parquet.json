@@ -1,0 +1,57 @@
+{
+  "FileName": "/opt/home/proller/ClickHouse2/dbms/tests/queries/0_stateless/data_parquet/nullable.impala.parquet",
+  "Version": "0",
+  "CreatedBy": "parquet-mr version 1.8.0 (build 0fda28af84b9746396014ad6a415b90592a98b3b)",
+  "TotalRows": "7",
+  "NumberOfRowGroups": "1",
+  "NumberOfRealColumns": "6",
+  "NumberOfColumns": "13",
+  "Columns": [
+     { "Id": "0", "Name": "id", "PhysicalType": "INT64", "LogicalType": "NONE" },
+     { "Id": "1", "Name": "element", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "2", "Name": "element", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "3", "Name": "key", "PhysicalType": "BYTE_ARRAY", "LogicalType": "UTF8" },
+     { "Id": "4", "Name": "value", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "5", "Name": "key", "PhysicalType": "BYTE_ARRAY", "LogicalType": "UTF8" },
+     { "Id": "6", "Name": "value", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "7", "Name": "A", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "8", "Name": "element", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "9", "Name": "E", "PhysicalType": "INT32", "LogicalType": "NONE" },
+     { "Id": "10", "Name": "F", "PhysicalType": "BYTE_ARRAY", "LogicalType": "UTF8" },
+     { "Id": "11", "Name": "key", "PhysicalType": "BYTE_ARRAY", "LogicalType": "UTF8" },
+     { "Id": "12", "Name": "element", "PhysicalType": "DOUBLE", "LogicalType": "NONE" }
+  ],
+  "RowGroups": [
+     {
+       "Id": "0",  "TotalBytes": "1073",  "Rows": "7",
+       "ColumnChunks": [
+          {"Id": "0", "Values": "7", "StatsSet": "True", "Stats": {"NumNulls": "0", "DistinctValues": "0", "Max": "7", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "BIT_PACKED PLAIN RLE ", "UncompressedSize": "103", "CompressedSize": "103" },
+          {"Id": "1", "Values": "14", "StatsSet": "True", "Stats": {"NumNulls": "8", "DistinctValues": "0", "Max": "3", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "78", "CompressedSize": "78" },
+          {"Id": "2", "Values": "20", "StatsSet": "True", "Stats": {"NumNulls": "10", "DistinctValues": "0", "Max": "6", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "103", "CompressedSize": "103" },
+          {"Id": "3", "Values": "10", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "80", "CompressedSize": "80" },
+          {"Id": "4", "Values": "10", "StatsSet": "True", "Stats": {"NumNulls": "7", "DistinctValues": "0", "Max": "100", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "PLAIN RLE ", "UncompressedSize": "61", "CompressedSize": "61" },
+          {"Id": "5", "Values": "11", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "77", "CompressedSize": "77" },
+          {"Id": "6", "Values": "11", "StatsSet": "True", "Stats": {"NumNulls": "9", "DistinctValues": "0", "Max": "1", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "72", "CompressedSize": "72" },
+          {"Id": "7", "Values": "7", "StatsSet": "True", "Stats": {"NumNulls": "5", "DistinctValues": "0", "Max": "7", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "BIT_PACKED PLAIN RLE ", "UncompressedSize": "48", "CompressedSize": "48" },
+          {"Id": "8", "Values": "9", "StatsSet": "True", "Stats": {"NumNulls": "6", "DistinctValues": "0", "Max": "3", "Min": "1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "PLAIN RLE ", "UncompressedSize": "63", "CompressedSize": "63" },
+          {"Id": "9", "Values": "19", "StatsSet": "True", "Stats": {"NumNulls": "13", "DistinctValues": "0", "Max": "11", "Min": "-10" },
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "90", "CompressedSize": "90" },
+          {"Id": "10", "Values": "19", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "93", "CompressedSize": "93" },
+          {"Id": "11", "Values": "11", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "101", "CompressedSize": "101" },
+          {"Id": "12", "Values": "13", "StatsSet": "True", "Stats": {"NumNulls": "9", "DistinctValues": "0", "Max": "3.3", "Min": "1.1" },
+           "Compression": "UNCOMPRESSED", "Encodings": "RLE PLAIN_DICTIONARY ", "UncompressedSize": "104", "CompressedSize": "104" }
+        ]
+     }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "FileName": "/opt/home/proller/ClickHouse2/dbms/tests/queries/0_stateless/data_parquet/fixed_length_decimal.parquet",
+  "Version": "0",
+  "CreatedBy": "parquet-mr version 1.8.2 (build c6522788629e590a53eb79874b95f6c3ff11f16c)",
+  "TotalRows": "24",
+  "NumberOfRowGroups": "1",
+  "NumberOfRealColumns": "1",
+  "NumberOfColumns": "1",
+  "Columns": [
+     { "Id": "0", "Name": "value", "PhysicalType": "FIXED_LEN_BYTE_ARRAY", "LogicalType": "DECIMAL" }
+  ],
+  "RowGroups": [
+     {
+       "Id": "0",  "TotalBytes": "319",  "Rows": "24",
+       "ColumnChunks": [
+          {"Id": "0", "Values": "24", "StatsSet": "False",
+           "Compression": "UNCOMPRESSED", "Encodings": "BIT_PACKED RLE PLAIN ", "UncompressedSize": "319", "CompressedSize": "319" }
+        ]
+     }
+  ]
+}
