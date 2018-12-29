@@ -10,6 +10,7 @@
 #include <Poco/ByteOrder.h>
 #include <Poco/Net/IPAddress.h>
 #include <Common/formatIPv6.h>
+#include <common/itoa.h>
 #include <ext/map.h>
 #include <ext/range.h>
 #include "DictionaryBlockInputStream.h"
@@ -778,8 +779,8 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             char * ptr = buffer;
             formatIPv6(reinterpret_cast<const unsigned char *>(ip_column.getDataAt(row).data), ptr);
             *(ptr - 1) = '/';
-            auto size = detail::writeUIntText(mask, ptr);
-            column->insertData(buffer, size + (ptr - buffer));
+            ptr = itoa(mask, ptr);
+            column->insertData(buffer, ptr - buffer);
         }
         return ColumnsWithTypeAndName{
             ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), attributes.front().name)};
