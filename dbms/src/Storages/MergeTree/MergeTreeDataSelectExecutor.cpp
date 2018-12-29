@@ -886,7 +886,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         Row index_left(used_key_size);
         Row index_right(used_key_size);
 
-        while (!ranges_stack.empty())
+        while (!ranges_stack.empty())/// In other words, it removes subranges from whole range, that definitely could not contain required keys.
+
         {
             MarkRange range = ranges_stack.back();
             ranges_stack.pop_back();
