@@ -12,7 +12,7 @@
 #include <DataStreams/NativeBlockInputStream.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 
 
 namespace DB

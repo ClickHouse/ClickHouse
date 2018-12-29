@@ -236,6 +236,9 @@ void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
     auto unique_ptr = dictionary.getColumnUniquePtr();
+    if (size == 0)
+        unique_ptr = unique_ptr->cloneEmpty();
+
     return ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
 }
 

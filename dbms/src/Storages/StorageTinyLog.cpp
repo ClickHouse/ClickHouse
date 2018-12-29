@@ -13,8 +13,8 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -407,7 +407,7 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr &)
+void StorageTinyLog::truncate(const ASTPtr &, const Context &)
 {
     if (name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
