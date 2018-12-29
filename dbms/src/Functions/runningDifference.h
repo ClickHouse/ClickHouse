@@ -59,7 +59,10 @@ private:
         for (size_t i = 0; i < size; ++i)
         {
             if (null_map && (*null_map)[i])
+            {
+                dst[i] = Dst{};
                 continue;
+            }
 
             if (!has_prev_value)
             {
