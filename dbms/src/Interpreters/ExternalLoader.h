@@ -132,6 +132,9 @@ private:
     bool is_initialized = false;
 
     /// Protects only objects map.
+    /** Reading and assignment of "loadable" should be done under mutex.
+      * Creating new versions of "loadable" should not be done under mutex.
+      */
     mutable std::mutex map_mutex;
 
     /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
