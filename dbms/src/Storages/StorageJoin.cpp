@@ -33,7 +33,8 @@ StorageJoin::StorageJoin(
     SizeLimits limits_,
     ASTTableJoin::Kind kind_,
     ASTTableJoin::Strictness strictness_,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    bool overwrite)
     : StorageSetOrJoinBase{path_, name_, columns_}
     , key_names(key_names_)
     , use_nulls(use_nulls_)
@@ -45,7 +46,7 @@ StorageJoin::StorageJoin(
         if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness);
+    join = std::make_shared<Join>(key_names, use_nulls, limits, kind, strictness, overwrite);
     join->setSampleBlock(getSampleBlock().sortColumns());
     restore();
 }
@@ -134,6 +135,7 @@ void registerStorageJoin(StorageFactory & factory)
         auto max_rows_in_join = settings.max_rows_in_join;
         auto max_bytes_in_join = settings.max_bytes_in_join;
         auto join_overflow_mode = settings.join_overflow_mode;
+        auto join_overwrite = settings.join_overwrite;
 
         if (args.storage_def && args.storage_def->settings)
         {
@@ -147,6 +149,8 @@ void registerStorageJoin(StorageFactory & factory)
                     max_bytes_in_join.set(setting.value);
                 else if (setting.name == "join_overflow_mode")
                     join_overflow_mode.set(setting.value);
+                else if (setting.name == "join_overwrite")
+                    join_overwrite.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -162,7 +166,8 @@ void registerStorageJoin(StorageFactory & factory)
             SizeLimits{max_rows_in_join.value, max_bytes_in_join.value, join_overflow_mode.value},
             kind,
             strictness,
-            args.columns);
+            args.columns,
+            join_overwrite);
     });
 }
 
@@ -224,12 +229,12 @@ protected:
         if (parent.blocks.empty())
             return Block();
 
-        if (parent.strictness == ASTTableJoin::Strictness::Any)
-            return createBlock<ASTTableJoin::Strictness::Any>(parent.maps_any);
-        else if (parent.strictness == ASTTableJoin::Strictness::All)
-            return createBlock<ASTTableJoin::Strictness::All>(parent.maps_all);
+        Block block;
+        if (parent.dispatch([&](auto, auto strictness, auto & map) { block = createBlock<strictness>(map); }))
+            ;
         else
             throw Exception("Logical error: unknown JOIN strictness (must be ANY or ALL)", ErrorCodes::LOGICAL_ERROR);
+        return block;
     }
 
 private:
