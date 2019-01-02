@@ -200,7 +200,7 @@ protected:
 
 
 /**
-  * INDEX name(column1, column2, ...) TYPE typename(arg1, arg2, ...)
+  * INDEX name BY expr TYPE typename(arg1, arg2, ...) GRANULARITY value
   */
 class ParserIndexDeclaration : public IParserBase
 {
@@ -215,7 +215,7 @@ protected:
 
 /**
   * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr]
-  * [INDEX name(expr) TYPE type(args) ...] [SETTINGS name = value, ...]
+  * [INDEX name BY expr TYPE type(args) ... GRANULARITY value] [SETTINGS name = value, ...]
   */
 class ParserStorage : public IParserBase
 {

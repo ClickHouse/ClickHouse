@@ -81,8 +81,8 @@ public:
 class MergeTreeIndex
 {
 public:
-    MergeTreeIndex(String name, ExpressionActionsPtr expr, Block key)
-            : name(name), expr(expr), sample(key) {}
+    MergeTreeIndex(String name, ExpressionActionsPtr expr, size_t granularity, Block key)
+            : name(name), expr(expr), granularity(granularity), sample(key) {}
 
     virtual ~MergeTreeIndex() {};
 
@@ -90,6 +90,7 @@ public:
 
     String name;
     ExpressionActionsPtr expr;
+    size_t granularity;
     Block sample;
 };
 

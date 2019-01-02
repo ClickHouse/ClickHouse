@@ -1,9 +1,11 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Core/Types.h>
-#include <Parsers/IAST.h>
+#include <Common/FieldVisitors.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/IAST.h>
 
 #include <vector>
 
@@ -19,6 +21,7 @@ public:
     String name;
     IAST * expr;
     ASTFunction * type;
+    Field granularity;
     //TODO: params (GRANULARITY number or SETTINGS a=b, c=d, ..)?
 
     /** Get the text that identifies this element. */
@@ -42,6 +45,8 @@ public:
         expr->formatImpl(s, state, frame);
         s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
         type->formatImpl(s, state, frame);
+        s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
+        s.ostr << applyVisitor(FieldVisitorToString(), granularity);
     }
 };
 
