@@ -174,13 +174,13 @@ thread_local
 
 void StorageReplicatedMergeTree::setZooKeeper(zkutil::ZooKeeperPtr zookeeper)
 {
-    std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+    std::lock_guard lock(current_zookeeper_mutex);
     current_zookeeper = zookeeper;
 }
 
 zkutil::ZooKeeperPtr StorageReplicatedMergeTree::tryGetZooKeeper()
 {
-    std::lock_guard<std::mutex> lock(current_zookeeper_mutex);
+    std::lock_guard lock(current_zookeeper_mutex);
     return current_zookeeper;
 }
 
@@ -2144,7 +2144,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
         /// (OPTIMIZE queries) can assign new merges.
-        std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+        std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
         auto zookeeper = getZooKeeper();
 
@@ -2644,7 +2644,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     }
 
     {
-        std::lock_guard<std::mutex> lock(currently_fetching_parts_mutex);
+        std::lock_guard lock(currently_fetching_parts_mutex);
         if (!currently_fetching_parts.insert(part_name).second)
         {
             LOG_DEBUG(log, "Part " << part_name << " is already fetching right now");
@@ -2654,7 +2654,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     SCOPE_EXIT
     ({
-        std::lock_guard<std::mutex> lock(currently_fetching_parts_mutex);
+        std::lock_guard lock(currently_fetching_parts_mutex);
         currently_fetching_parts.erase(part_name);
     });
 
@@ -2948,7 +2948,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
     {
         /// We must select parts for merge under merge_selecting_mutex because other threads
         /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
-        std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+        std::lock_guard merge_selecting_lock(merge_selecting_mutex);
 
         auto zookeeper = getZooKeeper();
         ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
@@ -3620,7 +3620,7 @@ void StorageReplicatedMergeTree::rename(const String & new_path_to_db, const Str
 bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 {
     {
-        std::lock_guard<std::mutex> lock(existing_nodes_cache_mutex);
+        std::lock_guard lock(existing_nodes_cache_mutex);
         if (existing_nodes_cache.count(path))
             return true;
     }
@@ -3629,7 +3629,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 
     if (res)
     {
-        std::lock_guard<std::mutex> lock(existing_nodes_cache_mutex);
+        std::lock_guard lock(existing_nodes_cache_mutex);
         existing_nodes_cache.insert(path);
     }
 
@@ -4666,7 +4666,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         /// It does not provides strong guarantees, but is suitable for intended use case (assume merges are quite rare).
 
         {
-            std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+            std::lock_guard merge_selecting_lock(merge_selecting_mutex);
             queue.disableMergesInRange(drop_range_fake_part_name);
         }
     }
@@ -4913,7 +4913,7 @@ bool StorageReplicatedMergeTree::dropPartsInPartition(
       */
     String drop_range_fake_part_name = getPartNamePossiblyFake(data.format_version, drop_range_info);
     {
-        std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+        std::lock_guard merge_selecting_lock(merge_selecting_mutex);
         queue.disableMergesInRange(drop_range_fake_part_name);
     }
 

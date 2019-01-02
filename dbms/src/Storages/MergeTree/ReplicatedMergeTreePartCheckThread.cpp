@@ -38,7 +38,7 @@ ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
-    std::lock_guard<std::mutex> lock(start_stop_mutex);
+    std::lock_guard lock(start_stop_mutex);
     need_stop = false;
     task->activateAndSchedule();
 }
@@ -48,14 +48,14 @@ void ReplicatedMergeTreePartCheckThread::stop()
     //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
     //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
 
-    std::lock_guard<std::mutex> lock(start_stop_mutex);
+    std::lock_guard lock(start_stop_mutex);
     need_stop = true;
     task->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
-    std::lock_guard<std::mutex> lock(parts_mutex);
+    std::lock_guard lock(parts_mutex);
 
     if (parts_set.count(name))
         return;
@@ -68,7 +68,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
-    std::lock_guard<std::mutex> lock(parts_mutex);
+    std::lock_guard lock(parts_mutex);
     return parts_set.size();
 }
 
@@ -295,7 +295,7 @@ void ReplicatedMergeTreePartCheckThread::run()
         time_t min_check_time = std::numeric_limits<time_t>::max();
 
         {
-            std::lock_guard<std::mutex> lock(parts_mutex);
+            std::lock_guard lock(parts_mutex);
 
             if (parts_queue.empty())
             {
@@ -331,7 +331,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         /// Remove the part from check queue.
         {
-            std::lock_guard<std::mutex> lock(parts_mutex);
+            std::lock_guard lock(parts_mutex);
 
             if (parts_queue.empty())
             {

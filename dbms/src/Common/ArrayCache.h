@@ -231,7 +231,7 @@ public:
 
         ~Holder()
         {
-            std::lock_guard<std::mutex> cache_lock(cache.mutex);
+            std::lock_guard cache_lock(cache.mutex);
             if (--region.refcount == 0)
                 cache.lru_list.push_back(region);
             cache.total_size_in_use -= region.size;
@@ -279,14 +279,14 @@ private:
 
         InsertTokenHolder() = default;
 
-        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard & cache_lock)
         {
             key = key_;
             token = token_;
             ++token->refcount;
         }
 
-        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void cleanup([[maybe_unused]] std::lock_guard & token_lock, [[maybe_unused]] std::lock_guard & cache_lock)
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -301,12 +301,12 @@ private:
             if (cleaned_up)
                 return;
 
-            std::lock_guard<std::mutex> token_lock(token->mutex);
+            std::lock_guard token_lock(token->mutex);
 
             if (token->cleaned_up)
                 return;
 
-            std::lock_guard<std::mutex> cache_lock(token->cache.mutex);
+            std::lock_guard cache_lock(token->cache.mutex);
 
             --token->refcount;
             if (token->refcount == 0)
@@ -536,7 +536,7 @@ public:
 
     ~ArrayCache()
     {
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
 
         key_map.clear();
         lru_list.clear();
@@ -563,7 +563,7 @@ public:
     {
         InsertTokenHolder token_holder;
         {
-            std::lock_guard<std::mutex> cache_lock(mutex);
+            std::lock_guard cache_lock(mutex);
 
             auto it = key_map.find(key, RegionCompareByKey());
             if (key_map.end() != it)
@@ -584,7 +584,7 @@ public:
 
         InsertToken * token = token_holder.token.get();
 
-        std::lock_guard<std::mutex> token_lock(token->mutex);
+        std::lock_guard token_lock(token->mutex);
 
         token_holder.cleaned_up = token->cleaned_up;
 
@@ -605,7 +605,7 @@ public:
 
         RegionMetadata * region;
         {
-            std::lock_guard<std::mutex> cache_lock(mutex);
+            std::lock_guard cache_lock(mutex);
             region = allocate(size);
         }
 
@@ -626,14 +626,14 @@ public:
             catch (...)
             {
                 {
-                    std::lock_guard<std::mutex> cache_lock(mutex);
+                    std::lock_guard cache_lock(mutex);
                     freeRegion(*region);
                 }
                 throw;
             }
         }
 
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
 
         try
         {
@@ -692,7 +692,7 @@ public:
 
     Statistics getStatistics() const
     {
-        std::lock_guard<std::mutex> cache_lock(mutex);
+        std::lock_guard cache_lock(mutex);
         Statistics res;
 
         res.total_chunks_size = total_chunks_size;

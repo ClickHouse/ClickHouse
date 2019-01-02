@@ -92,7 +92,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
     /// list of recreated loadable objects to perform delayed removal from unordered_map
     std::list<std::string> recreated_failed_loadable_objects;
 
-    std::unique_lock<std::mutex> all_lock(all_mutex);
+    std::unique_lock all_lock(all_mutex);
 
     /// retry loading failed loadable objects
     for (auto & failed_loadable_object : failed_loadable_objects)
@@ -122,7 +122,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
             }
             else
             {
-                const std::lock_guard<std::mutex> lock{map_mutex};
+                const std::lock_guard lock{map_mutex};
 
                 const auto & lifetime = loadable_ptr->getLifetime();
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
@@ -253,7 +253,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
     }
     else
     {
-        std::unique_lock<std::mutex> all_lock(all_mutex);
+        std::unique_lock all_lock(all_mutex);
 
         auto modification_time_it = last_modification_times.find(config_path);
         if (modification_time_it == std::end(last_modification_times))
@@ -305,7 +305,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                     decltype(loadable_objects.begin()) object_it;
                     {
-                        std::lock_guard<std::mutex> lock{map_mutex};
+                        std::lock_guard lock{map_mutex};
                         object_it = loadable_objects.find(name);
                     }
 
@@ -342,7 +342,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         }
                     }
 
-                    const std::lock_guard<std::mutex> lock{map_mutex};
+                    const std::lock_guard lock{map_mutex};
 
                     /// add new loadable object or update an existing version
                     if (object_it == std::end(loadable_objects))
@@ -365,7 +365,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         /// If the loadable object could not load data or even failed to initialize from the config.
                         /// - all the same we insert information into the `loadable_objects`, with the zero pointer `loadable`.
 
-                        const std::lock_guard<std::mutex> lock{map_mutex};
+                        const std::lock_guard lock{map_mutex};
 
                         const auto exception_ptr = std::current_exception();
                         const auto loadable_it = loadable_objects.find(name);
@@ -397,14 +397,14 @@ void ExternalLoader::reload(const std::string & name)
     reloadFromConfigFiles(true, true, name);
 
     /// Check that specified object was loaded
-    const std::lock_guard<std::mutex> lock{map_mutex};
+    const std::lock_guard lock{map_mutex};
     if (!loadable_objects.count(name))
         throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
 }
 
 ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & name, bool throw_on_error) const
 {
-    const std::lock_guard<std::mutex> lock{map_mutex};
+    const std::lock_guard lock{map_mutex};
 
     const auto it = loadable_objects.find(name);
     if (it == std::end(loadable_objects))

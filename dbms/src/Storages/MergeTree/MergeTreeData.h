@@ -531,7 +531,7 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        std::lock_guard lock{data_parts_mutex};
 
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
@@ -540,14 +540,14 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
     ColumnSizeByName getColumnSizes() const
     {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        std::lock_guard lock{data_parts_mutex};
         return column_sizes;
     }
 
     /// Calculates column sizes in compressed form for the current state of data_parts.
     void recalculateColumnSizes()
     {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        std::lock_guard lock{data_parts_mutex};
         calculateColumnSizesImpl();
     }
 

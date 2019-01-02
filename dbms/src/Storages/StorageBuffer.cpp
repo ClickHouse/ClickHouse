@@ -99,7 +99,7 @@ protected:
             return res;
         has_been_read = true;
 
-        std::lock_guard<std::mutex> lock(buffer.mutex);
+        std::lock_guard lock(buffer.mutex);
 
         if (!buffer.data.rows())
             return res;
@@ -336,7 +336,7 @@ public:
 
         for (size_t try_no = 0; try_no < storage.num_shards; ++try_no)
         {
-            std::unique_lock<std::mutex> lock(storage.buffers[shard_num].mutex, std::try_to_lock);
+            std::unique_lock lock(storage.buffers[shard_num].mutex, std::try_to_lock);
 
             if (lock.owns_lock())
             {
@@ -356,7 +356,7 @@ public:
         if (!least_busy_buffer)
         {
             least_busy_buffer = &storage.buffers[start_shard_num];
-            least_busy_lock = std::unique_lock<std::mutex>(least_busy_buffer->mutex);
+            least_busy_lock = std::unique_lock(least_busy_buffer->mutex);
         }
         insertIntoBuffer(block, *least_busy_buffer);
     }
@@ -527,7 +527,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     size_t bytes = 0;
     time_t time_passed = 0;
 
-    std::unique_lock<std::mutex> lock(buffer.mutex, std::defer_lock);
+    std::unique_lock lock(buffer.mutex, std::defer_lock);
     if (!locked)
         lock.lock();
 

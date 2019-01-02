@@ -109,7 +109,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     {
         {
             quit = true;
-            std::lock_guard<std::mutex> lock{mutex};
+            std::lock_guard lock{mutex};
         }
         cond.notify_one();
         thread.join();
@@ -123,7 +123,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
     {
         {
             quit = true;
-            std::lock_guard<std::mutex> lock{mutex};
+            std::lock_guard lock{mutex};
         }
         cond.notify_one();
         thread.join();
@@ -137,7 +137,7 @@ void StorageDistributedDirectoryMonitor::run()
 {
     setThreadName("DistrDirMonitor");
 
-    std::unique_lock<std::mutex> lock{mutex};
+    std::unique_lock lock{mutex};
 
     const auto quit_requested = [this] { return quit.load(std::memory_order_relaxed); };
 
