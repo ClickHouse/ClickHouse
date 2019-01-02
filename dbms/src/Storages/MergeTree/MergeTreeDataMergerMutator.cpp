@@ -811,6 +811,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         Poco::File(rows_sources_file_path).remove();
     }
 
+    // TODO: здесь надо как-то мержить индекс или в MergedBlockOutputStream
+
     for (const auto & part : parts)
         new_data_part->minmax_idx.merge(part->minmax_idx);
 
@@ -915,6 +917,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         while (check_not_cancelled() && (block = in->read()))
         {
             minmax_idx.update(block, data.minmax_idx_columns);
+            // TODO: насчитывать индексы
+            /// Supposing data is sorted we can calculate indexes there
             out.write(block);
         }
 
@@ -928,6 +932,18 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
+
+        for (const auto& col : in_header.getNames()) {
+            for (const auto& index_part : source_part->index_parts) {
+                const auto index_cols = index_part->index->sample.getNames();
+                auto it = find(cbegin(index_cols), cend(index_cols), col);
+                if (it != cend(index_cols)) {
+                    throw Exception("You can not modify columns used in index. Index name: '"
+                                    + index_part->index->name
+                                    + "' bad column:" + *it, ErrorCodes::ILLEGAL_COLUMN);
+                }
+            }
+        }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
         for (const auto & entry : in_header)
@@ -999,6 +1015,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->index = source_part->index;
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
+        new_data_part->index_parts = source_part->index_parts;
         new_data_part->modification_time = time(nullptr);
         new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->getFullPath());
     }
