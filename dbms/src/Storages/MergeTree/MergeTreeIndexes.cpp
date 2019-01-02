@@ -11,26 +11,13 @@ namespace ErrorCodes
 }
 
 
-INDEX_TYPE IndexCondition::indexType() const {
+IndexType IndexCondition::indexType() const {
     return part->indexType();
 }
 
 
-INDEX_TYPE MergeTreeIndexPart::indexType() const {
+IndexType MergeTreeIndexPart::indexType() const {
     return index->indexType();
-}
-
-void MergeTreeIndexPart::update(const Block & block, const Names & column_names) {
-    /// a few checks?
-    updateImpl(block, column_names);
-}
-
-void MergeTreeIndexPart::merge(const MergeTreeIndexPart & other) {
-    if (other.indexType() != indexType()) {
-        throw Exception("MergeTreeIndexPart: Merging index part with another index type.",
-                        ErrorCodes::LOGICAL_ERROR);
-    }
-    mergeImpl(other);
 }
 
 

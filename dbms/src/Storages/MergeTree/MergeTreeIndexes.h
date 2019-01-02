@@ -6,6 +6,7 @@
 #include <memory>
 #include <Core/Block.h>
 #include <ext/singleton.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/ExpressionActions.h>
@@ -14,7 +15,7 @@
 namespace DB
 {
 
-enum class INDEX_TYPE {
+enum class IndexType {
     NONE = 0
 };
 
@@ -22,8 +23,9 @@ enum class INDEX_TYPE {
 class MergeTreeIndex;
 struct MergeTreeIndexPart;
 
-using MergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
-using MergeTreeIndexes = std::vector<MergeTreeIndexPtr>;
+using MergeTreeIndexPtr = std::shared_ptr<const MergeTreeIndex>;
+using MutableMergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
+using MergeTreeIndexes = std::vector<MutableMergeTreeIndexPtr>;
 
 using MergeTreeIndexPartPtr = std::shared_ptr<MergeTreeIndexPart>;
 using MergeTreeIndexParts = std::vector<MergeTreeIndexPartPtr>;
@@ -37,7 +39,7 @@ class IndexCondition {
 public:
     virtual ~IndexCondition() = default;
 
-    virtual INDEX_TYPE indexType() const;
+    virtual IndexType indexType() const;
 
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
@@ -61,27 +63,17 @@ struct MergeTreeIndexPart
     friend MergeTreeIndex;
 
 public:
+    MergeTreeIndexPart() = default;
     virtual ~MergeTreeIndexPart() = default;
 
-    virtual INDEX_TYPE indexType() const;
+    virtual IndexType indexType() const;
 
-    void update(const Block & block, const Names & column_names);
-    void merge(const MergeTreeIndexPart & other);
+    virtual MergeTreeIndexPartPtr cloneEmpty() const = 0;
 
     virtual IndexConditionPtr createIndexConditionOnPart(
-            const SelectQueryInfo & query_info
-            , const Context & context
-            , const Names & key_column_names
-            , const ExpressionActionsPtr & key_expr) const = 0;
+            const SelectQueryInfo & query_info, const Context & context) const = 0;
 
-protected:
-    MergeTreeIndexPart() = default;
-
-    virtual void updateImpl(const Block & block, const Names & column_names) = 0;
-    virtual void mergeImpl(const MergeTreeIndexPart & other) = 0;
-
-public:
-    MergeTreeIndexPtr index;
+    MergeTreeIndexPtr index; // if parts can migrate to another tables it can be bad
 };
 
 
@@ -94,9 +86,7 @@ public:
 
     virtual ~MergeTreeIndex() {};
 
-    virtual INDEX_TYPE indexType() const = 0;
-
-    virtual MergeTreeIndexPartPtr createEmptyIndexPart() const = 0;
+    virtual IndexType indexType() const = 0;
 
     String name;
     ExpressionActionsPtr expr;

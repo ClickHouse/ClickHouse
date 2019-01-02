@@ -528,9 +528,10 @@ namespace DB
             else
                 ranges.ranges = MarkRanges{MarkRange{0, part->marks_count}};
 
-            for (const auto index_part : part->index_parts) {
-                const auto condition = index_part->createIndexConditionOnPart(
-                        query_info, context, index_part->index->sample.getNames(), index_part->index->expr);
+            /// It can be done in multiple threads (one thread for each part).
+            /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
+            for (auto index_part : part->index_parts) {
+                auto condition = index_part->createIndexConditionOnPart(query_info, context);
                 if (!condition->alwaysUnknownOrTrue()) {
                     ranges.ranges = condition->filterRanges(ranges.ranges);
                 }
