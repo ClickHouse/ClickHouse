@@ -95,14 +95,17 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     ParserKeyword s_by("BY");
     ParserKeyword s_type("TYPE");
+    ParserKeyword s_granularity("GRANULARITY");
 
     ParserIdentifier name_p;
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
+    ParserLiteral granularity_p;
 
     ASTPtr name;
     ASTPtr expr;
     ASTPtr type;
+    ASTPtr granularity;
 
     if (!name_p.parse(pos, name, expected))
         return false;
@@ -119,8 +122,15 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!ident_with_optional_params_p.parse(pos, type, expected))
         return false;
 
+    if (!s_granularity.ignore(pos, expected))
+        return false;
+
+    if (!granularity_p.parse(pos, granularity, expected))
+        return false;
+
     auto index = std::make_shared<ASTIndexDeclaration>();
     index->name = typeid_cast<const ASTIdentifier &>(*name).name;
+    index->granularity = typeid_cast<const ASTLiteral &>(*granularity).value;
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
