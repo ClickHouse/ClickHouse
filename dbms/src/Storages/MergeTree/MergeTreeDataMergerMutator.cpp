@@ -933,6 +933,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
+        /// TODO: just recalc index on part
         for (const auto& col : in_header.getNames()) {
             for (const auto& index_part : source_part->index_parts) {
                 const auto index_cols = index_part->index->sample.getNames();
@@ -940,7 +941,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 if (it != cend(index_cols)) {
                     throw Exception("You can not modify columns used in index. Index name: '"
                                     + index_part->index->name
-                                    + "' bad column:" + *it, ErrorCodes::ILLEGAL_COLUMN);
+                                    + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);
                 }
             }
         }
