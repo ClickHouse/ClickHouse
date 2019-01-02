@@ -39,7 +39,7 @@ class IndexCondition {
 public:
     virtual ~IndexCondition() = default;
 
-    virtual IndexType indexType() const;
+    IndexType indexType() const;
 
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
@@ -58,6 +58,7 @@ using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 
 
 /// Data structure for operations with index data for each MergeTreeDataPart.
+/// Stores information specific for DataPart.
 struct MergeTreeIndexPart
 {
     friend MergeTreeIndex;
@@ -66,7 +67,7 @@ public:
     MergeTreeIndexPart() = default;
     virtual ~MergeTreeIndexPart() = default;
 
-    virtual IndexType indexType() const;
+    IndexType indexType() const;
 
     virtual MergeTreeIndexPartPtr cloneEmpty() const = 0;
 
