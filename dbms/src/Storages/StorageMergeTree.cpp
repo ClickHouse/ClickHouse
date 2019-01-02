@@ -277,7 +277,7 @@ struct CurrentlyMergingPartsTagger
 
     ~CurrentlyMergingPartsTagger()
     {
-        std::lock_guard<std::mutex> lock(storage->currently_merging_mutex);
+        std::lock_guard lock(storage->currently_merging_mutex);
 
         for (const auto & part : parts)
         {
@@ -386,7 +386,7 @@ bool StorageMergeTree::merge(
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
-        std::lock_guard<std::mutex> lock(currently_merging_mutex);
+        std::lock_guard lock(currently_merging_mutex);
 
         auto can_merge = [this, &lock] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
         {
@@ -492,7 +492,7 @@ bool StorageMergeTree::tryMutatePart()
     {
         auto disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-        std::lock_guard<std::mutex> lock(currently_merging_mutex);
+        std::lock_guard lock(currently_merging_mutex);
 
         if (current_mutations_by_version.empty())
             return false;

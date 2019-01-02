@@ -87,7 +87,7 @@ SharedLibraryPtr Compiler::getOrCount(
 {
     HashedKey hashed_key = getHash(key);
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     UInt32 count = ++counts[hashed_key];
 
@@ -306,7 +306,7 @@ void Compiler::compile(
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         libraries[hashed_key] = lib;
     }
 

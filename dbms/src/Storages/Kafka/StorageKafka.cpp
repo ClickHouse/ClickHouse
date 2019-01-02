@@ -427,7 +427,7 @@ StorageKafka::ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
         semaphore.wait();
 
     // Take the first available consumer from the list
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     auto consumer = consumers.back();
     consumers.pop_back();
     return consumer;
@@ -435,7 +435,7 @@ StorageKafka::ConsumerPtr StorageKafka::tryClaimConsumer(long wait_ms)
 
 void StorageKafka::pushConsumer(StorageKafka::ConsumerPtr c)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     consumers.push_back(c);
     semaphore.set();
 }

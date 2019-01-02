@@ -558,7 +558,7 @@ String MergeTreeData::MergingParams::getModeName() const
 
 Int64 MergeTreeData::getMaxBlockNumber()
 {
-    std::lock_guard<std::mutex> lock_all(data_parts_mutex);
+    std::lock_guard lock_all(data_parts_mutex);
 
     Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
@@ -587,7 +587,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
     data_parts_indexes.clear();
 
     for (const String & file_name : part_file_names)
@@ -766,7 +766,7 @@ static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
 void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
-    std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
+    std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
     if (!lock.try_lock())
         return;
 
@@ -805,7 +805,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     DataPartsVector res;
 
     /// If the method is already called from another thread, then we don't need to do anything.
-    std::unique_lock<std::mutex> lock(grab_old_parts_mutex, std::defer_lock);
+    std::unique_lock lock(grab_old_parts_mutex, std::defer_lock);
     if (!lock.try_lock())
         return res;
 
@@ -813,7 +813,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
 
     {
-        std::lock_guard<std::mutex> lock_parts(data_parts_mutex);
+        std::lock_guard lock_parts(data_parts_mutex);
 
         auto outdated_parts_range = getDataPartsStateRange(DataPartState::Outdated);
         for (auto it = outdated_parts_range.begin(); it != outdated_parts_range.end(); ++it)
@@ -847,7 +847,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector & parts)
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
     for (auto & part : parts)
     {
         /// We should modify it under data_parts_mutex
@@ -859,7 +859,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
 {
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
 
         /// TODO: use data_parts iterators instead of pointers
         for (auto & part : parts)
@@ -926,7 +926,7 @@ void MergeTreeData::dropAllData()
 {
     LOG_TRACE(log, "dropAllData: waiting for locks.");
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
 
     LOG_TRACE(log, "dropAllData: removing data from memory.");
 
@@ -1630,7 +1630,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
     DataPartsVector covered_parts;
     {
-        std::unique_lock<std::mutex> lock(data_parts_mutex);
+        std::unique_lock lock(data_parts_mutex);
         renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts);
     }
     return covered_parts;
@@ -1844,7 +1844,7 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 {
     DataPartPtr part_to_delete;
     {
-        std::lock_guard<std::mutex> lock_parts(data_parts_mutex);
+        std::lock_guard lock_parts(data_parts_mutex);
 
         LOG_TRACE(log, "Trying to immediately remove part " << part->getNameWithState());
 
@@ -1880,7 +1880,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
     size_t res = 0;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
             res += part->bytes_on_disk;
@@ -1892,7 +1892,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
 
     size_t res = 0;
     size_t cur_count = 0;
@@ -2016,7 +2016,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
@@ -2025,7 +2025,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
 
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -2266,7 +2266,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
     DataPartsVector res;
     DataPartsVector buf;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
 
         for (auto state : affordable_states)
         {
@@ -2292,7 +2292,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 {
     DataPartsVector res;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
         res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
 
         if (out_states != nullptr)
@@ -2310,7 +2310,7 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
 {
     DataParts res;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
         for (auto state : affordable_states)
         {
             auto range = getDataPartsStateRange(state);

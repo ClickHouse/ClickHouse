@@ -41,7 +41,7 @@ MergeTreeReadPool::MergeTreeReadPool(
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
 {
-    const std::lock_guard<std::mutex> lock{mutex};
+    const std::lock_guard lock{mutex};
 
     /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
     if (thread >= backoff_state.current_threads)
@@ -164,7 +164,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     if (info.nanoseconds < backoff_settings.min_read_latency_ms * 1000000)
         return;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (backoff_state.current_threads <= 1)
         return;

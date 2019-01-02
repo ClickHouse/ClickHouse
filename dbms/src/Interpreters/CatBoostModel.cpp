@@ -488,7 +488,7 @@ std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & 
     static std::weak_ptr<CatBoostLibHolder> ptr;
     static std::mutex mutex;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     auto result = ptr.lock();
 
     if (!result || result->getCurrentPath() != lib_path)

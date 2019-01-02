@@ -128,7 +128,7 @@ protected:
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
 
-        if (pad_left)
+        if (pad_left)   /// TODO Do we need it?
             memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
     }
 

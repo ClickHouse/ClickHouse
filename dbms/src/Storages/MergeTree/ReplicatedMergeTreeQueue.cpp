@@ -294,7 +294,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     size_t queue_size = 0;
 
     {
-        std::unique_lock<std::mutex> lock(state_mutex);
+        std::unique_lock lock(state_mutex);
 
         /// Remove the job from the queue in the RAM.
         /// You can not just refer to a pre-saved iterator, because someone else might be able to delete the task.
@@ -335,7 +335,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
     std::optional<time_t> max_processed_insert_time_changed;
 
     {
-        std::unique_lock<std::mutex> lock(state_mutex);
+        std::unique_lock lock(state_mutex);
 
         virtual_parts.remove(part_name);
 
@@ -370,7 +370,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 
 bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & part_info)
 {
-    std::unique_lock<std::mutex> lock(state_mutex);
+    std::unique_lock lock(state_mutex);
     return virtual_parts.remove(part_info);
 }
 
@@ -711,7 +711,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPt
     std::optional<time_t> max_processed_insert_time_changed;
 
     /// Remove operations with parts, contained in the range to be deleted, from the queue.
-    std::unique_lock<std::mutex> lock(state_mutex);
+    std::unique_lock lock(state_mutex);
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
         auto type = (*it)->type;
@@ -785,7 +785,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 void ReplicatedMergeTreeQueue::checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry)
 {
     String conflicts_description;
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard lock(state_mutex);
 
     if (0 != getConflictsCountForRange(range, entry, &conflicts_description, lock))
         throw Exception(conflicts_description, ErrorCodes::UNFINISHED);
@@ -1013,7 +1013,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
 {
     LogEntryPtr entry;
 
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
     {
@@ -1635,8 +1635,8 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
 {
-    std::lock_guard<std::mutex> lock(state_mutex);
-    std::lock_guard<std::mutex> lock_subscribers(subscribers_mutex);
+    std::lock_guard lock(state_mutex);
+    std::lock_guard lock_subscribers(subscribers_mutex);
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
@@ -1648,13 +1648,13 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
 {
-    std::lock_guard<std::mutex> lock(queue.subscribers_mutex);
+    std::lock_guard lock(queue.subscribers_mutex);
     queue.subscribers.erase(it);
 }
 
 void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size)
 {
-    std::lock_guard<std::mutex> lock_subscribers(subscribers_mutex);
+    std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
         subscriber_callback(new_queue_size);
 }
