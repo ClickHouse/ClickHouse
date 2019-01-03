@@ -57,8 +57,25 @@ public:
 using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 
 
+struct MergeTreeIndexGranule
+{
+    friend MergeTreeIndexPart;
+
+public:
+    virtual ~MergeTreeIndexGranule();
+
+    virtual void serializeBinary() const = 0;
+    virtual void deserializeBinary() const = 0;
+
+    virtual void update(const Block & block, size_t first, size_t last) = 0;
+};
+
+using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
+
+
 /// Data structure for operations with index data for each MergeTreeDataPart.
 /// Stores information specific for DataPart.
+/// Возможно будет убран.
 struct MergeTreeIndexPart
 {
     friend MergeTreeIndex;
@@ -71,10 +88,11 @@ public:
 
     virtual MergeTreeIndexPartPtr cloneEmpty() const = 0;
 
+    virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
     virtual IndexConditionPtr createIndexConditionOnPart(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
-    MergeTreeIndexPtr index; // if parts can migrate to another tables it can be bad
+    MergeTreeIndexPtr index;
 };
 
 
