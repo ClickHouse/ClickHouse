@@ -620,6 +620,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
 
+    ExpressionActionsPtr stream_expr = data.sorting_key_expr;
+    /// TODO: добавлять стобцы из индексов
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
@@ -628,11 +630,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
-        if (data.hasPrimaryKey())
-            src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.sorting_key_expr)));
-        else
+        if (data.hasPrimaryKey()) {
+            auto stream = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(
+                            BlockInputStreamPtr(std::move(input)), stream_expr));
+            src_streams.emplace_back(stream);
+        } else {
             src_streams.emplace_back(std::move(input));
+        }
     }
 
     Names sort_columns = data.sorting_key_columns;
