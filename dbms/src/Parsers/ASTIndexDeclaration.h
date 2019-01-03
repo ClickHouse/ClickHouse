@@ -22,7 +22,6 @@ public:
     IAST * expr;
     ASTFunction * type;
     Field granularity;
-    //TODO: params (GRANULARITY number or SETTINGS a=b, c=d, ..)?
 
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }
