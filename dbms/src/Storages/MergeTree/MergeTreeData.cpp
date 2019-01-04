@@ -99,7 +99,7 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : context(context_),
+    : global_context(context_),
     merging_params(merging_params_),
     index_granularity(settings_.index_granularity),
     settings(settings_),
@@ -126,8 +126,8 @@ MergeTreeData::MergeTreeData(
             && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        auto syntax = SyntaxAnalyzer(context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, context)
+        auto syntax = SyntaxAnalyzer(global_context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
+        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
             .getRequiredSourceColumns();
     }
 
@@ -282,8 +282,8 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = SyntaxAnalyzer(context, {}).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, context)
+            auto syntax = SyntaxAnalyzer(global_context, {}).analyze(added_key_column_expr_list, all_columns);
+            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
                 .getRequiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
@@ -305,17 +305,17 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         }
     }
 
-    auto new_sorting_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_sorting_key_expr_list, all_columns);
-    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
+    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context, {}).analyze(new_sorting_key_expr_list, all_columns);
+    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
         .getActions(false);
     auto new_sorting_key_sample =
-        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
+        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
         .getActions(true)->getSampleBlock();
 
     checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
 
-    auto new_primary_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_primary_key_expr_list, all_columns);
-    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, context)
+    auto new_primary_key_syntax = SyntaxAnalyzer(global_context, {}).analyze(new_primary_key_expr_list, all_columns);
+    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, global_context)
         .getActions(false);
 
     Block new_primary_key_sample;
@@ -376,8 +376,8 @@ void MergeTreeData::initPartitionKey()
         return;
 
     {
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, context).getActions(false);
+        auto syntax_result = SyntaxAnalyzer(global_context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
+        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
     }
 
     for (const ASTPtr & ast : partition_key_expr_list->children)
@@ -390,7 +390,7 @@ void MergeTreeData::initPartitionKey()
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_key_expr->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context);
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, global_context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -549,9 +549,6 @@ String MergeTreeData::MergingParams::getModeName() const
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
-
-        default:
-            throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
     }
 }
 
@@ -876,7 +873,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = context.getPartLog(database_name))
+    if (auto part_log = global_context.getPartLog(database_name))
     {
         PartLogElement part_log_elem;
 
@@ -918,7 +915,7 @@ void MergeTreeData::setPath(const String & new_full_path)
 
     Poco::File(full_path).renameTo(new_full_path);
 
-    context.dropCaches();
+    global_context.dropCaches();
     full_path = new_full_path;
 }
 
@@ -933,7 +930,7 @@ void MergeTreeData::dropAllData()
     data_parts_indexes.clear();
     column_sizes.clear();
 
-    context.dropCaches();
+    global_context.dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
@@ -1148,7 +1145,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 /// Need to modify column type.
                 if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
+                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), global_context);
 
                 out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
@@ -1159,7 +1156,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 out_expression->add(ExpressionAction::addColumn(
                     { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
-                const auto & function = FunctionFactory::instance().get("CAST", context);
+                const auto & function = FunctionFactory::instance().get("CAST", global_context);
                 out_expression->add(ExpressionAction::applyFunction(
                     function, Names{column.name, new_type_name_column}), out_names);
 
@@ -1303,7 +1300,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
             *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
-        auto compression_codec = this->context.chooseCompressionCodec(
+        auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
             static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
@@ -1411,7 +1408,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         mutable_part.bytes_on_disk = new_checksums.getTotalSizeOnDisk();
 
         /// TODO: we can skip resetting caches when the column is added.
-        data_part->storage.context.dropCaches();
+        data_part->storage.global_context.dropCaches();
 
         clear();
     }

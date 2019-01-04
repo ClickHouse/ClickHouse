@@ -355,9 +355,6 @@ String SettingTotalsMode::toString() const
         case TotalsMode::AFTER_HAVING_EXCLUSIVE: return "after_having_exclusive";
         case TotalsMode::AFTER_HAVING_INCLUSIVE: return "after_having_inclusive";
         case TotalsMode::AFTER_HAVING_AUTO:      return "after_having_auto";
-
-        default:
-            throw Exception("Unknown TotalsMode enum value", ErrorCodes::UNKNOWN_TOTALS_MODE);
     }
 }
 

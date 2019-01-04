@@ -1054,14 +1054,14 @@ void Context::setCurrentQueryId(const String & query_id)
             {
                 UInt64 a;
                 UInt64 b;
-            };
+            } words;
         } random;
 
         {
             auto lock = getLock();
 
-            random.a = shared->rng();
-            random.b = shared->rng();
+            random.words.a = shared->rng();
+            random.words.b = shared->rng();
         }
 
         /// Use protected constructor.
@@ -1620,7 +1620,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 }
 
 
-void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop)
+void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
 {
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
@@ -1668,7 +1668,7 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 }
 
 
-void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size)
+void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
     size_t max_table_size_to_drop = shared->max_table_size_to_drop;
 
@@ -1683,7 +1683,7 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 }
 
 
-void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size)
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
     size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
 

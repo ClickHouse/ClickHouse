@@ -1181,9 +1181,9 @@ void ZooKeeper::receiveEvent()
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
 
-        request_info.callback = [this](const Response & response)
+        request_info.callback = [this](const Response & response_)
         {
-            const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response);
+            const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
 
             std::lock_guard lock(watches_mutex);
 

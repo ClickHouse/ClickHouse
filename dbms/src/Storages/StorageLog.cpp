@@ -408,7 +408,7 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
         writeIntBinary(mark.second.offset, marks_stream);
 
         size_t column_index = mark.first;
-        storage.files[storage.column_names[column_index]].marks.push_back(mark.second);
+        storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);
     }
 }
 
@@ -452,13 +452,13 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
             column_data.data_file = Poco::File{
                 path + escapeForFileName(name) + '/' + stream_name + DBMS_STORAGE_LOG_DATA_FILE_EXTENSION};
 
-            column_names.push_back(stream_name);
+            column_names_by_idx.push_back(stream_name);
             ++file_count;
         }
     };
 
-    IDataType::SubstreamPath path;
-    type.enumerateStreams(stream_callback, path);
+    IDataType::SubstreamPath substream_path;
+    type.enumerateStreams(stream_callback, substream_path);
 }
 
 
@@ -554,12 +554,12 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
-    IDataType::SubstreamPath path;
+    IDataType::SubstreamPath substream_root_path;
     column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
-    }, path);
+    }, substream_root_path);
 
     Files_t::const_iterator it = files.find(filename);
     if (files.end() == it)
