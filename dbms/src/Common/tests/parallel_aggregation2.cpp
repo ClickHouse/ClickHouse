@@ -186,8 +186,8 @@ struct MergeParallelForTwoLevelTable
                 for (size_t i = 0; i < num_maps; ++i)
                     section[i] = &source_maps[i]->impls[bucket];
 
-                typename Map::Impl * result_map;
-                ImplMerge::execute(section.data(), num_maps, result_map, merger, pool);
+                typename Map::Impl * res;
+                ImplMerge::execute(section.data(), num_maps, res, merger, pool);
             });
 
         pool.wait();

@@ -12,7 +12,6 @@
 #include <pthread.h>
 
 
-
 std::mutex mutex;
 
 
@@ -52,8 +51,10 @@ void do_io(size_t id)
     TaskStatsInfoGetter get_info;
 
     get_info.getStat(stat, tid);
-    std::lock_guard lock(mutex);
-    std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
+    {
+        std::lock_guard lock(mutex);
+        std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
+    }
 
     size_t copy_size = 1048576 * (1 + id);
     std::string path_dst = "test_out_" + std::to_string(id);
