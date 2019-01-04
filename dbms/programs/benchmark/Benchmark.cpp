@@ -229,7 +229,7 @@ private:
                 report(info_per_interval);
                 delay_watch.restart();
             }
-        };
+        }
 
         return true;
     }

@@ -1053,11 +1053,8 @@ private:
 
     void runQueries(const QueriesWithIndexes & queries_with_indexes)
     {
-        for (const std::pair<Query, const size_t> & query_and_index : queries_with_indexes)
+        for (const auto & [query, run_index] : queries_with_indexes)
         {
-            Query query = query_and_index.first;
-            const size_t run_index = query_and_index.second;
-
             TestStopConditions & stop_conditions = stop_conditions_by_run[run_index];
             Stats & statistics = statistics_by_run[run_index];
 
