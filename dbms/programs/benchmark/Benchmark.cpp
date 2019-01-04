@@ -503,6 +503,4 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << std::endl;
         return getCurrentExceptionCode();
     }
-
-    return 0;
 }
