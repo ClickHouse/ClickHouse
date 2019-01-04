@@ -21,20 +21,16 @@ enum class IndexType {
 
 
 class MergeTreeIndex;
-struct MergeTreeIndexPart;
 
 using MergeTreeIndexPtr = std::shared_ptr<const MergeTreeIndex>;
 using MutableMergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
 using MergeTreeIndexes = std::vector<MutableMergeTreeIndexPtr>;
 
-using MergeTreeIndexPartPtr = std::shared_ptr<MergeTreeIndexPart>;
-using MergeTreeIndexParts = std::vector<MergeTreeIndexPartPtr>;
-
 
 /// Condition on the index.
 /// It works only with one indexPart (MergeTreeDataPart).
 class IndexCondition {
-    friend MergeTreeIndexPart;
+    friend MergeTreeIndex;
 
 public:
     virtual ~IndexCondition() = default;
@@ -51,7 +47,7 @@ protected:
     IndexCondition() = default;
 
 public:
-    MergeTreeIndexPartPtr part;
+    MergeTreeIndexPtr index;
 };
 
 using IndexConditionPtr = std::shared_ptr<IndexCondition>;
@@ -59,7 +55,7 @@ using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 
 struct MergeTreeIndexGranule
 {
-    friend MergeTreeIndexPart;
+    friend MergeTreeIndex;
 
 public:
     virtual ~MergeTreeIndexGranule();
@@ -76,28 +72,6 @@ using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
 
-/// Data structure for operations with index data for each MergeTreeDataPart.
-/// Stores information specific for DataPart.
-/// Возможно будет убран.
-struct MergeTreeIndexPart
-{
-    friend MergeTreeIndex;
-
-public:
-    MergeTreeIndexPart() = default;
-    virtual ~MergeTreeIndexPart() = default;
-
-    IndexType indexType() const;
-
-    virtual MergeTreeIndexPartPtr cloneEmpty() const = 0;
-
-    virtual IndexConditionPtr createIndexConditionOnPart(
-            const SelectQueryInfo & query_info, const Context & context) const = 0;
-
-    MergeTreeIndexPtr index;
-};
-
-
 /// Structure for storing basic index info like columns, expression, arguments, ...
 class MergeTreeIndex
 {
@@ -110,6 +84,9 @@ public:
     virtual IndexType indexType() const = 0;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+
+    virtual IndexConditionPtr createIndexConditionOnPart(
+            const SelectQueryInfo & query_info, const Context & context) const = 0;
 
     String name;
     ExpressionActionsPtr expr;

@@ -12,11 +12,6 @@ namespace ErrorCodes
 
 
 IndexType IndexCondition::indexType() const {
-    return part->indexType();
-}
-
-
-IndexType MergeTreeIndexPart::indexType() const {
     return index->indexType();
 }
 

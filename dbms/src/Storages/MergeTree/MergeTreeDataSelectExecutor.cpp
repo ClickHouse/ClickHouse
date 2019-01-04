@@ -530,8 +530,8 @@ namespace DB
 
             /// It can be done in multiple threads (one thread for each part).
             /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
-            for (auto index_part : part->index_parts) {
-                auto condition = index_part->createIndexConditionOnPart(query_info, context);
+            for (auto index : data.indexes) {
+                auto condition = index->createIndexConditionOnPart(query_info, context);
                 if (!condition->alwaysUnknownOrTrue()) {
                     ranges.ranges = condition->filterRanges(ranges.ranges);
                 }
