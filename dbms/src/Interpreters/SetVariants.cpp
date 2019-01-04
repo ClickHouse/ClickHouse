@@ -25,9 +25,6 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
 
@@ -42,9 +39,6 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         case Type::NAME: return NAME->data.size();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
 
@@ -59,9 +53,6 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         case Type::NAME: return NAME->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
 

@@ -420,10 +420,10 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
         /// The average size of the node value in this case is less than 10 kilobytes.
         static constexpr auto MAX_MULTI_OPS = 100;
 
-        for (size_t i = 0, size = log_entries.size(); i < size; i += MAX_MULTI_OPS)
+        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries; entry_idx += MAX_MULTI_OPS)
         {
-            auto begin = log_entries.begin() + i;
-            auto end = i + MAX_MULTI_OPS >= log_entries.size()
+            auto begin = log_entries.begin() + entry_idx;
+            auto end = entry_idx + MAX_MULTI_OPS >= log_entries.size()
                 ? log_entries.end()
                 : (begin + MAX_MULTI_OPS);
             auto last = end - 1;
@@ -463,7 +463,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)
                 {
-                    std::lock_guard lock(state_mutex);
+                    std::lock_guard state_lock(state_mutex);
                     if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
                     {
                         min_unprocessed_insert_time = entry.create_time;
@@ -485,17 +485,17 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 
             try
             {
-                std::lock_guard lock(state_mutex);
+                std::lock_guard state_lock(state_mutex);
 
                 log_pointer = last_entry_index + 1;
 
-                for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
+                for (size_t copied_entry_idx = 0, num_copied_entries = copied_entries.size(); copied_entry_idx < num_copied_entries; ++copied_entry_idx)
                 {
-                    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[i]).path_created;
-                    copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+                    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[copied_entry_idx]).path_created;
+                    copied_entries[copied_entry_idx]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
                     std::optional<time_t> unused = false;
-                    insertUnlocked(copied_entries[i], unused, lock);
+                    insertUnlocked(copied_entries[copied_entry_idx], unused, state_lock);
                 }
 
                 last_queue_update = time(nullptr);
@@ -552,7 +552,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     /// Compare with the local state, delete obsolete entries and determine which new entries to load.
     Strings entries_to_load;
     {
-        std::lock_guard lock(state_mutex);
+        std::lock_guard state_lock(state_mutex);
 
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
         {
@@ -599,7 +599,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
         bool some_mutations_are_probably_done = false;
         {
-            std::lock_guard lock(state_mutex);
+            std::lock_guard state_lock(state_mutex);
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {

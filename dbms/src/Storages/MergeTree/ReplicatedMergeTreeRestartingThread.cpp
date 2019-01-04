@@ -51,7 +51,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
-    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -84,7 +84,7 @@ void ReplicatedMergeTreeRestartingThread::run()
             {
                 try
                 {
-                    storage.setZooKeeper(storage.context.getZooKeeper());
+                    storage.setZooKeeper(storage.global_context.getZooKeeper());
                 }
                 catch (const Coordination::Exception &)
                 {

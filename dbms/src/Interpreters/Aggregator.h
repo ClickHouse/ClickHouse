@@ -444,7 +444,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     struct State : public BaseState
     {
-        ColumnRawPtrs key;
+        ColumnRawPtrs key_columns;
         const IColumn * positions = nullptr;
         size_t size_of_index_type = 0;
 
@@ -464,12 +464,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             throw Exception("Expected cache for AggregationMethodSingleLowCardinalityColumn::init", ErrorCodes::LOGICAL_ERROR);
         }
 
-        void init(ColumnRawPtrs & key_columns, const AggregationStateCachePtr & cache_ptr)
+        void init(ColumnRawPtrs & key_columns_low_cardinality, const AggregationStateCachePtr & cache_ptr)
         {
-            auto column = typeid_cast<const ColumnLowCardinality *>(key_columns[0]);
+            auto column = typeid_cast<const ColumnLowCardinality *>(key_columns_low_cardinality[0]);
             if (!column)
                 throw Exception("Invalid aggregation key type for AggregationMethodSingleLowCardinalityColumn method. "
-                                "Excepted LowCardinality, got " + key_columns[0]->getName(), ErrorCodes::LOGICAL_ERROR);
+                                "Excepted LowCardinality, got " + key_columns_low_cardinality[0]->getName(), ErrorCodes::LOGICAL_ERROR);
 
             if (!cache_ptr)
                 throw Exception("Cache wasn't created for AggregationMethodSingleLowCardinalityColumn", ErrorCodes::LOGICAL_ERROR);
@@ -484,7 +484,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
             auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
             is_nullable = column->getDictionary().nestedColumnIsNullable();
-            key = {dict};
+            key_columns = {dict};
             bool is_shared_dict = column->isSharedDictionary();
 
             typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
@@ -517,12 +517,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
 
             AggregateDataPtr default_data = nullptr;
-            aggregate_data_cache.assign(key[0]->size(), default_data);
+            aggregate_data_cache.assign(key_columns[0]->size(), default_data);
 
             size_of_index_type = column->getSizeOfIndexType();
             positions = column->getIndexesPtr().get();
 
-            BaseState::init(key);
+            BaseState::init(key_columns);
         }
 
         ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -547,7 +547,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             Arena & pool) const
         {
             size_t row = getIndexAt(i);
-            return BaseState::getKey(key, 1, row, key_sizes, keys, pool);
+            return BaseState::getKey(key_columns, 1, row, key_sizes, keys, pool);
         }
 
         template <typename D>
@@ -575,9 +575,8 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
             else
             {
-                ColumnRawPtrs key_columns;
                 Sizes key_sizes;
-                auto key = getKey(key_columns, 0, i, key_sizes, keys, pool);
+                auto key = getKey({}, 0, i, key_sizes, keys, pool);
 
                 typename D::iterator it;
                 if (saved_hash)
@@ -618,11 +617,10 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
             if (!aggregate_data_cache[row])
             {
-                ColumnRawPtrs key_columns;
                 Sizes key_sizes;
                 StringRefs keys;
                 Arena pool;
-                auto key = getKey(key_columns, 0, i, key_sizes, keys, pool);
+                auto key = getKey({}, 0, i, key_sizes, keys, pool);
 
                 typename D::iterator it;
                 if (saved_hash)
@@ -653,10 +651,10 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static const bool no_consecutive_keys_optimization = true;
     static const bool low_cardinality_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
         auto ref = Base::getValueRef(value);
-        static_cast<ColumnLowCardinality *>(key_columns[0].get())->insertData(ref.data, ref.size);
+        static_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
     }
 };
 
@@ -1132,9 +1130,6 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
 
         type = type_;
@@ -1152,9 +1147,6 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return NAME->data.size() + (without_key != nullptr);
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
 
@@ -1170,9 +1162,6 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return NAME->data.size();
             APPLY_FOR_AGGREGATED_VARIANTS(M)
             #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
 
@@ -1187,9 +1176,6 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return #NAME;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
 
@@ -1204,9 +1190,6 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return IS_TWO_LEVEL;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
 

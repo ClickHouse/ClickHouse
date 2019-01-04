@@ -42,7 +42,7 @@ StorageMySQL::StorageMySQL(const std::string & name,
     , replace_query{replace_query}
     , on_duplicate_clause{on_duplicate_clause}
     , pool(std::move(pool))
-    , context(context)
+    , global_context(context)
 {
 }
 
@@ -60,9 +60,9 @@ BlockInputStreams StorageMySQL::read(
         *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 
     Block sample_block;
-    for (const String & name : column_names)
+    for (const String & column_name : column_names)
     {
-        auto column_data = getColumn(name);
+        auto column_data = getColumn(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
 
@@ -114,7 +114,7 @@ public:
         sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
+        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.global_context);
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())

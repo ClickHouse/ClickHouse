@@ -622,9 +622,9 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
+        else if (auto col_from_const = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
-            auto value = col_from->template getValue<FromType>();
+            auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
                 hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
@@ -672,10 +672,10 @@ private:
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
+        else if (const ColumnFixedString * col_from_fixed = checkAndGetColumn<ColumnFixedString>(column))
         {
-            const typename ColumnString::Chars & data = col_from->getChars();
-            size_t n = col_from->getN();
+            const typename ColumnString::Chars & data = col_from_fixed->getChars();
+            size_t n = col_from_fixed->getN();
             size_t size = data.size() / n;
 
             for (size_t i = 0; i < size; ++i)
@@ -687,9 +687,9 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
         {
-            String value = col_from->getValue<String>().data();
+            String value = col_from_const->getValue<String>().data();
             const ToType hash = Impl::apply(value.data(), value.size());
             const size_t size = vec_to.size();
 
@@ -749,10 +749,10 @@ private:
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnArray>(column))
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnArray>(column))
         {
             /// NOTE: here, of course, you can do without the materialization of the column.
-            ColumnPtr full_column = col_from->convertToFullColumn();
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
             executeArray<first>(type, &*full_column, vec_to);
         }
         else
@@ -799,9 +799,9 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
-        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
+        else if (const ColumnTuple * tuple_const = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const Columns & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)

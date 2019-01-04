@@ -359,7 +359,7 @@ bool MinimalisticDataPartChecksums::deserialize(ReadBuffer & in)
     return true;
 }
 
-void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums)
+void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums_)
 {
     num_compressed_files = 0;
     num_uncompressed_files = 0;
@@ -368,7 +368,7 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
     SipHash hash_of_uncompressed_files_;
     SipHash uncompressed_hash_of_compressed_files_;
 
-    for (const auto & elem : full_checksums.files)
+    for (const auto & elem : full_checksums_.files)
     {
         const String & name = elem.first;
         const auto & checksum = elem.second;
