@@ -157,7 +157,7 @@ void StorageDistributedDirectoryMonitor::run()
                 std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
                 std::chrono::milliseconds{max_sleep_time});
             tryLogCurrentException(getLoggerName().data());
-        };
+        }
 
         if (do_sleep)
             cond.wait_for(lock, sleep_time, quit_requested);
