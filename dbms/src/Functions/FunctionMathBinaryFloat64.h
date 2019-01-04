@@ -146,7 +146,7 @@ private:
             block.getByPosition(result).column = std::move(dst);
             return true;
         }
-        else if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
+        if (const auto right_arg_typed = checkAndGetColumnConst<ColumnVector<RightType>>(right_arg))
         {
             auto dst = ColumnVector<Float64>::create();
 
@@ -205,7 +205,7 @@ private:
                 throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN};
             }
-            else if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
+            if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
             {
                 if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
                     return true;
