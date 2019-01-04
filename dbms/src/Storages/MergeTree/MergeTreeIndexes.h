@@ -64,13 +64,16 @@ struct MergeTreeIndexGranule
 public:
     virtual ~MergeTreeIndexGranule();
 
-    virtual void serializeBinary() const = 0;
-    virtual void deserializeBinary() const = 0;
+    virtual void serializeBinary(WriteBuffer & ostr) const = 0;
+    virtual void deserializeBinary(ReadBuffer & istr) const = 0;
 
-    virtual void update(const Block & block, size_t first, size_t last) = 0;
+    virtual bool empty() const = 0;
+
+    virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
+using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
 
 /// Data structure for operations with index data for each MergeTreeDataPart.
@@ -88,7 +91,6 @@ public:
 
     virtual MergeTreeIndexPartPtr cloneEmpty() const = 0;
 
-    virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
     virtual IndexConditionPtr createIndexConditionOnPart(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
@@ -107,9 +109,13 @@ public:
 
     virtual IndexType indexType() const = 0;
 
+    virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
+
     String name;
     ExpressionActionsPtr expr;
     size_t granularity;
+    Names columns;
+    DataTypes data_types;
     Block sample;
 };
 
