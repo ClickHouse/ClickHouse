@@ -98,6 +98,7 @@ public:
 
 class MergeTreeIndexes : public std::vector<MutableMergeTreeIndexPtr>
 {
+public:
     void writeText(WriteBuffer & ostr) const;
     void readText(ReadBuffer & istr);
 };
