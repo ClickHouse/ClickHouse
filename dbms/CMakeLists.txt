@@ -50,6 +50,22 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
             set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
         endif ()
     endif ()
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
+        if (WEVERYTHING)
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+        endif ()
+    endif ()
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
+        if (WEVERYTHING)
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-shadow-field")
+        endif ()
+    endif ()
 endif ()
 
 if (USE_DEBUG_HELPERS)
