@@ -970,6 +970,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
+
+        for (auto index : data.indexes) {
+            files_to_skip.insert(index->getFileName() + ".idx");
+        }
+
         for (const auto & entry : in_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)

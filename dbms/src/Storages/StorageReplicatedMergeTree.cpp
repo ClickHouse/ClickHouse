@@ -227,7 +227,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     if (path_.empty())
         throw Exception("ReplicatedMergeTree storages require data path", ErrorCodes::INCORRECT_FILE_NAME);
     if (!indexes_ast_.empty()) {
-        throw Exception("ReplicatedMergeTree storages do not support indexes", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("check indexes support for ReplicatedMergeTree", ErrorCodes::INCORRECT_QUERY);
     }
 
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
