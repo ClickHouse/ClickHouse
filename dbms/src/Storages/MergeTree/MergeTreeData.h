@@ -580,7 +580,7 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Secondary indexes for MergeTree
+    /// Secondary (data skipping) indexes for MergeTree
     MergeTreeIndexes indexes;
 
     /// Names of columns for primary key + secondary sorting columns.
@@ -724,6 +724,8 @@ private:
     std::mutex clear_old_temporary_directories_mutex;
 
     void setPrimaryKeyAndColumns(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check = false);
+
+    void setSkipIndexes(const ASTs & indexes_asts, bool only_check = false);
 
     void initPartitionKey();
 
