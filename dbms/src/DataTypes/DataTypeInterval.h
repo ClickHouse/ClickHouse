@@ -50,6 +50,8 @@ public:
             case Quarter: return "Quarter";
             case Year: return "Year";
         }
+
+        __builtin_unreachable();
     }
 
     DataTypeInterval(Kind kind) : kind(kind) {}

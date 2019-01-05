@@ -795,6 +795,8 @@ String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
         case State::Deleting:
             return "Deleting";
     }
+
+    __builtin_unreachable();
 }
 
 String MergeTreeDataPart::stateString() const

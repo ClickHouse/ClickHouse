@@ -128,6 +128,8 @@ static size_t getTotalRowCountImpl(const Maps & maps, Join::Type type)
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
     }
+
+    __builtin_unreachable();
 }
 
 template <typename Maps>
@@ -143,6 +145,8 @@ static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
     }
+
+    __builtin_unreachable();
 }
 
 

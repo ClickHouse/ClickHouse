@@ -81,7 +81,7 @@ struct DefaultHash<CompactStringRef>
 };
 
 
-static ALWAYS_INLINE UInt64 mix(UInt64 h)
+static inline UInt64 mix(UInt64 h)
 {
     h ^= h >> 23;
     h *= 0x2127599bf4325c37ULL;

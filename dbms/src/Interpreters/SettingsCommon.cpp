@@ -356,6 +356,8 @@ String SettingTotalsMode::toString() const
         case TotalsMode::AFTER_HAVING_INCLUSIVE: return "after_having_inclusive";
         case TotalsMode::AFTER_HAVING_AUTO:      return "after_having_auto";
     }
+
+    __builtin_unreachable();
 }
 
 void SettingTotalsMode::set(TotalsMode x)
