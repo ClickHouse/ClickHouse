@@ -30,12 +30,13 @@ namespace ErrorCodes
 namespace
 {
 
-/** To read and checksum single stream (a pair of .bin, .mrk files) for a single column.
+/** To read and checksum single stream (a pair of .bin, .mrk files) for a single column or secondary index.
   */
 class Stream
 {
 public:
     String base_name;
+    String bin_file_ext;
     String bin_file_path;
     String mrk_file_path;
 private:
@@ -50,10 +51,11 @@ private:
 public:
     HashingReadBuffer mrk_hashing_buf;
 
-    Stream(const String & path, const String & base_name)
+    Stream(const String & path, const String & base_name, const String & bin_file_ext = ".bin")
         :
         base_name(base_name),
-        bin_file_path(path + base_name + ".bin"),
+        bin_file_ext(bin_file_ext),
+        bin_file_path(path + base_name + bin_file_ext),
         mrk_file_path(path + base_name + ".mrk"),
         file_buf(bin_file_path),
         compressed_hashing_buf(file_buf),
@@ -118,7 +120,7 @@ public:
 
     void saveChecksums(MergeTreeData::DataPart::Checksums & checksums)
     {
-        checksums.files[base_name + ".bin"] = MergeTreeData::DataPart::Checksums::Checksum(
+        checksums.files[base_name + bin_file_ext] = MergeTreeData::DataPart::Checksums::Checksum(
             compressed_hashing_buf.count(), compressed_hashing_buf.getHash(),
             uncompressed_hashing_buf.count(), uncompressed_hashing_buf.getHash());
 

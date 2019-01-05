@@ -17,16 +17,11 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
-enum class IndexType {
-    NONE = 0
-};
-
 
 class MergeTreeIndex;
 
 using MergeTreeIndexPtr = std::shared_ptr<const MergeTreeIndex>;
 using MutableMergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
-using MergeTreeIndexes = std::vector<MutableMergeTreeIndexPtr>;
 
 
 /// Condition on the index.
@@ -36,8 +31,6 @@ class IndexCondition {
 
 public:
     virtual ~IndexCondition() = default;
-
-    IndexType indexType() const;
 
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
@@ -82,17 +75,17 @@ public:
 
     virtual ~MergeTreeIndex() {};
 
-    virtual IndexType indexType() const = 0;
+    virtual String indexType() const { return "UNKNOWN"; };
 
     /// gets filename without extension
     virtual String getFileName() const = 0;
-
-    String getFileExt() const { return ".idx"; };
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     virtual IndexConditionPtr createIndexConditionOnPart(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
+
+    virtual void writeText(WriteBuffer & ostr) const = 0;
 
     String name;
     ExpressionActionsPtr expr;
@@ -100,6 +93,13 @@ public:
     Names columns;
     DataTypes data_types;
     Block sample;
+};
+
+
+class MergeTreeIndexes : public std::vector<MutableMergeTreeIndexPtr>
+{
+    void writeText(WriteBuffer & ostr) const;
+    void readText(ReadBuffer & istr);
 };
 
 
@@ -111,6 +111,7 @@ public:
     using Creator = std::function<std::unique_ptr<MergeTreeIndex>(std::shared_ptr<ASTIndexDeclaration> node)>;
 
     std::unique_ptr<MergeTreeIndex> get(std::shared_ptr<ASTIndexDeclaration> node) const;
+    std::unique_ptr<MergeTreeIndex> get(const String & description) const;
 
     void registerIndex(const std::string & name, Creator creator);
 
