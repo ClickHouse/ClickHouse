@@ -1126,6 +1126,8 @@ String KeyCondition::RPNElement::toString() const
         case ALWAYS_TRUE:
             return "true";
     }
+
+    __builtin_unreachable();
 }
 
 

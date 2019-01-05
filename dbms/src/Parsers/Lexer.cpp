@@ -325,6 +325,8 @@ const char * getTokenName(TokenType type)
 APPLY_FOR_TOKENS(M)
 #undef M
     }
+
+    __builtin_unreachable();
 }
 
 
