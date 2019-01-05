@@ -17,7 +17,6 @@ namespace
 constexpr auto DATA_FILE_EXTENSION = ".bin";
 constexpr auto MARKS_FILE_EXTENSION = ".mrk";
 constexpr auto INDEX_FILE_EXTENSION = ".idx";
-constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 }
 
@@ -355,6 +354,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     }
 
     skip_indexes_streams.clear();
+    skip_indexes_granules.clear();
+    skip_index_filling.clear();
 
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
     {
@@ -414,7 +415,7 @@ void MergedBlockOutputStream::init()
     }
 
     for (const auto index : storage.indexes) {
-        String stream_name = INDEX_FILE_PREFIX + index->name;
+        String stream_name = index->getFileName();
         skip_indexes_streams.emplace_back(
                 std::move(std::make_unique<ColumnStream>(
                         stream_name,

@@ -332,6 +332,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Sorting key in the ORDER BY clause;
         *  - Primary key (if it is different from the sorting key) in the PRIMARY KEY clause;
         *  - Sampling expression in the SAMPLE BY clause;
+        *  - Secondary indexes
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 

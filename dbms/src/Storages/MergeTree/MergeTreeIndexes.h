@@ -12,6 +12,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTIndexDeclaration.h>
 
+constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
+
 namespace DB
 {
 
@@ -57,7 +59,6 @@ struct MergeTreeIndexGranule
 {
     friend MergeTreeIndex;
 
-public:
     virtual ~MergeTreeIndexGranule();
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
@@ -82,6 +83,11 @@ public:
     virtual ~MergeTreeIndex() {};
 
     virtual IndexType indexType() const = 0;
+
+    /// gets filename without extension
+    virtual String getFileName() const = 0;
+
+    String getFileExt() const { return ".idx"; };
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
