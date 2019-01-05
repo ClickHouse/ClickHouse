@@ -956,7 +956,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
-        /// TODO: just recalc index on part
+        /// TODO: more effective check
         for (const auto & col : in_header.getNames()) {
             for (const auto index : data.indexes) {
                 const auto & index_cols = index->expr->getRequiredColumns();
@@ -970,10 +970,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
-
-        for (auto index : data.indexes) {
-            files_to_skip.insert(index->getFileName() + ".idx");
-        }
 
         for (const auto & entry : in_header)
         {
