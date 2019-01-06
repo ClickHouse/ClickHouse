@@ -148,6 +148,10 @@ private:
     std::unique_ptr<WriteBufferFromFile> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
     MutableColumns index_columns;
+
+    std::vector<std::unique_ptr<ColumnStream>> skip_indexes_streams;
+    MergeTreeIndexGranules skip_indexes_granules;
+    std::vector<size_t> skip_index_filling;
 };
 
 

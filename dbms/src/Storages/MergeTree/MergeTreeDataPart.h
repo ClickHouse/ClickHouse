@@ -208,8 +208,6 @@ struct MergeTreeDataPart
 
     MinMaxIndex minmax_idx;
 
-    MergeTreeIndexParts index_parts;
-
     Checksums checksums;
 
     /// Columns description.
