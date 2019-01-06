@@ -252,7 +252,9 @@ struct ZooKeeperRequest : virtual Request
     /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
     bool probably_sent = false;
 
-    virtual ~ZooKeeperRequest() {}
+    ZooKeeperRequest() = default;
+    ZooKeeperRequest(const ZooKeeperRequest &) = default;
+    virtual ~ZooKeeperRequest() = default;
 
     virtual ZooKeeper::OpNum getOpNum() const = 0;
 

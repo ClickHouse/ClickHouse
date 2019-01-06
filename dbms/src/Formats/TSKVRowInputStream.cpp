@@ -88,7 +88,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
 }
 
 
-bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
+bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension & ext)
 {
     if (istr.eof())
         return false;
@@ -96,9 +96,7 @@ bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     size_t num_columns = columns.size();
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
-    /// TODO Ability to provide your DEFAULTs.
-    bool read_columns[num_columns];
-    memset(read_columns, 0, num_columns);
+    read_columns.assign(num_columns, false);
 
     if (unlikely(*istr.position() == '\n'))
     {
@@ -179,6 +177,9 @@ bool TSKVRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     for (size_t i = 0; i < num_columns; ++i)
         if (!read_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
+
+    /// return info about defaults set
+    ext.read_columns = read_columns;
 
     return true;
 }

@@ -197,7 +197,7 @@ Q4. تعداد تاخیرها براساس carrier در سال 78
 </div>
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 <div dir="rtl" markdown="1">

@@ -133,6 +133,7 @@ struct ConstSource : public Base
     {
     }
 
+    ConstSource(const ConstSource &) = default;
     virtual ~ConstSource() = default;
 
     virtual void accept(ArraySourceVisitor & visitor) // override

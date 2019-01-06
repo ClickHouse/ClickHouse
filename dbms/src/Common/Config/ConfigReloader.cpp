@@ -78,10 +78,10 @@ void ConfigReloader::run()
 
 void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallback_to_preprocessed)
 {
-    std::lock_guard<std::mutex> lock(reload_mutex);
+    std::lock_guard lock(reload_mutex);
 
     FilesChangesTracker new_files = getNewFileList();
-    if (force || new_files.isDifferOrNewerThan(files))
+    if (force || need_reload_from_zk || new_files.isDifferOrNewerThan(files))
     {
         ConfigProcessor config_processor(path);
         ConfigProcessor::LoadedConfig loaded_config;
@@ -93,6 +93,17 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
             if (loaded_config.has_zk_includes)
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
                     zk_node_cache, zk_changed_event, fallback_to_preprocessed);
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (Coordination::isHardwareError(e.code))
+                need_reload_from_zk = true;
+
+            if (throw_on_error)
+                throw;
+
+            tryLogCurrentException(log, "ZooKeeper error when loading config from `" + path + "'");
+            return;
         }
         catch (...)
         {
@@ -110,7 +121,10 @@ void ConfigReloader::reloadIfNewer(bool force, bool throw_on_error, bool fallbac
          *  When file has been written (and contain valid data), we don't load new data since modification time remains the same.
          */
         if (!loaded_config.loaded_from_preprocessed)
+        {
             files = std::move(new_files);
+            need_reload_from_zk = false;
+        }
 
         try
         {

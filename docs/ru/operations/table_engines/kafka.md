@@ -23,7 +23,7 @@ Kafka SETTINGS
   kafka_topic_list = 'topic1,topic2',
   kafka_group_name = 'group1',
   kafka_format = 'JSONEachRow',
-  kafka_row_delimiter = '\n'
+  kafka_row_delimiter = '\n',
   kafka_schema = '',
   kafka_num_consumers = 2
 ```
@@ -122,7 +122,7 @@ Kafka SETTINGS
 Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать - глобальный (`kafka`) и по топикам (`kafka_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
 
 ```xml
-  <!--  Global configuration options for all tables of Kafka engine type -->
+  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>

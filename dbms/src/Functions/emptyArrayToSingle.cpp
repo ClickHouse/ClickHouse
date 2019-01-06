@@ -82,12 +82,12 @@ namespace
         {
             if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
             {
-                const PaddedPODArray<T> & src_data = src_data_concrete->getData();
+                const PaddedPODArray<T> & src_data_vec = src_data_concrete->getData();
                 PaddedPODArray<T> & res_data = static_cast<ColumnVector<T> &>(res_data_col).getData();
 
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
-                res_data.reserve(src_data.size());
+                res_data.reserve(src_data_vec.size());
 
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
@@ -101,7 +101,7 @@ namespace
                     {
                         size_t size_to_write = src_offsets[i] - src_prev_offset;
                         res_data.resize(res_prev_offset + size_to_write);
-                        memcpy(&res_data[res_prev_offset], &src_data[src_prev_offset], size_to_write * sizeof(T));
+                        memcpy(&res_data[res_prev_offset], &src_data_vec[src_prev_offset], size_to_write * sizeof(T));
 
                         if (nullable)
                         {
@@ -142,7 +142,7 @@ namespace
             if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
             {
                 const size_t n = src_data_concrete->getN();
-                const ColumnFixedString::Chars & src_data = src_data_concrete->getChars();
+                const ColumnFixedString::Chars & src_data_vec = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnFixedString *>(&res_data_col);
                 if (!concrete_res_data)
@@ -151,7 +151,7 @@ namespace
                 ColumnFixedString::Chars & res_data = concrete_res_data->getChars();
                 size_t size = src_offsets.size();
                 res_offsets.resize(size);
-                res_data.reserve(src_data.size());
+                res_data.reserve(src_data_vec.size());
 
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
@@ -166,7 +166,7 @@ namespace
                         size_t size_to_write = src_offsets[i] - src_prev_offset;
                         size_t prev_res_data_size = res_data.size();
                         res_data.resize(prev_res_data_size + size_to_write * n);
-                        memcpy(&res_data[prev_res_data_size], &src_data[src_prev_offset * n], size_to_write * n);
+                        memcpy(&res_data[prev_res_data_size], &src_data_vec[src_prev_offset * n], size_to_write * n);
 
                         if (nullable)
                         {
@@ -215,7 +215,7 @@ namespace
                     throw Exception{"Internal error", ErrorCodes::LOGICAL_ERROR};
                 ColumnString::Offsets & res_string_offsets = concrete_res_string_offsets->getOffsets();
 
-                const ColumnString::Chars & src_data = src_data_concrete->getChars();
+                const ColumnString::Chars & src_data_vec = src_data_concrete->getChars();
 
                 auto concrete_res_data = typeid_cast<ColumnString *>(&res_data_col);
                 if (!concrete_res_data)
@@ -225,7 +225,7 @@ namespace
                 size_t size = src_array_offsets.size();
                 res_array_offsets.resize(size);
                 res_string_offsets.reserve(src_string_offsets.size());
-                res_data.reserve(src_data.size());
+                res_data.reserve(src_data_vec.size());
 
                 if (nullable)
                     res_null_map->reserve(src_null_map->size());
@@ -257,7 +257,7 @@ namespace
 
                         size_t res_data_old_size = res_data.size();
                         res_data.resize(res_data_old_size + bytes_to_copy);
-                        memcpy(&res_data[res_data_old_size], &src_data[src_string_prev_offset], bytes_to_copy);
+                        memcpy(&res_data[res_data_old_size], &src_data_vec[src_string_prev_offset], bytes_to_copy);
 
                         if (nullable)
                         {

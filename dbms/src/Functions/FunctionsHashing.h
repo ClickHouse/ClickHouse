@@ -8,6 +8,11 @@
 #include <murmurhash2.h>
 #include <murmurhash3.h>
 
+#include <Common/config.h>
+#if USE_XXHASH
+    #include <xxhash.h>
+#endif
+
 #include <Poco/ByteOrder.h>
 
 #include <Common/SipHash.h>
@@ -117,6 +122,7 @@ struct HalfMD5Impl
 
     /// If true, it will use intHash32 or intHash64 to hash POD types. This behaviour is intended for better performance of some functions.
     /// Otherwise it will hash bytes in memory as a string using corresponding hash function.
+
     static constexpr bool use_int_hash_for_pods = false;
 };
 
@@ -402,6 +408,49 @@ struct ImplMetroHash64
 };
 
 
+#if USE_XXHASH
+
+struct ImplXxHash32
+{
+    static constexpr auto name = "xxHash32";
+    using ReturnType = UInt32;
+
+    static auto apply(const char * s, const size_t len) { return XXH32(s, len, 0); }
+    /**
+      *  With current implementation with more than 1 arguments it will give the results
+      *  non-reproducable from outside of CH.
+      *
+      *  Proper way of combining several input is to use streaming mode of hash function
+      *  https://github.com/Cyan4973/xxHash/issues/114#issuecomment-334908566
+      *
+      *  In common case doable by init_state / update_state / finalize_state
+      */
+    static auto combineHashes(UInt32 h1, UInt32 h2) { return IntHash32Impl::apply(h1) ^ h2; }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+
+struct ImplXxHash64
+{
+    static constexpr auto name = "xxHash64";
+    using ReturnType = UInt64;
+    using uint128_t = CityHash_v1_0_2::uint128;
+
+    static auto apply(const char * s, const size_t len) { return XXH64(s, len, 0); }
+
+    /*
+       With current implementation with more than 1 arguments it will give the results
+       non-reproducable from outside of CH. (see comment on ImplXxHash32).
+     */
+    static auto combineHashes(UInt64 h1, UInt64 h2) { return CityHash_v1_0_2::Hash128to64(uint128_t(h1, h2)); }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
+#endif
+
+
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
 {
@@ -573,9 +622,9 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
+        else if (auto col_from_const = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
-            auto value = col_from->template getValue<FromType>();
+            auto value = col_from_const->template getValue<FromType>();
             ToType hash;
             if constexpr (std::is_same_v<ToType, UInt64>)
                 hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(value));
@@ -623,10 +672,10 @@ private:
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
+        else if (const ColumnFixedString * col_from_fixed = checkAndGetColumn<ColumnFixedString>(column))
         {
-            const typename ColumnString::Chars & data = col_from->getChars();
-            size_t n = col_from->getN();
+            const typename ColumnString::Chars & data = col_from_fixed->getChars();
+            size_t n = col_from_fixed->getN();
             size_t size = data.size() / n;
 
             for (size_t i = 0; i < size; ++i)
@@ -638,9 +687,9 @@ private:
                     vec_to[i] = Impl::combineHashes(vec_to[i], h);
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConstStringOrFixedString(column))
         {
-            String value = col_from->getValue<String>().data();
+            String value = col_from_const->getValue<String>().data();
             const ToType hash = Impl::apply(value.data(), value.size());
             const size_t size = vec_to.size();
 
@@ -700,10 +749,10 @@ private:
                 current_offset = offsets[i];
             }
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnArray>(column))
+        else if (const ColumnConst * col_from_const = checkAndGetColumnConst<ColumnArray>(column))
         {
             /// NOTE: here, of course, you can do without the materialization of the column.
-            ColumnPtr full_column = col_from->convertToFullColumn();
+            ColumnPtr full_column = col_from_const->convertToFullColumn();
             executeArray<first>(type, &*full_column, vec_to);
         }
         else
@@ -750,9 +799,9 @@ private:
             for (size_t i = 0; i < tuple_size; ++i)
                 executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to, is_first);
         }
-        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
+        else if (const ColumnTuple * tuple_const = checkAndGetColumnConstData<ColumnTuple>(column))
         {
-            const Columns & tuple_columns = tuple->getColumns();
+            const Columns & tuple_columns = tuple_const->getColumns();
             const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
             size_t tuple_size = tuple_columns.size();
             for (size_t i = 0; i < tuple_size; ++i)
@@ -1026,5 +1075,10 @@ using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
+
+#if USE_XXHASH
+    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
+#endif
 
 }

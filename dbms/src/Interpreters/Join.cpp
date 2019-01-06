@@ -112,9 +112,6 @@ static void initImpl(Maps & maps, Join::Type type)
         case Join::Type::TYPE: maps.TYPE = std::make_unique<typename decltype(maps.TYPE)::element_type>(); break;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
 
@@ -130,10 +127,9 @@ static size_t getTotalRowCountImpl(const Maps & maps, Join::Type type)
         case Join::Type::NAME: return maps.NAME ? maps.NAME->size() : 0;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
+
+    __builtin_unreachable();
 }
 
 template <typename Maps>
@@ -148,10 +144,9 @@ static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
         case Join::Type::NAME: return maps.NAME ? maps.NAME->getBufferSizeInBytes() : 0;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
+
+    __builtin_unreachable();
 }
 
 
@@ -354,7 +349,7 @@ namespace
                  * We will insert each time the element into the second place.
                  * That is, the former second element, if it was, will be the third, and so on.
                  */
-                auto elem = reinterpret_cast<typename Map::mapped_type *>(pool.alloc(sizeof(typename Map::mapped_type)));
+                auto elem = pool.alloc<typename Map::mapped_type>();
 
                 elem->next = it->second.next;
                 it->second.next = elem;
@@ -412,9 +407,6 @@ namespace
                     break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
         }
     }
 }
@@ -437,14 +429,8 @@ bool Join::insertFromBlock(const Block & block)
     /// Memoize key columns to work.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column));
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column->convertToFullColumnIfConst()));
         key_columns[i] = materialized_columns.back().get();
-
-        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns[i] = materialized_columns.back().get();
-        }
     }
 
     /// We will insert to the map only keys, where all components are not NULL.
@@ -483,11 +469,7 @@ bool Join::insertFromBlock(const Block & block)
 
     /// Rare case, when joined columns are constant. To avoid code bloat, simply materialize them.
     for (size_t i = 0; i < size; ++i)
-    {
-        ColumnPtr col = stored_block->safeGetByPosition(i).column;
-        if (ColumnPtr converted = col->convertToFullColumnIfConst())
-            stored_block->safeGetByPosition(i).column = converted;
-    }
+        stored_block->safeGetByPosition(i).column = stored_block->safeGetByPosition(i).column->convertToFullColumnIfConst();
 
     /// In case of LEFT and FULL joins, if use_nulls, convert joined columns to Nullable.
     if (use_nulls && (kind == ASTTableJoin::Kind::Left || kind == ASTTableJoin::Kind::Full))
@@ -685,14 +667,8 @@ void Join::joinBlockImpl(
     /// Memoize key columns to work with.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column));
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column->convertToFullColumnIfConst()));
         key_columns[i] = materialized_columns.back().get();
-
-        if (ColumnPtr converted = key_columns[i]->convertToFullColumnIfConst())
-        {
-            materialized_columns.emplace_back(converted);
-            key_columns[i] = materialized_columns.back().get();
-        }
     }
 
     /// Keys with NULL value in any column won't join to anything.
@@ -710,10 +686,7 @@ void Join::joinBlockImpl(
     {
         for (size_t i = 0; i < existing_columns; ++i)
         {
-            auto & col = block.getByPosition(i).column;
-
-            if (ColumnPtr converted = col->convertToFullColumnIfConst())
-                col = converted;
+            block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
 
             /// If use_nulls, convert left columns (except keys) to Nullable.
             if (use_nulls)
@@ -1189,7 +1162,7 @@ private:
         {
         #define M(TYPE) \
             case Join::Type::TYPE: \
-                rows_added = fillColumns<STRICTNESS>(*maps.TYPE, num_columns_left, columns_left, num_columns_right, columns_keys_and_right); \
+                rows_added = fillColumns<STRICTNESS>(*maps.TYPE); \
                 break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -1212,10 +1185,11 @@ private:
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Map>
-    size_t fillColumns(const Map & map,
-        size_t num_columns_left, MutableColumns & columns_left,
-        size_t num_columns_right, MutableColumns & columns_right)
+    size_t fillColumns(const Map & map)
     {
+        size_t num_columns_left = column_indices_left.size();
+        size_t num_columns_right = column_indices_keys_and_right.size();
+
         size_t rows_added = 0;
 
         if (!position)
@@ -1231,7 +1205,7 @@ private:
             if (it->second.getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, num_columns_left, columns_left, num_columns_right, columns_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {

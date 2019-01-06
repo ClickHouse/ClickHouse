@@ -126,8 +126,8 @@ public:
 private:
 
     MergeAlgorithm chooseMergeAlgorithm(
-            const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts,
-            size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
+        const MergeTreeData::DataPartsVector & parts,
+        size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate) const;
 
 private:
     MergeTreeData & data;

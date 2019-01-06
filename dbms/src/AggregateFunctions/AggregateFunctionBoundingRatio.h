@@ -96,7 +96,7 @@ private:
     /** Calculates the slope of a line between leftmost and rightmost data points.
       * (y2 - y1) / (x2 - x1)
       */
-    Float64 getBoundingRatio(const AggregateFunctionBoundingRatioData & data) const
+    Float64 NO_SANITIZE_UNDEFINED getBoundingRatio(const AggregateFunctionBoundingRatioData & data) const
     {
         if (data.empty)
             return std::numeric_limits<Float64>::quiet_NaN();
