@@ -4,7 +4,7 @@
 #include <Core/Row.h>
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <Columns/ColumnsNumber.h>
 

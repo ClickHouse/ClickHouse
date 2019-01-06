@@ -1131,7 +1131,7 @@ TestEntries entries =
 };
 
 
-bool performTests(const TestEntries & entries)
+bool run()
 {
     unsigned int count = 0;
     unsigned int i = 1;
@@ -1154,11 +1154,6 @@ bool performTests(const TestEntries & entries)
     std::cout << count << " out of " << entries.size() << " test(s) passed.\n";
 
     return count == entries.size();
-}
-
-bool run()
-{
-    return performTests(entries);
 }
 
 

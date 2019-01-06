@@ -328,9 +328,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
             break;
         }
-
-        default:
-            throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
     }
 }
 
@@ -375,10 +372,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
             if (array_joined_columns.empty())
                 throw Exception("No arrays to join", ErrorCodes::LOGICAL_ERROR);
 
-            ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column;
-            if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
-                any_array_ptr = converted;
-
+            ColumnPtr any_array_ptr = block.getByName(*array_joined_columns.begin()).column->convertToFullColumnIfConst();
             const ColumnArray * any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
             if (!any_array)
                 throw Exception("ARRAY JOIN of not array: " + *array_joined_columns.begin(), ErrorCodes::TYPE_MISMATCH);
@@ -416,10 +410,10 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
 
                     Block tmp_block{src_col, column_of_max_length, {{}, src_col.type, {}}};
                     function_arrayResize->build({src_col, column_of_max_length})->execute(tmp_block, {0, 1}, 2, rows);
-                    any_array_ptr = src_col.column = tmp_block.safeGetByPosition(2).column;
+                    src_col.column = tmp_block.safeGetByPosition(2).column;
+                    any_array_ptr = src_col.column->convertToFullColumnIfConst();
                 }
-                if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
-                    any_array_ptr = converted;
+
                 any_array = typeid_cast<const ColumnArray *>(&*any_array_ptr);
             }
             else if (array_join_is_left && !unaligned_array_join)
@@ -434,10 +428,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
                     non_empty_array_columns[name] = tmp_block.safeGetByPosition(1).column;
                 }
 
-                any_array_ptr = non_empty_array_columns.begin()->second;
-                if (ColumnPtr converted = any_array_ptr->convertToFullColumnIfConst())
-                    any_array_ptr = converted;
-
+                any_array_ptr = non_empty_array_columns.begin()->second->convertToFullColumnIfConst();
                 any_array = &typeid_cast<const ColumnArray &>(*any_array_ptr);
             }
 
@@ -452,9 +443,7 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
                         throw Exception("ARRAY JOIN of not array: " + current.name, ErrorCodes::TYPE_MISMATCH);
 
                     ColumnPtr array_ptr = (array_join_is_left && !unaligned_array_join) ? non_empty_array_columns[current.name] : current.column;
-
-                    if (ColumnPtr converted = array_ptr->convertToFullColumnIfConst())
-                        array_ptr = converted;
+                    array_ptr = array_ptr->convertToFullColumnIfConst();
 
                     const ColumnArray & array = typeid_cast<const ColumnArray &>(*array_ptr);
                     if (!unaligned_array_join && !array.hasEqualOffsets(typeid_cast<const ColumnArray &>(*any_array_ptr)))
@@ -529,9 +518,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
                 block.insert({ block.getByName(source_name).column, result_type, result_name });
 
             break;
-
-        default:
-            throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
     }
 }
 
@@ -611,9 +597,6 @@ std::string ExpressionAction::toString() const
                     ss << " AS " << projection[i].second;
             }
             break;
-
-        default:
-            throw Exception("Unexpected Action type", ErrorCodes::LOGICAL_ERROR);
     }
 
     return ss.str();

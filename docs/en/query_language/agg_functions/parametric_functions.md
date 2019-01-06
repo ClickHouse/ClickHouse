@@ -37,7 +37,7 @@ Pattern syntax:
 
 Any quantity of any type of events is allowed over the specified time.
 
-Instead of `>=`,  the following operators can be used:`<`, `>`, `<=`.
+Instead of `>=`, the following operators can be used:`<`, `>`, `<=`.
 
 Any number may be specified in place of 1800.
 

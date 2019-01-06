@@ -18,7 +18,7 @@ For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 
-Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax)  of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
+Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.
 
 Returns 0 if it doesn't match, or 1 if it matches.
 

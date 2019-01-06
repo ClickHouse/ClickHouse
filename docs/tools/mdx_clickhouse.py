@@ -47,6 +47,9 @@ class ClickHousePreprocessor(markdown.util.Processor):
             for line in lines:
                 if '<!--hide-->' not in line:
                     yield line
+        else:
+            for line in lines:
+                yield line
 
 
 class ClickHouseMarkdown(markdown.extensions.Extension):

@@ -138,7 +138,7 @@ public:
             ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
 
             size_t size = levels.size();
-            offsets_to.push_back((offsets_to.size() == 0 ? 0 : offsets_to.back()) + size);
+            offsets_to.push_back(offsets_to.back() + size);
 
             if (!size)
                 return;

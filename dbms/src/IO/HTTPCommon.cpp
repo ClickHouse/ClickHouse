@@ -141,7 +141,7 @@ namespace
     public:
         Entry getSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts, size_t max_connections_per_endpoint)
         {
-            std::unique_lock<std::mutex> lock(mutex);
+            std::unique_lock lock(mutex);
             const std::string & host = uri.getHost();
             UInt16 port = uri.getPort();
             bool https = isHTTPS(uri);

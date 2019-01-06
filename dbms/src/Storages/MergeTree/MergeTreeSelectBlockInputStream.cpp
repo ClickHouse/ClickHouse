@@ -167,9 +167,9 @@ try
     if (!reader)
     {
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.context.getUncompressedCache();
+            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
 
-        owned_mark_cache = storage.context.getMarkCache();
+        owned_mark_cache = storage.global_context.getMarkCache();
 
         reader = std::make_unique<MergeTreeReader>(
             path, data_part, columns, owned_uncompressed_cache.get(),

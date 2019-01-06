@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 
-#if __SSE4_2__
+#ifdef __SSE4_2__
 #include <nmmintrin.h>
 #endif
 
@@ -80,7 +80,7 @@ private:
         size_t chars_to_trim_left = 0;
         size_t chars_to_trim_right = 0;
         char whitespace = ' ';
-#if __SSE4_2__
+#ifdef __SSE4_2__
         const auto bytes_sse = sizeof(__m128i);
         const auto size_sse = size - (size % bytes_sse);
         const auto whitespace_mask = _mm_set1_epi8(whitespace);
@@ -90,9 +90,11 @@ private:
 
         if constexpr (mode::trim_left)
         {
-#if __SSE4_2__
+#ifdef __SSE4_2__
             /// skip whitespace from left in blocks of up to 16 characters
-            constexpr auto left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT;
+
+            /// Avoid gcc bug: _mm_cmpistri: error: the third argument must be an 8-bit immediate
+            enum { left_sse_mode = base_sse_mode | _SIDD_LEAST_SIGNIFICANT };
             while (mask == bytes_sse && chars_to_trim_left < size_sse)
             {
                 const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + chars_to_trim_left));
@@ -108,9 +110,11 @@ private:
         if constexpr (mode::trim_right)
         {
             const auto trim_right_size = size - chars_to_trim_left;
-#if __SSE4_2__
+#ifdef __SSE4_2__
             /// try to skip whitespace from right in blocks of up to 16 characters
-            constexpr auto right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT;
+
+            /// Avoid gcc bug: _mm_cmpistri: error: the third argument must be an 8-bit immediate
+            enum { right_sse_mode = base_sse_mode | _SIDD_MOST_SIGNIFICANT };
             const auto trim_right_size_sse = trim_right_size - (trim_right_size % bytes_sse);
             while (mask == bytes_sse && chars_to_trim_right < trim_right_size_sse)
             {

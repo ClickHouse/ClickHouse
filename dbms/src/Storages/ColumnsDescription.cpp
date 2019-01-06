@@ -20,6 +20,7 @@
 #include <ext/map.h>
 
 #include <boost/range/join.hpp>
+#include <Compression/CompressionFactory.h>
 
 #include <optional>
 
@@ -84,12 +85,14 @@ String ColumnsDescription::toString() const
         {
             const auto defaults_it = defaults.find(column.name);
             const auto comments_it = comments.find(column.name);
+            const auto codec_it = codecs.find(column.name);
 
             writeBackQuotedString(column.name, buf);
             writeChar(' ', buf);
             writeText(column.type->getName(), buf);
 
             const bool exist_comment = comments_it != std::end(comments);
+            const bool exist_codec = codec_it != std::end(codecs);
             if (defaults_it != std::end(defaults))
             {
                 writeChar('\t', buf);
@@ -106,6 +109,14 @@ String ColumnsDescription::toString() const
             {
                 writeChar('\t', buf);
                 writeText(queryToString(ASTLiteral(Field(comments_it->second))), buf);
+            }
+
+            if (exist_codec)
+            {
+                writeChar('\t', buf);
+                writeText("CODEC(", buf);
+                writeText(codec_it->second->getCodecDesc(), buf);
+                writeText(")", buf);
             }
 
             writeChar('\n', buf);
@@ -152,6 +163,23 @@ String parseComment(ReadBufferFromString& buf)
     return typeid_cast<ASTLiteral &>(*comment_expr).value.get<String>();
 }
 
+CompressionCodecPtr parseCodec(ReadBufferFromString& buf)
+{
+    if (*buf.position() == '\n')
+        return {};
+
+    assertChar('\t', buf);
+    ParserCodec codec_parser;
+    String codec_expr_str;
+    readText(codec_expr_str, buf);
+    ASTPtr codec_expr = parseQuery(codec_parser, codec_expr_str, "codec expression", 0);
+    if (codec_expr)
+        return CompressionCodecFactory::instance().get(codec_expr);
+    else
+        return nullptr;
+}
+
+
 void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const DataTypeFactory & data_type_factory)
 {
     String column_name;
@@ -192,7 +220,24 @@ void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const 
         result.comments.emplace(column_name, std::move(comment));
     }
 
+    auto codec = parseCodec(buf);
+    if (codec)
+    {
+        result.codecs.emplace(column_name, std::move(codec));
+    }
+
+
     assertChar('\n', buf);
+}
+
+CompressionCodecPtr ColumnsDescription::getCodecOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+{
+    const auto codec = codecs.find(column_name);
+
+    if (codec == codecs.end())
+        return default_codec;
+
+    return codec->second;
 }
 
 ColumnsDescription ColumnsDescription::parse(const String & str)

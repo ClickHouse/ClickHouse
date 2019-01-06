@@ -11,6 +11,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/AlterCommands.h>
 
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -100,27 +101,27 @@ ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::s
 
 /// Calculate maximum number in file names in directory and all subdirectories.
 /// To ensure global order of data blocks yet to be sent across server restarts.
-UInt64 getMaximumFileNumber(const std::string & path)
+UInt64 getMaximumFileNumber(const std::string & dir_path)
 {
     UInt64 res = 0;
 
-    boost::filesystem::recursive_directory_iterator begin(path);
+    boost::filesystem::recursive_directory_iterator begin(dir_path);
     boost::filesystem::recursive_directory_iterator end;
     for (auto it = begin; it != end; ++it)
     {
-        const auto & path = it->path();
+        const auto & file_path = it->path();
 
-        if (it->status().type() != boost::filesystem::regular_file || !endsWith(path.filename().string(), ".bin"))
+        if (it->status().type() != boost::filesystem::regular_file || !endsWith(file_path.filename().string(), ".bin"))
             continue;
 
         UInt64 num = 0;
         try
         {
-            num = parse<UInt64>(path.filename().stem().string());
+            num = parse<UInt64>(file_path.filename().stem().string());
         }
         catch (Exception & e)
         {
-            e.addMessage("Unexpected file name " + path.filename().string() + " found at " + path.parent_path().string() + ", should have numeric base name.");
+            e.addMessage("Unexpected file name " + file_path.filename().string() + " found at " + file_path.parent_path().string() + ", should have numeric base name.");
             throw;
         }
 
@@ -175,7 +176,7 @@ static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_k
 
 StorageDistributed::StorageDistributed(
     const String & database_name,
-    const String & table_name_,
+    const String & table_name,
     const ColumnsDescription & columns_,
     const String & remote_database_,
     const String & remote_table_,
@@ -184,18 +185,17 @@ StorageDistributed::StorageDistributed(
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : IStorage{columns_},
-    table_name(table_name_),
+    : IStorage{columns_}, table_name(table_name),
     remote_database(remote_database_), remote_table(remote_table_),
-    context(context_), cluster_name(context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
-    sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, context, getColumns().getAllPhysical(), false) : nullptr),
+    global_context(context_), cluster_name(global_context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
+    sharding_key_expr(sharding_key_ ? buildShardingKeyExpression(sharding_key_, global_context, getColumns().getAllPhysical(), false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
     path(data_path_.empty() ? "" : (data_path_ + escapeForFileName(table_name) + '/'))
 {
     /// Sanity check. Skip check if the table is already created to allow the server to start.
     if (!attach && !cluster_name.empty())
     {
-        size_t num_local_shards = context.getCluster(cluster_name)->getLocalShardCount();
+        size_t num_local_shards = global_context.getCluster(cluster_name)->getLocalShardCount();
         if (num_local_shards && remote_database == database_name && remote_table == table_name)
             throw Exception("Distributed table " + table_name + " looks at itself", ErrorCodes::INFINITE_LOOP);
     }
@@ -335,13 +335,13 @@ BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const Settings & 
 }
 
 
-void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageDistributed::alter(const AlterCommands & params, const String & database_name, const String & current_table_name, const Context & context)
 {
     auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, current_table_name, new_columns, {});
     setColumns(std::move(new_columns));
 }
 
@@ -359,7 +359,7 @@ void StorageDistributed::shutdown()
 }
 
 
-void StorageDistributed::truncate(const ASTPtr &)
+void StorageDistributed::truncate(const ASTPtr &, const Context &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
 
@@ -439,7 +439,7 @@ size_t StorageDistributed::getShardCount() const
 
 ClusterPtr StorageDistributed::getCluster() const
 {
-    return owned_cluster ? owned_cluster : context.getCluster(cluster_name);
+    return owned_cluster ? owned_cluster : global_context.getCluster(cluster_name);
 }
 
 void StorageDistributed::ClusterNodeData::requireConnectionPool(const std::string & name, const StorageDistributed & storage)

@@ -48,6 +48,9 @@ Block InterpreterDescribeQuery::getSampleBlock()
     col.name = "comment_expression";
     block.insert(col);
 
+    col.name = "codec_expression";
+    block.insert(col);
+
     return block;
 }
 
@@ -59,6 +62,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
     NamesAndTypesList columns;
     ColumnDefaults column_defaults;
     ColumnComments column_comments;
+    ColumnCodecs column_codecs;
     StoragePtr table;
 
     auto table_expression = typeid_cast<const ASTTableExpression *>(ast.table_expression.get());
@@ -106,6 +110,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         columns = table->getColumns().getAll();
         column_defaults = table->getColumns().defaults;
         column_comments = table->getColumns().comments;
+        column_codecs = table->getColumns().codecs;
     }
 
     Block sample_block = getSampleBlock();
@@ -136,6 +141,16 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         else
         {
             res_columns[4]->insert(comments_it->second);
+        }
+
+        const auto codecs_it = column_codecs.find(column.name);
+        if (codecs_it == std::end(column_codecs))
+        {
+            res_columns[5]->insertDefault();
+        }
+        else
+        {
+            res_columns[5]->insert(codecs_it->second->getCodecDesc());
         }
     }
 
