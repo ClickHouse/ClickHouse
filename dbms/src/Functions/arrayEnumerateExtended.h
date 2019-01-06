@@ -328,7 +328,7 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
             size_t rank = 0;
             for (size_t j = prev_off; j < off; ++j)
             {
-                auto &idx = indices[packFixed<UInt128>(j, count, columns, key_sizes)];;
+                auto & idx = indices[packFixed<UInt128>(j, count, columns, key_sizes)];
                 if (!idx)
                     idx = ++rank;
                 res_values[j] = idx;

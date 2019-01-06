@@ -66,9 +66,9 @@ public:
     Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void updateHashWithValue(size_t n, SipHash & hash) const override
+    void updateHashWithValue(size_t n, SipHash & hash_func) const override
     {
-        return getNestedColumn()->updateHashWithValue(n, hash);
+        return getNestedColumn()->updateHashWithValue(n, hash_func);
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;

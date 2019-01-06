@@ -74,8 +74,8 @@ bool MergeTreeThreadSelectBlockInputStream::getNewTask()
         auto rest_mark_ranges = pool->getRestMarks(path, task->mark_ranges[0]);
 
         if (use_uncompressed_cache)
-            owned_uncompressed_cache = storage.context.getUncompressedCache();
-        owned_mark_cache = storage.context.getMarkCache();
+            owned_uncompressed_cache = storage.global_context.getUncompressedCache();
+        owned_mark_cache = storage.global_context.getMarkCache();
 
         reader = std::make_unique<MergeTreeReader>(
             path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,

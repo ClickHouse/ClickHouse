@@ -317,8 +317,8 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         if (size >= 16)
         {
-            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(dst);
+            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(hash_dst);
         }
         else
         {

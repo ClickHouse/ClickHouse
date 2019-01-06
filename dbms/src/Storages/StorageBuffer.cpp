@@ -59,7 +59,7 @@ StorageBuffer::StorageBuffer(const std::string & name_, const ColumnsDescription
     size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
     const String & destination_database_, const String & destination_table_, bool allow_materialized_)
     : IStorage{columns_},
-    name(name_), context(context_),
+    name(name_), global_context(context_),
     num_shards(num_shards_), buffers(num_shards_),
     min_thresholds(min_thresholds_), max_thresholds(max_thresholds_),
     destination_database(destination_database_), destination_table(destination_table_),
@@ -306,7 +306,7 @@ public:
         StoragePtr destination;
         if (!storage.no_destination)
         {
-            destination = storage.context.tryGetTable(storage.destination_database, storage.destination_table);
+            destination = storage.global_context.tryGetTable(storage.destination_database, storage.destination_table);
             if (destination.get() == &storage)
                 throw Exception("Destination table is myself. Write will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
         }
@@ -403,7 +403,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
     if (no_destination)
         return false;
 
-    auto destination = context.getTable(destination_database, destination_table);
+    auto destination = global_context.getTable(destination_database, destination_table);
 
     if (destination.get() == this)
         throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
@@ -414,7 +414,7 @@ bool StorageBuffer::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) con
 
 void StorageBuffer::startup()
 {
-    if (context.getSettingsRef().readonly)
+    if (global_context.getSettingsRef().readonly)
     {
         LOG_WARNING(log, "Storage " << getName() << " is run with readonly settings, it will not be able to insert data."
             << " Set apropriate system_profile to fix this.");
@@ -433,7 +433,7 @@ void StorageBuffer::shutdown()
 
     try
     {
-        optimize(nullptr /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, context);
+        optimize(nullptr /*query*/, {} /*partition*/, false /*final*/, false /*deduplicate*/, global_context);
     }
     catch (...)
     {
@@ -570,7 +570,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         */
     try
     {
-        writeBlockToDestination(block_to_write, context.tryGetTable(destination_database, destination_table));
+        writeBlockToDestination(block_to_write, global_context.tryGetTable(destination_database, destination_table));
     }
     catch (...)
     {
@@ -625,7 +625,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
                     << " have different type of column " << backQuoteIfNeed(column.name) << " ("
                     << dst_col.type->getName() << " != " << column.type->getName()
                     << "). Block of data is converted.");
-                column.column = castColumn(column, dst_col.type, context);
+                column.column = castColumn(column, dst_col.type, global_context);
                 column.type = dst_col.type;
             }
 
@@ -650,7 +650,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     for (const auto & column : block_to_write)
         list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
-    InterpreterInsertQuery interpreter{insert, context, allow_materialized};
+    InterpreterInsertQuery interpreter{insert, global_context, allow_materialized};
 
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();

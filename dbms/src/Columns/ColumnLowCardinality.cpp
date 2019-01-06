@@ -635,11 +635,11 @@ void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
         throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & dictionary)
+void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
 {
-    checkColumn(*dictionary);
+    checkColumn(*column_unique_);
 
-    column_unique = dictionary;
+    column_unique = column_unique_;
     shared = true;
 }
 
