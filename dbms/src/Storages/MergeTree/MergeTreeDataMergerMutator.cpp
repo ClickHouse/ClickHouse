@@ -336,12 +336,18 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & all_columns,
     const ExpressionActionsPtr & sorting_key_expr,
+    const MergeTreeIndexes & indexes,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
 {
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
+    for (const auto & index : indexes) {
+        Names index_columns_vec = index->expr->getRequiredColumns();
+        std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
+                  std::inserter(key_columns, key_columns.end()));
+    }
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -549,7 +555,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        all_columns, data.sorting_key_expr,
+        all_columns, data.sorting_key_expr, data.indexes,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
@@ -620,8 +626,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
 
-    ExpressionActionsPtr stream_expr = data.sorting_key_expr;
-    /// TODO: добавлять стобцы из индексов
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
@@ -630,13 +634,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
+        BlockInputStreamPtr stream = std::move(input);
+        for (const auto & index : data.indexes) {
+            stream = std::make_shared<ExpressionBlockInputStream>(stream, index->expr);
+        }
+
         if (data.hasPrimaryKey()) {
-            auto stream = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(
-                            BlockInputStreamPtr(std::move(input)), stream_expr));
-            src_streams.emplace_back(stream);
+            stream = std::make_shared<ExpressionBlockInputStream>(
+                            BlockInputStreamPtr(std::move(stream)), data.sorting_key_expr);
+        }
+
+        if (!data.indexes.empty() || data.hasPrimaryKey()) {
+            src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(stream));
         } else {
-            src_streams.emplace_back(std::move(input));
+            src_streams.emplace_back(stream);
         }
     }
 
@@ -898,7 +909,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     Poco::File(new_part_tmp_path).createDirectories();
 
-    auto in = mutations_interpreter.execute();
+    BlockInputStreamPtr in = mutations_interpreter.execute();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
     Block in_header = in->getHeader();
@@ -907,9 +918,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// All columns are modified, proceed to write a new part from scratch.
 
+        for (const auto & index : data.indexes) {
+            in = std::make_shared<ExpressionBlockInputStream>(in, index->expr);
+        }
+
         if (data.hasPrimaryKey())
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
+        else if (!data.indexes.empty()) {
+            in = std::make_shared<MaterializingBlockInputStream>(in);
+        }
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -938,20 +956,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
-        /// TODO: just recalc index on part
-        for (const auto& col : in_header.getNames()) {
-            for (const auto& index_part : source_part->index_parts) {
-                const auto index_cols = index_part->index->sample.getNames();
+        /// TODO: more effective check
+        for (const auto & col : in_header.getNames()) {
+            for (const auto index : data.indexes) {
+                const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
                 if (it != cend(index_cols)) {
                     throw Exception("You can not modify columns used in index. Index name: '"
-                                    + index_part->index->name
+                                    + index->name
                                     + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);
                 }
             }
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
+
         for (const auto & entry : in_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
@@ -1021,7 +1040,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->index = source_part->index;
         new_data_part->partition.assign(source_part->partition);
         new_data_part->minmax_idx = source_part->minmax_idx;
-        new_data_part->index_parts = source_part->index_parts;
         new_data_part->modification_time = time(nullptr);
         new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->getFullPath());
     }

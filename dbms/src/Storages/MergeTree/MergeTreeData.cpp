@@ -187,11 +187,7 @@ MergeTreeData::MergeTreeData(
             "MergeTree data format version on disk doesn't support custom partitioning",
             ErrorCodes::METADATA_MISMATCH);
 
-    for (const auto & index_ast : indexes_ast_) {
-        indexes.push_back(
-                std::move(MergeTreeIndexFactory::instance().get(
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast))));
-    }
+    setSkipIndexes(indexes_ast_);
 }
 
 
@@ -347,6 +343,18 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         primary_key_expr = std::move(new_primary_key_expr);
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);
+    }
+}
+
+
+void MergeTreeData::setSkipIndexes(const ASTs & indexes_asts, bool only_check)
+{
+    if (!only_check) {
+        for (const auto &index_ast : indexes_asts) {
+            indexes.push_back(
+                    std::move(MergeTreeIndexFactory::instance().get(
+                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast))));
+        }
     }
 }
 
