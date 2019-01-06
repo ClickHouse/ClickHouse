@@ -66,6 +66,12 @@ using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
 
+class MergeTreeIndexReader {
+public:
+    MergeTreeIndexPtr index;
+};
+
+
 /// Structure for storing basic index info like columns, expression, arguments, ...
 class MergeTreeIndex
 {
