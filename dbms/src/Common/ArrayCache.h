@@ -94,7 +94,11 @@ private:
         Key key;
         Payload payload;
 
-        void * ptr;
+        union
+        {
+            void * ptr;
+            char * char_ptr;
+        };
         size_t size;
         size_t refcount = 0;
         void * chunk;
@@ -286,7 +290,7 @@ private:
             ++token->refcount;
         }
 
-        void cleanup([[maybe_unused]] std::lock_guard & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
         {
             token->cache.insert_tokens.erase(*key);
             token->cleaned_up = true;
@@ -349,7 +353,7 @@ private:
             if (left_it->chunk == region.chunk && left_it->isFree())
             {
                 region.size += left_it->size;
-                *reinterpret_cast<char **>(&region.ptr) -= left_it->size;
+                region.char_ptr-= left_it->size;
                 size_multimap.erase(size_multimap.iterator_to(*left_it));
                 adjacency_list.erase_and_dispose(left_it, [](RegionMetadata * elem) { elem->destroy(); });
             }
@@ -479,7 +483,7 @@ private:
 
         size_multimap.erase(size_multimap.iterator_to(free_region));
         free_region.size -= size;
-        *reinterpret_cast<char **>(&free_region.ptr) += size;
+        free_region.char_ptr += size;
         size_multimap.insert(free_region);
 
         adjacency_list.insert(adjacency_list.iterator_to(free_region), *allocated_region);

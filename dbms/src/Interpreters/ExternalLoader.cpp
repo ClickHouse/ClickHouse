@@ -435,8 +435,12 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & 
     }
 
     if (!it->second.loadable && throw_on_error)
-        it->second.exception ? std::rethrow_exception(it->second.exception)
-                             : throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
+    {
+        if (it->second.exception)
+            std::rethrow_exception(it->second.exception);
+        else
+            throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
+    }
 
     return it->second.loadable;
 }

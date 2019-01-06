@@ -268,7 +268,7 @@ void AsynchronousMetrics::update()
             set("jemalloc." NAME, value); \
         } while (0);
 
-        FOR_EACH_METRIC(GET_METRIC);
+        FOR_EACH_METRIC(GET_METRIC)
 
     #undef GET_METRIC
     #undef FOR_EACH_METRIC

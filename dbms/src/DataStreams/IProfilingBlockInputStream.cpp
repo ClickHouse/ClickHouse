@@ -230,9 +230,6 @@ void IProfilingBlockInputStream::checkQuota(Block & block)
             prev_elapsed = total_elapsed;
             break;
         }
-
-        default:
-            throw Exception("Logical error: unknown limits mode.", ErrorCodes::LOGICAL_ERROR);
     }
 }
 

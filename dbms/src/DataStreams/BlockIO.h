@@ -60,6 +60,8 @@ struct BlockIO
     }
 
     ~BlockIO();
+    BlockIO();
+    BlockIO(const BlockIO &);
 };
 
 }

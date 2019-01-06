@@ -598,10 +598,6 @@ void NO_INLINE Aggregator::executeImpl(
         executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
@@ -617,7 +613,7 @@ void NO_INLINE Aggregator::executeImplCase(
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
 
     /// For all rows.
-    typename Method::Key prev_key;
+    typename Method::Key prev_key{};
     AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {
@@ -707,9 +703,6 @@ void NO_INLINE Aggregator::executeImplCase(
     }
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic pop
-#endif
 
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
