@@ -4,6 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <numeric>
+
 
 namespace DB
 {
@@ -62,7 +64,15 @@ std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(std::shared_ptr<ASTIn
     auto it = indexes.find(node->type->name);
     if (it == indexes.end())
         throw Exception(
-                "Unknown Index type '" + node->type->name + "'",
+                "Unknown Index type '" + node->type->name + "'. Available index types: " +
+                std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
+                        [] (auto && lft, const auto & rht) -> std::string {
+                            if (lft == "") {
+                                return rht.first;
+                            } else {
+                                return lft + ", " + rht.first;
+                            }
+                        }) + ".",
                 ErrorCodes::INCORRECT_QUERY);
     return it->second(node);
 }
