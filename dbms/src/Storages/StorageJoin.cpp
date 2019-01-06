@@ -190,8 +190,8 @@ size_t rawSize(const StringRef & t)
 class JoinBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block)
-        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block))
+    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block_)
+        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
         column_indices.resize(sample_block.columns());
