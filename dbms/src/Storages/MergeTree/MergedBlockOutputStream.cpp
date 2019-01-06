@@ -428,7 +428,7 @@ void MergedBlockOutputStream::init()
                         stream_name,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, MARKS_FILE_EXTENSION,
-                        max_compress_block_size, compression_settings,
+                        codec, max_compress_block_size,
                         0, aio_threshold)));
 
         skip_indexes_granules.emplace_back(nullptr);
