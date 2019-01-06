@@ -148,7 +148,6 @@ void Set::setHeader(const Block & block)
             set_elements.emplace_back(removeNullable(type)->createColumn());
     }
 
-
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));
 }

@@ -26,8 +26,6 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    __builtin_unreachable();
 }
 
 template <typename Variant>
