@@ -72,7 +72,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(std::shared_ptr<ASTIn
                             } else {
                                 return lft + ", " + rht.first;
                             }
-                        }) + ".",
+                        }),
                 ErrorCodes::INCORRECT_QUERY);
     return it->second(node);
 }
