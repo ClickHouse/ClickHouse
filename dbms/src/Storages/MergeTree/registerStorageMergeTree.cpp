@@ -1,5 +1,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/StorageMergeTreeIndexes.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Common/typeid_cast.h>
@@ -178,6 +179,11 @@ static void setGraphitePatternsFromConfig(const Context & context,
 
     if (config.has(config_element + ".default"))
         appendGraphitePattern(config, config_element + "." + ".default", params.patterns);
+}
+
+
+static void registerMergeTreeSkipIndexes() {
+
 }
 
 

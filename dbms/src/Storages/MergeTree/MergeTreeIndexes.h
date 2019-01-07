@@ -17,35 +17,10 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
-
 class MergeTreeIndex;
 
 using MergeTreeIndexPtr = std::shared_ptr<const MergeTreeIndex>;
 using MutableMergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
-
-
-/// Condition on the index.
-/// It works only with one indexPart (MergeTreeDataPart).
-class IndexCondition {
-    friend MergeTreeIndex;
-
-public:
-    virtual ~IndexCondition() = default;
-
-    /// Checks if this index is useful for query.
-    virtual bool alwaysUnknownOrTrue() const = 0;
-
-    /// Drops out ranges where query is false
-    virtual MarkRanges filterRanges(const MarkRanges & ranges) const = 0;
-
-protected:
-    IndexCondition() = default;
-
-public:
-    MergeTreeIndexPtr index;
-};
-
-using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 
 
 struct MergeTreeIndexGranule
@@ -62,14 +37,30 @@ struct MergeTreeIndexGranule
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
 };
 
+
 using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
+/// Condition on the index.
+class IndexCondition {
+    friend MergeTreeIndex;
 
-class MergeTreeIndexReader {
+public:
+    virtual ~IndexCondition() = default;
+
+    /// Checks if this index is useful for query.
+    virtual bool alwaysUnknownOrTrue() const = 0;
+
+    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranule & granule);
+
+protected:
+    IndexCondition() = default;
+
 public:
     MergeTreeIndexPtr index;
 };
+
+using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 
 
 /// Structure for storing basic index info like columns, expression, arguments, ...
@@ -84,11 +75,11 @@ public:
     virtual String indexType() const { return "UNKNOWN"; };
 
     /// gets filename without extension
-    virtual String getFileName() const = 0;
+    virtual String getFileName() const { return INDEX_FILE_PREFIX + name; };
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
-    virtual IndexConditionPtr createIndexConditionOnPart(
+    virtual IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
     virtual void writeText(WriteBuffer & ostr) const = 0;
