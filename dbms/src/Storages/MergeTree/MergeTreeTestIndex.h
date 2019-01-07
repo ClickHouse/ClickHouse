@@ -75,9 +75,10 @@ public:
     };
 };
 
-std::unique_ptr<MergeTreeIndex> MTItestCreator(std::shared_ptr<ASTIndexDeclaration> node) {
+std::unique_ptr<MergeTreeIndex> MTItestCreator(
+        const MergeTreeData & data, std::shared_ptr<ASTIndexDeclaration> node, const Context & ) {
     return std::make_unique<MergeTreeTestIndex>(
-            node->name, nullptr, node->granularity.get<size_t>(), Block{});
+            node->name, data.primary_key_expr, node->granularity.get<size_t>(), Block{});
 }
 
 }
