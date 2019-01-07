@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/NamesAndTypes.h>
 #include <port/clock.h>
@@ -56,7 +57,6 @@ public:
     /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
     size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
-private:
     class Stream
     {
     public:
@@ -94,6 +94,7 @@ private:
         std::unique_ptr<CompressedReadBufferFromFile> non_cached_buffer;
     };
 
+private:
     using FileStreams = std::map<std::string, std::unique_ptr<Stream>>;
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
