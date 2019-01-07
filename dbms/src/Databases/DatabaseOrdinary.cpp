@@ -507,13 +507,13 @@ void DatabaseOrdinary::shutdown()
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
-    const String & name,
+    const String & table_name,
     const ColumnsDescription & columns,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
-    String table_name_escaped = escapeForFileName(name);
+    String table_name_escaped = escapeForFileName(table_name);
     String table_metadata_tmp_path = metadata_path + "/" + table_name_escaped + ".sql.tmp";
     String table_metadata_path = metadata_path + "/" + table_name_escaped + ".sql";
     String statement;
