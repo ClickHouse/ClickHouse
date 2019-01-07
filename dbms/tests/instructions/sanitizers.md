@@ -47,13 +47,13 @@ sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1,suppressions=../dbms/tests/tsan
 # How to use Undefined Behaviour Sanitizer
 
 ```
-CC=clang CXX=clang++ mkdir build_ubsan && cd build_ubsan
+mkdir build_ubsan && cd build_ubsan
 ```
 
 Note: clang is mandatory, because gcc (in version 8) has false positives due to devirtualization and it has less amount of checks.
 
 ```
-cmake -D SANITIZE=undefined ..
+CC=clang CXX=clang++ cmake -D SANITIZE=undefined ..
 ninja
 ```
 
