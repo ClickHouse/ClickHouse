@@ -548,11 +548,11 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         {
             const auto index = storage.indexes[i];
             auto & stream = *skip_indexes_streams[i];
-            size_t prev_mark = 0;
+            size_t prev_pos = 0;
 
-            while (prev_mark < rows) {
+            while (prev_pos < rows) {
                 size_t limit = 0;
-                if (prev_mark == 0 && index_offset != 0)
+                if (prev_pos == 0 && index_offset != 0)
                 {
                     limit = index_offset;
                 }
@@ -571,10 +571,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                     }
                 }
 
-                size_t pos = prev_mark;
+                size_t pos = prev_pos;
                 skip_indexes_granules[i]->update(block, &pos, limit);
 
-                if (pos == prev_mark + limit) {
+                if (pos == prev_pos + limit) {
                     ++skip_index_filling[i];
 
                     /// write index if it is filled
@@ -584,7 +584,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                         skip_index_filling[i] = 0;
                     }
                 }
-                prev_mark = pos;
+                prev_pos = pos;
             }
         }
     }
