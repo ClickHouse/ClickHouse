@@ -553,17 +553,22 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
+    LOG_DEBUG(log, "Before extract");
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
         all_columns, data.sorting_key_expr, data.indexes,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
+    LOG_DEBUG(log, "After extract");
+
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
             data, future_part.name, future_part.part_info);
     new_data_part->partition.assign(future_part.getPartition());
     new_data_part->relative_path = TMP_PREFIX + future_part.name;
     new_data_part->is_temp = true;
+
+    LOG_DEBUG(log, "New Part");
 
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 

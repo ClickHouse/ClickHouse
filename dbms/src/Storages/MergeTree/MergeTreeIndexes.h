@@ -17,6 +17,7 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
+class MergeTreeData;
 class MergeTreeIndex;
 
 using MergeTreeIndexPtr = std::shared_ptr<const MergeTreeIndex>;
@@ -86,12 +87,7 @@ public:
 };
 
 
-class MergeTreeIndexes : public std::vector<MutableMergeTreeIndexPtr>
-{
-public:
-    void writeText(WriteBuffer & ostr) const;
-    void readText(ReadBuffer & istr);
-};
+using MergeTreeIndexes = std::vector<MutableMergeTreeIndexPtr>;
 
 
 class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
@@ -99,10 +95,16 @@ class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
     friend class ext::singleton<MergeTreeIndexFactory>;
 
 public:
-    using Creator = std::function<std::unique_ptr<MergeTreeIndex>(std::shared_ptr<ASTIndexDeclaration> node)>;
+    using Creator = std::function<
+            std::unique_ptr<MergeTreeIndex>(
+                    const MergeTreeData & data,
+                    std::shared_ptr<ASTIndexDeclaration> node,
+                    const Context & context)>;
 
-    std::unique_ptr<MergeTreeIndex> get(std::shared_ptr<ASTIndexDeclaration> node) const;
-    std::unique_ptr<MergeTreeIndex> get(const String & description) const;
+    std::unique_ptr<MergeTreeIndex> get(
+            const MergeTreeData & data,
+            std::shared_ptr<ASTIndexDeclaration> node,
+            const Context & context) const;
 
     void registerIndex(const std::string & name, Creator creator);
 
