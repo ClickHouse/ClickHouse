@@ -25,12 +25,10 @@ using MutableMergeTreeIndexPtr = std::shared_ptr<MergeTreeIndex>;
 
 struct MergeTreeIndexGranule
 {
-    friend MergeTreeIndex;
-
-    virtual ~MergeTreeIndexGranule();
+    virtual ~MergeTreeIndexGranule() = default;
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(ReadBuffer & istr) const = 0;
+    virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
     virtual bool empty() const = 0;
 
@@ -43,20 +41,15 @@ using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
 /// Condition on the index.
 class IndexCondition {
-    friend MergeTreeIndex;
-
 public:
+    IndexCondition() = default;
     virtual ~IndexCondition() = default;
 
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranule & granule);
+    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranule & granule) const = 0;
 
-protected:
-    IndexCondition() = default;
-
-public:
     MergeTreeIndexPtr index;
 };
 
@@ -75,7 +68,7 @@ public:
     virtual String indexType() const { return "UNKNOWN"; };
 
     /// gets filename without extension
-    virtual String getFileName() const { return INDEX_FILE_PREFIX + name; };
+    String getFileName() const { return INDEX_FILE_PREFIX + name; };
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
