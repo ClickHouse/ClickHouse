@@ -7,6 +7,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <iostream>
+#include <random>
+
 namespace DB {
 
 class MergeTreeTestIndex;
@@ -15,11 +18,13 @@ struct MergeTreeTestGranule : public MergeTreeIndexGranule {
     ~MergeTreeTestGranule() override {};
 
     void serializeBinary(WriteBuffer &ostr) const override {
+        //std::cerr << "TESTINDEX: written " << emp << "\n";
         writeIntBinary(emp, ostr);
     }
 
     void deserializeBinary(ReadBuffer &istr) override {
         readIntBinary(emp, istr);
+        //std::cerr << "TESTINDEX: read " << emp << "\n";
     }
 
     bool empty() const override {
@@ -28,7 +33,7 @@ struct MergeTreeTestGranule : public MergeTreeIndexGranule {
 
     void update(const Block &block, size_t *pos, size_t limit) override {
         *pos += std::min(limit, block.rows() - *pos);
-        emp = false;
+        emp = rand();
     };
 
     Int32 emp = true;
