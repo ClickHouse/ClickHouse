@@ -536,11 +536,9 @@ namespace DB
             /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
             for (auto index : data.indexes) {
                 auto condition = index->createIndexCondition(query_info, context);
-                if (condition->alwaysUnknownOrTrue()) {
-                    continue;
+                if (!condition->alwaysUnknownOrTrue()) {
+                    ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);
                 }
-
-                ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);
             }
 
             if (!ranges.ranges.empty())
@@ -983,7 +981,8 @@ namespace DB
         for (const auto & range : ranges)
         {
             MarkRange index_range(
-                    range.begin / index->granularity, range.end / index->granularity);
+                    range.begin / index->granularity,
+                    (range.end + index->granularity - 1) / index->granularity);
 
             if (last_index_mark != index_range.begin || !granule) {
                 reader.seek(index_range.begin);
