@@ -355,7 +355,9 @@ void MergeTreeData::setSkipIndexes(const ASTs & indexes_asts, bool only_check)
         for (const auto &index_ast : indexes_asts) {
             indexes.push_back(
                     std::move(MergeTreeIndexFactory::instance().get(
-                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast))));
+                            *this,
+                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast),
+                            global_context)));
         }
     }
 }
