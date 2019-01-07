@@ -1,6 +1,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeTestIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -633,6 +635,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
+static void registerMergeTreeSkipIndexes() {
+    auto & factory = MergeTreeIndexFactory::instance();
+    factory.registerIndex("test", MTItestCreator);
+}
+
+
 void registerStorageMergeTree(StorageFactory & factory)
 {
     factory.registerStorage("MergeTree", create);
@@ -650,6 +658,8 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
+
+    registerMergeTreeSkipIndexes();
 }
 
 }

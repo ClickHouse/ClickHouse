@@ -1,11 +1,15 @@
 #include <boost/rational.hpp>   /// For calculations related to sampling coefficients.
 #include <optional>
 
+#include <Poco/File.h>
+
 #include <Common/FieldVisitors.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -531,9 +535,9 @@ namespace DB
             /// It can be done in multiple threads (one thread for each part).
             /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
             for (auto index : data.indexes) {
-                auto condition = index->createIndexConditionOnPart(query_info, context);
+                auto condition = index->createIndexCondition(query_info, context);
                 if (!condition->alwaysUnknownOrTrue()) {
-                    ranges.ranges = condition->filterRanges(ranges.ranges);
+                    ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);
                 }
             }
 
@@ -930,7 +934,7 @@ namespace DB
                 if (range.end == range.begin + 1)
                 {
                     /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
+                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek) // is it a bug??
                         res.push_back(range);
                     else
                         res.back().end = range.end;
@@ -949,6 +953,61 @@ namespace DB
             }
         }
 
+        return res;
+    }
+
+    MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
+            MergeTreeIndexPtr index,
+            IndexConditionPtr condition,
+            MergeTreeData::DataPartPtr part,
+            const MarkRanges & ranges,
+            const Settings & settings) const
+    {
+        if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists()) {
+            return ranges;
+        }
+
+        const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+
+        MergeTreeIndexReader reader(
+                index, part,
+                ((part->marks_count + index->granularity - 1) / index->granularity),
+                ranges);
+
+        MarkRanges res;
+
+        MergeTreeIndexGranulePtr granule = nullptr;
+        size_t last_index_mark = 0;
+        for (const auto & range : ranges)
+        {
+            MarkRange index_range(
+                    range.begin / index->granularity,
+                    (range.end + index->granularity - 1) / index->granularity);
+
+            if (last_index_mark != index_range.begin || !granule) {
+                reader.seek(index_range.begin);
+            }
+
+            for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+            {
+                if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
+                    granule = reader.read();
+
+                MarkRange data_range(
+                        std::max(range.begin, index_mark * index->granularity),
+                        std::min(range.end, (index_mark + 1) * index->granularity));
+
+                if (!condition->mayBeTrueOnGranule(*granule))
+                    continue;
+
+                if (res.empty() || res.back().end - data_range.begin >= min_marks_for_seek)
+                    res.push_back(data_range);
+                else
+                    res.back().end = data_range.end;
+            }
+
+            last_index_mark = index_range.end - 1;
+        }
         return res;
     }
 

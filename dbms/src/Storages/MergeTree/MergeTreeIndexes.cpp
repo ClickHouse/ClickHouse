@@ -18,36 +18,6 @@ namespace ErrorCodes
 }
 
 
-void MergeTreeIndexes::writeText(DB::WriteBuffer &ostr) const
-{
-    writeString("indexes format version: 1\n", ostr);
-    DB::writeText(size(), ostr);
-    writeString(" indexes:\n", ostr);
-    for (auto index : *this) {
-        index->writeText(ostr);
-        writeChar('\n', ostr);
-    }
-}
-
-
-void MergeTreeIndexes::readText(DB::ReadBuffer &istr)
-{
-    const MergeTreeIndexFactory & factory = MergeTreeIndexFactory::instance();
-
-    assertString("indexes format version: 1\n", istr);
-    size_t count;
-    DB::readText(count, istr);
-    assertString(" indexes:\n", istr);
-    reserve(count);
-    for (size_t i = 0; i < count; ++i) {
-        String index_descr;
-        readString(index_descr, istr);
-        emplace_back(factory.get(index_descr));
-        assertChar('\n', istr);
-    }
-}
-
-
 void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creator)
 {
     if (!indexes.emplace(name, std::move(creator)).second)
@@ -55,7 +25,10 @@ void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creat
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(std::shared_ptr<ASTIndexDeclaration> node) const
+std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
+        const MergeTreeData & data,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const Context & context) const
 {
     if (!node->type)
         throw Exception(
@@ -74,14 +47,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(std::shared_ptr<ASTIn
                             }
                         }),
                 ErrorCodes::INCORRECT_QUERY);
-    return it->second(node);
-}
-
-std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(const String & description) const
-{
-    ParserIndexDeclaration parser;
-    ASTPtr ast = parseQuery(parser, description.data(), description.data() + description.size(), "index factory", 0);
-    return get(std::dynamic_pointer_cast<ASTIndexDeclaration>(ast));
+    return it->second(data, node, context);
 }
 
 }

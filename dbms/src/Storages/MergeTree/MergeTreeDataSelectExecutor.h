@@ -81,6 +81,13 @@ private:
         const MergeTreeData::DataPart::Index & index,
         const KeyCondition & key_condition,
         const Settings & settings) const;
+
+    MarkRanges filterMarksUsingIndex(
+            MergeTreeIndexPtr index,
+            IndexConditionPtr condition,
+            MergeTreeData::DataPartPtr part,
+            const MarkRanges & ranges,
+            const Settings & settings) const;
 };
 
 }
