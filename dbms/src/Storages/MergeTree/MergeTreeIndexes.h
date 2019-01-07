@@ -76,8 +76,6 @@ public:
     virtual IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query_info, const Context & context) const = 0;
 
-    virtual void writeText(WriteBuffer & ostr) const = 0;
-
     String name;
     ExpressionActionsPtr expr;
     size_t granularity;

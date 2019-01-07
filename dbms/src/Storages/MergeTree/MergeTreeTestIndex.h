@@ -28,15 +28,15 @@ struct MergeTreeTestGranule : public MergeTreeIndexGranule {
     }
 
     bool empty() const override {
-        return static_cast<bool>(emp);
+        return emp == 0;
     }
 
     void update(const Block &block, size_t *pos, size_t limit) override {
         *pos += std::min(limit, block.rows() - *pos);
-        emp = rand();
+        emp = 10;
     };
 
-    Int32 emp = true;
+    Int32 emp = 0;
 };
 
 class IndexTestCondition : public IndexCondition{
@@ -75,9 +75,6 @@ public:
         return std::make_shared<IndexTestCondition>();
     };
 
-    void writeText(WriteBuffer & ostr) const override {
-        DB::writeText(10, ostr);
-    };
 };
 
 std::unique_ptr<MergeTreeIndex> MTItestCreator(
