@@ -183,7 +183,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                formatReadableSizeWithBinarySuffix(vec_from[i], buf_to);
+                formatReadableSizeWithBinarySuffix(static_cast<double>(vec_from[i]), buf_to);
                 writeChar(0, buf_to);
                 offsets_to[i] = buf_to.count();
             }
