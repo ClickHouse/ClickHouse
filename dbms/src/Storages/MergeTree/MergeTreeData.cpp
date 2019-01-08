@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <set>
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
@@ -351,15 +352,27 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
 void MergeTreeData::setSkipIndexes(const ASTs & indexes_asts, bool only_check)
 {
-    if (!only_check) {
-        for (const auto &index_ast : indexes_asts) {
+    indexes.clear();
+    std::set<String> names;
+    if (!only_check)
+    {
+        for (const auto &index_ast : indexes_asts)
+        {
             indexes.push_back(
                     std::move(MergeTreeIndexFactory::instance().get(
                             *this,
                             std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast),
                             global_context)));
+            if (names.find(indexes.back()->name) != names.end())
+            {
+                throw Exception(
+                        "Index with name `" + indexes.back()->name + "` already exsists",
+                        ErrorCodes::LOGICAL_ERROR);
+            }
+            LOG_DEBUG(log, "new index init : " << indexes.back()->name);
         }
     }
+    LOG_DEBUG(log, "Indexes size: " << indexes.size());
 }
 
 
