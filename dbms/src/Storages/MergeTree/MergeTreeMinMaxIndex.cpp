@@ -35,6 +35,8 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
         type->deserializeBinary(min_val, istr);
         Field max_val;
         type->deserializeBinary(max_val, istr);
+
+        parallelogram.emplace_back(min_val, true, max_val, true);
     }
     emp = true;
 }
