@@ -112,7 +112,6 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
 {
 	std::vector<capnp::StructSchema::Field> parents;
 	std::vector<std::string> tokens;
-	std::vector<std::string> acc;
 	
 	capnp::StructSchema cur_reader = reader;
 	size_t level = 0;
@@ -120,7 +119,6 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
     {
 		while(level > (field.tokens.size()-1) || (level > 0 && tokens[level-1] != field.tokens[level-1])) {
 			level--;
-			acc.push_back("POP");
 			actions.push_back({Action::POP});
 			tokens.pop_back();
 			parents.pop_back();
@@ -143,7 +141,6 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
 				tokens.push_back(field.tokens[level]);
 				
 				cur_reader = node.getType().asStruct();
-				acc.push_back("PUSH:"+field.tokens[level]);
                 actions.push_back({Action::PUSH, node});
             }
             else if (node.getType().isList())
@@ -169,13 +166,8 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
         }
         else
         {
-			acc.push_back("READ:"+field.tokens[level]);
             actions.push_back({Action::READ, node, {field.pos}});
         }
-		for(size_t i = 0; i < acc.size(); i++) {	
-			//std::cout << acc[i] << ",";
-		}
-		//std::cout << std::endl;
     }
 }
 
@@ -221,7 +213,6 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
 
 bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
-	std::cout << "############################################" << std::endl;
     if (istr.eof())
         return false;
 
