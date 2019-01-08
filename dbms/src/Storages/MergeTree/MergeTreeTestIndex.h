@@ -12,6 +12,12 @@
 
 namespace DB {
 
+namespace ErrorCodes
+{
+    extern const int FILE_DOESNT_EXIST;
+}
+
+
 class MergeTreeTestIndex;
 
 struct MergeTreeTestGranule : public MergeTreeIndexGranule {
@@ -24,6 +30,9 @@ struct MergeTreeTestGranule : public MergeTreeIndexGranule {
 
     void deserializeBinary(ReadBuffer &istr) override {
         readIntBinary(emp, istr);
+        if (emp != 10) {
+            throw Exception("kek bad read", ErrorCodes::FILE_DOESNT_EXIST);
+        }
         //std::cerr << "TESTINDEX: read " << emp << "\n";
     }
 

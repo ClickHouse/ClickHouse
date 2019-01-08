@@ -106,7 +106,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
         if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key
-            || storage.order_by || storage.sample_by || !storage.indexes.empty() || storage.settings)
+            || storage.order_by || storage.sample_by || (storage.indexes && !storage.indexes->children.empty()) || storage.settings)
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
