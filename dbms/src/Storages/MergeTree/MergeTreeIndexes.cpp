@@ -6,6 +6,8 @@
 
 #include <numeric>
 
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -16,7 +18,6 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int UNKNOWN_EXCEPTION;
 }
-
 
 void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creator)
 {
@@ -32,8 +33,12 @@ std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
 {
     if (!node->type)
         throw Exception(
-                "for INDEX TYPE is required",
-                ErrorCodes::INCORRECT_QUERY);
+                "for index TYPE is required", ErrorCodes::INCORRECT_QUERY);
+    if (node->type->parameters && !node->type->parameters->children.empty())
+        throw Exception(
+                "Index type can not have parameters", ErrorCodes::INCORRECT_QUERY);
+
+    boost::algorithm::to_lower(node->type->name);
     auto it = indexes.find(node->type->name);
     if (it == indexes.end())
         throw Exception(

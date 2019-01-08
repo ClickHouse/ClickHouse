@@ -43,15 +43,11 @@ using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 /// Condition on the index.
 class IndexCondition {
 public:
-    IndexCondition() = default;
     virtual ~IndexCondition() = default;
-
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranule & granule) const = 0;
-
-    MergeTreeIndexPtr index;
+    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
 };
 
 using IndexConditionPtr = std::shared_ptr<IndexCondition>;
@@ -61,12 +57,10 @@ using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 class MergeTreeIndex
 {
 public:
-    MergeTreeIndex(String name, ExpressionActionsPtr expr, size_t granularity, Block key)
-            : name(name), expr(expr), granularity(granularity), sample(key) {}
+    MergeTreeIndex(String name, ExpressionActionsPtr expr, size_t granularity)
+            : name(name), expr(expr), granularity(granularity) {}
 
-    virtual ~MergeTreeIndex() {};
-
-    virtual String indexType() const { return "UNKNOWN"; };
+    virtual ~MergeTreeIndex() = default;
 
     /// gets filename without extension
     String getFileName() const { return INDEX_FILE_PREFIX + name; };
@@ -81,7 +75,6 @@ public:
     size_t granularity;
     Names columns;
     DataTypes data_types;
-    Block sample;
 };
 
 
