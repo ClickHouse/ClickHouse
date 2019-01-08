@@ -13,7 +13,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
-
+#include <iostream>
 
 namespace DB
 {
@@ -108,34 +108,43 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
     else
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
-
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
-    String last;
-    size_t level = 0;
-    capnp::StructSchema::Field parent;
-
-    for (const auto & field : sortedFields)
+	std::vector<capnp::StructSchema::Field> parents;
+	std::vector<std::string> tokens;
+	std::vector<std::string> acc;
+	
+	capnp::StructSchema cur_reader = reader;
+	size_t level = 0;
+	for (const auto & field : sortedFields)
     {
-        // Move to a different field in the same structure, keep parent
-        if (level > 0 && field.tokens[level - 1] != last)
-        {
-            auto child = getFieldOrThrow(parent.getContainingStruct(), field.tokens[level - 1]);
-            reader = child.getType().asStruct();
-            actions.push_back({Action::POP});
-            actions.push_back({Action::PUSH, child});
-        }
-        // Descend to a nested structure
+		while(level > (field.tokens.size()-1) || (level > 0 && tokens[level-1] != field.tokens[level-1])) {
+			level--;
+			acc.push_back("POP");
+			actions.push_back({Action::POP});
+			tokens.pop_back();
+			parents.pop_back();
+			if(level > 0) {
+				cur_reader = parents[level-1].getType().asStruct();
+			} else {
+				cur_reader = reader;
+				break;
+			}
+
+		}
         for (; level < field.tokens.size() - 1; ++level)
         {
-            auto node = getFieldOrThrow(reader, field.tokens[level]);
+
+            auto node = getFieldOrThrow(cur_reader, field.tokens[level]);
             if (node.getType().isStruct())
             {
                 // Descend to field structure
-                last = field.tokens[level];
-                parent = node;
-                reader = parent.getType().asStruct();
-                actions.push_back({Action::PUSH, parent});
+				parents.push_back(node);
+				tokens.push_back(field.tokens[level]);
+				
+				cur_reader = node.getType().asStruct();
+				acc.push_back("PUSH:"+field.tokens[level]);
+                actions.push_back({Action::PUSH, node});
             }
             else if (node.getType().isList())
             {
@@ -146,7 +155,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
         }
 
         // Read field from the structure
-        auto node = getFieldOrThrow(reader, field.tokens[level]);
+        auto node = getFieldOrThrow(cur_reader, field.tokens[level]);
         if (node.getType().isList() && actions.size() > 0 && actions.back().field == node)
         {
             // The field list here flattens Nested elements into multiple arrays
@@ -160,8 +169,13 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
         }
         else
         {
+			acc.push_back("READ:"+field.tokens[level]);
             actions.push_back({Action::READ, node, {field.pos}});
         }
+		for(size_t i = 0; i < acc.size(); i++) {	
+			//std::cout << acc[i] << ",";
+		}
+		//std::cout << std::endl;
     }
 }
 
@@ -191,9 +205,14 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     // Reorder list to make sure we don't have to backtrack
     std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b)
     {
-        if (a.tokens.size() == b.tokens.size())
-            return a.tokens < b.tokens;
-           return a.tokens.size() < b.tokens.size();
+		
+		size_t min = std::min(a.tokens.size(),b.tokens.size());
+		for(size_t i = 0; i < min; i++) {
+			if(a.tokens[i] != b.tokens[i]){
+				return a.tokens[i] > b.tokens[i];
+			}
+		}
+		return a.tokens.size() < b.tokens.size();
     });
 
     createActions(list, root);
@@ -202,6 +221,7 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
 
 bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
+	std::cout << "############################################" << std::endl;
     if (istr.eof())
         return false;
 
