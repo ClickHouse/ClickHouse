@@ -226,14 +226,14 @@ public:
 
         // Advance column offsets
         auto & to_keys_offsets = to_keys_arr.getOffsets();
-        to_keys_offsets.push_back((to_keys_offsets.empty() ? 0 : to_keys_offsets.back()) + size);
+        to_keys_offsets.push_back(to_keys_offsets.back() + size);
         to_keys_col.reserve(size);
 
         for (size_t col = 0; col < values_types.size(); ++col)
         {
             auto & to_values_arr = static_cast<ColumnArray &>(to_tuple.getColumn(col + 1));
             auto & to_values_offsets = to_values_arr.getOffsets();
-            to_values_offsets.push_back((to_values_offsets.empty() ? 0 : to_values_offsets.back()) + size);
+            to_values_offsets.push_back(to_values_offsets.back() + size);
             to_values_arr.getData().reserve(size);
         }
 
