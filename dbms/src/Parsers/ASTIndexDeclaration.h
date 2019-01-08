@@ -27,8 +27,10 @@ public:
     String getID(char) const override { return "Index"; }
 
     ASTPtr clone() const override {
-        auto res = std::make_shared<ASTIndexDeclaration>(*this);
-        res->children.clear();
+        auto res = std::make_shared<ASTIndexDeclaration>();
+
+        res->name = name;
+        res->granularity = granularity;
 
         if (expr)
             res->set(res->expr, expr->clone());
