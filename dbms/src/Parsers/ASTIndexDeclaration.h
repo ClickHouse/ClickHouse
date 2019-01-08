@@ -13,7 +13,7 @@
 namespace DB
 {
 
-/** Index name(expr) TYPE typename(args) in create query
+/** name BY expr TYPE typename(args) GRANULARITY int in create query
   */
 class ASTIndexDeclaration : public IAST
 {
