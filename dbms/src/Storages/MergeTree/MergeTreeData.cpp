@@ -95,7 +95,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
-    const ASTs & indexes_ast_,
+    const ASTPtr & indexes_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -350,13 +350,19 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 }
 
 
-void MergeTreeData::setSkipIndexes(const ASTs & indexes_asts, bool only_check)
+void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
 {
-    indexes.clear();
-    std::set<String> names;
+    if (!indexes_asts)
+    {
+        return;
+    }
     if (!only_check)
     {
-        for (const auto &index_ast : indexes_asts)
+        indexes.clear();
+        std::set<String> names;
+        auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indexes_asts);
+
+        for (const auto &index_ast : index_list->children)
         {
             indexes.push_back(
                     std::move(MergeTreeIndexFactory::instance().get(
@@ -369,10 +375,9 @@ void MergeTreeData::setSkipIndexes(const ASTs & indexes_asts, bool only_check)
                         "Index with name `" + indexes.back()->name + "` already exsists",
                         ErrorCodes::LOGICAL_ERROR);
             }
-            LOG_DEBUG(log, "new index init : " << indexes.back()->name);
+            names.insert(indexes.back()->name);
         }
     }
-    LOG_DEBUG(log, "Indexes size: " << indexes.size());
 }
 
 
