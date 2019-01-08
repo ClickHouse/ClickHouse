@@ -138,6 +138,12 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
+bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIndexDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, node, expected);
+}
+
 
 bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -147,20 +153,20 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
-    ParserKeyword s_index("INDEX");
+    ParserKeyword s_indexes("INDEXES");
     ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
-    ParserIndexDeclaration index_p;
+    ParserIndexDeclarationList indexes_p;
 
     ASTPtr engine;
     ASTPtr partition_by;
     ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
-    ASTs indexes;
+    ASTPtr indexes;
     ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
@@ -205,9 +211,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (s_index.ignore(pos, expected)) {
-            indexes.emplace_back(nullptr);
-            if (index_p.parse(pos, indexes.back(), expected))
+        if (s_indexes.ignore(pos, expected)) {
+            if (indexes_p.parse(pos, indexes, expected))
                 continue;
             else
                 return false;
@@ -228,11 +233,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
-
-    for (const auto& index : indexes) {
-        storage->indexes.emplace_back(nullptr);
-        storage->set(storage->indexes.back(), index);
-    }
+    storage->set(storage->indexes, indexes);
 
     storage->set(storage->settings, settings);
 

@@ -47,6 +47,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <set>
 #include <thread>
 #include <typeinfo>
 #include <typeindex>
@@ -94,7 +95,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
-    const ASTs & indexes_ast_,
+    const ASTPtr & indexes_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -349,15 +350,32 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 }
 
 
-void MergeTreeData::setSkipIndexes(const ASTs & indexes_asts, bool only_check)
+void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
 {
-    if (!only_check) {
-        for (const auto &index_ast : indexes_asts) {
+    if (!indexes_asts)
+    {
+        return;
+    }
+    if (!only_check)
+    {
+        indexes.clear();
+        std::set<String> names;
+        auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indexes_asts);
+
+        for (const auto &index_ast : index_list->children)
+        {
             indexes.push_back(
                     std::move(MergeTreeIndexFactory::instance().get(
                             *this,
                             std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast),
                             global_context)));
+            if (names.find(indexes.back()->name) != names.end())
+            {
+                throw Exception(
+                        "Index with name `" + indexes.back()->name + "` already exsists",
+                        ErrorCodes::LOGICAL_ERROR);
+            }
+            names.insert(indexes.back()->name);
         }
     }
 }
