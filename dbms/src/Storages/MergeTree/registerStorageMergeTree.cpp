@@ -3,6 +3,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndexes.h>
 #include <Storages/MergeTree/MergeTreeTestIndex.h>
+#include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -638,6 +639,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 static void registerMergeTreeSkipIndexes() {
     auto & factory = MergeTreeIndexFactory::instance();
     factory.registerIndex("test", MTItestCreator);
+    factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
 }
 
 

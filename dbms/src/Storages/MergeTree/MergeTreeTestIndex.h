@@ -21,7 +21,7 @@ namespace ErrorCodes
 class MergeTreeTestIndex;
 
 struct MergeTreeTestGranule : public MergeTreeIndexGranule {
-    ~MergeTreeTestGranule() override {};
+    ~MergeTreeTestGranule() override = default;;
 
     void serializeBinary(WriteBuffer &ostr) const override {
         //std::cerr << "TESTINDEX: written " << emp << "\n";
@@ -50,13 +50,13 @@ struct MergeTreeTestGranule : public MergeTreeIndexGranule {
 
 class IndexTestCondition : public IndexCondition{
 public:
-    IndexTestCondition() = default;
-    ~IndexTestCondition() override {};
+    IndexTestCondition(int) {};
+    ~IndexTestCondition() override = default;
 
     /// Checks if this index is useful for query.
     bool alwaysUnknownOrTrue() const override { return false; };
 
-    bool mayBeTrueOnGranule(const MergeTreeIndexGranule &) const override {
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const override {
         return true;
     }
 
@@ -66,12 +66,10 @@ public:
 class MergeTreeTestIndex : public MergeTreeIndex
 {
 public:
-    MergeTreeTestIndex(String name, ExpressionActionsPtr expr, size_t granularity, Block key)
-            : MergeTreeIndex(name, expr, granularity, key) {}
+    MergeTreeTestIndex(String name, ExpressionActionsPtr expr, size_t granularity)
+            : MergeTreeIndex(name, expr, granularity) {}
 
-    ~MergeTreeTestIndex() override {}
-
-    String indexType() const override { return "TEST"; }
+    ~MergeTreeTestIndex() override = default;
 
     /// gets filename without extension
 
@@ -81,7 +79,7 @@ public:
 
     IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & , const Context & ) const override {
-        return std::make_shared<IndexTestCondition>();
+        return std::make_shared<IndexTestCondition>(4);
     };
 
 };
@@ -89,7 +87,7 @@ public:
 std::unique_ptr<MergeTreeIndex> MTItestCreator(
         const MergeTreeData & data, std::shared_ptr<ASTIndexDeclaration> node, const Context & ) {
     return std::make_unique<MergeTreeTestIndex>(
-            node->name, data.primary_key_expr, node->granularity.get<size_t>(), Block{});
+            node->name, data.primary_key_expr, node->granularity.get<size_t>());
 }
 
 }

@@ -997,7 +997,7 @@ namespace DB
                         std::max(range.begin, index_mark * index->granularity),
                         std::min(range.end, (index_mark + 1) * index->granularity));
 
-                if (!condition->mayBeTrueOnGranule(*granule))
+                if (!condition->mayBeTrueOnGranule(granule))
                     continue;
 
                 if (res.empty() || res.back().end - data_range.begin >= min_marks_for_seek)
