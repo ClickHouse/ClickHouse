@@ -62,13 +62,13 @@ StorageMergeTree::StorageMergeTree(
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
     : path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
-    context(context_), background_pool(context_.getBackgroundPool()),
+    global_context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
          full_path, columns_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
          sample_by_ast_, merging_params_,
          settings_, false, attach),
-    reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()),
+    reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
     if (path_.empty())
@@ -132,14 +132,14 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Set
 void StorageMergeTree::checkTableCanBeDropped() const
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
+    global_context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
 }
 
 void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
 
-    const String partition_id = data.getPartitionIDFromQuery(partition, context);
+    const String partition_id = data.getPartitionIDFromQuery(partition, global_context);
     auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     UInt64 partition_size = 0;
@@ -148,7 +148,7 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     {
         partition_size += part->bytes_on_disk;
     }
-    context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
+    global_context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
 void StorageMergeTree::drop()
@@ -191,8 +191,8 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
-    const String & database_name,
-    const String & table_name,
+    const String & current_database_name,
+    const String & current_table_name,
     const Context & context)
 {
     if (!params.is_mutable())
@@ -200,7 +200,7 @@ void StorageMergeTree::alter(
         auto table_soft_lock = lockStructureForAlter();
         auto new_columns = getColumns();
         params.apply(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, {});
         setColumns(std::move(new_columns));
         return;
     }
@@ -239,7 +239,7 @@ void StorageMergeTree::alter(
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
     };
 
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, storage_modifier);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
@@ -277,7 +277,7 @@ struct CurrentlyMergingPartsTagger
 
     ~CurrentlyMergingPartsTagger()
     {
-        std::lock_guard<std::mutex> lock(storage->currently_merging_mutex);
+        std::lock_guard lock(storage->currently_merging_mutex);
 
         for (const auto & part : parts)
         {
@@ -386,7 +386,7 @@ bool StorageMergeTree::merge(
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
 
     {
-        std::lock_guard<std::mutex> lock(currently_merging_mutex);
+        std::lock_guard lock(currently_merging_mutex);
 
         auto can_merge = [this, &lock] (const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right, String *)
         {
@@ -414,7 +414,7 @@ bool StorageMergeTree::merge(
         merging_tagger.emplace(future_part.parts, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
 
-    MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
 
     /// Logging
     Stopwatch stopwatch;
@@ -424,7 +424,7 @@ bool StorageMergeTree::merge(
     {
         try
         {
-            auto part_log = context.getPartLog(database_name);
+            auto part_log = global_context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -492,7 +492,7 @@ bool StorageMergeTree::tryMutatePart()
     {
         auto disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-        std::lock_guard<std::mutex> lock(currently_merging_mutex);
+        std::lock_guard lock(currently_merging_mutex);
 
         if (current_mutations_by_version.empty())
             return false;
@@ -536,7 +536,7 @@ bool StorageMergeTree::tryMutatePart()
     {
         try
         {
-            auto part_log = context.getPartLog(database_name);
+            auto part_log = global_context.getPartLog(database_name);
             if (!part_log)
                 return;
 
@@ -574,7 +574,7 @@ bool StorageMergeTree::tryMutatePart()
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_part, commands, global_context);
         data.renameTempPartAndReplace(new_part);
         write_part_log({});
     }
@@ -728,10 +728,6 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 bool StorageMergeTree::optimize(
     const ASTPtr & /*query*/, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
-    String partition_id;
-    if (partition)
-        partition_id = data.getPartitionIDFromQuery(partition, context);
-
     String disable_reason;
     if (!partition && final)
     {
@@ -753,6 +749,10 @@ bool StorageMergeTree::optimize(
     }
     else
     {
+        String partition_id;
+        if (partition)
+            partition_id = data.getPartitionIDFromQuery(partition, context);
+
         if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
             if (context.getSettingsRef().optimize_throw_if_noop)
@@ -844,13 +844,13 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
 }
 
 
-void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, const Context & context)
+void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_part, const Context & context)
 {
     // TODO: should get some locks to prevent race with 'alter … modify column'
 
     String partition_id;
 
-    if (part)
+    if (attach_part)
         partition_id = typeid_cast<const ASTLiteral &>(*partition).value.safeGet<String>();
     else
         partition_id = data.getPartitionIDFromQuery(partition, context);
@@ -859,7 +859,7 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 
     /// Let's make a list of parts to add.
     Strings parts;
-    if (part)
+    if (attach_part)
     {
         parts.push_back(partition_id);
     }
@@ -958,11 +958,11 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
                 data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
         }
 
-        PartLog::addNewParts(this->context, dst_parts, watch.elapsed());
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed());
     }
     catch (...)
     {
-        PartLog::addNewParts(this->context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        PartLog::addNewParts(global_context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
         throw;
     }
 }

@@ -446,11 +446,11 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
                     for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
                     {
-                        ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(lambda_arg_asts[j].get());
-                        if (!identifier)
+                        ASTIdentifier * lambda_identifier = typeid_cast<ASTIdentifier *>(lambda_arg_asts[j].get());
+                        if (!lambda_identifier)
                             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-                        String arg_name = identifier->name;
+                        String arg_name = lambda_identifier->name;
 
                         lambda_arguments.emplace_back(arg_name, lambda_type->getArgumentTypes()[j]);
                     }

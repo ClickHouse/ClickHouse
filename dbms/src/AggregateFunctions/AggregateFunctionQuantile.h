@@ -100,9 +100,12 @@ public:
             return res;
     }
 
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
+        /// Out of range conversion may occur. This is Ok.
+
         const auto & column = static_cast<const ColVecType &>(*columns[0]);
+
         if constexpr (has_second_arg)
             this->data(place).add(
                 column.getData()[row_num],

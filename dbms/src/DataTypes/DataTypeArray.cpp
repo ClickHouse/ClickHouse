@@ -94,7 +94,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
         throw;
     }
 
-    offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+    offsets.push_back(offsets.back() + size);
 }
 
 
@@ -255,7 +255,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & nested_column = column_array.getData();
 
     /// Number of values corresponding with `offset_values` must be read.
-    size_t last_offset = (offset_values.empty() ? 0 : offset_values.back());
+    size_t last_offset = offset_values.back();
     if (last_offset < nested_column.size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
@@ -341,7 +341,7 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
         throw;
     }
 
-    offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+    offsets.push_back(offsets.back() + size);
 }
 
 

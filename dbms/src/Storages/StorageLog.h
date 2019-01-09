@@ -88,7 +88,7 @@ private:
 
     Files_t files; /// name -> data
 
-    Names column_names; /// column_index -> name
+    Names column_names_by_idx; /// column_index -> name
 
     Poco::File marks_file;
 

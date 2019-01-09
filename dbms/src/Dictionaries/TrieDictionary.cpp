@@ -1,7 +1,6 @@
 #include "TrieDictionary.h"
 #include <iostream>
 #include <stack>
-#include <btrie.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -15,6 +14,13 @@
 #include <ext/range.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wold-style-cast"
+    #pragma clang diagnostic ignored "-Wnewline-eof"
+#endif
+
+#include <btrie.h>
 
 
 namespace DB
@@ -761,13 +767,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
+    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
-        const auto & attr = attributes.front();
+        const auto & attr = dict_attributes.front();
         return ColumnsWithTypeAndName(
             {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & attributes)
+    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & ip_column = static_cast<const ColumnFixedString &>(*columns.front());
@@ -783,7 +789,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             column->insertData(buffer, ptr - buffer);
         }
         return ColumnsWithTypeAndName{
-            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), attributes.front().name)};
+            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(
         shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(getKeys), std::move(getView));

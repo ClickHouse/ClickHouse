@@ -371,7 +371,7 @@ struct StringEqualsImpl
                     && !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
     }
 
-#if __SSE2__
+#ifdef __SSE2__
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
         const ColumnString::Chars & a_data,
         const ColumnString::Chars & b_data,
@@ -428,7 +428,7 @@ struct StringEqualsImpl
         /** Specialization if both sizes are 16.
           * To more efficient comparison of IPv6 addresses stored in FixedString(16).
           */
-#if __SSE2__
+#ifdef __SSE2__
         if (a_n == 16 && b_n == 16)
         {
             fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
@@ -448,7 +448,7 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         ColumnString::Offset b_n = b.size();
-#if __SSE2__
+#ifdef __SSE2__
         if (a_n == 16 && b_n == 16)
         {
             fixed_string_vector_constant_16(a_data, b, c);

@@ -328,9 +328,6 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 
             break;
         }
-
-        default:
-            throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
     }
 }
 
@@ -521,9 +518,6 @@ void ExpressionAction::execute(Block & block, bool dry_run) const
                 block.insert({ block.getByName(source_name).column, result_type, result_name });
 
             break;
-
-        default:
-            throw Exception("Unknown action type", ErrorCodes::UNKNOWN_ACTION);
     }
 }
 
@@ -603,9 +597,6 @@ std::string ExpressionAction::toString() const
                     ss << " AS " << projection[i].second;
             }
             break;
-
-        default:
-            throw Exception("Unexpected Action type", ErrorCodes::LOGICAL_ERROR);
     }
 
     return ss.str();
