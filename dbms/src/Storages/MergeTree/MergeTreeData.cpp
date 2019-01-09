@@ -2097,7 +2097,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types);
+        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types, indexes);
 
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);

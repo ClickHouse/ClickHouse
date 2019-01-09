@@ -137,6 +137,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     size_t index_granularity,
     bool require_checksums,
     const DataTypes & primary_key_data_types,
+    const MergeTreeIndexes & indexes,
     std::function<bool()> is_cancelled)
 {
     Logger * log = &Logger::get("checkDataPart");
@@ -239,6 +240,49 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         readText(count, buf);
         assertEOF(buf);
         rows = count;
+    }
+
+    /// Read and check skip indexes
+    for (const auto index : indexes)
+    {
+        LOG_DEBUG(log, "Checking index " << index->name << " in " << path);
+        Stream stream(path, index->getFileName(), ".idx");
+        size_t mark_num = 0;
+
+        while (!stream.uncompressed_hashing_buf.eof())
+        {
+            if (stream.mrk_hashing_buf.eof())
+                throw Exception("Unexpected end of mrk file while reading index " + index->name,
+                                ErrorCodes::CORRUPTED_DATA);
+            try
+            {
+                stream.assertMark();
+            }
+            catch (Exception &e)
+            {
+                e.addMessage("Cannot read mark " + toString(mark_num)
+                             + " in file " + stream.mrk_file_path
+                             + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                throw;
+            }
+            try
+            {
+                index->createIndexGranule()->deserializeBinary(stream.uncompressed_hashing_buf);
+            }
+            catch (Exception &e)
+            {
+                e.addMessage("Cannot read granule " + toString(mark_num)
+                          + " in file " + stream.bin_file_path
+                          + ", mrk file offset: " + toString(stream.mrk_hashing_buf.count()));
+                throw;
+            }
+            ++mark_num;
+            if (is_cancelled())
+                return {};
+        }
+
+        stream.assertEnd();
+        stream.saveChecksums(checksums_data);
     }
 
     /// Read all columns, calculate checksums and validate marks.

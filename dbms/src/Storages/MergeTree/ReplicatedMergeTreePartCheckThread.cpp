@@ -225,6 +225,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                     storage.data.index_granularity,
                     true,
                     storage.data.primary_key_data_types,
+                    storage.data.indexes,
                     [this] { return need_stop.load(); });
 
                 if (need_stop)
