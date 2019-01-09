@@ -18,6 +18,6 @@ SELECT murmurHash3_64(1, 2, 3);
 SELECT murmurHash3_64(1, 3, 2);
 SELECT murmurHash3_64(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2))));
 
-SELECT gccHash(1, 2, 3);
-SELECT gccHash(1, 3, 2);
-SELECT gccHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2))));
+SELECT gccMurmurHash(1, 2, 3);
+SELECT gccMurmurHash(1, 3, 2);
+SELECT gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2))));
