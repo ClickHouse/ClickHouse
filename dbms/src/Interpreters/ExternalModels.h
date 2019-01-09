@@ -33,7 +33,7 @@ public:
 
 protected:
 
-    std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+    std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                               const std::string & config_prefix) override;
 
     using ExternalLoader::getObjectsMap;

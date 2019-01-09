@@ -46,7 +46,7 @@ ExternalModels::ExternalModels(
     init(throw_on_error);
 }
 
-std::unique_ptr<IExternalLoadable> ExternalModels::create(
+std::shared_ptr<IExternalLoadable> ExternalModels::create(
         const std::string & name, const Configuration & config, const std::string & config_prefix)
 {
     String type = config.getString(config_prefix + ".type");

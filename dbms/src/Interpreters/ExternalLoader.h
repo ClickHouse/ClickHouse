@@ -91,7 +91,7 @@ private:
 
     struct FailedLoadableInfo final
     {
-        std::unique_ptr<IExternalLoadable> loadable;
+        std::shared_ptr<IExternalLoadable> loadable;
         std::chrono::system_clock::time_point next_attempt_time;
         UInt64 error_count;
     };
@@ -118,7 +118,7 @@ public:
     LoadablePtr tryGetLoadable(const std::string & name) const;
 
 protected:
-    virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+    virtual std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                                       const std::string & config_prefix) = 0;
 
     class LockedObjectsMap
