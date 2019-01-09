@@ -68,7 +68,7 @@ public:
 
 protected:
 
-    std::mutex internal_dictionaries_mutex;
+    mutable std::mutex internal_dictionaries_mutex;
     std::unordered_map<String, DictPtr> internal_dictionaries;
 
 private:
