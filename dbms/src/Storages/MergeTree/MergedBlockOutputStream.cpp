@@ -476,9 +476,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     for (size_t i = 0, size = skip_indexes_column_names.size(); i < size; ++i)
     {
         const auto & name = skip_indexes_column_names[i];
-
         skip_indexes_column_name_to_position.emplace(name, i);
-
         skip_indexes_columns[i] = block.getByName(name);
 
         /// Reorder index columns in advance.
@@ -519,12 +517,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto skip_index_column_it = skip_indexes_column_name_to_position.find(it->name);
             if (primary_key_column_name_to_position.end() != primary_column_it)
             {
-                auto & primary_column = *primary_key_columns[primary_column_it->second].column;
+                const auto & primary_column = *primary_key_columns[primary_column_it->second].column;
                 writeData(column.name, *column.type, primary_column, offset_columns, false, serialization_states[i]);
             }
             else if (skip_indexes_column_name_to_position.end() != skip_index_column_it)
             {
-                auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
+                const auto & index_column = *skip_indexes_columns[skip_index_column_it->second].column;
                 writeData(column.name, *column.type, index_column, offset_columns, false, serialization_states[i]);
             }
             else

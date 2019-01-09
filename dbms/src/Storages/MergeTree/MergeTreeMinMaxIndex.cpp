@@ -124,7 +124,7 @@ bool MinMaxCondition::alwaysUnknownOrTrue() const
 bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
     std::shared_ptr<MergeTreeMinMaxGranule> granule
-            = std::dynamic_pointer_cast<MergeTreeMinMaxGranule>(idx_granule);
+        = std::dynamic_pointer_cast<MergeTreeMinMaxGranule>(idx_granule);
     if (!granule) {
         throw Exception(
             "Minmax index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
@@ -140,16 +140,16 @@ MergeTreeIndexGranulePtr MergeTreeMinMaxIndex::createIndexGranule() const
 }
 
 IndexConditionPtr MergeTreeMinMaxIndex::createIndexCondition(
-        const SelectQueryInfo & query, const Context & context) const
+    const SelectQueryInfo & query, const Context & context) const
 {
 return std::make_shared<MinMaxCondition>(query, context, *this);
 };
 
 
 std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
-        const MergeTreeData & data,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context)
+    const MergeTreeData & data,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context)
 {
     if (node->name.empty())
         throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
@@ -161,7 +161,6 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     auto syntax = SyntaxAnalyzer(context, {}).analyze(
             expr_list, data.getColumns().getAllPhysical());
     auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
-
 
     auto minmax = std::make_unique<MergeTreeMinMaxIndex>(
             node->name, std::move(minmax_expr), node->granularity.get<size_t>());

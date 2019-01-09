@@ -45,9 +45,9 @@ class MinMaxCondition : public IndexCondition
 {
 public:
     MinMaxCondition(
-            const SelectQueryInfo & query,
-            const Context & context,
-            const MergeTreeMinMaxIndex & index);
+        const SelectQueryInfo & query,
+        const Context & context,
+        const MergeTreeMinMaxIndex & index);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -64,18 +64,18 @@ class MergeTreeMinMaxIndex : public MergeTreeIndex
 {
 public:
     MergeTreeMinMaxIndex(String name, ExpressionActionsPtr expr, size_t granularity)
-            : MergeTreeIndex(name, expr, granularity) {}
+        : MergeTreeIndex(name, expr, granularity) {}
 
     ~MergeTreeMinMaxIndex() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
     IndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, const Context & context) const override;
+        const SelectQueryInfo & query, const Context & context) const override;
 
 };
 
 std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
-        const MergeTreeData & data, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
+    const MergeTreeData & data, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }

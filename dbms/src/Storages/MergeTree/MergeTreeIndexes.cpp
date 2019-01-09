@@ -27,9 +27,9 @@ void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creat
 }
 
 std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
-        const MergeTreeData & data,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context) const
+    const MergeTreeData & data,
+    std::shared_ptr<ASTIndexDeclaration> node,
+    const Context & context) const
 {
     if (!node->type)
         throw Exception(

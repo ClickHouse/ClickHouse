@@ -4,11 +4,11 @@
 namespace DB {
 
 MergeTreeIndexReader::MergeTreeIndexReader(
-        MergeTreeIndexPtr index, MergeTreeData::DataPartPtr part, size_t marks_count, const MarkRanges & all_mark_ranges)
-        : index(index), stream(
-            part->getFullPath() + index->getFileName(), ".idx", marks_count,
-            all_mark_ranges, nullptr, false, nullptr, 0, DBMS_DEFAULT_BUFFER_SIZE,
-            ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE) {
+    MergeTreeIndexPtr index, MergeTreeData::DataPartPtr part, size_t marks_count, const MarkRanges & all_mark_ranges)
+    : index(index), stream(
+        part->getFullPath() + index->getFileName(), ".idx", marks_count,
+        all_mark_ranges, nullptr, false, nullptr, 0, DBMS_DEFAULT_BUFFER_SIZE,
+        ReadBufferFromFileBase::ProfileCallback{}, CLOCK_MONOTONIC_COARSE) {
     stream.seekToStart();
 }
 

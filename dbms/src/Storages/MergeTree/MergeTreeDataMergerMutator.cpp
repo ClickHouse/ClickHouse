@@ -655,7 +655,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     sort_description.reserve(sort_columns_size);
 
     Block header = src_streams.at(0)->getHeader();
-
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
@@ -823,8 +822,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         Poco::File(rows_sources_file_path).remove();
     }
 
-    // TODO: здесь надо как-то мержить индекс или в MergedBlockOutputStream
-
     for (const auto & part : parts)
         new_data_part->minmax_idx.merge(part->minmax_idx);
 
@@ -933,8 +930,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         while (check_not_cancelled() && (block = in->read()))
         {
             minmax_idx.update(block, data.minmax_idx_columns);
-            // TODO: насчитывать индексы
-            /// Supposing data is sorted we can calculate indexes there
             out.write(block);
         }
 
@@ -949,7 +944,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
 
-        /// TODO: more effective check
+        /// Checks if columns used in skipping indexes modified/
         for (const auto & col : in_header.getNames()) {
             for (const auto index : data.indexes) {
                 const auto & index_cols = index->expr->getRequiredColumns();
@@ -963,7 +958,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
-
         for (const auto & entry : in_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
