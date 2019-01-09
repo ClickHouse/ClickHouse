@@ -83,11 +83,11 @@ private:
         const Settings & settings) const;
 
     MarkRanges filterMarksUsingIndex(
-            MergeTreeIndexPtr index,
-            IndexConditionPtr condition,
-            MergeTreeData::DataPartPtr part,
-            const MarkRanges & ranges,
-            const Settings & settings) const;
+        MergeTreeIndexPtr index,
+        IndexConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const Settings & settings) const;
 };
 
 }

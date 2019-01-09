@@ -10,10 +10,10 @@ namespace DB {
 class MergeTreeIndexReader {
 public:
     MergeTreeIndexReader(
-            MergeTreeIndexPtr index,
-            MergeTreeData::DataPartPtr part,
-            size_t marks_count,
-            const MarkRanges & all_mark_ranges);
+        MergeTreeIndexPtr index,
+        MergeTreeData::DataPartPtr part,
+        size_t marks_count,
+        const MarkRanges & all_mark_ranges);
 
     void seek(size_t mark);
 

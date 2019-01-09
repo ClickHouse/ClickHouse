@@ -59,7 +59,7 @@ class MergeTreeIndex
 {
 public:
     MergeTreeIndex(String name, ExpressionActionsPtr expr, size_t granularity)
-            : name(name), expr(expr), granularity(granularity) {}
+        : name(name), expr(expr), granularity(granularity) {}
 
     virtual ~MergeTreeIndex() = default;
 
@@ -94,9 +94,9 @@ public:
                     const Context & context)>;
 
     std::unique_ptr<MergeTreeIndex> get(
-            const MergeTreeData & data,
-            std::shared_ptr<ASTIndexDeclaration> node,
-            const Context & context) const;
+        const MergeTreeData & data,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const Context & context) const;
 
     void registerIndex(const std::string & name, Creator creator);
 

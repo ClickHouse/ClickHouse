@@ -215,9 +215,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_codec);
 
     for (auto index : data.indexes)
-    {
         index->expr->execute(block);
-    }
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
