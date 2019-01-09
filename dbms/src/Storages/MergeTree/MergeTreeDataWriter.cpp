@@ -216,12 +216,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     for (auto index : data.indexes)
     {
-        auto index_columns = index->expr->getRequiredColumnsWithTypes();
-        for (const auto & column : index_columns)
-        {
-            if (!block.has(column.name))
-                block.insert(ColumnWithTypeAndName(column.type, column.name));
-        }
         index->expr->execute(block);
     }
 

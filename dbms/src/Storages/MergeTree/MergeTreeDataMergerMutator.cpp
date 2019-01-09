@@ -637,19 +637,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         BlockInputStreamPtr stream = std::move(input);
         for (const auto & index : data.indexes) {
-            stream = std::make_shared<ExpressionBlockInputStream>(stream, index->expr);
+            stream = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(stream, index->expr));
         }
 
         if (data.hasPrimaryKey()) {
-            stream = std::make_shared<ExpressionBlockInputStream>(
-                            BlockInputStreamPtr(std::move(stream)), data.sorting_key_expr);
+            stream = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_expr));
         }
 
-        if (!data.indexes.empty() || data.hasPrimaryKey()) {
-            src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(stream));
-        } else {
-            src_streams.emplace_back(stream);
-        }
+        src_streams.emplace_back(stream);
     }
 
     Names sort_columns = data.sorting_key_columns;
@@ -658,6 +655,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     sort_description.reserve(sort_columns_size);
 
     Block header = src_streams.at(0)->getHeader();
+
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
@@ -916,16 +914,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// All columns are modified, proceed to write a new part from scratch.
 
-        for (const auto & index : data.indexes) {
-            in = std::make_shared<ExpressionBlockInputStream>(in, index->expr);
-        }
+        for (const auto & index : data.indexes)
+            in = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(in, index->expr));
 
         if (data.hasPrimaryKey())
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
-        else if (!data.indexes.empty()) {
-            in = std::make_shared<MaterializingBlockInputStream>(in);
-        }
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
