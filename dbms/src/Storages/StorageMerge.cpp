@@ -453,7 +453,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
             NameAndTypePair virtual_column = getColumn("_table");
             source_columns.insert(source_columns.end(), virtual_column);
-            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(where_expression, source_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 
