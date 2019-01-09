@@ -220,7 +220,7 @@ void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, M
 
 using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
 
-const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> ParquetBlockInputStream::arrow_type_to_internal_type = {
+const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
     {arrow::Type::UINT8, std::make_shared<DataTypeUInt8>()},
     {arrow::Type::INT8, std::make_shared<DataTypeInt8>()},
     {arrow::Type::UINT16, std::make_shared<DataTypeUInt16>()},
