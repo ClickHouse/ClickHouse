@@ -55,6 +55,8 @@ public:
 
     std::string getName() const override { return name; }
 
+    bool isDefinedInDDL() const override { return false; }
+
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override;
