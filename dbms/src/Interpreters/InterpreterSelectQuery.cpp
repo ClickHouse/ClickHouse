@@ -184,8 +184,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructure(false);
 
-    syntax_analyzer_result = SyntaxAnalyzer(context, storage)
-            .analyze(query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth);
+    syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
+        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
         query_ptr, syntax_analyzer_result, context, NamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
 
@@ -792,7 +792,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
             auto additional_source_columns_set = ext::map<NameSet>(additional_source_columns, [] (const auto & it) { return it.name; });
 
-            auto syntax_result = SyntaxAnalyzer(context, storage).analyze(required_columns_expr_list, additional_source_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(required_columns_expr_list, additional_source_columns, {}, storage);
             alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
@@ -829,7 +829,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
-                auto analyzed_result = SyntaxAnalyzer(context, {}).analyze(required_prewhere_columns_expr_list, storage->getColumns().getAllPhysical());
+                auto analyzed_result = SyntaxAnalyzer(context).analyze(required_prewhere_columns_expr_list, storage->getColumns().getAllPhysical());
                 prewhere_info->alias_actions =
                     ExpressionAnalyzer(required_prewhere_columns_expr_list, analyzed_result, context)
                     .getActions(true, false);
