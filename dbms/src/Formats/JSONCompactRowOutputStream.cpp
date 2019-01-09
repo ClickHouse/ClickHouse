@@ -8,8 +8,8 @@
 namespace DB
 {
 
-JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings)
-    : JSONRowOutputStream(ostr_, sample_, settings)
+JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings_)
+    : JSONRowOutputStream(ostr_, sample_, settings_)
 {
 }
 

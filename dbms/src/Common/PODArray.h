@@ -127,9 +127,6 @@ protected:
 
         c_end = c_start + end_diff;
         c_end_of_storage = c_start + bytes - pad_right - pad_left;
-
-        if (pad_left)   /// TODO Do we need it?
-            memset(c_start - ELEMENT_SIZE, 0, ELEMENT_SIZE);
     }
 
     bool isInitialized() const
@@ -312,13 +309,13 @@ public:
         this->c_end = this->c_start + this->byte_size(n);
     }
 
-    template <typename ... TAllocatorParams>
-    void push_back(const T & x, TAllocatorParams &&... allocator_params)
+    template <typename U, typename ... TAllocatorParams>
+    void push_back(U && x, TAllocatorParams &&... allocator_params)
     {
         if (unlikely(this->c_end == this->c_end_of_storage))
             this->reserveForNextSize(std::forward<TAllocatorParams>(allocator_params)...);
 
-        *t_end() = x;
+        new (t_end()) T(std::forward<U>(x));
         this->c_end += this->byte_size(1);
     }
 

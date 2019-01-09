@@ -150,8 +150,8 @@ std::unique_ptr<ShellCommand> ShellCommand::execute(const std::string & command,
 {
     /// Arguments in non-constant chunks of memory (as required for `execv`).
     /// Moreover, their copying must be done before calling `vfork`, so after `vfork` do a minimum of things.
-    std::vector<char> argv0("sh", "sh" + strlen("sh") + 1);
-    std::vector<char> argv1("-c", "-c" + strlen("-c") + 1);
+    std::vector<char> argv0("sh", &("sh"[3]));
+    std::vector<char> argv1("-c", &("-c"[3]));
     std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
 
     char * const argv[] = { argv0.data(), argv1.data(), argv2.data(), nullptr };
