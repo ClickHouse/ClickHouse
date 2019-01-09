@@ -14,23 +14,133 @@
 6	1	0	0	0	0	0	0	04/01/09	0	4280852480
 7	0	1	1	1	10	1.1	10.1	04/01/09	1	45885184
 === Try load data from byte_array_decimal.parquet
-Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
-
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+9.0
+10.0
+11.0
+12.0
+13.0
+14.0
+15.0
+16.0
+17.0
+18.0
+19.0
+20.0
+21.0
+22.0
+23.0
+24.0
 === Try load data from datapage_v2.snappy.parquet
 Code: 33. DB::Ex---tion: Error while reading parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
 
 === Try load data from fixed_length_decimal_legacy.parquet
-Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
-
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+9.0
+10.0
+11.0
+12.0
+13.0
+14.0
+15.0
+16.0
+17.0
+18.0
+19.0
+20.0
+21.0
+22.0
+23.0
+24.0
 === Try load data from fixed_length_decimal.parquet
-Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
-
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+9.0
+10.0
+11.0
+12.0
+13.0
+14.0
+15.0
+16.0
+17.0
+18.0
+19.0
+20.0
+21.0
+22.0
+23.0
+24.0
 === Try load data from int32_decimal.parquet
-Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
-
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+9.0
+10.0
+11.0
+12.0
+13.0
+14.0
+15.0
+16.0
+17.0
+18.0
+19.0
+20.0
+21.0
+22.0
+23.0
+24.0
 === Try load data from int64_decimal.parquet
-Code: 70. DB::Ex---tion: The type "decimal" of an input column "value" is not supported for conversion from a Parquet data format
-
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+7.0
+8.0
+9.0
+10.0
+11.0
+12.0
+13.0
+14.0
+15.0
+16.0
+17.0
+18.0
+19.0
+20.0
+21.0
+22.0
+23.0
+24.0
 === Try load data from nation.dict-malformed.parquet
 0	ALGERIA	0	 haggle. carefully final deposits detect slyly agai
 1	ARGENTINA	1	al foxes promise slyly according to the regular accounts. bold requests alon
