@@ -20,8 +20,6 @@ class Context;
   */
 String getTableDefinitionFromCreateQuery(const ASTPtr & query);
 
-// TODO: add function createDictionaryFromDefinition here ?
-// and also getter ?
 
 /** Create a table by its definition, without using InterpreterCreateQuery.
   *  (InterpreterCreateQuery has more complex functionality, and it can not be used if the database has not been created yet)
@@ -36,6 +34,10 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     bool has_force_restore_data_flag,
     const String & description_for_error_message);
 
+
+String getDictionaryDefinitionFromCreateQuery(const ASTPtr & query);
+
+std::pair<String, DictionaryPtr> createDictionaryFromDefinition();
 
 /// Copies list of tables and iterates through such snapshot.
 class DatabaseSnapshotIterator final : public IDatabaseIterator
