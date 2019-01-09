@@ -101,7 +101,7 @@ private:
     String table_name;
     String full_path;
 
-    Context & context;
+    Context global_context;
     BackgroundProcessingPool & background_pool;
 
     MergeTreeData data;

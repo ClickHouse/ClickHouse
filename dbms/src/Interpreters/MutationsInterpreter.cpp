@@ -72,8 +72,7 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_copy.getSettingsRef().max_threads = 1;
 
-    InterpreterSelectQuery interpreter_select(select, context_copy, storage, QueryProcessingStage::Complete);
-    BlockInputStreamPtr in = interpreter_select.execute().in;
+    BlockInputStreamPtr in = InterpreterSelectQuery(select, context_copy, storage, QueryProcessingStage::Complete).execute().in;
 
     Block block = in->read();
     if (!block.rows())

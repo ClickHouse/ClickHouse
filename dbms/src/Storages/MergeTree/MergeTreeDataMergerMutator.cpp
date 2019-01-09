@@ -561,7 +561,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     size_t sum_input_rows_upper_bound = merge_entry->total_size_marks * data.index_granularity;
 
-    MergeAlgorithm merge_alg = chooseMergeAlgorithm(data, parts, sum_input_rows_upper_bound, gathering_columns, deduplicate);
+    MergeAlgorithm merge_alg = chooseMergeAlgorithm(parts, sum_input_rows_upper_bound, gathering_columns, deduplicate);
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
@@ -570,7 +570,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    auto compression_codec = data.context.chooseCompressionCodec(
+    auto compression_codec = data.global_context.chooseCompressionCodec(
         merge_entry->total_size_bytes_compressed,
         static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
@@ -687,9 +687,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
                 src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
-
-        default:
-            throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
     }
 
     if (deduplicate)
@@ -974,8 +971,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         new_data_part->checksums.add(std::move(changed_checksums));
         {
             /// Write file with checksums.
-            WriteBufferFromFile out(new_part_tmp_path + "checksums.txt", 4096);
-            new_data_part->checksums.write(out);
+            WriteBufferFromFile out_checksums(new_part_tmp_path + "checksums.txt", 4096);
+            new_data_part->checksums.write(out_checksums);
         }
 
         /// Write the columns list of the resulting part in the same order as all_columns.
@@ -991,8 +988,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         }
         {
             /// Write a file with a description of columns.
-            WriteBufferFromFile out(new_part_tmp_path + "columns.txt", 4096);
-            new_data_part->columns.writeText(out);
+            WriteBufferFromFile out_columns(new_part_tmp_path + "columns.txt", 4096);
+            new_data_part->columns.writeText(out_columns);
         }
 
         new_data_part->rows_count = source_part->rows_count;
@@ -1009,7 +1006,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
 
 MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMergeAlgorithm(
-    const MergeTreeData & data, const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
+    const MergeTreeData::DataPartsVector & parts, size_t sum_rows_upper_bound,
     const NamesAndTypesList & gathering_columns, bool deduplicate) const
 {
     if (deduplicate)
