@@ -39,7 +39,7 @@ CapnProtoRowInputStream::NestedField split(const Block & header, size_t i)
     if (name.size() > 0 && name[0] == '.')
         name.erase(0, 1);
 
-    boost::split(field.tokens, name, boost::is_any_of("."));
+    boost::split(field.tokens, name, boost::is_any_of("._"));
     return field;
 }
 
