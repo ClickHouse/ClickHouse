@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_ELEMENT_IN_AST;
+}
+
 static constexpr auto and_function_name = "and";
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
@@ -400,6 +406,8 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
                 DatabaseAndTableWithAlias database_and_table_name(*database_and_table_ast);
                 storage = context.getTable(database_and_table_name.database, database_and_table_name.table);
             }
+            else
+                throw Exception("Logical error: unexpected table expression", ErrorCodes::LOGICAL_ERROR);
 
             const auto block = storage->getSampleBlock();
             for (size_t idx = 0; idx < block.columns(); idx++)
