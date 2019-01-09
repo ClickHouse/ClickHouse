@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:18.10
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -20,6 +20,7 @@ RUN apt-get update -y \
             telnet
 
 COPY ./stress /stress
+COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \

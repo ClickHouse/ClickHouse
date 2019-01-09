@@ -25,6 +25,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 COPY zookeeper.xml /etc/clickhouse-server/config.d/zookeeper.xml
 COPY listen.xml /etc/clickhouse-server/config.d/listen.xml
+COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
