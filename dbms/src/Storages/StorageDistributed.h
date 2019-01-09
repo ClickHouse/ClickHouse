@@ -111,7 +111,7 @@ public:
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    const Context & context;
+    Context global_context;
     Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.

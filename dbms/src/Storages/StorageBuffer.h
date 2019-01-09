@@ -85,7 +85,7 @@ public:
 private:
     String name;
 
-    Context & context;
+    Context global_context;
 
     struct Buffer
     {

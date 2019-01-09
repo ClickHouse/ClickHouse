@@ -218,7 +218,7 @@ private:
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
-    Context & context;
+    Context global_context;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
     std::mutex current_zookeeper_mutex;            /// To recreate the session in the background thread.
@@ -397,7 +397,7 @@ private:
         const String & new_part_name,
         const MergeTreeData::DataPartPtr & result_part,
         const MergeTreeData::DataPartsVector & source_parts,
-        const MergeListEntry * merge_entry) const;
+        const MergeListEntry * merge_entry);
 
     void executeDropRange(const LogEntry & entry);
 

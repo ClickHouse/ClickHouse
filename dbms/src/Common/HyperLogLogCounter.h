@@ -278,7 +278,7 @@ template <
     typename BiasEstimator = TrivialBiasEstimator,
     HyperLogLogMode mode = HyperLogLogMode::FullFeatured,
     DenominatorMode denominator_mode = DenominatorMode::StableIfBig>
-class __attribute__ ((packed)) HyperLogLogCounter : private Hash
+class HyperLogLogCounter : private Hash
 {
 private:
     /// Number of buckets.

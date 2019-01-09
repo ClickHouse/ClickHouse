@@ -23,8 +23,8 @@ namespace
     class ShellCommandOwningBlockInputStream : public OwningBlockInputStream<ShellCommand>
     {
     public:
-        ShellCommandOwningBlockInputStream(const BlockInputStreamPtr & stream, std::unique_ptr<ShellCommand> own)
-            : OwningBlockInputStream(std::move(stream), std::move(own))
+        ShellCommandOwningBlockInputStream(const BlockInputStreamPtr & impl, std::unique_ptr<ShellCommand> own_)
+            : OwningBlockInputStream(std::move(impl), std::move(own_))
         {
         }
 

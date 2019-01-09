@@ -93,12 +93,14 @@ void ZlibDeflatingWriteBuffer::finish()
         out.position() = out.buffer().end() - zstr.avail_out;
 
         if (rc == Z_STREAM_END)
+        {
+            finished = true;
             return;
+        }
+
         if (rc != Z_OK)
             throw Exception(std::string("deflate finish failed: ") + zError(rc), ErrorCodes::ZLIB_DEFLATE_FAILED);
     }
-
-    finished = true;
 }
 
 }

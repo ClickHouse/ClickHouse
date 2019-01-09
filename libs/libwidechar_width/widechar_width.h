@@ -492,10 +492,10 @@ static const struct widechar_range widechar_widened_table[] = {
     {0x1F910, 0x1F918}, {0x1F980, 0x1F984}, {0x1F9C0, 0x1F9C0}
 };
 
-template<typename Collection>
+template <typename Collection>
 bool widechar_in_table(const Collection &arr, int32_t c) {
     auto where = std::lower_bound(std::begin(arr), std::end(arr), c,
-        [](widechar_range p, int32_t c) { return p.hi < c; });
+        [](widechar_range p, int32_t chr) { return p.hi < chr; });
     return where != std::end(arr) && where->lo <= c;
 }
 

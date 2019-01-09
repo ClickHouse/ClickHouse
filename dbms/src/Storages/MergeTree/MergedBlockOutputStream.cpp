@@ -41,7 +41,7 @@ void IMergedBlockOutputStream::addStreams(
     const String & path,
     const String & name,
     const IDataType & type,
-    const CompressionCodecPtr & codec,
+    const CompressionCodecPtr & effective_codec,
     size_t estimated_size,
     bool skip_offsets)
 {
@@ -60,7 +60,7 @@ void IMergedBlockOutputStream::addStreams(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
             path + stream_name, MARKS_FILE_EXTENSION,
-            codec,
+            effective_codec,
             max_compress_block_size,
             estimated_size,
             aio_threshold);
@@ -99,7 +99,7 @@ void IMergedBlockOutputStream::writeData(
     bool skip_offsets,
     IDataType::SerializeBinaryBulkStatePtr & serialization_state)
 {
-    auto & settings = storage.context.getSettingsRef();
+    auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
@@ -233,9 +233,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     CompressionCodecPtr default_codec_)
     : IMergedBlockOutputStream(
-        storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, default_codec_,
-        storage_.context.getSettings().min_bytes_to_use_direct_io),
+        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
+        storage_.global_context.getSettings().min_bytes_to_use_direct_io),
     columns_list(columns_list_), part_path(part_path_)
 {
     init();
@@ -254,8 +254,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_)
     : IMergedBlockOutputStream(
-        storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, default_codec_,
+        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         aio_threshold_),
     columns_list(columns_list_), part_path(part_path_)
 {
@@ -312,7 +312,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish columns serialization.
     if (!serialization_states.empty())
     {
-        auto & settings = storage.context.getSettingsRef();
+        auto & settings = storage.global_context.getSettingsRef();
         IDataType::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
         serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
@@ -517,9 +517,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec_, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns)
     : IMergedBlockOutputStream(
-        storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, default_codec_,
-        storage_.context.getSettings().min_bytes_to_use_direct_io),
+        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
+        storage_.global_context.getSettings().min_bytes_to_use_direct_io),
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns)
 {
@@ -570,7 +570,7 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums()
 {
     /// Finish columns serialization.
-    auto & settings = storage.context.getSettingsRef();
+    auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
