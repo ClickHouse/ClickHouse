@@ -273,7 +273,7 @@ void Compiler::compile(
             << " 2>&1"
         ") || echo Return code: $?";
 
-#if !NDEBUG
+#ifndef NDEBUG
     LOG_TRACE(log, "Compile command: " << command.str());
 #endif
 

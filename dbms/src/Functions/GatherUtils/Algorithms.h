@@ -4,8 +4,10 @@
 
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
+#include <Core/AccurateComparison.h>
 
 #include <ext/range.h>
+
 
 namespace DB::ErrorCodes
 {
@@ -31,7 +33,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-        sink.elements[sink.current_offset] = slice.data[i];
+        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
         ++sink.current_offset;
     }
 }
@@ -421,16 +423,11 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
     return all;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
 template <typename T, typename U>
 bool sliceEqualElements(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second, size_t first_ind, size_t second_ind)
 {
-    return first.data[first_ind] == second.data[second_ind];
+    return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
 }
-
-#pragma GCC diagnostic pop
 
 template <typename T>
 bool sliceEqualElements(const NumericArraySlice<T> &, const GenericArraySlice &, size_t, size_t)
