@@ -21,6 +21,7 @@ RUN apt-get update -y \
 
 COPY ./stress /stress
 COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
+COPY part_log.xml /etc/clickhouse-server/config.d/part_log.xml
 
 CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
