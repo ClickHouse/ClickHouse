@@ -85,7 +85,7 @@ void collectSourceColumns(ASTSelectQuery * select_query, StoragePtr storage, Nam
 void translateQualifiedNames(ASTPtr & query, ASTSelectQuery * select_query,
                              const NameSet & source_columns, const Context & context)
 {
-    if (!select_query || !select_query->tables || select_query->tables->children.empty())
+    if (!select_query->tables || select_query->tables->children.empty())
         return;
 
     std::vector<DatabaseAndTableWithAlias> tables = getDatabaseAndTables(*select_query, context.getCurrentDatabase());
@@ -165,9 +165,6 @@ bool hasArrayJoin(const ASTPtr & ast)
 /// This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
 void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, const Names & required_result_columns)
 {
-    if (!select_query)
-        return;
-
     if (required_result_columns.empty())
         return;
 
@@ -251,7 +248,7 @@ const std::unordered_set<String> possibly_injective_function_names
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
-    if (!(select_query && select_query->group_expression_list))
+    if (!select_query->group_expression_list)
         return;
 
     const auto is_literal = [] (const ASTPtr & ast)
@@ -355,7 +352,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 /// Remove duplicate items from ORDER BY.
 void optimizeOrderBy(const ASTSelectQuery * select_query)
 {
-    if (!(select_query && select_query->order_expression_list))
+    if (!select_query->order_expression_list)
         return;
 
     /// Make unique sorting conditions.
@@ -382,7 +379,7 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 /// Remove duplicate items from LIMIT BY.
 void optimizeLimitBy(const ASTSelectQuery * select_query)
 {
-    if (!(select_query && select_query->limit_by_expression_list))
+    if (!select_query->limit_by_expression_list)
         return;
 
     std::set<String> elems_set;
@@ -404,9 +401,6 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
-    if (!select_query)
-        return;
-
     auto node = const_cast<ASTTablesInSelectQueryElement *>(select_query->join());
     if (!node)
         return;
@@ -437,9 +431,6 @@ void optimizeUsing(const ASTSelectQuery * select_query)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set)
 {
-    if (!select_query)
-        return;
-
     ASTPtr array_join_expression_list = select_query->array_join_expression_list();
     if (array_join_expression_list)
     {
@@ -665,9 +656,6 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
 void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * select_query,
                           const NameSet & source_columns, const Context & context)
 {
-    if (!select_query)
-        return;
-
     const ASTTablesInSelectQueryElement * node = select_query->join();
 
     if (!node)
@@ -760,14 +748,17 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
         source_columns_list.emplace_back(type_name.name);
     NameSet source_columns_set(source_columns_list.begin(), source_columns_list.end());
 
-    translateQualifiedNames(query, select_query, source_columns_set, context);
+    if (select_query)
+    {
+        translateQualifiedNames(query, select_query, source_columns_set, context);
 
-    /// Depending on the user's profile, check for the execution rights
-    /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
-    InJoinSubqueriesPreprocessor(context).process(select_query);
+        /// Depending on the user's profile, check for the execution rights
+        /// distributed subqueries inside the IN or JOIN sections and process these subqueries.
+        InJoinSubqueriesPreprocessor(context).process(select_query);
 
-    /// Optimizes logical expressions.
-    LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+        /// Optimizes logical expressions.
+        LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
+    }
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     {
@@ -784,7 +775,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
-    removeUnneededColumnsFromSelectClause(select_query, required_result_columns);
+    if (select_query)
+        removeUnneededColumnsFromSelectClause(select_query, required_result_columns);
 
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth);
@@ -792,25 +784,28 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
 
-    /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, source_columns_set, context);
+    if (select_query)
+    {
+        /// GROUP BY injective function elimination.
+        optimizeGroupBy(select_query, source_columns_set, context);
 
-    /// Remove duplicate items from ORDER BY.
-    optimizeOrderBy(select_query);
+        /// Remove duplicate items from ORDER BY.
+        optimizeOrderBy(select_query);
 
-    /// Remove duplicated elements from LIMIT BY clause.
-    optimizeLimitBy(select_query);
+        /// Remove duplicated elements from LIMIT BY clause.
+        optimizeLimitBy(select_query);
 
-    /// Remove duplicated columns from USING(...).
-    optimizeUsing(select_query);
+        /// Remove duplicated columns from USING(...).
+        optimizeUsing(select_query);
 
-    /// array_join_alias_to_name, array_join_result_to_source.
-    getArrayJoinedColumns(query, result, select_query, source_columns_list, source_columns_set);
+        /// array_join_alias_to_name, array_join_result_to_source.
+        getArrayJoinedColumns(query, result, select_query, source_columns_list, source_columns_set);
 
-    /// Push the predicate expression down to the subqueries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
+        /// Push the predicate expression down to the subqueries.
+        result.rewrite_subqueries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
-    collectJoinedColumns(result.analyzed_join, select_query, source_columns_set, context);
+        collectJoinedColumns(result.analyzed_join, select_query, source_columns_set, context);
+    }
 
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
