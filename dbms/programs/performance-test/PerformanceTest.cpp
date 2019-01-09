@@ -112,7 +112,8 @@ public:
     {
         return asString(padding);
     }
-    String asString(size_t padding) const
+
+    String asString(size_t cur_padding) const
     {
         String repr = "{";
 
@@ -121,10 +122,10 @@ public:
             if (it != content.begin())
                 repr += ',';
             /// construct "key": "value" string with padding
-            repr += "\n" + pad(padding) + '"' + it->first + '"' + ": " + it->second;
+            repr += "\n" + pad(cur_padding) + '"' + it->first + '"' + ": " + it->second;
         }
 
-        repr += "\n" + pad(padding - 1) + '}';
+        repr += "\n" + pad(cur_padding - 1) + '}';
         return repr;
     }
 };
@@ -762,13 +763,13 @@ private:
         return true;
     }
 
-    void processTestsConfigurations(const Paths & input_files)
+    void processTestsConfigurations(const Paths & paths)
     {
-        tests_configurations.resize(input_files.size());
+        tests_configurations.resize(paths.size());
 
-        for (size_t i = 0; i != input_files.size(); ++i)
+        for (size_t i = 0; i != paths.size(); ++i)
         {
-            const String path = input_files[i];
+            const String path = paths[i];
             tests_configurations[i] = XMLConfigurationPtr(new XMLConfiguration(path));
         }
 
@@ -881,8 +882,6 @@ private:
             }
         }
 
-        Query query;
-
         if (!test_config->has("query") && !test_config->has("query_file"))
         {
             throw DB::Exception("Missing query fields in test's config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
@@ -907,6 +906,7 @@ private:
             bool tsv = fs::path(filename).extension().string() == ".tsv";
 
             ReadBufferFromFile query_file(filename);
+            Query query;
 
             if (tsv)
             {
@@ -1024,7 +1024,7 @@ private:
         }
 
         if (lite_output)
-            return minOutput(main_metric);
+            return minOutput();
         else
             return constructTotalInfo(metrics);
     }
@@ -1053,11 +1053,8 @@ private:
 
     void runQueries(const QueriesWithIndexes & queries_with_indexes)
     {
-        for (const std::pair<Query, const size_t> & query_and_index : queries_with_indexes)
+        for (const auto & [query, run_index] : queries_with_indexes)
         {
-            Query query = query_and_index.first;
-            const size_t run_index = query_and_index.second;
-
             TestStopConditions & stop_conditions = stop_conditions_by_run[run_index];
             Stats & statistics = statistics_by_run[run_index];
 
@@ -1139,7 +1136,7 @@ private:
         }
     }
 
-    void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVector & substitutions)
+    void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVector & out_substitutions)
     {
         Keys xml_substitutions;
         substitutions_view->keys(xml_substitutions);
@@ -1157,21 +1154,16 @@ private:
 
             for (size_t j = 0; j != xml_values.size(); ++j)
             {
-                substitutions[name].push_back(xml_substitution->getString("values.value[" + std::to_string(j) + "]"));
+                out_substitutions[name].push_back(xml_substitution->getString("values.value[" + std::to_string(j) + "]"));
             }
         }
     }
 
-    std::vector<String> formatQueries(const String & query, StringToVector substitutions)
+    std::vector<String> formatQueries(const String & query, StringToVector substitutions_to_generate)
     {
-        std::vector<String> queries;
-
-        StringToVector::iterator substitutions_first = substitutions.begin();
-        StringToVector::iterator substitutions_last = substitutions.end();
-
-        runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries);
-
-        return queries;
+        std::vector<String> queries_res;
+        runThroughAllOptionsAndPush(substitutions_to_generate.begin(), substitutions_to_generate.end(), query, queries_res);
+        return queries_res;
     }
 
     /// Recursive method which goes through all substitution blocks in xml
@@ -1179,11 +1171,11 @@ private:
     void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
         StringToVector::iterator substitutions_right,
         const String & template_query,
-        std::vector<String> & queries)
+        std::vector<String> & out_queries)
     {
         if (substitutions_left == substitutions_right)
         {
-            queries.push_back(template_query); /// completely substituted query
+            out_queries.push_back(template_query); /// completely substituted query
             return;
         }
 
@@ -1191,7 +1183,7 @@ private:
 
         if (template_query.find(substitution_mask) == String::npos) /// nothing to substitute here
         {
-            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, template_query, queries);
+            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, template_query, out_queries);
             return;
         }
 
@@ -1209,7 +1201,7 @@ private:
                     query.replace(substr_pos, substitution_mask.length(), value);
             }
 
-            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, query, queries);
+            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, query, out_queries);
         }
     }
 
@@ -1343,7 +1335,7 @@ public:
         return json_output.asString();
     }
 
-    String minOutput(const String & main_metric)
+    String minOutput()
     {
         String output;
 
@@ -1465,7 +1457,7 @@ try
         input_files = options["input-files"].as<Strings>();
         Strings collected_files;
 
-        for (const String filename : input_files)
+        for (const String & filename : input_files)
         {
             fs::path file(filename);
 

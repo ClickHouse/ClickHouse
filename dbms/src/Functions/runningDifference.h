@@ -53,7 +53,7 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        Src prev;
+        Src prev{};
         bool has_prev_value = false;
 
         for (size_t i = 0; i < size; ++i)

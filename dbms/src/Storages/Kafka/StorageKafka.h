@@ -72,7 +72,7 @@ private:
     // Configuration and state
     String table_name;
     String database_name;
-    Context & context;
+    Context global_context;
     Names topics;
     const String brokers;
     const String group;
