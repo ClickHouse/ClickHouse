@@ -45,7 +45,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         size_t i = 0;
 
         res_columns[i++]->insert(dict_info.first);
-        res_columns[i++]->insert(dict_info.second.origin);
+        res_columns[i++]->insert(dict_info.second.origin.name);
 
         if (dict_info.second.loadable)
         {
