@@ -5,6 +5,7 @@
 #include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
+#include <common/unaligned.h>
 #include <ext/range.h>
 #include <stdint.h>
 #include <string.h>
@@ -121,9 +122,9 @@ protected:
     CRTP & self() { return static_cast<CRTP &>(*this); }
     const CRTP & self() const { return const_cast<VolnitskyBase *>(this)->self(); }
 
-    static const Ngram & toNGram(const UInt8 * const pos)
+    static Ngram toNGram(const UInt8 * const pos)
     {
-        return *reinterpret_cast<const Ngram *>(pos);
+        return unalignedLoad<Ngram>(pos);
     }
 
     void putNGramBase(const Ngram ngram, const int offset)
@@ -193,9 +194,9 @@ template <bool CaseSensitive, bool ASCII> struct VolnitskyImpl;
 /// Case sensitive comparison
 template <bool ASCII> struct VolnitskyImpl<true, ASCII> : VolnitskyBase<VolnitskyImpl<true, ASCII>>
 {
-    VolnitskyImpl(const char * const needle, const size_t needle_size, const size_t haystack_size_hint = 0)
-        : VolnitskyBase<VolnitskyImpl<true, ASCII>>{needle, needle_size, haystack_size_hint},
-          fallback_searcher{needle, needle_size}
+    VolnitskyImpl(const char * const needle_, const size_t needle_size_, const size_t haystack_size_hint = 0)
+        : VolnitskyBase<VolnitskyImpl<true, ASCII>>{needle_, needle_size_, haystack_size_hint},
+          fallback_searcher{needle_, needle_size_}
     {
     }
 
@@ -221,8 +222,8 @@ template <bool ASCII> struct VolnitskyImpl<true, ASCII> : VolnitskyBase<Volnitsk
 /// Case-insensitive ASCII
 template <> struct VolnitskyImpl<false, true> : VolnitskyBase<VolnitskyImpl<false, true>>
 {
-    VolnitskyImpl(const char * const needle, const size_t needle_size, const size_t haystack_size_hint = 0)
-        : VolnitskyBase{needle, needle_size, haystack_size_hint}, fallback_searcher{needle, needle_size}
+    VolnitskyImpl(const char * const needle_, const size_t needle_size_, const size_t haystack_size_hint = 0)
+        : VolnitskyBase{needle_, needle_size_, haystack_size_hint}, fallback_searcher{needle_, needle_size_}
     {
     }
 
@@ -247,8 +248,8 @@ template <> struct VolnitskyImpl<false, true> : VolnitskyBase<VolnitskyImpl<fals
 /// Case-sensitive UTF-8
 template <> struct VolnitskyImpl<false, false> : VolnitskyBase<VolnitskyImpl<false, false>>
 {
-    VolnitskyImpl(const char * const needle, const size_t needle_size, const size_t haystack_size_hint = 0)
-        : VolnitskyBase{needle, needle_size, haystack_size_hint}, fallback_searcher{needle, needle_size}
+    VolnitskyImpl(const char * const needle_, const size_t needle_size_, const size_t haystack_size_hint = 0)
+        : VolnitskyBase{needle_, needle_size_, haystack_size_hint}, fallback_searcher{needle_, needle_size_}
     {
     }
 

@@ -766,7 +766,7 @@ namespace
         void operator()()
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
-                column = creator((ColumnVector<T> *)(nullptr));
+                column = creator(static_cast<ColumnVector<T> *>(nullptr));
         }
     };
 }
@@ -780,13 +780,13 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
-        return creator((ColumnString *)(nullptr));
+        return creator(static_cast<ColumnString *>(nullptr));
     if (isFixedString(type))
-        return creator((ColumnFixedString *)(nullptr));
+        return creator(static_cast<ColumnFixedString *>(nullptr));
     if (typeid_cast<const DataTypeDate *>(type))
-        return creator((ColumnVector<UInt16> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
-        return creator((ColumnVector<UInt32> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     if (isNumber(type))
     {
         MutableColumnUniquePtr column;

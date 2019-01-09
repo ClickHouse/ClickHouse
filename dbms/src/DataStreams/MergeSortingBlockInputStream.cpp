@@ -5,7 +5,7 @@
 #include <DataStreams/processConstants.h>
 #include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/sortBlock.h>
 
 

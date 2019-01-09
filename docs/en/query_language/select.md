@@ -44,7 +44,7 @@ If a query does not list any columns (for example, SELECT count() FROM t), some 
 
 The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree table. When you specify FINAL, data is selected fully "collapsed". Keep in mind that using FINAL leads to a selection that includes columns related to the primary key, in addition to the columns specified in the SELECT. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using FINAL, the query is processed more slowly. In most cases, you should avoid using FINAL. For more information, see the section "CollapsingMergeTree engine".
 
-### SAMPLE Clause
+### SAMPLE Clause {#select-sample-clause}
 
 The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
@@ -81,7 +81,7 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
 
-### ARRAY JOIN Clause
+### ARRAY JOIN Clause {#select-array-join-clause}
 
 Allows executing JOIN with an array or nested data structure. The intent is similar to the 'arrayJoin' function, but its functionality is broader.
 
@@ -339,7 +339,7 @@ The corresponding conversion can be performed before the WHERE/PREWHERE clause (
 Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
 !!! info "Note"
-    Not related to [ARRAY JOIN](#array-join).
+    Not related to [ARRAY JOIN](#select-array-join-clause).
 
 
 ``` sql
@@ -374,7 +374,7 @@ When using a normal `JOIN`, the query is sent to remote servers. Subqueries are 
 
 When using `GLOBAL ... JOIN`, first the requestor server runs a subquery to calculate the right table. This temporary table is passed to each remote server, and queries are run on them using the temporary data that was transmitted.
 
-Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#distributed-subqueries).
+Be careful when using `GLOBAL`. For more information, see the section [Distributed subqueries](#select-distributed-subqueries).
 
 **Usage Recommendations**
 
@@ -443,7 +443,7 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md) setting. With `join_use_nulls=1`, `JOIN` works like in standard SQL.
 
-If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md) are not joined.
+If the JOIN keys are [Nullable](../data_types/nullable.md) fields, the rows where at least one of the keys has the value [NULL](syntax.md) are not joined.
 
 
 ### WHERE Clause
@@ -575,11 +575,11 @@ When using `max_bytes_before_external_group_by`, we recommend that you set max_m
 
 For example, if `max_memory_usage` was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and max_memory_usage to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than ` max_bytes_before_external_group_by`.
 
-With distributed query processing, external aggregation is performed on remote servers. In order for the requestor server to use only a small amount of RAM, set ` distributed_aggregation_memory_efficient`  to 1.
+With distributed query processing, external aggregation is performed on remote servers. In order for the requestor server to use only a small amount of RAM, set ` distributed_aggregation_memory_efficient` to 1.
 
 When merging data flushed to the disk, as well as when merging results from remote servers when the ` distributed_aggregation_memory_efficient` setting is enabled, consumes up to 1/256 \* the number of threads from the total amount of RAM.
 
-When external aggregation is enabled, if there was less than ` max_bytes_before_external_group_by`  of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
+When external aggregation is enabled, if there was less than ` max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
 If you have an ORDER BY with a small LIMIT after GROUP BY, then the ORDER BY CLAUSE will not use significant amounts of RAM.
 But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting (`max_bytes_before_external_sort`).
@@ -693,7 +693,7 @@ The result will be the same as if GROUP BY were specified across all the fields 
 
 DISTINCT is not supported if SELECT has at least one array column.
 
-`DISTINCT` works with [NULL](syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
+`DISTINCT` works with [NULL](syntax.md) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ### LIMIT Clause
 
@@ -747,7 +747,7 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
 
-### IN Operators
+### IN Operators {#select-in-operators}
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -813,7 +813,7 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 #### NULL processing
 
-During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
 
 Here is an example with the `t_null` table:
 
@@ -845,20 +845,20 @@ FROM t_null
 ```
 
 
-#### Distributed Subqueries
+#### Distributed Subqueries {#select-distributed-subqueries}
 
-There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / `JOIN`  and `GLOBAL IN`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
+There are two options for IN-s with subqueries (similar to JOINs): normal `IN` / `JOIN` and `GLOBAL IN` / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
 !!! attention
     Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md) `distributed_product_mode` setting.
 
 When using the regular IN, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 
-When using `GLOBAL IN`  / `GLOBAL JOINs`, first all the subqueries are run for `GLOBAL IN`  / `GLOBAL JOINs`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
+When using `GLOBAL IN` / `GLOBAL JOINs`, first all the subqueries are run for `GLOBAL IN` / `GLOBAL JOINs`, and the results are collected in temporary tables. Then the temporary tables are sent to each remote server, where the queries are run using this temporary data.
 
 For a non-distributed query, use the regular `IN` / `JOIN`.
 
-Be careful when using subqueries in the  `IN` / `JOIN` clauses for distributed query processing.
+Be careful when using subqueries in the `IN` / `JOIN` clauses for distributed query processing.
 
 Let's look at some examples. Assume that each server in the cluster has a normal **local_table**. Each server also has a **distributed_table** table with the **Distributed** type, which looks at all the servers in the cluster.
 

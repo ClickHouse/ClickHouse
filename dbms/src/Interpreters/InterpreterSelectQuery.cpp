@@ -606,6 +606,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
                     else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
+                    if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.has_having)
+                        executeHaving(pipeline, expressions.before_having);
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -625,10 +627,15 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
                 }
 
-                if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                else if (query.group_by_with_cube && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::CUBE);
+                if ((query.group_by_with_rollup || query.group_by_with_cube) && !aggregate_final)
+                {
+                    if (query.group_by_with_rollup)
+                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                    else if (query.group_by_with_cube)
+                        executeRollupOrCube(pipeline, Modificator::CUBE);
+                    if (expressions.has_having)
+                        executeHaving(pipeline, expressions.before_having);
+                }
             }
 
             if (expressions.has_order_by)
@@ -737,8 +744,8 @@ void InterpreterSelectQuery::executeFetchColumns(
             Block prewhere_actions_result;
             if (prewhere_info)
             {
-                auto required_columns = prewhere_info->prewhere_actions->getRequiredColumns();
-                required_prewhere_columns.insert(required_columns.begin(), required_columns.end());
+                auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns();
+                required_prewhere_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
                 prewhere_actions_result = prewhere_info->prewhere_actions->getSampleBlock();
             }
 
@@ -785,9 +792,8 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
             auto additional_source_columns_set = ext::map<NameSet>(additional_source_columns, [] (const auto & it) { return it.name; });
 
-            ASTPtr query = required_columns_expr_list;
-            auto syntax_result = SyntaxAnalyzer(context, storage).analyze(query, additional_source_columns);
-            alias_actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+            auto syntax_result = SyntaxAnalyzer(context, storage).analyze(required_columns_expr_list, additional_source_columns);
+            alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
@@ -823,8 +829,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
-                auto source_columns = storage->getColumns().getAllPhysical();
-                auto analyzed_result = SyntaxAnalyzer(context, {}).analyze(required_prewhere_columns_expr_list, source_columns);
+                auto analyzed_result = SyntaxAnalyzer(context, {}).analyze(required_prewhere_columns_expr_list, storage->getColumns().getAllPhysical());
                 prewhere_info->alias_actions =
                     ExpressionAnalyzer(required_prewhere_columns_expr_list, analyzed_result, context)
                     .getActions(true, false);
@@ -1483,3 +1488,4 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
+

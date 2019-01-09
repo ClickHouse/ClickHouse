@@ -626,7 +626,7 @@ size_t CompiledExpressionCache::weight() const
 {
 
 #if LLVM_VERSION_MAJOR >= 6
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     size_t result{0};
     std::unordered_set<size_t> seen;
     for (const auto & cell : cells)

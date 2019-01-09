@@ -995,10 +995,10 @@ public:
             Impl::vector(col->getChars(), col->getOffsets(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const ColumnFixedString * col = checkAndGetColumn<ColumnFixedString>(column_src.get()))
+        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector_fixed(col->getChars(), col->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
         else
@@ -1080,7 +1080,7 @@ void registerFunctionsStringSearch(FunctionFactory & factory)
     factory.registerFunction<FunctionReplaceAll>();
     factory.registerFunction<FunctionReplaceRegexpOne>();
     factory.registerFunction<FunctionReplaceRegexpAll>();
-    factory.registerFunction<FunctionPosition>();
+    factory.registerFunction<FunctionPosition>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionPositionUTF8>();
     factory.registerFunction<FunctionPositionCaseInsensitive>();
     factory.registerFunction<FunctionPositionCaseInsensitiveUTF8>();

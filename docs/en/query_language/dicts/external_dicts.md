@@ -1,6 +1,4 @@
-<a name="dicts-external_dicts"></a>
-
-# External Dictionaries
+# External Dictionaries {#dicts-external_dicts}
 
 You can add your own dictionaries from various data sources. The data source for a dictionary can be a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Sources for external dictionaries](external_dicts_dict_sources.md)".
 

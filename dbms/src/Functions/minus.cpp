@@ -12,7 +12,7 @@ struct MinusImpl
     static const constexpr bool allow_decimal = true;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         return static_cast<Result>(a) - b;
     }

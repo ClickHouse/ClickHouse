@@ -14,7 +14,7 @@
 #include <Core/Types.h>
 #include <Core/Row.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/HashMap.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -116,7 +116,7 @@ int main(int argc, char ** argv)
         value[2] = func_uniq.get();    \
     }
 
-    INIT;
+    INIT
 
 #ifndef USE_AUTO_ARRAY
     #undef INIT
@@ -163,7 +163,7 @@ int main(int argc, char ** argv)
             if (inserted)
             {
                 new(&it->second) Value(std::move(value));
-                INIT;
+                INIT
             }
         }
 
@@ -193,7 +193,7 @@ int main(int argc, char ** argv)
             if (inserted)
             {
                 new(&it->second) Value(std::move(value));
-                INIT;
+                INIT
             }
         }
 
@@ -224,7 +224,7 @@ int main(int argc, char ** argv)
             if (inserted)
             {
                 new(&it->second) Value(std::move(value));
-                INIT;
+                INIT
             }
         }
 
@@ -249,7 +249,7 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n; ++i)
         {
             it = map.insert(std::make_pair(data[i], std::move(value))).first;
-            INIT;
+            INIT
         }
 
         watch.stop();
@@ -270,7 +270,7 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n; ++i)
         {
             it = map.insert(std::make_pair(data[i], std::move(value))).first;
-            INIT;
+            INIT
         }
 
         watch.stop();
@@ -290,7 +290,7 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n; ++i)
         {
             map.insert(std::make_pair(data[i], std::move(value)));
-            INIT;
+            INIT
         }
 
         watch.stop();

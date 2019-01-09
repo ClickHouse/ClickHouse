@@ -58,7 +58,7 @@ public:
             */
 
         Columns columns_holder(num_elements);
-        const IColumn * columns[num_elements];
+        ColumnRawPtrs columns(num_elements);
 
         for (size_t i = 0; i < num_elements; ++i)
         {
@@ -69,8 +69,7 @@ public:
             if (!arg.type->equals(*elem_type))
                 preprocessed_column = castColumn(arg, elem_type, context);
 
-            if (ColumnPtr materialized_column = preprocessed_column->convertToFullColumnIfConst())
-                preprocessed_column = materialized_column;
+            preprocessed_column = preprocessed_column->convertToFullColumnIfConst();
 
             columns_holder[i] = std::move(preprocessed_column);
             columns[i] = columns_holder[i].get();

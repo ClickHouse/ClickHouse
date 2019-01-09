@@ -1,6 +1,4 @@
-<a name="query_language_queries_alter"></a>
-
-## ALTER
+## ALTER {#query_language_queries_alter}
 
 The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`and`Distributed`. The query has several variations.
 
@@ -56,7 +54,7 @@ If there is a failure during one of the successive stages, data can be restored 
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
-There is no support for deleting columns in the primary key or the sampling key (columns that are in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or change a type with `DateTime`  to `UInt32`).
+There is no support for deleting columns in the primary key or the sampling key (columns that are in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, it is allowed to add values to an Enum or change a type with `DateTime` to `UInt32`).
 
 If the `ALTER` query is not sufficient for making the table changes you need, you can create a new table, copy the data to it using the `INSERT SELECT` query, then switch the tables using the `RENAME` query and delete the old table.
 
@@ -117,10 +115,10 @@ Data directory: `/var/lib/clickhouse/data/database/table/`,where `/var/lib/click
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 May 5 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 May 5 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 May 5 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 May 5 02:58 increment.txt
 ```
 
 Here, `20140317_20140323_2_2_0` and ` 20140317_20140323_4_4_0` are the directories of data parts.
@@ -195,7 +193,7 @@ The `ALTER ... FREEZE PARTITION` query is not replicated. A local backup is only
 As an alternative, you can manually copy data from the `/var/lib/clickhouse/data/database/table` directory.
 But if you do this while the server is running, race conditions are possible when copying directories with files being added or changed, and the backup may be inconsistent. You can do this if the server isn't running – then the resulting data will be the same as after the `ALTER TABLE t FREEZE PARTITION` query.
 
-`ALTER TABLE ... FREEZE PARTITION` only copies data, not table metadata. To make a backup of table metadata, copy the file  `/var/lib/clickhouse/metadata/database/table.sql`
+`ALTER TABLE ... FREEZE PARTITION` only copies data, not table metadata. To make a backup of table metadata, copy the file `/var/lib/clickhouse/metadata/database/table.sql`
 
 To restore from a backup:
 
@@ -218,7 +216,7 @@ Although the query is called `ALTER TABLE`, it does not change the table structu
 
 Data is placed in the `detached` directory. You can use the `ALTER TABLE ... ATTACH` query to attach the data.
 
-The ` FROM`  clause specifies the path in ` ZooKeeper`. For example, `/clickhouse/tables/01-01/visits`.
+The ` FROM` clause specifies the path in ` ZooKeeper`. For example, `/clickhouse/tables/01-01/visits`.
 Before downloading, the system checks that the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
 
 The `ALTER ... FETCH PARTITION` query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the `ALTER TABLE ... ATTACH` query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
@@ -230,9 +228,7 @@ For non-replicatable tables, all `ALTER` queries are performed synchronously. Fo
 For `ALTER ... ATTACH|DETACH|DROP` queries, you can use the `replication_alter_partitions_sync` setting to set up waiting.
 Possible values: `0` – do not wait; `1` – only wait for own execution (default); `2` – wait for all.
 
-<a name="query_language_queries_show_databases"></a>
-
-### Mutations
+### Mutations {#query_language_queries_show_databases}
 
 Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
 

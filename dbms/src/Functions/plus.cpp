@@ -12,7 +12,7 @@ struct PlusImpl
     static const constexpr bool allow_decimal = true;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b)
+    static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)
     {
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
         return static_cast<Result>(a) + b;

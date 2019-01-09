@@ -58,10 +58,6 @@ struct ExpressionAnalyzerData
 
     bool has_global_subqueries = false;
 
-    /// Which column is needed to be ARRAY-JOIN'ed to get the specified.
-    /// For example, for `SELECT s.v ... ARRAY JOIN a AS s` will get "s.v" -> "a.v".
-    NameToNameMap array_join_result_to_source;
-
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
 
@@ -154,7 +150,7 @@ public:
     /** Get a set of columns that are enough to read from the table to evaluate the expression.
       * Columns added from another table by JOIN are not counted.
       */
-    Names getRequiredSourceColumns() const;
+    Names getRequiredSourceColumns() const { return source_columns.getNames(); }
 
     /** These methods allow you to build a chain of transformations over a block, that receives values in the desired sections of the query.
       *
@@ -236,19 +232,16 @@ private:
     const AnalyzedJoin & analyzedJoin() const { return syntax->analyzed_join; }
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
-      * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
-      * as well as the columns added by JOIN (`columns_added_by_join`).
+      * At the same time, form a set of columns added by JOIN (`columns_added_by_join`).
       */
     void collectUsedColumns();
 
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables();
 
-    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const;
+    void addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool is_left) const;
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
-
-    bool isThereArrayJoin(const ASTPtr & ast);
 
     /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
     void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, ExpressionActionsPtr & actions);
@@ -273,7 +266,7 @@ private:
     void assertAggregation() const;
 
     /**
-      * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
+      * Create Set from a subuquery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);

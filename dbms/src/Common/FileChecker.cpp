@@ -146,7 +146,7 @@ void FileChecker::load(Map & local_map, const std::string & path)
     JSON json(out.str());
 
     JSON files = json["yandex"];
-    for (const auto & name_value : files)
+    for (const JSON name_value : files)
         local_map[unescapeForFileName(name_value.getName())] = name_value.getValue()["size"].toUInt();
 }
 

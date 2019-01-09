@@ -86,6 +86,25 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
     bool is_pm = false;
 
+    auto read_alpha_month = [&month] (const auto & alpha)
+    {
+             if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
+        else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
+        else if (0 == strncasecmp(alpha, "Mar", 3)) month = 3;
+        else if (0 == strncasecmp(alpha, "Apr", 3)) month = 4;
+        else if (0 == strncasecmp(alpha, "May", 3)) month = 5;
+        else if (0 == strncasecmp(alpha, "Jun", 3)) month = 6;
+        else if (0 == strncasecmp(alpha, "Jul", 3)) month = 7;
+        else if (0 == strncasecmp(alpha, "Aug", 3)) month = 8;
+        else if (0 == strncasecmp(alpha, "Sep", 3)) month = 9;
+        else if (0 == strncasecmp(alpha, "Oct", 3)) month = 10;
+        else if (0 == strncasecmp(alpha, "Nov", 3)) month = 11;
+        else if (0 == strncasecmp(alpha, "Dec", 3)) month = 12;
+        else
+            return false;
+        return true;
+    };
+
     while (!in.eof())
     {
         char digits[14];
@@ -205,6 +224,10 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                 /// hh - only if already have day of month
                 /// DD/MM/YYYY
                 /// DD/MM/YY
+                /// DD.MM.YYYY
+                /// DD.MM.YY
+                /// DD-MM-YYYY
+                /// DD-MM-YY
                 /// DD
 
                 UInt8 hour_or_day_of_month = 0;
@@ -244,7 +267,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                             return on_error("Cannot read DateTime: unexpected number of decimal digits after hour and minute: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
                     }
                 }
-                else if (checkChar('/', in))
+                else if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                 {
                     if (day_of_month)
                         return on_error("Cannot read DateTime: day of month is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
@@ -260,10 +283,23 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                         readDecimalNumber<2>(month, digits);
                     else if (num_digits == 1)
                         readDecimalNumber<1>(month, digits);
+                    else if (num_digits == 0)
+                    {
+                        /// Month in alphabetical form
+
+                        char alpha[9];  /// The longest month name: September
+                        size_t num_alpha = readAlpha(alpha, sizeof(alpha), in);
+
+                        if (num_alpha < 3)
+                            return on_error("Cannot read DateTime: unexpected number of alphabetical characters after day of month: " + toString(num_alpha), ErrorCodes::CANNOT_PARSE_DATETIME);
+
+                        if (!read_alpha_month(alpha))
+                            return on_error("Cannot read DateTime: alphabetical characters after day of month don't look like month: " + std::string(alpha, 3), ErrorCodes::CANNOT_PARSE_DATETIME);
+                    }
                     else
                         return on_error("Cannot read DateTime: unexpected number of decimal digits after day of month: " + toString(num_digits), ErrorCodes::CANNOT_PARSE_DATETIME);
 
-                    if (checkChar('/', in))
+                    if (checkChar('/', in) || checkChar('.', in) || checkChar('-', in))
                     {
                         if (year)
                             return on_error("Cannot read DateTime: year component is duplicated", ErrorCodes::CANNOT_PARSE_DATETIME);
@@ -401,19 +437,9 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                 {
                     bool has_day_of_week = false;
 
-                         if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
-                    else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
-                    else if (0 == strncasecmp(alpha, "Mar", 3)) month = 3;
-                    else if (0 == strncasecmp(alpha, "Apr", 3)) month = 4;
-                    else if (0 == strncasecmp(alpha, "May", 3)) month = 5;
-                    else if (0 == strncasecmp(alpha, "Jun", 3)) month = 6;
-                    else if (0 == strncasecmp(alpha, "Jul", 3)) month = 7;
-                    else if (0 == strncasecmp(alpha, "Aug", 3)) month = 8;
-                    else if (0 == strncasecmp(alpha, "Sep", 3)) month = 9;
-                    else if (0 == strncasecmp(alpha, "Oct", 3)) month = 10;
-                    else if (0 == strncasecmp(alpha, "Nov", 3)) month = 11;
-                    else if (0 == strncasecmp(alpha, "Dec", 3)) month = 12;
-
+                    if (read_alpha_month(alpha))
+                    {
+                    }
                     else if (0 == strncasecmp(alpha, "UTC", 3)) has_time_zone_offset = true;
                     else if (0 == strncasecmp(alpha, "GMT", 3)) has_time_zone_offset = true;
                     else if (0 == strncasecmp(alpha, "MSK", 3)) { has_time_zone_offset = true; time_zone_offset_hour = 3; }

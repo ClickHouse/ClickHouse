@@ -53,6 +53,20 @@
     <timezone>Europe/Moscow</timezone>
     <remote_servers incl="clickhouse_remote_servers" >
         <!-- Test only shard config for testing distributed storage -->
+        <test_unavailable_shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>59000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>1</port>
+                </replica>
+            </shard>
+        </test_unavailable_shard>
         <test_shard_localhost>
             <shard>
                 <replica>

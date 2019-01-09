@@ -246,10 +246,10 @@ public:
 
     struct ActionsHash
     {
-        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        UInt128 operator()(const ExpressionActions::Actions & elems) const
         {
             SipHash hash;
-            for (const ExpressionAction & act : actions)
+            for (const ExpressionAction & act : elems)
                 hash.update(ExpressionAction::ActionHash{}(act));
             UInt128 result;
             hash.get128(result.low, result.high);

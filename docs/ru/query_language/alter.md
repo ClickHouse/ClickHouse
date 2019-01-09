@@ -1,6 +1,4 @@
-<a name="query_language_queries_alter"></a>
-
-## ALTER
+## ALTER {#query_language_queries_alter}
 Запрос `ALTER` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
 
 ### Манипуляции со столбцами
@@ -114,10 +112,10 @@ SELECT * FROM system.parts WHERE active
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 May 5 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 May 5 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 May 5 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 May 5 02:58 increment.txt
 ```
 
 Здесь `20140317_20140323_2_2_0`, `20140317_20140323_4_4_0` - директории кусков.
@@ -227,9 +225,7 @@ ALTER TABLE [db.]table FETCH PARTITION 'name' FROM 'path-in-zookeeper'
 Для запросов `ALTER ... ATTACH|DETACH|DROP` можно настроить ожидание, с помощью настройки `replication_alter_partitions_sync`.
 Возможные значения: `0` - не ждать, `1` - ждать выполнения только у себя (по умолчанию), `2` - ждать всех.
 
-<a name="query_language_queries_show_databases"></a>
-
-### Мутации
+### Мутации {#query_language_queries_show_databases}
 
 Мутации - разновидность запроса ALTER, позволяющая изменять или удалять данные в таблице. В отличие от стандартных запросов `DELETE` и `UPDATE`, рассчитанных на точечное изменение данных, область применения мутаций - достаточно тяжёлые изменения, затрагивающие много строк в таблице.
 

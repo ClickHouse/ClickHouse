@@ -1056,17 +1056,17 @@ public:
 
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (const auto col_in = checkAndGetColumn<ColumnFixedString>(column.get()))
+        else if (const auto col_in_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
-            if (col_in->getN() != uuid_text_length)
+            if (col_in_fixed->getN() != uuid_text_length)
                 throw Exception("Illegal type " + col_type_name.type->getName() +
-                                " of column " + col_in->getName() +
+                                " of column " + col_in_fixed->getName() +
                                 " argument of function " + getName() +
                                 ", expected FixedString(" + toString(uuid_text_length) + ")",
                                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto size = col_in->size();
-            const auto & vec_in = col_in->getChars();
+            const auto size = col_in_fixed->size();
+            const auto & vec_in = col_in_fixed->getChars();
 
             auto col_res = ColumnFixedString::create(uuid_bytes_length);
 
@@ -1087,8 +1087,7 @@ public:
         }
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-            + " of argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+                + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

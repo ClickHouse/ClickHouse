@@ -62,6 +62,8 @@ public:
         UInt32 replica_num;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local;
+        bool user_specified = false;
+
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 
@@ -143,6 +145,9 @@ public:
     /// Get a subcluster consisting of one shard - index by count (from 0) of the shard of this cluster.
     std::unique_ptr<Cluster> getClusterWithSingleShard(size_t index) const;
 
+    /// Get a subcluster consisting of one or multiple shards - indexes by count (from 0) of the shard of this cluster.
+    std::unique_ptr<Cluster> getClusterWithMultipleShards(const std::vector<size_t> & indices) const;
+
 private:
     using SlotToShard = std::vector<UInt64>;
     SlotToShard slot_to_shard;
@@ -153,8 +158,8 @@ public:
 private:
     void initMisc();
 
-    /// For getClusterWithSingleShard implementation.
-    Cluster(const Cluster & from, size_t index);
+    /// For getClusterWithMultipleShards implementation.
+    Cluster(const Cluster & from, const std::vector<size_t> & indices);
 
     String hash_of_addresses;
     /// Description of the cluster shards.

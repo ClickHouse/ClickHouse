@@ -51,7 +51,7 @@ StorageJoin::StorageJoin(
 }
 
 
-void StorageJoin::truncate(const ASTPtr &)
+void StorageJoin::truncate(const ASTPtr &, const Context &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
@@ -139,10 +139,14 @@ void registerStorageJoin(StorageFactory & factory)
         {
             for (const ASTSetQuery::Change & setting : args.storage_def->settings->changes)
             {
-                if (setting.name == "join_use_nulls") join_use_nulls.set(setting.value);
-                else if (setting.name == "max_rows_in_join") max_rows_in_join.set(setting.value);
-                else if (setting.name == "max_bytes_in_join") max_bytes_in_join.set(setting.value);
-                else if (setting.name == "join_overflow_mode") join_overflow_mode.set(setting.value);
+                if (setting.name == "join_use_nulls")
+                    join_use_nulls.set(setting.value);
+                else if (setting.name == "max_rows_in_join")
+                    max_rows_in_join.set(setting.value);
+                else if (setting.name == "max_bytes_in_join")
+                    max_bytes_in_join.set(setting.value);
+                else if (setting.name == "join_overflow_mode")
+                    join_overflow_mode.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -186,8 +190,8 @@ size_t rawSize(const StringRef & t)
 class JoinBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block & sample_block_)
-        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(sample_block_)
+    JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block_)
+        : parent(parent_), lock(parent.rwlock), max_block_size(max_block_size_), sample_block(std::move(sample_block_))
     {
         columns.resize(sample_block.columns());
         column_indices.resize(sample_block.columns());
@@ -358,8 +362,7 @@ BlockInputStreams StorageJoin::read(
     unsigned /*num_streams*/)
 {
     check(column_names);
-    Block sample_block = getSampleBlockForColumns(column_names);
-    return {std::make_shared<JoinBlockInputStream>(*join, max_block_size, sample_block)};
+    return {std::make_shared<JoinBlockInputStream>(*join, max_block_size, getSampleBlockForColumns(column_names))};
 }
 
 }
