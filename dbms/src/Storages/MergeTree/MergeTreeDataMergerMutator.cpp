@@ -637,19 +637,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         BlockInputStreamPtr stream = std::move(input);
         for (const auto & index : data.indexes) {
-            stream = std::make_shared<ExpressionBlockInputStream>(stream, index->expr);
+            stream = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(stream, index->expr));
         }
 
         if (data.hasPrimaryKey()) {
-            stream = std::make_shared<ExpressionBlockInputStream>(
-                            BlockInputStreamPtr(std::move(stream)), data.sorting_key_expr);
+            stream = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_expr));
         }
 
-        if (!data.indexes.empty() || data.hasPrimaryKey()) {
-            src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(stream));
-        } else {
-            src_streams.emplace_back(stream);
-        }
+        src_streams.emplace_back(stream);
     }
 
     Names sort_columns = data.sorting_key_columns;
@@ -658,6 +655,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     sort_description.reserve(sort_columns_size);
 
     Block header = src_streams.at(0)->getHeader();
+
+    for (size_t i = 0; i < src_streams.size(); ++i) {
+        LOG_DEBUG(log, "merging header " << i << "\n");
+        auto tmp_h = src_streams.at(i)->getHeader();
+        for (auto column : tmp_h.getNames()) {
+            LOG_DEBUG(log, "column: " << column);
+        }
+    }
+
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
@@ -720,6 +726,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     Block block;
     while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
     {
+        LOG_DEBUG(log, "merging\n");
+        for (auto column : block.getNames())
+        {
+            LOG_DEBUG(log, "column: " << column);
+        }
+        LOG_DEBUG(log, ">>>>>> rows read:: " << block.rows());
+
         rows_written += block.rows();
         to.write(block);
 
