@@ -257,6 +257,25 @@ struct MurmurHash2Impl64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+/// To be compatible with gcc: https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191
+struct GccMurmurHashImpl
+{
+    static constexpr auto name = "gccMurmurHash";
+    using ReturnType = UInt64;
+
+    static UInt64 apply(const char * data, const size_t size)
+    {
+        return MurmurHash64A(data, size, 0xc70f6907UL);
+    }
+
+    static UInt64 combineHashes(UInt64 h1, UInt64 h2)
+    {
+        return IntHash64Impl::apply(h1) ^ h2;
+    }
+
+    static constexpr bool use_int_hash_for_pods = false;
+};
+
 struct MurmurHash3Impl32
 {
     static constexpr auto name = "murmurHash3_32";
@@ -1070,6 +1089,7 @@ using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
+using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
