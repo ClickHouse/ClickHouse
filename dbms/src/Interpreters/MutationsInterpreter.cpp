@@ -203,10 +203,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                 }
             }
         }
-    }
 
-    if (!updated_columns.empty())
         validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
+    }
 
     /// First, break a sequence of commands into stages.
     stages.emplace_back(context);

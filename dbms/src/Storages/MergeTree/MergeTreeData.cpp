@@ -2269,7 +2269,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
 
         for (auto state : affordable_states)
         {
-            buf = std::move(res);
+            std::swap(buf, res);
             res.clear();
 
             auto range = getDataPartsStateRange(state);
