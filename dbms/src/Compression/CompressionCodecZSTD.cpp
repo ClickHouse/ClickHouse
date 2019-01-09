@@ -63,7 +63,7 @@ CompressionCodecZSTD::CompressionCodecZSTD(int level_)
 
 void registerCodecZSTD(CompressionCodecFactory & factory)
 {
-    UInt8 method_code = static_cast<char>(CompressionMethodByte::ZSTD);
+    UInt8 method_code = UInt8(CompressionMethodByte::ZSTD);
     factory.registerCompressionCodec("ZSTD", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
     {
         int level = CompressionCodecZSTD::ZSTD_DEFAULT_LEVEL;
