@@ -930,14 +930,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// All columns are modified, proceed to write a new part from scratch.
 
         for (const auto & index : data.indexes) {
-            in = std::make_shared<ExpressionBlockInputStream>(in, index->expr);
+            in = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(in, index->expr));
         }
 
         if (data.hasPrimaryKey())
             in = std::make_shared<MaterializingBlockInputStream>(
                 std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
-        else if (!data.indexes.empty()) {
-            in = std::make_shared<MaterializingBlockInputStream>(in);
         }
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
