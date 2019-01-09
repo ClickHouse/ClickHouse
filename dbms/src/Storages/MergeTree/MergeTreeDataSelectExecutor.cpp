@@ -996,9 +996,17 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             MarkRange data_range(
                     std::max(range.begin, index_mark * index->granularity),
                     std::min(range.end, (index_mark + 1) * index->granularity));
+            LOG_DEBUG(log, "drop out:: " <<  " data_range [" <<
+                data_range.begin << ", " << data_range.end << ") index_mark = " << index_mark <<
+                " granule data: ");
+
+            LOG_DEBUG(log, granule->toString());
 
             if (!condition->mayBeTrueOnGranule(granule))
+            {
+                LOG_DEBUG(log, "DROP");
                 continue;
+            }
 
             if (res.empty() || res.back().end - data_range.begin >= min_marks_for_seek)
                 res.push_back(data_range);
