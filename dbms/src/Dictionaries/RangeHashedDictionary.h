@@ -216,7 +216,7 @@ private:
     template <typename RangeType>
     BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
 
-    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
+    friend struct RangeHashedDictionaryCallGetBlockInputStreamImpl;
 
     const std::string dictionary_name;
     const DictionaryStructure dict_struct;
