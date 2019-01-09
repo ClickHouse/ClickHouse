@@ -36,6 +36,10 @@ struct MergeTreeTestGranule : public MergeTreeIndexGranule {
         //std::cerr << "TESTINDEX: read " << emp << "\n";
     }
 
+    String toString() const override {
+        return "test_index";
+    }
+
     bool empty() const override {
         return emp == 0;
     }

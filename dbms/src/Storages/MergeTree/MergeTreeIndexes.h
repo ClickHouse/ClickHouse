@@ -31,6 +31,7 @@ struct MergeTreeIndexGranule
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
 
+    virtual String toString() const = 0;
     virtual bool empty() const = 0;
 
     virtual void update(const Block & block, size_t * pos, size_t limit) = 0;
