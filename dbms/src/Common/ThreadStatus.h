@@ -2,7 +2,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
-#include <Common/ObjectPool.h>
 
 #include <IO/Progress.h>
 
@@ -175,8 +174,7 @@ protected:
     std::unique_ptr<TasksStatsCounters> last_taskstats;
 
     /// Set to non-nullptr only if we have enough capabilities.
-    /// We use pool because creation and destruction of TaskStatsInfoGetter objects are expensive.
-    SimpleObjectPool<TaskStatsInfoGetter>::Pointer taskstats_getter;
+    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
 };
 
 }
