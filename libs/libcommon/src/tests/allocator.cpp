@@ -24,7 +24,7 @@ void thread_func()
                 abort();
             buf = new_buf;
 
-            memset(buf + size, 0, next_size - size);
+            memset(reinterpret_cast<char*>(buf) + size, 0, next_size - size);
             size = next_size;
         }
 
