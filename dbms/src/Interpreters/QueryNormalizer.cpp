@@ -161,8 +161,8 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
         {
             if (typeid_cast<const ASTAsterisk *>(child.get()))
             {
-                for (const auto & [table_name, table_columns] : tables_with_columns)
-                    for (const auto & column_name : table_columns)
+                for (const auto & pr : tables_with_columns)
+                    for (const auto & column_name : pr.second)
                         expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
             }
             else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
