@@ -6,7 +6,7 @@
 
 void thread_func()
 {
-    for (size_t i = 0; i < 100000; ++i)
+    for (size_t i = 0; i < 100; ++i)
     {
         size_t size = 4096;
 
@@ -36,9 +36,12 @@ void thread_func()
 int main(int, char **)
 {
     std::vector<std::thread> threads(16);
-    for (auto & thread : threads)
-        thread = std::thread(thread_func);
-    for (auto & thread : threads)
-        thread.join();
+    for (size_t i = 0; i < 1000; ++i)
+    {
+        for (auto & thread : threads)
+            thread = std::thread(thread_func);
+        for (auto & thread : threads)
+            thread.join();
+    }
     return 0;
 }
