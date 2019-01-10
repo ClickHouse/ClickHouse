@@ -32,7 +32,7 @@ public:
         std::lock_guard lock{internal_dictionaries_mutex};
         auto it = internal_dictionaries.find(name);
         if (it != internal_dictionaries.end())
-            throw Exception("Dictionary " + name + " already exist.", ErrorCodes::DICTIONARY_ALREADY_EXIST);
+            throw Exception("Dictionary " + name + " already exist.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
         internal_dictionaries[name] = DictionaryFactory::instance().create(name, create, context);
     }
