@@ -648,7 +648,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
 
     /// Let's find the action to merge this part with others. Let's remember others.
     StringSet parts_for_merge;
-    Queue::iterator merge_entry;
+    Queue::iterator merge_entry = queue.end();
     for (Queue::iterator it = queue.begin(); it != queue.end(); ++it)
     {
         if ((*it)->type == LogEntry::MERGE_PARTS || (*it)->type == LogEntry::MUTATE_PART)

@@ -304,7 +304,7 @@ BlockInputStreams StorageKafka::read(
     if (num_created_consumers == 0)
         return BlockInputStreams();
 
-    const size_t stream_count = std::min(num_streams, num_created_consumers);
+    const size_t stream_count = std::min(size_t(num_streams), num_created_consumers);
 
     BlockInputStreams streams;
     streams.reserve(stream_count);
