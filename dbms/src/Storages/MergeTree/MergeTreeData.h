@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeIndexes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
