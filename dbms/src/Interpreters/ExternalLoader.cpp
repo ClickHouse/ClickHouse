@@ -3,7 +3,9 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 #include <Common/setThreadName.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <ext/scope_guard.h>
 #include <Poco/Util/Application.h>
 #include <cmath>
@@ -28,6 +30,29 @@ ExternalLoadableLifetime::ExternalLoadableLifetime(const Poco::Util::AbstractCon
     min_sec = has_min ? config.getUInt64(lifetime_min_key) : config.getUInt64(config_prefix);
     max_sec = has_min ? config.getUInt64(config_prefix + ".max") : min_sec;
 }
+
+
+ExternalLoadableLifetime::ExternalLoadableLifetime(const ASTKeyValueFunction * lifetime)
+{
+    if (lifetime->name != "LIFETIME")
+        throw Exception("ExternalLoadableLifetime: AST should be in the folowing form LIFETIME(MIN 0 MAX 1)", ErrorCodes::BAD_ARGUMENTS);
+
+    for (const auto & child : lifetime->elements->children)
+    {
+        const auto & pair = typeid_cast<const ASTPair &>(*child.get());
+        if (pair.first == "MIN")
+            min_sec = typeid_cast<const ASTLiteral &>(*child.get()).value.get<UInt64>();
+        else if (pair.first == "MAX")
+            max_sec = typeid_cast<const ASTLiteral &>(*child.get()).value.get<UInt64>();
+    }
+
+    if (min_sec > max_sec)
+    {
+        throw Exception("ExternalLoadableLifetime: min_sec can't be greater than max_sec. min_sec="
+                        + std::to_string(min_sec) + " max_sec=" + std::to_string(max_sec) , ErrorCodes::BAD_ARGUMENTS);
+    }
+}
+
 
 void ExternalLoader::reloadPeriodically()
 {

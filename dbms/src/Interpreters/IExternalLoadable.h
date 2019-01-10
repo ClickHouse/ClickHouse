@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <Core/Types.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace Poco::Util
@@ -18,10 +19,11 @@ namespace DB
 /// Min and max lifetimes for a loadable object or it's entry
 struct ExternalLoadableLifetime final
 {
-    UInt64 min_sec;
-    UInt64 max_sec;
+    UInt64 min_sec = 0;
+    UInt64 max_sec = 0;
 
     ExternalLoadableLifetime(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+    explicit ExternalLoadableLifetime(const ASTKeyValueFunction * lifetime);
 };
 
 
