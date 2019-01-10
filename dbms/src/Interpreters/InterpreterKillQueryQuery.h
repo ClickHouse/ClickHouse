@@ -21,6 +21,7 @@ public:
 
 private:
     Block getSelectFromSystemProcessesResult();
+    Block getSelectFromSystemMutationsResult();
 
     ASTPtr query_ptr;
     Context & context;

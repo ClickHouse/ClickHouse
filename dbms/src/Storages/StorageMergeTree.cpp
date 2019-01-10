@@ -343,7 +343,6 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
     background_task_handle->wake();
 }
 
-
 std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() const
 {
     std::lock_guard lock(currently_merging_mutex);
@@ -386,6 +385,11 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     }
 
     return result;
+}
+
+void StorageMergeTree::killMutation(const String & mutation_id)
+{
+    LOG_TRACE(log, "KILL MUTATION " << mutation_id);
 }
 
 

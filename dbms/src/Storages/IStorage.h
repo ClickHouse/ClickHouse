@@ -257,6 +257,12 @@ public:
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Cancel a mutation.
+    virtual void killMutation(const String & /*mutation_id*/)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** If the table have to do some complicated work on startup,
       *  that must be postponed after creation of table object
       *  (like launching some background threads),
