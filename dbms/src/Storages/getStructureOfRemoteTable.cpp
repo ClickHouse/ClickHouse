@@ -1,6 +1,7 @@
 #include "getStructureOfRemoteTable.h"
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -54,7 +55,10 @@ ColumnsDescription getStructureOfRemoteTable(
 
     ColumnsDescription res;
 
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context);
+
+    auto new_context = ClusterProxy::removeUserRestrictionsFromSettings(context, context.getSettingsRef());
+    /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
         input->setMainTable(QualifiedTableName{database, table});

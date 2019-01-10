@@ -1,8 +1,10 @@
-FROM ubuntu:18.10
+FROM ubuntu:18.04
 
-RUN apt-get update -y \
+RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
+
+RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
-        apt-get install --yes --no-install-recommends \
+        apt-get --allow-unauthenticated install --yes --no-install-recommends \
             bash \
             fakeroot \
             cmake \
@@ -33,8 +35,8 @@ RUN apt-get update -y \
             devscripts \
             debhelper \
             git \
-            libc++abi-dev \
             libc++-dev \
+            libc++abi-dev \
             libboost-program-options-dev \
             libboost-system-dev \
             libboost-filesystem-dev \
