@@ -109,26 +109,26 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
 }
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
-	std::vector<capnp::StructSchema::Field> parents;
-	std::vector<std::string> tokens;
-	
-	capnp::StructSchema cur_reader = reader;
-	size_t level = 0;
-	for (const auto & field : sortedFields)
-    {
-		while(level > (field.tokens.size()-1) || (level > 0 && tokens[level-1] != field.tokens[level-1])) {
-			level--;
-			actions.push_back({Action::POP});
-			tokens.pop_back();
-			parents.pop_back();
-			if(level > 0) {
-				cur_reader = parents[level-1].getType().asStruct();
-			} else {
-				cur_reader = reader;
-				break;
-			}
+    std::vector<capnp::StructSchema::Field> parents;
+    std::vector<std::string> tokens;
 
-		}
+    capnp::StructSchema cur_reader = reader;
+    size_t level = 0;
+    for (const auto & field : sortedFields)
+    {
+        while(level > (field.tokens.size()-1) || (level > 0 && tokens[level-1] != field.tokens[level-1])) {
+            level--;
+            actions.push_back({Action::POP});
+            tokens.pop_back();
+            parents.pop_back();
+            if(level > 0) {
+                cur_reader = parents[level-1].getType().asStruct();
+            } else {
+                cur_reader = reader;
+                break;
+            }
+
+        }
         for (; level < field.tokens.size() - 1; ++level)
         {
 
@@ -136,10 +136,10 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
             if (node.getType().isStruct())
             {
                 // Descend to field structure
-				parents.push_back(node);
-				tokens.push_back(field.tokens[level]);
-				
-				cur_reader = node.getType().asStruct();
+                parents.push_back(node);
+                tokens.push_back(field.tokens[level]);
+
+                cur_reader = node.getType().asStruct();
                 actions.push_back({Action::PUSH, node});
             }
             else if (node.getType().isList())
@@ -196,14 +196,13 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     // Reorder list to make sure we don't have to backtrack
     std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b)
     {
-		
-		size_t min = std::min(a.tokens.size(),b.tokens.size());
-		for(size_t i = 0; i < min; i++) {
-			if(a.tokens[i] != b.tokens[i]){
-				return a.tokens[i] > b.tokens[i];
-			}
-		}
-		return a.tokens.size() < b.tokens.size();
+        size_t min = std::min(a.tokens.size(),b.tokens.size());
+        for(size_t i = 0; i < min; i++) {
+            if(a.tokens[i] != b.tokens[i]){
+                return a.tokens[i] > b.tokens[i];
+            }
+        }
+        return a.tokens.size() < b.tokens.size();
     });
 
     createActions(list, root);
