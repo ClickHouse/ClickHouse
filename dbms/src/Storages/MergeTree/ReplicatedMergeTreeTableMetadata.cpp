@@ -44,6 +44,8 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
+
+    skip_indexes = formattedAST(data.skip_indexes_ast);
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -64,6 +66,9 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!sorting_key.empty())
         out << "sorting key: " << sorting_key << "\n";
+
+    if (!skip_indexes.empty())
+        out << "skip indexes: " << skip_indexes << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -93,6 +98,9 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
 
     if (checkString("sorting key: ", in))
         in >> sorting_key >> "\n";
+
+    if (checkString("skip indexes: ", in))
+        in >> skip_indexes >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -174,6 +182,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                 " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
                 ErrorCodes::METADATA_MISMATCH);
     }
+
+    if (skip_indexes != from_zk.skip_indexes)
+        throw Exception("Existing table metadata in ZooKeeper differs in skip indexes."
+                        " Stored in ZooKeeper: " + from_zk.skip_indexes +
+                        ", local: " + skip_indexes,
+                        ErrorCodes::METADATA_MISMATCH);
 
     return diff;
 }
