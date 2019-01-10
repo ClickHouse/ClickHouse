@@ -12,7 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int DICTIONARY_ALREADY_EXIST;
+    extern const int DICTIONARY_ALREADY_EXISTS;
 };
 
 class Context;
@@ -102,7 +102,7 @@ public:
 
 protected:
 
-    std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
+    std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                               const std::string & config_prefix) override;
 
     using ExternalLoader::getObjectsMap;
