@@ -109,6 +109,7 @@ class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnC
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
+    bool replace{false};   /// Query CREATE OR REPLACE {TABLE,DICTIONARY}.
     bool if_not_exists{false};
     bool is_view{false};
     bool is_materialized_view{false};
@@ -137,6 +138,8 @@ public:
             res->set(res->storage, storage->clone());
         if (select)
             res->set(res->select, select->clone());
+        if (dictionary_source)
+            res->set(res->dictionary_source, dictionary_source->clone());
 
         cloneOutputOptions(*res);
 
