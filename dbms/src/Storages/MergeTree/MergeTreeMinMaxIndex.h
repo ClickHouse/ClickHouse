@@ -1,13 +1,8 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeIndexes.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
-
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/SyntaxAnalyzer.h>
 
 #include <memory>
 

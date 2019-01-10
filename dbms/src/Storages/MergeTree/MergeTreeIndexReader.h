@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/MergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndexes.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB {
