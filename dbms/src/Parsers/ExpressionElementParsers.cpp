@@ -1328,5 +1328,33 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
+
+bool ParserKeyValueFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserKeyValuePairsList pairs_list_parser;
+
+    ASTPtr identifier;
+    ASTPtr expr_list_args;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    if (pos.get().type != TokenType::OpeningRoundBracket)
+        return false;
+
+    if (!pairs_list_parser.parse(pos, expr_list_args, expected))
+        return false;
+
+    if (pos.get().type != TokenType::ClosingRoundBracket)
+        return false;
+
+    auto function = std::make_shared<ASTKeyValueFunction>();
+    function->name = typeid_cast<Field &>(*identifier.get()).get<String>();
+    function->elements = expr_list_args;
+    function->children.push_back(function->elements);
+    node = function;
+
+    return true;
 }
 
+}
