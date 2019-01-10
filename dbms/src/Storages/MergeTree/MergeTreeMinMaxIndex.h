@@ -63,8 +63,13 @@ private:
 class MergeTreeMinMaxIndex : public MergeTreeIndex
 {
 public:
-    MergeTreeMinMaxIndex(String name, ExpressionActionsPtr expr, size_t granularity)
-        : MergeTreeIndex(name, expr, granularity) {}
+    MergeTreeMinMaxIndex(
+        String name,
+        ExpressionActionsPtr expr,
+        const Names & columns,
+        const DataTypes & data_types,
+        size_t granularity)
+        : MergeTreeIndex(name, expr, columns, data_types, granularity) {}
 
     ~MergeTreeMinMaxIndex() override = default;
 

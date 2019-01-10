@@ -58,8 +58,17 @@ using IndexConditionPtr = std::shared_ptr<IndexCondition>;
 class MergeTreeIndex
 {
 public:
-    MergeTreeIndex(String name, ExpressionActionsPtr expr, size_t granularity)
-        : name(name), expr(expr), granularity(granularity) {}
+    MergeTreeIndex(
+        String name,
+        ExpressionActionsPtr expr,
+        const Names & columns,
+        const DataTypes & data_types,
+        size_t granularity)
+        : name(name)
+        , expr(expr)
+        , columns(columns)
+        , data_types(data_types)
+        , granularity(granularity) {}
 
     virtual ~MergeTreeIndex() = default;
 
@@ -73,9 +82,9 @@ public:
 
     String name;
     ExpressionActionsPtr expr;
-    size_t granularity;
     Names columns;
     DataTypes data_types;
+    size_t granularity;
 };
 
 

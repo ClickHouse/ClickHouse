@@ -162,11 +162,11 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
             expr_list, data.getColumns().getAllPhysical());
     auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
-    auto minmax = std::make_unique<MergeTreeMinMaxIndex>(
-            node->name, std::move(minmax_expr), node->granularity.get<size_t>());
-
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)
             .getActions(true)->getSampleBlock();
+
+    Names columns;
+    DataTypes data_types;
 
     Poco::Logger * log = &Poco::Logger::get("minmax_idx");
     LOG_DEBUG(log, "new minmax index");
@@ -174,12 +174,13 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     {
         const auto & column = sample.getByPosition(i);
 
-        minmax->columns.emplace_back(column.name);
-        minmax->data_types.emplace_back(column.type);
+        columns.emplace_back(column.name);
+        data_types.emplace_back(column.type);
         LOG_DEBUG(log, ">" << column.name << " " << column.type->getName());
     }
 
-    return minmax;
+    return std::make_unique<MergeTreeMinMaxIndex>(
+            node->name, std::move(minmax_expr), columns, data_types, node->granularity.get<size_t>());;
 }
 
 }
