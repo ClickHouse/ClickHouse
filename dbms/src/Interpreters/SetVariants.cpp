@@ -132,7 +132,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     /// If there is one numeric key that fits into 64 bits
-    if (keys_size == 1 && nested_key_columns[0]->isNumeric())
+    if (keys_size == 1 && nested_key_columns[0]->isNumeric() && !nested_key_columns[0]->lowCardinality())
     {
         size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
         if (size_of_field == 1)

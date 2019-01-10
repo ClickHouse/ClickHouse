@@ -36,7 +36,7 @@ namespace
             if (0 != pipe2(fds_rw, O_CLOEXEC))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
             #else
-            if (0 != pipe(fds))
+            if (0 != pipe(fds_rw))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
             if (0 != fcntl(fds_rw[0], F_SETFD, FD_CLOEXEC))
                 DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);

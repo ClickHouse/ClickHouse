@@ -583,6 +583,7 @@ public:
 
     /// Secondary (data skipping) indexes for MergeTree
     MergeTreeIndexes indexes;
+    ASTPtr skip_indexes_ast;
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;

@@ -116,6 +116,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
     setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
+    setSkipIndexes(indexes_ast_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -128,7 +129,7 @@ MergeTreeData::MergeTreeData(
             && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        auto syntax = SyntaxAnalyzer(global_context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
+        auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
         columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
             .getRequiredSourceColumns();
     }
@@ -189,8 +190,6 @@ MergeTreeData::MergeTreeData(
         throw Exception(
             "MergeTree data format version on disk doesn't support custom partitioning",
             ErrorCodes::METADATA_MISMATCH);
-
-    setSkipIndexes(indexes_ast_);
 }
 
 
@@ -286,7 +285,7 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = SyntaxAnalyzer(global_context, {}).analyze(added_key_column_expr_list, all_columns);
+            auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
             Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
                 .getRequiredSourceColumns();
 
@@ -309,7 +308,7 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         }
     }
 
-    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context, {}).analyze(new_sorting_key_expr_list, all_columns);
+    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context).analyze(new_sorting_key_expr_list, all_columns);
     auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
         .getActions(false);
     auto new_sorting_key_sample =
@@ -318,7 +317,7 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
     checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
 
-    auto new_primary_key_syntax = SyntaxAnalyzer(global_context, {}).analyze(new_primary_key_expr_list, all_columns);
+    auto new_primary_key_syntax = SyntaxAnalyzer(global_context).analyze(new_primary_key_expr_list, all_columns);
     auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, global_context)
         .getActions(false);
 
@@ -356,27 +355,32 @@ void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
     {
         return;
     }
+
+    MergeTreeIndexes new_indexes;
+    std::set<String> names;
+    auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indexes_asts);
+
+    for (const auto &index_ast : index_list->children)
+    {
+        new_indexes.push_back(
+                std::move(MergeTreeIndexFactory::instance().get(
+                        *this,
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast),
+                        global_context)));
+
+        if (names.find(new_indexes.back()->name) != names.end())
+        {
+            throw Exception(
+                    "Index with name `" + new_indexes.back()->name + "` already exsists",
+                    ErrorCodes::LOGICAL_ERROR);
+        }
+        names.insert(new_indexes.back()->name);
+    }
+
     if (!only_check)
     {
-        indexes.clear();
-        std::set<String> names;
-        auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indexes_asts);
-
-        for (const auto &index_ast : index_list->children)
-        {
-            indexes.push_back(
-                    std::move(MergeTreeIndexFactory::instance().get(
-                            *this,
-                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast),
-                            global_context)));
-            if (names.find(indexes.back()->name) != names.end())
-            {
-                throw Exception(
-                        "Index with name `" + indexes.back()->name + "` already exsists",
-                        ErrorCodes::LOGICAL_ERROR);
-            }
-            names.insert(indexes.back()->name);
-        }
+        skip_indexes_ast = indexes_asts;
+        indexes = std::move(new_indexes);
     }
 }
 
@@ -411,7 +415,7 @@ void MergeTreeData::initPartitionKey()
         return;
 
     {
-        auto syntax_result = SyntaxAnalyzer(global_context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(partition_key_expr_list, getColumns().getAllPhysical());
         partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
     }
 
@@ -1056,6 +1060,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
             columns_alter_forbidden.insert(col);
     }
 
+    for (auto index : indexes)
+    {
+        /// TODO: some special error telling about "drop index"
+        for (const String & col : index->expr->getRequiredColumns())
+            columns_alter_forbidden.insert(col);
+    }
+
     if (sorting_key_expr)
     {
         for (const ExpressionAction & action : sorting_key_expr->getActions())
@@ -1111,6 +1122,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
+    setSkipIndexes(skip_indexes_ast, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -2304,7 +2316,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
 
         for (auto state : affordable_states)
         {
-            buf = std::move(res);
+            std::swap(buf, res);
             res.clear();
 
             auto range = getDataPartsStateRange(state);
