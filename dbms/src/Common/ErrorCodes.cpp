@@ -408,7 +408,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 431;
     extern const int UNKNOWN_CODEC = 432;
     extern const int ILLEGAL_CODEC_PARAMETER = 433;
-    extern const int DICTIONARY_ALREADY_EXIST = 434;
+    extern const int DICTIONARY_ALREADY_EXISTS = 434;
     extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 435;
 
     extern const int KEEPER_EXCEPTION = 999;
