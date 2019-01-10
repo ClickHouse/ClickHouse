@@ -42,9 +42,9 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
-void removeDuplicateColumns(NamesAndTypesList & columns)
+NameSet removeDuplicateColumns(NamesAndTypesList & columns)
 {
-    std::set<String> names;
+    NameSet names;
     for (auto it = columns.begin(); it != columns.end();)
     {
         if (names.emplace(it->name).second)
@@ -52,6 +52,7 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
         else
             columns.erase(it++);
     }
+    return names;
 }
 
 namespace
@@ -77,8 +78,6 @@ void collectSourceColumns(ASTSelectQuery * select_query, StoragePtr storage, Nam
             source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
         }
     }
-
-    removeDuplicateColumns(source_columns);
 }
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to unqualified names.
@@ -102,12 +101,11 @@ void normalizeTree(
     SyntaxAnalyzerResult & result,
     const Names & source_columns,
     const NameSet & source_columns_set,
-    const StoragePtr & storage,
     const Context & context,
     const ASTSelectQuery * select_query,
     bool asterisk_left_columns_only)
 {
-    Names all_columns_name = storage ? storage->getColumns().ordinary.getNames() : source_columns;
+    Names all_columns_name = source_columns;
 
     if (!asterisk_left_columns_only)
     {
@@ -119,16 +117,19 @@ void normalizeTree(
     if (all_columns_name.empty())
         throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    TableNamesAndColumnNames table_names_and_column_names;
+    std::vector<QueryNormalizer::TableWithColumnNames> table_with_columns;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
         std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
 
         bool first = true;
+        String current_database = context.getCurrentDatabase();
         for (const auto * table_expression : tables_expression)
         {
-            DatabaseAndTableWithAlias table_name(*table_expression, context.getCurrentDatabase());
+            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
             NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
+
+            removeDuplicateColumns(names_and_types);
 
             if (!first)
             {
@@ -140,12 +141,13 @@ void normalizeTree(
 
             first = false;
 
-            table_names_and_column_names.emplace_back(std::pair(table_name, names_and_types.getNames()));
+            table_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
         }
     }
+    else
+        table_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
 
-    auto & settings = context.getSettingsRef();
-    QueryNormalizer(query, result.aliases, settings, all_columns_name, table_names_and_column_names).perform();
+    QueryNormalizer(query, result.aliases, context.getSettingsRef(), std::move(table_with_columns)).perform();
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -739,6 +741,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     result.source_columns = source_columns_;
 
     collectSourceColumns(select_query, result.storage, result.source_columns);
+    NameSet source_columns_set = removeDuplicateColumns(result.source_columns);
 
     const auto & settings = context.getSettingsRef();
 
@@ -746,7 +749,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     source_columns_list.reserve(result.source_columns.size());
     for (const auto & type_name : result.source_columns)
         source_columns_list.emplace_back(type_name.name);
-    NameSet source_columns_set(source_columns_list.begin(), source_columns_list.end());
+
+    if (source_columns_set.size() != source_columns_list.size())
+        throw Exception("Unexpected duplicates in source columns list.", ErrorCodes::LOGICAL_ERROR);
 
     if (select_query)
     {
@@ -768,7 +773,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    normalizeTree(query, result, source_columns_list, source_columns_set, result.storage,
+    normalizeTree(query, result, (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
                   context, select_query, settings.asterisk_left_columns_only != 0);
 
     /// Remove unneeded columns according to 'required_result_columns'.
