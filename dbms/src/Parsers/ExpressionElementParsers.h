@@ -285,8 +285,8 @@ protected:
 class ParserKeyValueFunction : public IParserBase
 {
 protected:
-    const char * getName() const { return "key-value pairs function"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+    const char * getName() const override { return "key-value pairs function"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 }
