@@ -18,10 +18,6 @@ inline bool functionIsInOrGlobalInOperator(const String & name)
 }
 
 
-using TableNameAndColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
-using TableNamesAndColumnNames = std::vector<TableNameAndColumnNames>;
-
-
 class QueryNormalizer
 {
     /// Extracts settings, mostly to show which are used and which are not.
@@ -41,9 +37,10 @@ class QueryNormalizer
 
 public:
     using Aliases = std::unordered_map<String, ASTPtr>;
+    using TableWithColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
 
-    QueryNormalizer(ASTPtr & query, const Aliases & aliases, ExtractedSettings && settings, const Names & all_columns_name,
-                    const TableNamesAndColumnNames & table_names_and_column_names);
+    QueryNormalizer(ASTPtr & query, const Aliases & aliases, ExtractedSettings && settings,
+                    std::vector<TableWithColumnNames> && tables_with_columns = {});
 
     void perform();
 
@@ -54,8 +51,9 @@ private:
     ASTPtr & query;
     const Aliases & aliases;
     const ExtractedSettings settings;
-    const Names & all_column_names;
-    const TableNamesAndColumnNames & table_names_and_column_names;
+    const std::vector<TableWithColumnNames> tables_with_columns;
+
+    bool processAsterisks() const { return !tables_with_columns.empty(); }
 
     void performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
 };
