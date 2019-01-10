@@ -13,7 +13,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
-#include <iostream>
 
 namespace DB
 {
