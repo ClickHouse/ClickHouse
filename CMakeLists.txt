@@ -92,6 +92,15 @@ endif ()
 
 set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
+include(CheckCCompilerFlag)
+
+if(UNIX)
+    check_c_compiler_flag("-fstack-clash-protection" compiler_has_stack_clash_protection)
+    if(compiler_has_stack_clash_protection)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-clash-protection")
+    endif()
+endif()
+
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
