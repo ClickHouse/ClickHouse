@@ -26,6 +26,9 @@ NamesAndTypesList StorageSystemMutations::getNamesAndTypes()
         { "block_numbers.number",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>()) },
         { "parts_to_do",                std::make_shared<DataTypeInt64>() },
         { "is_done",                    std::make_shared<DataTypeUInt8>() },
+        { "latest_failed_part",         std::make_shared<DataTypeString>() },
+        { "latest_fail_time",           std::make_shared<DataTypeDateTime>() },
+        { "latest_fail_reason",         std::make_shared<DataTypeString>() },
     };
 }
 
@@ -118,6 +121,9 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
             res_columns[col_num++]->insert(block_numbers);
             res_columns[col_num++]->insert(status.parts_to_do);
             res_columns[col_num++]->insert(status.is_done);
+            res_columns[col_num++]->insert(status.latest_failed_part);
+            res_columns[col_num++]->insert(UInt64(status.latest_fail_time));
+            res_columns[col_num++]->insert(status.latest_fail_reason);
         }
     }
 }
