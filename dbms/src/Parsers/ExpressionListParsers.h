@@ -372,4 +372,18 @@ protected:
 };
 
 
+class ParserKeyValuePair : public IParserBase
+{
+protected:
+    const char * getName() const override { return "key-value pair"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserKeyValuePairsList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "list of key-value pairs"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 }

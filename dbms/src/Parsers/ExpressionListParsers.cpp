@@ -636,4 +636,47 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
 }
 
 
+bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier id_parser;
+    ParserLiteral literal_parser;
+
+    ASTPtr identifier;
+    ASTPtr literal;
+    if (!id_parser.parse(pos, identifier, expected))
+        return false;
+
+    // TODO: нужно ли здесь парсить пробел?
+
+    if (!literal_parser.parse(pos, literal, expected))
+        return false;
+
+    auto pair = std::make_shared<ASTPair>();
+    pair->first = typeid_cast<Field &>(*identifier.get()).get<String>();
+    pair->second = literal;
+    node = pair;
+    return true;
+}
+
+class TMPParser : public IParserBase
+{
+protected:
+    const char * getName() const override { return "stacked parser"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        if (ParserKeyValueFunction().parse(pos, node, expected))
+            return true;
+        else
+            return ParserKeyValuePair().parse(pos, node, expected);
+    }
+};
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(
+        std::make_unique<TMPParser>(),
+        std::make_unique<ParserToken>(TokenType::Whitespace))
+        .parse(pos, node, expected);
+}
+
 }
