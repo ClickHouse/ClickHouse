@@ -4397,6 +4397,11 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     return queue.getMutationsStatus();
 }
 
+void StorageReplicatedMergeTree::killMutation(const String & mutation_id)
+{
+    LOG_TRACE(log, "KILL MUTATION " << mutation_id);
+}
+
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
