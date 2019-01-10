@@ -31,7 +31,7 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 {
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
     auto ast = node->clone();
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
     ExpressionActionsPtr expr_for_constant_folding = ExpressionAnalyzer(ast, syntax_result, context).getConstActions();
 
     /// There must be at least one column in the block so that it knows the number of rows.

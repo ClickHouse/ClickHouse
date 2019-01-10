@@ -34,7 +34,7 @@ StoragePtr TableFunctionNumbers::executeImpl(const ASTPtr & ast_function, const 
         res->startup();
         return res;
     }
-    throw new Exception("Table function 'numbers' requires 'limit' or 'offset, limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    throw Exception("Table function 'numbers' requires 'limit' or 'offset, limit'.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)

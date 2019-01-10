@@ -161,21 +161,21 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
     // Actually this should work for 7.0.0 but now we have OLDER 7.0.0svn in contrib
     auto flags = [&](const llvm::orc::SymbolNameSet & symbols)
     {
-        llvm::orc::SymbolFlagsMap flags;
+        llvm::orc::SymbolFlagsMap flags_map;
         for (const auto & symbol : symbols)
         {
             auto resolved = jsr.lookupFlags({*symbol});
             if (resolved && resolved->size())
-                flags.emplace(symbol, resolved->begin()->second);
+                flags_map.emplace(symbol, resolved->begin()->second);
         }
-        return flags;
+        return flags_map;
     };
 #endif
 
-    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols)
+    auto symbols = [&](std::shared_ptr<llvm::orc::AsynchronousSymbolQuery> query, llvm::orc::SymbolNameSet symbols_set)
     {
         llvm::orc::SymbolNameSet missing;
-        for (const auto & symbol : symbols)
+        for (const auto & symbol : symbols_set)
         {
             auto resolved = jsr.lookup({*symbol});
             if (resolved && resolved->size())
@@ -275,20 +275,20 @@ struct LLVMContext
     {
         if (!module->size())
             return 0;
-        llvm::PassManagerBuilder builder;
+        llvm::PassManagerBuilder pass_manager_builder;
         llvm::legacy::PassManager mpm;
         llvm::legacy::FunctionPassManager fpm(module.get());
-        builder.OptLevel = 3;
-        builder.SLPVectorize = true;
-        builder.LoopVectorize = true;
-        builder.RerollLoops = true;
-        builder.VerifyInput = true;
-        builder.VerifyOutput = true;
-        machine->adjustPassManager(builder);
+        pass_manager_builder.OptLevel = 3;
+        pass_manager_builder.SLPVectorize = true;
+        pass_manager_builder.LoopVectorize = true;
+        pass_manager_builder.RerollLoops = true;
+        pass_manager_builder.VerifyInput = true;
+        pass_manager_builder.VerifyOutput = true;
+        machine->adjustPassManager(pass_manager_builder);
         fpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
         mpm.add(llvm::createTargetTransformInfoWrapperPass(machine->getTargetIRAnalysis()));
-        builder.populateFunctionPassManager(fpm);
-        builder.populateModulePassManager(mpm);
+        pass_manager_builder.populateFunctionPassManager(fpm);
+        pass_manager_builder.populateModulePassManager(mpm);
         fpm.doInitialization();
         for (auto & function : *module)
             fpm.run(function);
