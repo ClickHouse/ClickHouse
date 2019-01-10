@@ -1349,7 +1349,7 @@ bool ParserKeyValueFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     auto function = std::make_shared<ASTKeyValueFunction>();
-    function->name = typeid_cast<Field &>(*identifier.get()).get<String>();
+    function->name = typeid_cast<ASTIdentifier &>(*identifier.get()).name;
     function->elements = expr_list_args;
     function->children.push_back(function->elements);
     node = function;

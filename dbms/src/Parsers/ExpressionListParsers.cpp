@@ -652,7 +652,7 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         return false;
 
     auto pair = std::make_shared<ASTPair>();
-    pair->first = typeid_cast<Field &>(*identifier.get()).get<String>();
+    pair->first = typeid_cast<ASTIdentifier &>(*identifier.get()).name;
     pair->second = literal;
     node = pair;
     return true;
