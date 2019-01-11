@@ -13,17 +13,6 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t num_threads, size_t queue_size)
     : num_threads(num_threads), queue_size(queue_size)
 {
     threads.reserve(num_threads);
-
-    try
-    {
-        for (size_t i = 0; i < num_threads; ++i)
-            threads.emplace_back([this] { worker(); });
-    }
-    catch (...)
-    {
-        finalize();
-        throw;
-    }
 }
 
 template <typename Thread>
