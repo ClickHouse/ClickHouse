@@ -330,7 +330,9 @@ public:
     virtual bool lowCardinality() const { return false; }
 
 
-    virtual ~IColumn() {}
+    virtual ~IColumn() = default;
+    IColumn() = default;
+    IColumn(const IColumn &) = default;
 
     /** Print column name, size, and recursively print all subcolumns.
       */

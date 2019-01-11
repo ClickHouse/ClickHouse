@@ -56,8 +56,6 @@ static inline void readText(time_t & x, ReadBuffer & istr, const FormatSettings 
         case FormatSettings::DateTimeInputFormat::BestEffort:
             parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
             return;
-        default:
-            __builtin_unreachable();
     }
 }
 
