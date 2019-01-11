@@ -6,14 +6,14 @@
 namespace DB
 {
 
-String ASTSource::getID(char) const
+String ASTDictionarySource::getID(char) const
 {
     return "Source definition";
 }
 
-ASTPtr ASTSource::clone() const
+ASTPtr ASTDictionarySource::clone() const
 {
-    auto res = std::make_shared<ASTSource>(*this);
+    auto res = std::make_shared<ASTDictionarySource>(*this);
     res->children.clear();
 
     if (source)
@@ -31,25 +31,34 @@ ASTPtr ASTSource::clone() const
     return res;
 }
 
-void ASTSource::formatImpl(const FormatSettings & settings,
-                           FormatState & state,
-                           FormatStateStacked frame) const
+void ASTDictionarySource::formatImpl(const FormatSettings & settings,
+                                     FormatState & state,
+                                     FormatStateStacked frame) const
 {
-    if (source)
-    {
-        settings.ostr << (settings.hilite ? hilite_none : "");
-        source->formatImpl(settings, state, frame);
-    }
-
     if (primary_key)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws
-                      << "PRIMARY KEY" << (settings.hilite ? hilite_none : "");
+                      << "PRIMARY KEY " << (settings.hilite ? hilite_none : "");
         primary_key->formatImpl(settings, state, frame);
     }
 
-    lifetime->formatImpl(settings, state, frame);
-    layout->formatImpl(settings, state, frame);
+    if (source)
+    {
+        settings.ostr << settings.nl_or_ws;
+        source->formatImpl(settings, state, frame);
+    }
+
+    if (lifetime)
+    {
+        settings.ostr << settings.nl_or_ws;
+        lifetime->formatImpl(settings, state, frame);
+    }
+
+    if (layout)
+    {
+        settings.ostr << settings.nl_or_ws;
+        layout->formatImpl(settings, state, frame);
+    }
 }
 
 }

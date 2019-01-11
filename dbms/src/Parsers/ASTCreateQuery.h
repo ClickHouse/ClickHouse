@@ -82,19 +82,18 @@ public:
 };
 
 
-class ASTSource : public IAST
+class ASTDictionarySource : public IAST
 {
 public:
-    ASTFunction * source = nullptr;
+    ASTKeyValueFunction * source = nullptr;
+    IAST * primary_key = nullptr;
     String password;
     UInt16 port;
     String user;
-    ASTFunction * replica = nullptr;
     String database;
     String table;
-    ASTFunction * lifetime;
-    ASTFunction * layout;
-    IAST * primary_key;
+    ASTKeyValueFunction * lifetime;
+    ASTKeyValueFunction * layout;
 
     String getID(char delimiter) const override;
 
@@ -109,7 +108,7 @@ class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnC
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
-    bool replace{false};   /// Query CREATE OR REPLACE {TABLE,DICTIONARY}.
+    bool or_replace{false};   /// Query CREATE OR REPLACE DICTIONARY.
     bool if_not_exists{false};
     bool is_view{false};
     bool is_materialized_view{false};
@@ -121,7 +120,7 @@ public:
     String as_database;
     String as_table;
     ASTSelectWithUnionQuery * select = nullptr;
-    ASTSource * dictionary_source = nullptr;
+    ASTDictionarySource * dictionary_source = nullptr;
 
 
     /** Get the text that identifies this element. */
