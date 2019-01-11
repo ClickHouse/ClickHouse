@@ -4,7 +4,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/NamesAndTypes.h>
 #include <port/clock.h>
 
@@ -120,7 +120,7 @@ private:
     size_t max_read_buffer_size;
     size_t index_granularity;
 
-    void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+    void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(

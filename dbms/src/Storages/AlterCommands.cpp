@@ -398,7 +398,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             {
                 const auto & default_expression = default_column.second.expression;
                 ASTPtr query = default_expression;
-                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                 const auto required_columns = actions->getRequiredColumns();
 
@@ -473,7 +473,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
     }
 
     ASTPtr query = default_expr_list;
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
     const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
     const auto block = actions->getSampleBlock();
 

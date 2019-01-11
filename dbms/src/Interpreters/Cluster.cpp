@@ -54,6 +54,9 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
 
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
+    if (config.has(config_prefix + ".user"))
+        user_specified = true;
+
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");

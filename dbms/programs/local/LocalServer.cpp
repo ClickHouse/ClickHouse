@@ -66,11 +66,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(Context & context)
+void LocalServer::applyCmdSettings()
 {
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (cmd_settings.NAME.changed) \
-            context.getSettingsRef().NAME = cmd_settings.NAME;
+            context->getSettingsRef().NAME = cmd_settings.NAME;
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 }
@@ -179,7 +179,7 @@ try
     std::string default_database = config().getString("default_database", "_local");
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
-    applyCmdOptions(*context);
+    applyCmdOptions();
 
     if (!context->getPath().empty())
     {
@@ -274,7 +274,7 @@ void LocalServer::processQueries()
 
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
-    applyCmdSettings(*context);
+    applyCmdSettings();
 
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(*context);
@@ -494,10 +494,10 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
 }
 
-void LocalServer::applyCmdOptions(Context & context)
+void LocalServer::applyCmdOptions()
 {
-    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-    applyCmdSettings(context);
+    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings();
 }
 
 }

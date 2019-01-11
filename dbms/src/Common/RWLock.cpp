@@ -70,7 +70,7 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type)
     GroupsContainer::iterator it_group;
     ClientsContainer::iterator it_client;
 
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
 
     /// Check if the same thread is acquiring previously acquired lock
     auto it_handler = thread_to_handler.find(this_thread_id);
@@ -139,7 +139,7 @@ RWLockImpl::LockHandler RWLockImpl::getLock(RWLockImpl::Type type)
 
 RWLockImpl::LockHandlerImpl::~LockHandlerImpl()
 {
-    std::unique_lock<std::mutex> lock(parent->mutex);
+    std::unique_lock lock(parent->mutex);
 
     /// Remove weak_ptr to the handler, since there are no owners of the current lock
     parent->thread_to_handler.erase(it_handler);

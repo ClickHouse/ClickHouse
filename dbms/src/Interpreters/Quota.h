@@ -183,7 +183,8 @@ public:
     }
 
     QuotaForIntervals() = default;
-    QuotaForIntervals(const QuotaForIntervals & other) = default;
+    QuotaForIntervals(const QuotaForIntervals &) = default;
+    QuotaForIntervals & operator=(const QuotaForIntervals &) = default;
 
     /// Is there at least one interval for counting quota?
     bool empty() const

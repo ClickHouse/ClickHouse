@@ -66,7 +66,7 @@ public:
     void write(const Block & block) override
     {
         storage.check(block, true);
-        std::lock_guard<std::mutex> lock(storage.mutex);
+        std::lock_guard lock(storage.mutex);
         storage.data.push_back(block);
     }
 private:
@@ -90,7 +90,7 @@ BlockInputStreams StorageMemory::read(
 {
     check(column_names);
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     size_t size = data.size();
 
@@ -123,13 +123,13 @@ BlockOutputStreamPtr StorageMemory::write(
 
 void StorageMemory::drop()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     data.clear();
 }
 
-void StorageMemory::truncate(const ASTPtr &)
+void StorageMemory::truncate(const ASTPtr &, const Context &)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     data.clear();
 }
 

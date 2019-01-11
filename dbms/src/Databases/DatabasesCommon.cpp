@@ -88,7 +88,7 @@ bool DatabaseWithOwnTablesBase::isTableExist(
     const Context & /*context*/,
     const String & table_name) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
 }
 
@@ -96,7 +96,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     const Context & /*context*/,
     const String & table_name) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it == tables.end())
         return {};
@@ -105,13 +105,13 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
 
 DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return std::make_unique<DatabaseSnapshotIterator>(tables);
 }
 
 bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     return tables.empty();
 }
 
@@ -119,7 +119,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 {
     StoragePtr res;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         auto it = tables.find(table_name);
         if (it == tables.end())
             throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
@@ -132,7 +132,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 
 void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
@@ -144,7 +144,7 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     Tables tables_snapshot;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         tables_snapshot = tables;
     }
 
@@ -153,7 +153,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         kv.second->shutdown();
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     tables.clear();
 }
 
