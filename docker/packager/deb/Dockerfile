@@ -24,9 +24,6 @@ RUN apt-get --allow-unauthenticated update -y \
             lld-7 \
             libclang-7-dev \
             liblld-7-dev \
-            llvm-7 \
-            libllvm7 \
-            llvm-7-dev \
             libicu-dev \
             libreadline-dev \
             ninja-build \
