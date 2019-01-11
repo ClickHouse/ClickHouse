@@ -625,7 +625,7 @@ Path to temporary data for processing large queries.
 ```
 
 
-## uncompressed_cache_size {#server-setting-uncompressed_cache_size}
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
 
