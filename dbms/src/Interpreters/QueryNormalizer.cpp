@@ -60,16 +60,213 @@ private:
 };
 
 
+void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
+{
+    auto & aliases = data.aliases;
+    String & func_name = node.name;
+    ASTPtr & func_arguments = node.arguments;
+
+    /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
+    if (functionIsInOrGlobalInOperator(func_name))
+        if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_arguments->children.at(1).get()))
+            if (!aliases.count(right->name))
+                right->setSpecial();
+
+    /// Special cases for count function.
+    String func_name_lowercase = Poco::toLower(func_name);
+    if (startsWith(func_name_lowercase, "count"))
+    {
+        /// Select implementation of countDistinct based on settings.
+        /// Important that it is done as query rewrite. It means rewritten query
+        ///  will be sent to remote servers during distributed query execution,
+        ///  and on all remote servers, function implementation will be same.
+        if (endsWith(func_name, "Distinct") && func_name_lowercase == "countdistinct")
+            func_name = data.settings.count_distinct_implementation;
+
+        /// As special case, treat count(*) as count(), not as count(list of all columns).
+        if (func_name_lowercase == "count" && func_arguments->children.size() == 1
+            && typeid_cast<const ASTAsterisk *>(func_arguments->children[0].get()))
+        {
+            func_arguments->children.clear();
+        }
+    }
+}
+
+void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
+{
+    auto & current_asts = data.current_asts;
+    String & current_alias = data.current_alias;
+
+    if (!node.general())
+        return;
+
+    /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
+    auto it_alias = data.aliases.find(node.name);
+    if (it_alias != data.aliases.end() && current_alias != node.name)
+    {
+        auto & alias_node = it_alias->second;
+
+        /// Let's replace it with the corresponding tree node.
+        if (current_asts.count(alias_node.get()))
+            throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
+
+        String my_alias = ast->tryGetAlias();
+        if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
+        {
+            /// Avoid infinite recursion here
+            auto replace_to_identifier = typeid_cast<ASTIdentifier *>(alias_node.get());
+            bool is_cycle = replace_to_identifier && replace_to_identifier->general()
+                && replace_to_identifier->name == node.name;
+
+            if (!is_cycle)
+            {
+                /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
+                ast = alias_node->clone();
+                ast->setAlias(my_alias);
+            }
+        }
+        else
+            ast = alias_node;
+    }
+}
+
+/// Replace *, alias.*, database.table.* with a list of columns.
+void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & data)
+{
+    auto & tables_with_columns = data.tables_with_columns;
+
+    ASTs old_children;
+    if (data.processAsterisks())
+    {
+        bool has_asterisk = false;
+        for (const auto & child : node.children)
+        {
+            if (typeid_cast<const ASTAsterisk *>(child.get()) ||
+                typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
+            {
+                has_asterisk = true;
+                break;
+            }
+        }
+
+        if (has_asterisk)
+        {
+            old_children.swap(node.children);
+            node.children.reserve(old_children.size());
+        }
+    }
+
+    for (const auto & child : old_children)
+    {
+        if (typeid_cast<const ASTAsterisk *>(child.get()))
+        {
+            for (const auto & pr : tables_with_columns)
+                for (const auto & column_name : pr.second)
+                    node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+        }
+        else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
+        {
+            const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
+            size_t num_components = identifier->children.size();
+
+            for (const auto & [table_name, table_columns] : tables_with_columns)
+            {
+                if ((num_components == 2                    /// database.table.*
+                        && !table_name.database.empty()     /// This is normal (not a temporary) table.
+                        && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
+                        && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
+                    || (num_components == 0                                                         /// t.*
+                        && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
+                            || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
+                {
+                    for (const auto & column_name : table_columns)
+                        node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
+                    break;
+                }
+            }
+        }
+        else
+            node.children.emplace_back(child);
+    }
+}
+
+/// mark table identifiers as 'not columns'
+void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &, Data &)
+{
+    if (node.table_expression)
+    {
+        auto & database_and_table_name = static_cast<ASTTableExpression &>(*node.table_expression).database_and_table_name;
+        if (database_and_table_name)
+            if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(database_and_table_name.get()))
+                right->setSpecial();
+    }
+}
+
+/// special visitChildren() for ASTSelectQuery
+void QueryNormalizer::visit(ASTSelectQuery & select, const ASTPtr & ast, Data & data)
+{
+    for (auto & child : ast->children)
+    {
+        if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
+            typeid_cast<const ASTTableExpression *>(child.get()))
+            continue;
+
+        visit(child, data);
+    }
+
+    /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children,
+    /// but also in where_expression and having_expression.
+    if (select.prewhere_expression)
+        visit(select.prewhere_expression, data);
+    if (select.where_expression)
+        visit(select.where_expression, data);
+    if (select.having_expression)
+        visit(select.having_expression, data);
+}
+
+/// Don't go into subqueries.
+/// Don't go into components of compound identifiers.
+/// Don't go into select query. It processes children itself.
+/// Do not go to the left argument of lambda expressions, so as not to replace the formal parameters
+///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
+void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
+{
+    ASTFunction * func_node = typeid_cast<ASTFunction *>(node.get());
+    if (func_node && func_node->name == "lambda")
+    {
+        /// We skip the first argument. We also assume that the lambda function can not have parameters.
+        for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
+        {
+            auto & child = func_node->arguments->children[i];
+
+            if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
+                typeid_cast<const ASTTableExpression *>(child.get()))
+                continue;
+
+            visit(child, data);
+        }
+    }
+    else if (!typeid_cast<ASTIdentifier *>(node.get()) &&
+             !typeid_cast<ASTSelectQuery *>(node.get()))
+    {
+        for (auto & child : node->children)
+        {
+            if (typeid_cast<const ASTSelectQuery *>(child.get()) ||
+                typeid_cast<const ASTTableExpression *>(child.get()))
+                continue;
+
+            visit(child, data);
+        }
+    }
+}
+
 void QueryNormalizer::visit(ASTPtr & ast, Data & data)
 {
     CheckASTDepth scope1(data);
     RestoreAliasOnExitScope scope2(data.current_alias);
 
-    auto & aliases = data.aliases;
-    auto & tables_with_columns = data.tables_with_columns;
     auto & finished_asts = data.finished_asts;
     auto & current_asts = data.current_asts;
-    String & current_alias = data.current_alias;
 
     if (finished_asts.count(ast))
     {
@@ -80,206 +277,34 @@ void QueryNormalizer::visit(ASTPtr & ast, Data & data)
     ASTPtr initial_ast = ast;
     current_asts.insert(initial_ast.get());
 
-    String my_alias = ast->tryGetAlias();
-    if (!my_alias.empty())
-        current_alias = my_alias;
-
-    /// rewrite rules that act when you go from top to bottom.
-    bool replaced = false;
-
-    ASTIdentifier * identifier_node = nullptr;
-    ASTFunction * func_node = nullptr;
-
-    if ((func_node = typeid_cast<ASTFunction *>(ast.get())))
     {
-        /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
-        if (functionIsInOrGlobalInOperator(func_node->name))
-            if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
-                if (!aliases.count(right->name))
-                    right->setSpecial();
-
-        /// Special cases for count function.
-        String func_name_lowercase = Poco::toLower(func_node->name);
-        if (startsWith(func_name_lowercase, "count"))
-        {
-            /// Select implementation of countDistinct based on settings.
-            /// Important that it is done as query rewrite. It means rewritten query
-            ///  will be sent to remote servers during distributed query execution,
-            ///  and on all remote servers, function implementation will be same.
-            if (endsWith(func_node->name, "Distinct") && func_name_lowercase == "countdistinct")
-                func_node->name = data.settings.count_distinct_implementation;
-
-            /// As special case, treat count(*) as count(), not as count(list of all columns).
-            if (func_name_lowercase == "count" && func_node->arguments->children.size() == 1
-                && typeid_cast<const ASTAsterisk *>(func_node->arguments->children[0].get()))
-            {
-                func_node->arguments->children.clear();
-            }
-        }
+        String my_alias = ast->tryGetAlias();
+        if (!my_alias.empty())
+            data.current_alias = my_alias;
     }
-    else if ((identifier_node = typeid_cast<ASTIdentifier *>(ast.get())))
-    {
-        if (identifier_node->general())
-        {
-            /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
-            auto it_alias = aliases.find(identifier_node->name);
-            if (it_alias != aliases.end() && current_alias != identifier_node->name)
-            {
-                /// Let's replace it with the corresponding tree node.
-                if (current_asts.count(it_alias->second.get()))
-                    throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
-                if (!my_alias.empty() && my_alias != it_alias->second->getAliasOrColumnName())
-                {
-                    /// Avoid infinite recursion here
-                    auto replace_to_identifier = typeid_cast<ASTIdentifier *>(it_alias->second.get());
-                    bool is_cycle = replace_to_identifier && replace_to_identifier->general()
-                        && replace_to_identifier->name == identifier_node->name;
-
-                    if (!is_cycle)
-                    {
-                        /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
-                        ast = it_alias->second->clone();
-                        ast->setAlias(my_alias);
-                        replaced = true;
-                    }
-                }
-                else
-                {
-                    ast = it_alias->second;
-                    replaced = true;
-                }
-            }
-        }
-    }
-    else if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
-    {
-        /// Replace *, alias.*, database.table.* with a list of columns.
-
-        ASTs old_children;
-        if (data.processAsterisks())
-        {
-            bool has_asterisk = false;
-            for (const auto & child : expr_list->children)
-            {
-                if (typeid_cast<const ASTAsterisk *>(child.get()) ||
-                    typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
-                {
-                    has_asterisk = true;
-                    break;
-                }
-            }
-
-            if (has_asterisk)
-            {
-                old_children.swap(expr_list->children);
-                expr_list->children.reserve(old_children.size());
-            }
-        }
-
-        for (const auto & child : old_children)
-        {
-            if (typeid_cast<const ASTAsterisk *>(child.get()))
-            {
-                for (const auto & pr : tables_with_columns)
-                    for (const auto & column_name : pr.second)
-                        expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-            }
-            else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
-            {
-                const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
-                size_t num_components = identifier->children.size();
-
-                for (const auto & [table_name, table_columns] : tables_with_columns)
-                {
-                    if ((num_components == 2                    /// database.table.*
-                            && !table_name.database.empty()     /// This is normal (not a temporary) table.
-                            && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
-                            && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
-                        || (num_components == 0                                                         /// t.*
-                            && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
-                                || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
-                    {
-                        for (const auto & column_name : table_columns)
-                            expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
-                        break;
-                    }
-                }
-            }
-            else
-                expr_list->children.emplace_back(child);
-        }
-    }
-    else if (ASTTablesInSelectQueryElement * tables_elem = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
-    {
-        if (tables_elem->table_expression)
-        {
-            auto & database_and_table_name = static_cast<ASTTableExpression &>(*tables_elem->table_expression).database_and_table_name;
-            if (database_and_table_name)
-            {
-                if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(database_and_table_name.get()))
-                    right->setSpecial();
-            }
-        }
-    }
+    if (auto * node = typeid_cast<ASTFunction *>(ast.get()))
+        visit(*node, ast, data);
+    if (auto * node = typeid_cast<ASTIdentifier *>(ast.get()))
+        visit(*node, ast, data);
+    if (auto * node = typeid_cast<ASTExpressionList *>(ast.get()))
+        visit(*node, ast, data);
+    if (auto * node = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
+        visit(*node, ast, data);
+    if (auto * node = typeid_cast<ASTSelectQuery *>(ast.get()))
+        visit(*node, ast, data);
 
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
-    if (replaced)
-    {
+    if (ast.get() != initial_ast.get())
         visit(ast, data);
-        current_asts.erase(initial_ast.get());
-        current_asts.erase(ast.get());
-        finished_asts[initial_ast] = ast;
-        return;
-    }
-
-    /// Recurring calls. Don't go into subqueries. Don't go into components of compound identifiers.
-    /// We also do not go to the left argument of lambda expressions, so as not to replace the formal parameters
-    ///  on aliases in expressions of the form 123 AS x, arrayMap(x -> 1, [2]).
-
-    if (func_node && func_node->name == "lambda")
-    {
-        /// We skip the first argument. We also assume that the lambda function can not have parameters.
-        for (size_t i = 1, size = func_node->arguments->children.size(); i < size; ++i)
-        {
-            auto & child = func_node->arguments->children[i];
-
-            if (typeid_cast<const ASTSelectQuery *>(child.get()) || typeid_cast<const ASTTableExpression *>(child.get()))
-                continue;
-
-            visit(child, data);
-        }
-    }
-    else if (identifier_node)
-    {
-    }
     else
-    {
-        for (auto & child : ast->children)
-        {
-            if (typeid_cast<const ASTSelectQuery *>(child.get()) || typeid_cast<const ASTTableExpression *>(child.get()))
-                continue;
-
-            visit(child, data);
-        }
-    }
-
-    /// If the WHERE clause or HAVING consists of a single alias, the reference must be replaced not only in children, but also in where_expression and having_expression.
-    if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
-    {
-        if (select->prewhere_expression)
-            visit(select->prewhere_expression, data);
-        if (select->where_expression)
-            visit(select->where_expression, data);
-        if (select->having_expression)
-            visit(select->having_expression, data);
-    }
+        visitChildren(ast, data);
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());
     finished_asts[initial_ast] = ast;
 
-    /// @note can not place it in CheckASTDepth dror cause of throw.
+    /// @note can not place it in CheckASTDepth dtor cause of exception.
     if (data.level == 1)
     {
         try

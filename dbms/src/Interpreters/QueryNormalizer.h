@@ -18,6 +18,12 @@ inline bool functionIsInOrGlobalInOperator(const String & name)
 }
 
 
+class ASTFunction;
+class ASTIdentifier;
+class ASTExpressionList;
+struct ASTTablesInSelectQueryElement;
+
+
 class QueryNormalizer
 {
     /// Extracts settings, mostly to show which are used and which are not.
@@ -76,7 +82,15 @@ public:
 private:
     Data & visitor_data;
 
-    void visit(ASTPtr & query, Data & data);
+    static void visit(ASTPtr & query, Data & data);
+
+    static void visit(ASTIdentifier &, ASTPtr &, Data &);
+    static void visit(ASTFunction &, const ASTPtr &, Data &);
+    static void visit(ASTExpressionList &, const ASTPtr &, Data &);
+    static void visit(ASTTablesInSelectQueryElement &, const ASTPtr &, Data &);
+    static void visit(ASTSelectQuery &, const ASTPtr &, Data &);
+
+    static void visitChildren(const ASTPtr &, Data & data);
 };
 
 }
