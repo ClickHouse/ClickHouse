@@ -71,6 +71,7 @@ set(ARROW_SRCS
   ${LIBRARY_DIR}/table.cc
   ${LIBRARY_DIR}/table_builder.cc
   ${LIBRARY_DIR}/tensor.cc
+  ${LIBRARY_DIR}/sparse_tensor.cc
   ${LIBRARY_DIR}/type.cc
   ${LIBRARY_DIR}/visitor.cc
 
