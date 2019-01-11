@@ -28,25 +28,26 @@ public:
         if (!enabled_)
             return;
 
-        String full_comment;
         Lexer lexer(query.data(), query.data() + query.size());
 
         for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
         {
             if (token.type == TokenType::Comment)
-                full_comment += String(token.begin, token.begin + token.size()) + ' ';
-        }
-
-        if (!full_comment.empty())
-        {
-            size_t pos_start = full_comment.find('{', 0);
-            if (pos_start != String::npos)
             {
-                size_t pos_end = full_comment.find('}', pos_start);
-                if (pos_end != String::npos)
+                String comment(token.begin, token.begin + token.size());
+
+                if (!comment.empty())
                 {
-                    String hint(full_comment.begin() + pos_start + 1, full_comment.begin() + pos_end);
-                    parse(hint);
+                    size_t pos_start = comment.find('{', 0);
+                    if (pos_start != String::npos)
+                    {
+                        size_t pos_end = comment.find('}', pos_start);
+                        if (pos_end != String::npos)
+                        {
+                            String hint(comment.begin() + pos_start + 1, comment.begin() + pos_end);
+                            parse(hint);
+                        }
+                    }
                 }
             }
         }

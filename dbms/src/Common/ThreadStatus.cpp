@@ -21,9 +21,6 @@ namespace ErrorCodes
 }
 
 
-extern SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
-
-
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
@@ -74,7 +71,7 @@ void ThreadStatus::initPerformanceCounters()
         if (TaskStatsInfoGetter::checkPermissions())
         {
             if (!taskstats_getter)
-                taskstats_getter = task_stats_info_getter_pool.getDefault();
+                taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
 
             *last_taskstats = TasksStatsCounters::current();
         }

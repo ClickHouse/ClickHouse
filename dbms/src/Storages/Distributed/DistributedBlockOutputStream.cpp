@@ -6,7 +6,7 @@
 #include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -62,8 +62,9 @@ namespace ErrorCodes
 DistributedBlockOutputStream::DistributedBlockOutputStream(
     StorageDistributed & storage, const ASTPtr & query_ast, const ClusterPtr & cluster_,
     const Settings & settings_, bool insert_sync_, UInt64 insert_timeout_)
-    : storage(storage), query_ast(query_ast), cluster(cluster_), settings(settings_), insert_sync(insert_sync_),
-      insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
+        : storage(storage), query_ast(query_ast), query_string(queryToString(query_ast)),
+        cluster(cluster_), settings(settings_), insert_sync(insert_sync_),
+        insert_timeout(insert_timeout_), log(&Logger::get("DistributedBlockOutputStream"))
 {
 }
 
@@ -283,7 +284,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             if (!job.stream)
             {
                 /// Forward user settings
-                job.local_context = std::make_unique<Context>(storage.context);
+                job.local_context = std::make_unique<Context>(storage.global_context);
                 job.local_context->setSettings(settings);
 
                 InterpreterInsertQuery interp(query_ast, *job.local_context);
@@ -313,7 +314,6 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
         initWritingJobs(block);
 
         pool.emplace(remote_jobs_count + local_jobs_count);
-        query_string = queryToString(query_ast);
 
         if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
         {
@@ -505,7 +505,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
 void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_t repeats)
 {
     /// Async insert does not support settings forwarding yet whereas sync one supports
-    InterpreterInsertQuery interp(query_ast, storage.context);
+    InterpreterInsertQuery interp(query_ast, storage.global_context);
 
     auto block_io = interp.execute();
     block_io.out->writePrefix();
@@ -525,7 +525,6 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
     std::string first_file_tmp_path{};
 
     auto first = true;
-    const auto & query_string = queryToString(query_ast);
 
     /// write first file, hardlink the others
     for (const auto & dir_name : dir_names)

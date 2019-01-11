@@ -162,11 +162,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus(error));
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
@@ -190,11 +190,11 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
     try
     {
         commitPart(zookeeper, part, "");
-        PartLog::addNewPart(storage.context, part, watch.elapsed());
+        PartLog::addNewPart(storage.global_context, part, watch.elapsed());
     }
     catch (...)
     {
-        PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        PartLog::addNewPart(storage.global_context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
         throw;
     }
 }

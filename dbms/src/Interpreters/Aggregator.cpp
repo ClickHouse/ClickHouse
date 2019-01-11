@@ -15,7 +15,7 @@
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
@@ -196,7 +196,7 @@ Aggregator::Aggregator(const Params & params_)
 
 void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (compiled_if_possible)
         return;
@@ -598,10 +598,6 @@ void NO_INLINE Aggregator::executeImpl(
         executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
@@ -617,7 +613,7 @@ void NO_INLINE Aggregator::executeImplCase(
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
 
     /// For all rows.
-    typename Method::Key prev_key;
+    typename Method::Key prev_key{};
     AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {
@@ -707,9 +703,6 @@ void NO_INLINE Aggregator::executeImplCase(
     }
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic pop
-#endif
 
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
@@ -966,7 +959,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     double uncompressed_bytes = compressed_buf.count();
 
     {
-        std::lock_guard<std::mutex> lock(temporary_files.mutex);
+        std::lock_guard lock(temporary_files.mutex);
         temporary_files.files.emplace_back(std::move(file));
         temporary_files.sum_size_uncompressed += uncompressed_bytes;
         temporary_files.sum_size_compressed += compressed_bytes;
@@ -1819,7 +1812,7 @@ protected:
 
             while (true)
             {
-                std::unique_lock<std::mutex> lock(parallel_merge_data->mutex);
+                std::unique_lock lock(parallel_merge_data->mutex);
 
                 if (parallel_merge_data->exception)
                     std::rethrow_exception(parallel_merge_data->exception);
@@ -1909,12 +1902,12 @@ private:
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)
         #undef M
 
-            std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
+            std::lock_guard lock(parallel_merge_data->mutex);
             parallel_merge_data->ready_blocks[bucket_num] = std::move(block);
         }
         catch (...)
         {
-            std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
+            std::lock_guard lock(parallel_merge_data->mutex);
             if (!parallel_merge_data->exception)
                 parallel_merge_data->exception = std::current_exception();
         }

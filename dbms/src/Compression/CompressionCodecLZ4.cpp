@@ -1,13 +1,17 @@
-#include <Compression/CompressionCodecLZ4.h>
+#include "CompressionCodecLZ4.h"
+
 #include <lz4.h>
 #include <lz4hc.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <IO/LZ4_decompress_faster.h>
+#include <Compression/LZ4_decompress_faster.h>
 #include "CompressionCodecLZ4.h"
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
 
 
 namespace DB

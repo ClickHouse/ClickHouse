@@ -49,8 +49,9 @@ public:
             case Month: return "Month";
             case Quarter: return "Quarter";
             case Year: return "Year";
-            default: __builtin_unreachable();
         }
+
+        __builtin_unreachable();
     }
 
     DataTypeInterval(Kind kind) : kind(kind) {}

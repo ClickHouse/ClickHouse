@@ -242,7 +242,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!defaulted_columns.empty())
     {
-        auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, columns);
+        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         const auto block = actions->getSampleBlock();
 
@@ -362,11 +362,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         column_declaration->name = column.name;
 
         StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto pos = type_name->data();
-        const auto end = pos + type_name->size();
+        auto type_name_pos = type_name->data();
+        const auto type_name_end = type_name_pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
+        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
         column_declaration->type->owned_string = type_name;
 
         const auto defaults_it = columns.defaults.find(column.name);
@@ -387,10 +387,10 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         {
             String codec_desc = ct->second->getCodecDesc();
             codec_desc = "CODEC(" + codec_desc + ")";
-            auto pos = codec_desc.data();
-            const auto end = pos + codec_desc.size();
+            auto codec_desc_pos = codec_desc.data();
+            const auto codec_desc_end = codec_desc_pos + codec_desc.size();
             ParserIdentifierWithParameters codec_p;
-            column_declaration->codec = parseQuery(codec_p, pos, end, "column codec", 0);
+            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
         }
 
         columns_list->children.push_back(column_declaration_ptr);
