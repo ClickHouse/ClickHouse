@@ -1222,18 +1222,21 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
 
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
+        database_name, table_name, future_mutated_part.name, future_mutated_part.parts);
+
     Stopwatch stopwatch;
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
         writePartLog(
             PartLogElement::MUTATE_PART, execution_status, stopwatch.elapsed(),
-            entry.new_part_name, new_part, future_mutated_part.parts, nullptr);
+            entry.new_part_name, new_part, future_mutated_part.parts, merge_entry.get());
     };
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, global_context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, *merge_entry, global_context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try

@@ -96,7 +96,7 @@ public:
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FuturePart & future_part,
         const std::vector<MutationCommand> & commands,
-        const Context & context);
+        MergeListEntry & merge_entry, const Context & context);
 
     MergeTreeData::DataPartPtr renameMergedTemporaryPart(
         MergeTreeData::MutableDataPartPtr & new_data_part,

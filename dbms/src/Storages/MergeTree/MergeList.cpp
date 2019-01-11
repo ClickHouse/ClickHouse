@@ -24,6 +24,16 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     if (!source_parts.empty())
         partition_id = source_parts[0]->info.partition_id;
 
+    num_parts = source_parts.size();
+
+    for (const MergeTreeData::DataPartPtr & part : source_parts)
+    {
+        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
+
+        total_size_bytes_compressed += part->bytes_on_disk;
+        total_size_marks += part->marks_count;
+    }
+
     /// Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = &CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
