@@ -319,9 +319,12 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
     TranslateQualifiedNamesVisitor::Data qn_visitor_data{{}, tables};
     TranslateQualifiedNamesVisitor(qn_visitor_data).visit(ast);
+
     QueryAliasesVisitor::Data query_aliases_data{aliases};
     QueryAliasesVisitor(query_aliases_data).visit(ast);
-    QueryNormalizer(ast, aliases, settings).perform();
+
+    QueryNormalizer::Data normalizer_data(aliases, settings);
+    QueryNormalizer(normalizer_data).visit(ast);
 
     for (const auto & projection_column : select_query->select_expression_list->children)
     {

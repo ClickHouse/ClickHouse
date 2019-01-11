@@ -20,36 +20,56 @@ namespace ErrorCodes
     extern const int CYCLIC_ALIASES;
 }
 
-
-QueryNormalizer::QueryNormalizer(ASTPtr & query_, const QueryNormalizer::Aliases & aliases_, ExtractedSettings && settings_,
-                                 std::vector<TableWithColumnNames> && tables_with_columns_)
-    : query(query_), aliases(aliases_), settings(settings_), tables_with_columns(tables_with_columns_)
-{}
-
-void QueryNormalizer::perform()
+class CheckASTDepth
 {
-    SetOfASTs tmp_set;
-    MapOfASTs tmp_map;
-    performImpl(query, tmp_map, tmp_set, "", 0);
-
-    try
+public:
+    CheckASTDepth(QueryNormalizer::Data & data_)
+        : data(data_)
     {
-        query->checkSize(settings.max_expanded_ast_elements);
+        if (data.level > data.settings.max_ast_depth)
+            throw Exception("Normalized AST is too deep. Maximum: " + toString(data.settings.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+        ++data.level;
     }
-    catch (Exception & e)
-    {
-        e.addMessage("(after expansion of aliases)");
-        throw;
-    }
-}
 
-/// finished_asts - already processed vertices (and by what they replaced)
-/// current_asts - vertices in the current call stack of this method
-/// current_alias - the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
-void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level)
+    ~CheckASTDepth()
+    {
+        --data.level;
+    }
+
+private:
+    QueryNormalizer::Data & data;
+};
+
+
+class RestoreAliasOnExitScope
 {
-    if (level > settings.max_ast_depth)
-        throw Exception("Normalized AST is too deep. Maximum: " + toString(settings.max_ast_depth), ErrorCodes::TOO_DEEP_AST);
+public:
+    RestoreAliasOnExitScope(String & alias_)
+        : alias(alias_)
+        , copy(alias_)
+    {}
+
+    ~RestoreAliasOnExitScope()
+    {
+        alias = copy;
+    }
+
+private:
+    String & alias;
+    const String copy;
+};
+
+
+void QueryNormalizer::visit(ASTPtr & ast, Data & data)
+{
+    CheckASTDepth scope1(data);
+    RestoreAliasOnExitScope scope2(data.current_alias);
+
+    auto & aliases = data.aliases;
+    auto & tables_with_columns = data.tables_with_columns;
+    auto & finished_asts = data.finished_asts;
+    auto & current_asts = data.current_asts;
+    String & current_alias = data.current_alias;
 
     if (finished_asts.count(ast))
     {
@@ -87,7 +107,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
             ///  will be sent to remote servers during distributed query execution,
             ///  and on all remote servers, function implementation will be same.
             if (endsWith(func_node->name, "Distinct") && func_name_lowercase == "countdistinct")
-                func_node->name = settings.count_distinct_implementation;
+                func_node->name = data.settings.count_distinct_implementation;
 
             /// As special case, treat count(*) as count(), not as count(list of all columns).
             if (func_name_lowercase == "count" && func_node->arguments->children.size() == 1
@@ -137,7 +157,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
         /// Replace *, alias.*, database.table.* with a list of columns.
 
         ASTs old_children;
-        if (processAsterisks())
+        if (data.processAsterisks())
         {
             bool has_asterisk = false;
             for (const auto & child : expr_list->children)
@@ -206,7 +226,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     /// If we replace the root of the subtree, we will be called again for the new root, in case the alias is replaced by an alias.
     if (replaced)
     {
-        performImpl(ast, finished_asts, current_asts, current_alias, level + 1);
+        visit(ast, data);
         current_asts.erase(initial_ast.get());
         current_asts.erase(ast.get());
         finished_asts[initial_ast] = ast;
@@ -227,7 +247,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
             if (typeid_cast<const ASTSelectQuery *>(child.get()) || typeid_cast<const ASTTableExpression *>(child.get()))
                 continue;
 
-            performImpl(child, finished_asts, current_asts, current_alias, level + 1);
+            visit(child, data);
         }
     }
     else if (identifier_node)
@@ -240,7 +260,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
             if (typeid_cast<const ASTSelectQuery *>(child.get()) || typeid_cast<const ASTTableExpression *>(child.get()))
                 continue;
 
-            performImpl(child, finished_asts, current_asts, current_alias, level + 1);
+            visit(child, data);
         }
     }
 
@@ -248,16 +268,30 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
     {
         if (select->prewhere_expression)
-            performImpl(select->prewhere_expression, finished_asts, current_asts, current_alias, level + 1);
+            visit(select->prewhere_expression, data);
         if (select->where_expression)
-            performImpl(select->where_expression, finished_asts, current_asts, current_alias, level + 1);
+            visit(select->where_expression, data);
         if (select->having_expression)
-            performImpl(select->having_expression, finished_asts, current_asts, current_alias, level + 1);
+            visit(select->having_expression, data);
     }
 
     current_asts.erase(initial_ast.get());
     current_asts.erase(ast.get());
     finished_asts[initial_ast] = ast;
+
+    /// @note can not place it in CheckASTDepth dror cause of throw.
+    if (data.level == 1)
+    {
+        try
+        {
+            ast->checkSize(data.settings.max_expanded_ast_elements);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("(after expansion of aliases)");
+            throw;
+        }
+    }
 }
 
 }
