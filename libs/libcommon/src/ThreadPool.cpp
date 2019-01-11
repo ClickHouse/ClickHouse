@@ -12,6 +12,17 @@ ThreadPool::ThreadPool(size_t num_threads, size_t queue_size)
     : num_threads(num_threads), queue_size(queue_size)
 {
     threads.reserve(num_threads);
+
+    try
+    {
+        for (size_t i = 0; i < num_threads; ++i)
+            threads.emplace_back([this] { worker(); });
+    }
+    catch (...)
+    {
+        finalize();
+        throw;
+    }
 }
 
 
@@ -49,6 +60,11 @@ void ThreadPool::wait()
 
 ThreadPool::~ThreadPool()
 {
+    finalize();
+}
+
+void ThreadPool::finalize()
+{
     {
         std::unique_lock<std::mutex> lock(mutex);
         shutdown = true;
@@ -58,6 +74,8 @@ ThreadPool::~ThreadPool()
 
     for (auto & thread : threads)
         thread.join();
+
+    threads.clear();
 }
 
 size_t ThreadPool::active() const
@@ -118,5 +136,36 @@ void ThreadPool::worker()
 
         job_finished.notify_all();
     }
+}
+
+
+void ExceptionHandler::setException(std::exception_ptr && exception)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (!first_exception)
+        first_exception = std::move(exception);
+}
+
+void ExceptionHandler::throwIfException()
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler)
+{
+    return [job{std::move(job)}, &handler] ()
+    {
+        try
+        {
+            job();
+        }
+        catch (...)
+        {
+            handler.setException(std::current_exception());
+        }
+    };
 }
 

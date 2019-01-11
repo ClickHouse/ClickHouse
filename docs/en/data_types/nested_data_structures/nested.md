@@ -4,7 +4,7 @@ A nested data structure is like a nested table. The parameters of a nested data 
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -35,7 +35,7 @@ In most cases, when working with a nested data structure, its individual columns
 
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -44,7 +44,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+```
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -63,7 +63,7 @@ It is easiest to think of a nested data structure as a set of multiple column ar
 
 The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -73,7 +73,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+```
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │
@@ -96,3 +96,5 @@ For a DESCRIBE query, the columns in a nested data structure are listed separate
 
 The ALTER query is very limited for elements in a nested data structure.
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

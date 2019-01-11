@@ -1,8 +1,4 @@
-<a name="queries"></a>
-
-<a name="queries-attach"></a>
-
-## ATTACH
+## ATTACH {#queries}
 Запрос полностью аналогичен запросу `CREATE`, но:
 
 - вместо слова `CREATE` используется слово `ATTACH`;
@@ -12,7 +8,7 @@
 
 Если таблица перед этим была отсоединена (`DETACH`), т.е. её структура известна, то можно использовать сокращенную форму записи без определения структуры.
 
-```sql
+``` sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -21,14 +17,14 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ## DROP
 Запрос имеет два вида: `DROP DATABASE` и `DROP TABLE`.
 
-```sql
+``` sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Удаляет все таблицы внутри базы данных db, а затем саму базу данных db.
 Если указано `IF EXISTS` - не выдавать ошибку, если база данных не существует.
 
-```sql
+``` sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -38,7 +34,7 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ## DETACH
 Удаляет из сервера информацию о таблице name. Сервер перестаёт знать о существовании таблицы.
 
-```sql
+``` sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -50,7 +46,7 @@ DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ## RENAME
 Переименовывает одну или несколько таблиц.
 
-```sql
+``` sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
@@ -58,7 +54,7 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 
 ## SHOW DATABASES
 
-```sql
+``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -69,7 +65,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 
 ## SHOW TABLES
 
-```sql
+``` sql
 SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -84,7 +80,7 @@ SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORM
 
 ## SHOW PROCESSLIST
 
-```sql
+``` sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -116,7 +112,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 ## SHOW CREATE TABLE
 
-```sql
+``` sql
 SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -124,7 +120,7 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 ## DESCRIBE TABLE
 
-```sql
+``` sql
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -134,7 +130,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 ## EXISTS
 
-```sql
+``` sql
 EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -142,7 +138,7 @@ EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 
 ## USE
 
-```sql
+``` sql
 USE db
 ```
 
@@ -152,7 +148,7 @@ USE db
 
 ## SET
 
-```sql
+``` sql
 SET param = value
 ```
 
@@ -165,7 +161,7 @@ SET param = value
 
 ## OPTIMIZE
 
-```sql
+``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
@@ -179,7 +175,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 
 ## KILL QUERY
 
-```sql
+``` sql
 KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
@@ -190,7 +186,7 @@ KILL QUERY [ON CLUSTER cluster]
 Запросы для принудительной остановки выбираются из таблицы system.processes с помощью условия, указанного в секции `WHERE` запроса `KILL`.
 
 Примеры:
-```sql
+``` sql
 -- Принудительно останавливает все запросы с указанным query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
@@ -205,8 +201,10 @@ Readonly-пользователи могут останавливать толь
 Синхронный вариант (`SYNC`) ожидает остановки всех запросов и построчно выводит информацию о процессах по ходу их остановки.
 Ответ содержит колонку `kill_status`, которая может принимать следующие значения:
 
-1.  'finished' - запрос был успешно остановлен;
-2.  'waiting' - запросу отправлен сигнал завершения, ожидается его остановка;
-3.  остальные значения описывают причину невозможности остановки запроса.
+1. 'finished' - запрос был успешно остановлен;
+2. 'waiting' - запросу отправлен сигнал завершения, ожидается его остановка;
+3. остальные значения описывают причину невозможности остановки запроса.
 
 Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/misc/) <!--hide-->

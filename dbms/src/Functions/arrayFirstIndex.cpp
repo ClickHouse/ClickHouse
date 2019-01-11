@@ -45,7 +45,7 @@ struct ArrayFirstIndexImpl
                 return out_column;
             }
             else
-                return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
+                return DataTypeUInt32().createColumnConst(array.size(), 0u);
         }
 
         const auto & filter = column_filter->getData();
@@ -74,7 +74,7 @@ struct ArrayFirstIndexImpl
     }
 };
 
-struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
+struct NameArrayFirstIndex { static constexpr auto name = "arrayFirstIndex"; };
 using FunctionArrayFirstIndex = FunctionArrayMapped<ArrayFirstIndexImpl, NameArrayFirstIndex>;
 
 void registerFunctionArrayFirstIndex(FunctionFactory & factory)

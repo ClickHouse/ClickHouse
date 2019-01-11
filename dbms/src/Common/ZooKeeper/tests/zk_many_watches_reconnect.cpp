@@ -23,7 +23,7 @@ int main(int argc, char ** argv)
             return 3;
         }
 
-        ConfigProcessor processor(argv[1], false, true);
+        DB::ConfigProcessor processor(argv[1], false, true);
         auto config = processor.loadConfig().configuration;
         zkutil::ZooKeeper zk(*config, "zookeeper");
         zkutil::EventPtr watch = std::make_shared<Poco::Event>();
@@ -63,6 +63,4 @@ int main(int argc, char ** argv)
         std::cerr << "Some exception" << std::endl;
         return 2;
     }
-
-    return 0;
 }

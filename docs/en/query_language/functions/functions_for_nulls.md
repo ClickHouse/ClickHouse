@@ -2,13 +2,13 @@
 
 ## isNull
 
-Checks whether the argument is [NULL](../syntax.md#null-literal).
+Checks whether the argument is [NULL](../syntax.md#null).
 
 ```
 isNull(x)
 ```
 
-**Parameters:**
+**Parameters**
 
 - `x` — A value with a non-compound data type.
 
@@ -46,7 +46,7 @@ WHERE isNull(y)
 
 ## isNotNull
 
-Checks whether the argument is [NULL](../syntax.md#null-literal).
+Checks whether the argument is [NULL](../syntax.md#null).
 
 ```
 isNotNull(x)
@@ -102,7 +102,7 @@ coalesce(x,...)
 
 **Returned values**
 
-- The first  non-`NULL` argument.
+- The first non-`NULL` argument.
 - `NULL`, if all arguments are `NULL`.
 
 **Example**
@@ -207,7 +207,7 @@ SELECT nullIf(1, 2)
 
 ## assumeNotNull
 
-Results in a value of type [Nullable](../../data_types/nullable.md#data_type-nullable) for a non- `Nullable`, if the value is not `NULL`.
+Results in a value of type [Nullable](../../data_types/nullable.md) for a non- `Nullable`, if the value is not `NULL`.
 
 ```
 assumeNotNull(x)
@@ -293,3 +293,5 @@ SELECT toTypeName(toNullable(10))
 └────────────────────────────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

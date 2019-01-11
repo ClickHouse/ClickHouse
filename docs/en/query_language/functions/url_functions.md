@@ -34,7 +34,7 @@ For example, `cutToFirstSignificantSubdomain('https://news.yandex.com.tr/') = 'y
 
 ### path
 
-Returns the path. Example: `/top/news.html`  The path does not include the query string.
+Returns the path. Example: `/top/news.html` The path does not include the query string.
 
 ### pathFull
 
@@ -42,7 +42,7 @@ The same as above, but including query string and fragment. Example: /top/news.h
 
 ### queryString
 
-Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \#  and everything after \#.
+Returns the query string. Example: page=1&lr=213. query-string does not include the initial question mark, as well as \# and everything after \#.
 
 ### fragment
 
@@ -72,7 +72,7 @@ Returns an array containing the URL, truncated at the end by the symbols /,? in 
 
 The same as above, but without the protocol and host in the result. The / element (root) is not included. Example: the function is used to implement tree reports the URL in Yandex. Metric.
 
-```text
+```
 URLPathHierarchy('https://example.com/browse/CONV-6788') =
 [
     '/browse/',
@@ -85,11 +85,11 @@ URLPathHierarchy('https://example.com/browse/CONV-6788') =
 Returns the decoded URL.
 Example:
 
-```sql
+``` sql
 SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS DecodedURL;
 ```
 
-```text
+```
 ┌─DecodedURL─────────────────────────────┐
 │ http://127.0.0.1:8123/?query=SELECT 1; │
 └────────────────────────────────────────┘
@@ -119,3 +119,5 @@ Removes the query string and fragment identifier. The question mark and number s
 
 Removes the 'name' URL parameter, if present. This function works under the assumption that the parameter name is encoded in the URL exactly the same way as in the passed argument.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/url_functions/) <!--hide-->

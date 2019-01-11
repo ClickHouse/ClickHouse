@@ -28,14 +28,14 @@ struct JoinKeyGetterOneNumber
 {
     using Key = FieldType;
 
-    const FieldType * vec;
+    const char * vec;
 
     /** Created before processing of each block.
       * Initialize some members, used in another methods, called in inner loops.
       */
     JoinKeyGetterOneNumber(const ColumnRawPtrs & key_columns)
     {
-        vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+        vec = key_columns[0]->getRawData().data;
     }
 
     Key getKey(
@@ -44,7 +44,7 @@ struct JoinKeyGetterOneNumber
         size_t i,                             /// row number to get key from.
         const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
     {
-        return unionCastToUInt64(vec[i]);
+        return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
     }
 
     /// Place additional data into memory pool, if needed, when new key was inserted into hash table.
@@ -56,31 +56,32 @@ struct JoinKeyGetterString
 {
     using Key = StringRef;
 
-    const ColumnString::Offsets * offsets;
-    const ColumnString::Chars_t * chars;
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
 
     JoinKeyGetterString(const ColumnRawPtrs & key_columns)
     {
         const IColumn & column = *key_columns[0];
         const ColumnString & column_string = static_cast<const ColumnString &>(column);
-        offsets = &column_string.getOffsets();
-        chars = &column_string.getChars();
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
     }
 
     Key getKey(
         const ColumnRawPtrs &,
         size_t,
-        size_t i,
+        ssize_t i,
         const Sizes &) const
     {
         return StringRef(
-            &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
-            (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+            chars + offsets[i - 1],
+            offsets[i] - offsets[i - 1] - 1);
     }
 
     static void onNewKey(Key & key, Arena & pool)
     {
-        key.data = pool.insert(key.data, key.size);
+        if (key.size)
+            key.data = pool.insert(key.data, key.size);
     }
 };
 
@@ -90,7 +91,7 @@ struct JoinKeyGetterFixedString
     using Key = StringRef;
 
     size_t n;
-    const ColumnFixedString::Chars_t * chars;
+    const ColumnFixedString::Chars * chars;
 
     JoinKeyGetterFixedString(const ColumnRawPtrs & key_columns)
     {
@@ -219,8 +220,8 @@ struct JoinKeyGetterHashed
 class Join
 {
 public:
-    Join(const Names & key_names_left_, const Names & key_names_right_, const NameSet & needed_key_names_right_,
-         bool use_nulls_, const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_);
+    Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
+         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_);
 
     bool empty() { return type == Type::EMPTY; }
 
@@ -237,7 +238,13 @@ public:
     /** Join data from the map (that was previously built by calls to insertFromBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block) const;
+    void joinBlock(Block & block, const Names & key_names_left, const NameSet & needed_key_names_right) const;
+
+    /// Infer the return type for joinGet function
+    DataTypePtr joinGetReturnType(const String & column_name) const;
+
+    /// Used by joinGet function that turns StorageJoin into a dictionary
+    void joinGet(Block & block, const String & column_name) const;
 
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
@@ -251,7 +258,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, size_t max_block_size) const;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & left_sample_block, const Names & key_names_left, size_t max_block_size) const;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const;
@@ -320,6 +327,16 @@ public:
         M(keys256)                     \
         M(hashed)
 
+
+    /// Used for reading from StorageJoin and applying joinGet function
+    #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
+        M(key8)                                \
+        M(key16)                               \
+        M(key32)                               \
+        M(key64)                               \
+        M(key_string)                          \
+        M(key_fixed_string)
+
     enum class Type
     {
         EMPTY,
@@ -353,16 +370,13 @@ public:
 
 private:
     friend class NonJoinedBlockInputStream;
+    friend class JoinBlockInputStream;
 
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
-    /// Names of key columns (columns for equi-JOIN) in "left" table (in the order they appear in USING clause).
-    const Names key_names_left;
     /// Names of key columns (columns for equi-JOIN) in "right" table (in the order they appear in USING clause).
     const Names key_names_right;
-    /// Names of key columns in the "right" table which should stay in block after join.
-    const NameSet needed_key_names_right;
 
     /// Substitute NULLs for non-JOINed rows.
     bool use_nulls;
@@ -408,12 +422,20 @@ private:
     void init(Type type_);
 
     /// Throw an exception if blocks have different types of key columns.
-    void checkTypesOfKeys(const Block & block_left, const Block & block_right) const;
+    void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right) const;
 
     template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS, typename Maps>
-    void joinBlockImpl(Block & block, const Maps & maps) const;
+    void joinBlockImpl(
+        Block & block,
+        const Names & key_names_left,
+        const NameSet & needed_key_names_right,
+        const Block & block_with_columns_to_add,
+        const Maps & maps) const;
 
     void joinBlockImplCross(Block & block) const;
+
+    template <typename Maps>
+    void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;
 };
 
 using JoinPtr = std::shared_ptr<Join>;

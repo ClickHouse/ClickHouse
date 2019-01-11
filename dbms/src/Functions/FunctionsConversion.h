@@ -57,7 +57,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
-    extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_CONVERT_TYPE;
@@ -99,7 +99,7 @@ struct ConvertImpl
     using ToFieldType = typename ToDataType::FieldType;
 
     template <typename Additions = void *>
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
+    static void NO_SANITIZE_UNDEFINED execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
                         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = block.getByPosition(arguments[0]);
@@ -177,7 +177,7 @@ struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
-    static inline ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
     }
@@ -290,7 +290,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             auto col_to = ColumnString::create();
 
             const typename ColVecType::Container & vec_from = col_from->getData();
-            ColumnString::Chars_t & data_to = col_to->getChars();
+            ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
 
@@ -303,7 +303,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 
             offsets_to.resize(size);
 
-            WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+            WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
             for (size_t i = 0; i < size; ++i)
             {
@@ -312,8 +312,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
                 offsets_to[i] = write_buffer.count();
             }
 
-            data_to.resize(write_buffer.count());
-
+            write_buffer.finish();
             block.getByPosition(result).column = std::move(col_to);
         }
         else
@@ -337,13 +336,13 @@ struct ConvertImplGenericToString
 
         auto col_to = ColumnString::create();
 
-        ColumnString::Chars_t & data_to = col_to->getChars();
+        ColumnString::Chars & data_to = col_to->getChars();
         ColumnString::Offsets & offsets_to = col_to->getOffsets();
 
-        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitary.
+        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitrary.
         offsets_to.resize(size);
 
-        WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
+        WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
 
         FormatSettings format_settings;
         for (size_t i = 0; i < size; ++i)
@@ -353,7 +352,7 @@ struct ConvertImplGenericToString
             offsets_to[i] = write_buffer.count();
         }
 
-        data_to.resize(write_buffer.count());
+        write_buffer.finish();
         block.getByPosition(result).column = std::move(col_to);
     }
 };
@@ -520,7 +519,7 @@ struct ConvertThroughParsing
             vec_null_map_to = &col_null_map_to->getData();
         }
 
-        const ColumnString::Chars_t * chars = nullptr;
+        const ColumnString::Chars * chars = nullptr;
         const IColumn::Offsets * offsets = nullptr;
         size_t fixed_string_size = 0;
 
@@ -622,7 +621,7 @@ struct ConvertImplGenericFromString
             IColumn & column_to = *res;
             column_to.reserve(size);
 
-            const ColumnString::Chars_t & chars = col_from_string->getChars();
+            const ColumnString::Chars & chars = col_from_string->getChars();
             const IColumn::Offsets & offsets = col_from_string->getOffsets();
 
             size_t current_offset = 0;
@@ -682,8 +681,8 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
         {
             auto col_to = ColumnString::create();
 
-            const ColumnFixedString::Chars_t & data_from = col_from->getChars();
-            ColumnString::Chars_t & data_to = col_to->getChars();
+            const ColumnFixedString::Chars & data_from = col_from->getChars();
+            ColumnString::Chars & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = col_from->size();
             size_t n = col_from->getN();
@@ -739,6 +738,7 @@ DEFINE_NAME_TO_INTERVAL(Hour)
 DEFINE_NAME_TO_INTERVAL(Day)
 DEFINE_NAME_TO_INTERVAL(Week)
 DEFINE_NAME_TO_INTERVAL(Month)
+DEFINE_NAME_TO_INTERVAL(Quarter)
 DEFINE_NAME_TO_INTERVAL(Year)
 
 #undef DEFINE_NAME_TO_INTERVAL
@@ -784,13 +784,16 @@ public:
         }
         else if constexpr (to_decimal)
         {
+            if (!arguments[1].column)
+                throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
             if constexpr (std::is_same_v<Name, NameToDecimal32>)
                 return createDecimal(9, scale);
             else if constexpr (std::is_same_v<Name, NameToDecimal64>)
                 return createDecimal(18, scale);
-            else if constexpr ( std::is_same_v<Name, NameToDecimal128>)
+            else if constexpr (std::is_same_v<Name, NameToDecimal128>)
                 return createDecimal(38, scale);
 
             throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
@@ -881,7 +884,7 @@ private:
     {
         if (!arguments.size())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
-               ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+               ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
@@ -895,7 +898,7 @@ private:
             {
                 if (arguments.size() != 2)
                     throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.",
-                        ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+                        ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
                 const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
                 UInt32 scale = extractToDecimalScale(scale_column);
@@ -1136,32 +1139,27 @@ struct ToIntMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        size_t size_of_type = type.getSizeOfValueInMemory();
+        if (!type.isValueRepresentedByNumber())
+            return {};
 
-        /// If type is expanding
-        if (sizeof(T) > size_of_type)
-        {
-            /// If convert signed -> signed or unsigned -> signed, then function is monotonic.
-            if (std::is_signed_v<T> || type.isValueRepresentedByUnsignedInteger())
-                return {true, true, true};
-
-            /// If arguments from the same half, then function is monotonic.
-            if ((left.get<Int64>() >= 0) == (right.get<Int64>() >= 0))
-                return {true, true, true};
-        }
-
-        /// If type is same, too. (Enum has separate case, because it is different data type)
+        /// If type is same, the conversion is always monotonic.
+        /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
 
-        /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
-        if (left.isNull() || right.isNull())
-            return {};
+        /// Float cases.
 
-        /// If converting from float, for monotonicity, arguments must fit in range of result type.
+        /// When converting to Float, the conversion is always monotonic.
+        if (std::is_floating_point_v<T>)
+            return {true, true, true};
+
+        /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
         {
+            if (left.isNull() || right.isNull())
+                return {};
+
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
 
@@ -1172,18 +1170,79 @@ struct ToIntMonotonicity
             return {};
         }
 
-        /// If signedness of type is changing, or converting from Date, DateTime, then arguments must be from same half,
-        ///  and after conversion, resulting values must be from same half.
-        /// Just in case, it is required in rest of cases too.
-        if ((left.get<Int64>() >= 0) != (right.get<Int64>() >= 0)
-            || (T(left.get<Int64>()) >= 0) != (T(right.get<Int64>()) >= 0))
-            return {};
+        /// Integer cases.
 
-        /// If type is shrinked, then for monotonicity, all bits other than that fits, must be same.
-        if (divideByRangeOfType(left.get<UInt64>()) != divideByRangeOfType(right.get<UInt64>()))
-            return {};
+        const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
+        const bool to_is_unsigned = std::is_unsigned_v<T>;
 
-        return { true };
+        const size_t size_of_from = type.getSizeOfValueInMemory();
+        const size_t size_of_to = sizeof(T);
+
+        const bool left_in_first_half = left.isNull()
+            ? from_is_unsigned
+            : (left.get<Int64>() >= 0);
+
+        const bool right_in_first_half = right.isNull()
+            ? !from_is_unsigned
+            : (right.get<Int64>() >= 0);
+
+        /// Size of type is the same.
+        if (size_of_from == size_of_to)
+        {
+            if (from_is_unsigned == to_is_unsigned)
+                return {true, true, true};
+
+            if (left_in_first_half == right_in_first_half)
+                return {true};
+
+            return {};
+        }
+
+        /// Size of type is expanded.
+        if (size_of_from < size_of_to)
+        {
+            if (from_is_unsigned == to_is_unsigned)
+                return {true, true, true};
+
+            if (!to_is_unsigned)
+                return {true, true, true};
+
+            /// signed -> unsigned. If arguments from the same half, then function is monotonic.
+            if (left_in_first_half == right_in_first_half)
+                return {true};
+
+            return {};
+        }
+
+        /// Size of type is shrinked.
+        if (size_of_from > size_of_to)
+        {
+            /// Function cannot be monotonic on unbounded ranges.
+            if (left.isNull() || right.isNull())
+                return {};
+
+            if (from_is_unsigned == to_is_unsigned)
+            {
+                /// all bits other than that fits, must be same.
+                if (divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
+                    return {true};
+
+                return {};
+            }
+            else
+            {
+                /// When signedness is changed, it's also required for arguments to be from the same half.
+                /// And they must be in the same half after converting to the result type.
+                if (left_in_first_half == right_in_first_half
+                    && (T(left.get<Int64>()) >= 0) == (T(right.get<Int64>()) >= 0)
+                    && divideByRangeOfType(left.get<UInt64>()) == divideByRangeOfType(right.get<UInt64>()))
+                    return {true};
+
+                return {};
+            }
+        }
+
+        __builtin_unreachable();
     }
 };
 
@@ -1603,7 +1662,7 @@ private:
         element_wrappers.reserve(from_element_types.size());
 
         /// Create conversion wrapper for each element in tuple
-        for (const auto & idx_type : ext::enumerate(from_type->getElements()))
+        for (const auto idx_type : ext::enumerate(from_type->getElements()))
             element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
@@ -1629,7 +1688,7 @@ private:
             element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
 
             /// invoke conversion for each element
-            for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
+            for (const auto idx_element_wrapper : ext::enumerate(element_wrappers))
                 idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
                     tuple_size + idx_element_wrapper.first, input_rows_count);
 
@@ -2039,35 +2098,35 @@ private:
     {
         if (const auto type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
-        else if (isEnum(from_type))
+        if (isEnum(from_type))
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);
-            else if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
+            if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
                 return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined

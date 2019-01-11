@@ -14,6 +14,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TABLE_DIFFERS_TOO_MUCH;
+}
+
 static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
 
 
@@ -22,7 +27,7 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreePartCheckThread)")
     , log(&Logger::get(log_name))
 {
-    task = storage.context.getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
     task->schedule();
 }
 
@@ -33,7 +38,7 @@ ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
-    std::lock_guard<std::mutex> lock(start_stop_mutex);
+    std::lock_guard lock(start_stop_mutex);
     need_stop = false;
     task->activateAndSchedule();
 }
@@ -43,14 +48,14 @@ void ReplicatedMergeTreePartCheckThread::stop()
     //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
     //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
 
-    std::lock_guard<std::mutex> lock(start_stop_mutex);
+    std::lock_guard lock(start_stop_mutex);
     need_stop = true;
     task->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
-    std::lock_guard<std::mutex> lock(parts_mutex);
+    std::lock_guard lock(parts_mutex);
 
     if (parts_set.count(name))
         return;
@@ -63,7 +68,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
-    std::lock_guard<std::mutex> lock(parts_mutex);
+    std::lock_guard lock(parts_mutex);
     return parts_set.size();
 }
 
@@ -197,7 +202,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructure(false, __PRETTY_FUNCTION__);
+        auto table_lock = storage.lockStructure(false);
 
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->exists(storage.replica_path + "/parts/" + part_name))
@@ -213,7 +218,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 auto zk_columns = NamesAndTypesList::parse(
                     zookeeper->get(storage.replica_path + "/parts/" + part_name + "/columns"));
                 if (part->columns != zk_columns)
-                    throw Exception("Columns of local part " + part_name + " are different from ZooKeeper");
+                    throw Exception("Columns of local part " + part_name + " are different from ZooKeeper", ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
 
                 checkDataPart(
                     storage.data.getFullPath() + part_name,
@@ -290,7 +295,7 @@ void ReplicatedMergeTreePartCheckThread::run()
         time_t min_check_time = std::numeric_limits<time_t>::max();
 
         {
-            std::lock_guard<std::mutex> lock(parts_mutex);
+            std::lock_guard lock(parts_mutex);
 
             if (parts_queue.empty())
             {
@@ -326,7 +331,7 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         /// Remove the part from check queue.
         {
-            std::lock_guard<std::mutex> lock(parts_mutex);
+            std::lock_guard lock(parts_mutex);
 
             if (parts_queue.empty())
             {

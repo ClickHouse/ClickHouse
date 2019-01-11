@@ -34,7 +34,7 @@ class ReadBuffer;
   * YYYYMM - 6 digits is a year, month if year was not already read
   * hhmmss - 6 digits is a time if year was already read
   *
-  * .nnnnnnn - any number of digits after point is fractional part of second, if it is not YYYY.MM.DD
+  * .nnnnnnn - any number of digits after point is fractional part of second, if it is not YYYY.MM.DD or DD.MM.YYYY
   *
   * T - means that time will follow
   *

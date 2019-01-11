@@ -1,23 +1,55 @@
-#include <Dictionaries/ComplexKeyCacheDictionary.h>
+#include "ComplexKeyCacheDictionary.h"
 
 namespace DB
 {
-
 void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const size_t idx, const Field & value) const
 {
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8: std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt16: std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt32: std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt64: std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>(); break;
-        case AttributeUnderlyingType::UInt128: std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>(); break;
-        case AttributeUnderlyingType::Int8: std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Int16: std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Int32: std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
-        case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
-        case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+        case AttributeUnderlyingType::UInt8:
+            std::get<ContainerPtrType<UInt8>>(attribute.arrays)[idx] = value.get<UInt64>();
+            break;
+        case AttributeUnderlyingType::UInt16:
+            std::get<ContainerPtrType<UInt16>>(attribute.arrays)[idx] = value.get<UInt64>();
+            break;
+        case AttributeUnderlyingType::UInt32:
+            std::get<ContainerPtrType<UInt32>>(attribute.arrays)[idx] = value.get<UInt64>();
+            break;
+        case AttributeUnderlyingType::UInt64:
+            std::get<ContainerPtrType<UInt64>>(attribute.arrays)[idx] = value.get<UInt64>();
+            break;
+        case AttributeUnderlyingType::UInt128:
+            std::get<ContainerPtrType<UInt128>>(attribute.arrays)[idx] = value.get<UInt128>();
+            break;
+        case AttributeUnderlyingType::Int8:
+            std::get<ContainerPtrType<Int8>>(attribute.arrays)[idx] = value.get<Int64>();
+            break;
+        case AttributeUnderlyingType::Int16:
+            std::get<ContainerPtrType<Int16>>(attribute.arrays)[idx] = value.get<Int64>();
+            break;
+        case AttributeUnderlyingType::Int32:
+            std::get<ContainerPtrType<Int32>>(attribute.arrays)[idx] = value.get<Int64>();
+            break;
+        case AttributeUnderlyingType::Int64:
+            std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>();
+            break;
+        case AttributeUnderlyingType::Float32:
+            std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>();
+            break;
+        case AttributeUnderlyingType::Float64:
+            std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>();
+            break;
+
+        case AttributeUnderlyingType::Decimal32:
+            std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>();
+            break;
+        case AttributeUnderlyingType::Decimal64:
+            std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = value.get<Decimal64>();
+            break;
+        case AttributeUnderlyingType::Decimal128:
+            std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = value.get<Decimal128>();
+            break;
+
         case AttributeUnderlyingType::String:
         {
             const auto & string = value.get<String>();

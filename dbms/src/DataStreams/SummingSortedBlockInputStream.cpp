@@ -216,7 +216,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
                     if (desc.column_numbers.size() == 1)
                     {
                         // Flag row as non-empty if at least one column number if non-zero
-                        current_row_is_zero = current_row_is_zero && desc.merged_column->get64(desc.merged_column->size() - 1) == 0;
+                        current_row_is_zero = current_row_is_zero && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
                     }
                     else
                     {

@@ -186,7 +186,7 @@ private:
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderConcat>();
+    factory.registerFunction<FunctionBuilderConcat>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

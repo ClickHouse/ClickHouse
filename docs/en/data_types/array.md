@@ -1,6 +1,4 @@
-<a name="data_type-array"></a>
-
-# Array(T)
+# Array(T) {#data_type-array}
 
 Array of `T`-type items.
 
@@ -50,7 +48,7 @@ SELECT
 
 ## Working with data types
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or  [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md#data_type-nullable).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md).
 
 If ClickHouse couldn't determine the data type, it will generate an exception. For instance, this will happen when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 
@@ -83,3 +81,5 @@ Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception
 0 rows in set. Elapsed: 0.246 sec.
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/data_types/array/) <!--hide-->

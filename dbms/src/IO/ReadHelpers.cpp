@@ -7,11 +7,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <stdlib.h>
 #include <Common/memcpySmall.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
@@ -71,10 +71,10 @@ UInt128 stringToUUID(const String & str)
     return parseFromString<UUID>(str);
 }
 
-static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
+void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out <<  "Cannot parse input: expected " << escape << s;
+    out << "Cannot parse input: expected " << escape << s;
 
     if (buf.eof())
         out << " at end of stream.";
@@ -120,15 +120,6 @@ void assertString(const char * s, ReadBuffer & buf)
         throwAtAssertionFailed(s, buf);
 }
 
-void assertChar(char symbol, ReadBuffer & buf)
-{
-    if (buf.eof() || *buf.position() != symbol)
-    {
-        char err[2] = {symbol, '\0'};
-        throwAtAssertionFailed(err, buf);
-    }
-    ++buf.position();
-}
 
 void assertEOF(ReadBuffer & buf)
 {
@@ -567,7 +558,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             [&]()
             {
-#if __SSE2__
+#ifdef __SSE2__
                 auto rc = _mm_set1_epi8('\r');
                 auto nc = _mm_set1_epi8('\n');
                 auto dc = _mm_set1_epi8(delimiter);

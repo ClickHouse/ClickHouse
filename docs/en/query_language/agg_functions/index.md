@@ -1,6 +1,4 @@
-<a name="aggregate_functions"></a>
-
-# Aggregate functions
+# Aggregate functions {#aggregate_functions}
 
 Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
 
@@ -61,3 +59,5 @@ FROM t_null_big
 
 `groupArray` does not include `NULL` in the resulting array.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/) <!--hide-->

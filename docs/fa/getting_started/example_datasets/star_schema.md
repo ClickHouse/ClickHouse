@@ -14,7 +14,7 @@ make
 
 <div dir="rtl" markdown="1">
 
-در هنگام پردازش چند warnings نمایش داده می شود که مشکلی نیست  و طبیعی است.
+در هنگام پردازش چند warnings نمایش داده می شود که مشکلی نیست و طبیعی است.
 
 `dbgen` و ` dists.dss` را در یک جا با 800 گیگابایت فضای حالی دیسک قرار دهید.
 
@@ -33,7 +33,7 @@ make
 
 </div>
 
-```sql
+``` sql
 CREATE TABLE lineorder (
         LO_ORDERKEY             UInt32,
         LO_LINENUMBER           UInt8,
@@ -96,3 +96,5 @@ CREATE TABLE partd AS part ENGINE = Distributed(perftest_3shards_1replicas, defa
 cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INTO customer FORMAT CSV"
 cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```
+
+[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/star_schema/) <!--hide-->

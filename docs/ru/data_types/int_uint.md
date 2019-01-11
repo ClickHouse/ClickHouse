@@ -1,4 +1,3 @@
-<a name="data_type-int"></a>
 
 # UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64
 
@@ -19,3 +18,5 @@
 - UInt16 - [ 0 : 65535 ]
 - UInt32 - [ 0 : 4294967295 ]
 - UInt64 - [ 0 : 18446744073709551615 ]
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/int_uint/) <!--hide-->

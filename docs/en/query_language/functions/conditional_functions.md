@@ -46,3 +46,5 @@ Run the query `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`. Result:
 │                                       ᴺᵁᴸᴸ │
 └────────────────────────────────────────────┘
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/conditional_functions/) <!--hide-->

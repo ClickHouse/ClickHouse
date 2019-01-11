@@ -1,7 +1,7 @@
 #pragma once
 
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <DataStreams/IBlockOutputStream.h>
@@ -20,11 +20,12 @@ public:
         MergeTreeData & storage_,
         size_t min_compress_block_size_,
         size_t max_compress_block_size_,
-        CompressionSettings compression_settings_,
+        CompressionCodecPtr default_codec_,
         size_t aio_threshold_);
 
+    using WrittenOffsetColumns = std::set<std::string>;
+
 protected:
-    using OffsetColumns = std::set<std::string>;
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::vector<SerializationState>;
 
@@ -36,8 +37,8 @@ protected:
             const std::string & data_file_extension_,
             const std::string & marks_path,
             const std::string & marks_file_extension_,
+            const CompressionCodecPtr & compression_codec,
             size_t max_compress_block_size,
-            CompressionSettings compression_settings,
             size_t estimated_size,
             size_t aio_threshold);
 
@@ -64,13 +65,14 @@ protected:
 
     using ColumnStreams = std::map<String, std::unique_ptr<ColumnStream>>;
 
-    void addStreams(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
+    void addStreams(const String & path, const String & name, const IDataType & type,
+                    const CompressionCodecPtr & codec, size_t estimated_size, bool skip_offsets);
 
 
-    IDataType::OutputStreamGetter createStreamGetter(const String & name, OffsetColumns & offset_columns, bool skip_offsets);
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
     /// Write data of one column.
-    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
+    void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenOffsetColumns & offset_columns,
                    bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
 
     MergeTreeData & storage;
@@ -85,7 +87,7 @@ protected:
 
     size_t aio_threshold;
 
-    CompressionSettings compression_settings;
+    CompressionCodecPtr codec;
 };
 
 
@@ -99,13 +101,13 @@ public:
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionSettings compression_settings);
+        CompressionCodecPtr default_codec_);
 
     MergedBlockOutputStream(
         MergeTreeData & storage_,
         String part_path_,
         const NamesAndTypesList & columns_list_,
-        CompressionSettings compression_settings,
+        CompressionCodecPtr default_codec_,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
         size_t aio_threshold_);
 
@@ -150,13 +152,17 @@ private:
 };
 
 
-/// Writes only those columns that are in `block`
+/// Writes only those columns that are in `header`
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
     /// skip_offsets: used when ALTERing columns if we know that array offsets are not altered.
+    /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
+    ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
+        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
+        CompressionCodecPtr default_codec_, bool skip_offsets_,
+        WrittenOffsetColumns & already_written_offset_columns);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -171,6 +177,9 @@ private:
     bool initialized = false;
     bool sync;
     bool skip_offsets;
+
+    /// To correctly write Nested elements column-by-column.
+    WrittenOffsetColumns & already_written_offset_columns;
 };
 
 }

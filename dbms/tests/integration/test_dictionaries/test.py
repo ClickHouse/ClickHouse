@@ -121,3 +121,14 @@ def test_select_all_from_cached(cached_dictionary_structure):
     diff = test_table.compare_by_keys(keys, result.lines, use_parent, add_not_found_rows=True)
     print test_table.process_diff(diff)
     assert not diff
+
+def test_null_value(started_cluster):
+    query = instance.query
+
+    assert TSV(query("select dictGetUInt8('clickhouse_cache', 'UInt8_', toUInt64(12121212))")) == TSV("1")
+    assert TSV(query("select dictGetString('clickhouse_cache', 'String_', toUInt64(12121212))")) == TSV("implicit-default")
+    assert TSV(query("select dictGetDate('clickhouse_cache', 'Date_', toUInt64(12121212))")) == TSV("2015-11-25")
+
+    # Check, that empty null_value interprets as default value
+    assert TSV(query("select dictGetUInt64('clickhouse_cache', 'UInt64_', toUInt64(12121212))")) == TSV("0")
+    assert TSV(query("select dictGetDateTime('clickhouse_cache', 'DateTime_', toUInt64(12121212))")) == TSV("0000-00-00 00:00:00")

@@ -1,10 +1,10 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -13,6 +13,11 @@
 #include <common/logger_useful.h>
 #include <chrono>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 
 namespace DB
@@ -46,31 +51,24 @@ static bool isUnlimitedQuery(const IAST * ast)
         if (!ast_selects->list_of_selects || ast_selects->list_of_selects->children.empty())
             return false;
 
-        auto ast_select = typeid_cast<ASTSelectQuery *>(ast_selects->list_of_selects->children[0].get());
-
+        auto ast_select = typeid_cast<const ASTSelectQuery *>(ast_selects->list_of_selects->children[0].get());
         if (!ast_select)
             return false;
 
-        auto ast_database = ast_select->database();
-        if (!ast_database)
-            return false;
+        if (auto database_and_table = getDatabaseAndTable(*ast_select, 0))
+            return database_and_table->database == "system" && database_and_table->table == "processes";
 
-        auto ast_table = ast_select->table();
-        if (!ast_table)
-            return false;
-
-        auto ast_database_id = typeid_cast<const ASTIdentifier *>(ast_database.get());
-        if (!ast_database_id)
-            return false;
-
-        auto ast_table_id = typeid_cast<const ASTIdentifier *>(ast_table.get());
-        if (!ast_table_id)
-            return false;
-
-        return ast_database_id->name == "system" && ast_table_id->name == "processes";
+        return false;
     }
 
     return false;
+}
+
+
+ProcessList::ProcessList(size_t max_size_)
+    : max_size(max_size_)
+{
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 }
 
 
@@ -207,7 +205,7 @@ ProcessListEntry::~ProcessListEntry()
     /// Destroy all streams to avoid long lock of ProcessList
     it->releaseQueryStreams();
 
-    std::lock_guard<std::mutex> lock(parent.mutex);
+    std::lock_guard lock(parent.mutex);
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
@@ -285,7 +283,7 @@ QueryStatus::~QueryStatus() = default;
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     query_stream_in = io.in;
     query_stream_out = io.out;
@@ -298,7 +296,7 @@ void QueryStatus::releaseQueryStreams()
     BlockOutputStreamPtr out;
 
     {
-        std::lock_guard<std::mutex> lock(query_streams_mutex);
+        std::lock_guard lock(query_streams_mutex);
 
         query_streams_status = QueryStreamsStatus::Released;
         in = std::move(query_stream_in);
@@ -310,14 +308,14 @@ void QueryStatus::releaseQueryStreams()
 
 bool QueryStatus::streamsAreReleased()
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     return query_streams_status == QueryStreamsStatus::Released;
 }
 
 bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     if (query_streams_status != QueryStreamsStatus::Initialized)
         return false;
@@ -360,7 +358,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
@@ -384,8 +382,9 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
         }
         return CancellationCode::CancelCannotBeSent;
     }
-
-    return CancellationCode::QueryIsNotInitializedYet;
+    /// Query is not even started
+    elem->is_killed.store(true);
+    return CancellationCode::CancelSent;
 }
 
 
@@ -432,7 +431,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 {
     Info per_query_infos;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)

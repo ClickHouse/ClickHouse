@@ -48,11 +48,11 @@ If 'x' is non-negative, then erf(x / σ√2)<g> is the probability that a random
 
 Example (three sigma rule):
 
-```sql
+``` sql
 SELECT erf(3 / sqrt(2))
 ```
 
-```text
+```
 ┌─erf(divide(3, sqrt(2)))─┐
 │      0.9973002039367398 │
 └─────────────────────────┘
@@ -97,3 +97,5 @@ The arc tangent.
 ## pow(x, y)
 
 Takes two numeric arguments x and y. Returns a Float64 number close to x to the power of y.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/math_functions/) <!--hide-->

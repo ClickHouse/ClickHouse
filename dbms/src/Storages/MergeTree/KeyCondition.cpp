@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/BoolMask.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/FunctionFactory.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB
@@ -246,14 +248,14 @@ bool FieldWithInfinity::operator==(const FieldWithInfinity & other) const
   * For index to work when something like "WHERE Date = toDate(now())" is written.
   */
 Block KeyCondition::getBlockWithConstants(
-    const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
+    const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context)
 {
     Block result
     {
         { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
     };
 
-    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}.getConstActions();
+    const auto expr_for_constant_folding = ExpressionAnalyzer(query, syntax_analyzer_result, context).getConstActions();
 
     expr_for_constant_folding->execute(result);
 
@@ -264,7 +266,6 @@ Block KeyCondition::getBlockWithConstants(
 KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
-    const NamesAndTypesList & all_columns,
     const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_)
     : key_expr(key_expr_), prepared_sets(query_info.sets)
@@ -279,7 +280,7 @@ KeyCondition::KeyCondition(
     /** Evaluation of expressions that depend only on constants.
       * For the index to be used, if it is written, for example `WHERE Date = toDate(now())`.
       */
-    Block block_with_constants = getBlockWithConstants(query_info.query, context, all_columns);
+    Block block_with_constants = getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context);
 
     /// Trasform WHERE section to Reverse Polish notation
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query_info.query);
@@ -312,7 +313,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
-/** Computes value of constant expression and it data type.
+/** Computes value of constant expression and its data type.
   * Returns false, if expression isn't constant.
   */
 static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
@@ -662,7 +663,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
             key_arg_pos = 1;
         }
         else if (getConstant(args[0], block_with_constants, const_value, const_type)
-            &&  canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
+            && canConstantBeWrappedByMonotonicFunctions(args[1], key_column_num, key_expr_type, const_value, const_type))
         {
             key_arg_pos = 1;
             is_constant_transformed = true;
@@ -917,9 +918,9 @@ bool KeyCondition::mayBeTrueInRange(
         std::cerr << "+inf)\n";*/
 
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
-        [&] (const std::vector<Range> & key_ranges)
+        [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = mayBeTrueInParallelogram(key_ranges, data_types);
+        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -1124,9 +1125,9 @@ String KeyCondition::RPNElement::toString() const
             return "false";
         case ALWAYS_TRUE:
             return "true";
-        default:
-            throw Exception("Unknown function in RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
+
+    __builtin_unreachable();
 }
 
 

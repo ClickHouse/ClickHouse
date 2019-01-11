@@ -8,6 +8,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <common/unaligned.h>
+
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <Common/Exception.h>
@@ -132,12 +134,12 @@ StringRef ColumnArray::getDataAt(size_t n) const
       *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t array_size = sizeAt(n);
-    if (array_size == 0)
-        return StringRef();
-
     size_t offset_of_first_elem = offsetAt(n);
     StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+
+    size_t array_size = sizeAt(n);
+    if (array_size == 0)
+        return StringRef(first.data, 0);
 
     size_t offset_of_last_elem = getOffsets()[n] - 1;
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
@@ -164,7 +166,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     if (pos != end)
         throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
 
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + elems);
+    getOffsets().push_back(getOffsets().back() + elems);
 }
 
 
@@ -186,13 +188,13 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 
 const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 {
-    size_t array_size = *reinterpret_cast<const size_t *>(pos);
+    size_t array_size = unalignedLoad<size_t>(pos);
     pos += sizeof(array_size);
 
     for (size_t i = 0; i < array_size; ++i)
         pos = getData().deserializeAndInsertFromArena(pos);
 
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + array_size);
+    getOffsets().push_back(getOffsets().back() + array_size);
     return pos;
 }
 
@@ -214,7 +216,7 @@ void ColumnArray::insert(const Field & x)
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+    getOffsets().push_back(getOffsets().back() + size);
 }
 
 
@@ -225,13 +227,16 @@ void ColumnArray::insertFrom(const IColumn & src_, size_t n)
     size_t offset = src.offsetAt(n);
 
     getData().insertRangeFrom(src.getData(), offset, size);
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+    getOffsets().push_back(getOffsets().back() + size);
 }
 
 
 void ColumnArray::insertDefault()
 {
-    getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
+    /// NOTE 1: We can use back() even if the array is empty (due to zero -1th element in PODArray).
+    /// NOTE 2: We cannot use reference in push_back, because reference get invalidated if array is reallocated.
+    auto last_offset = getOffsets().back();
+    getOffsets().push_back(last_offset);
 }
 
 
@@ -320,16 +325,10 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 
 ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
-    ColumnPtr new_data;
-
-    if (ColumnPtr full_column = getData().convertToFullColumnIfConst())
-        new_data = full_column;
-    else
-        new_data = data;
-
-    return ColumnArray::create(new_data, offsets);
+    /// It is possible to have an array with constant data and non-constant offsets.
+    /// Example is the result of expression: replicate('hello', [1])
+    return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
 }
-
 
 void ColumnArray::getExtremes(Field & min, Field & max) const
 {
@@ -437,11 +436,11 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
     auto res = ColumnArray::create(data->cloneEmpty());
 
     const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
-    const ColumnString::Chars_t & src_chars = src_string.getChars();
+    const ColumnString::Chars & src_chars = src_string.getChars();
     const Offsets & src_string_offsets = src_string.getOffsets();
     const Offsets & src_offsets = getOffsets();
 
-    ColumnString::Chars_t & res_chars = typeid_cast<ColumnString &>(res->getData()).getChars();
+    ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res->getData()).getChars();
     Offsets & res_string_offsets = typeid_cast<ColumnString &>(res->getData()).getOffsets();
     Offsets & res_offsets = res->getOffsets();
 
@@ -697,20 +696,20 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
     if (replicate_offsets.empty())
         return cloneEmpty();
 
-    if (typeid_cast<const ColumnUInt8 *>(data.get()))     return replicateNumber<UInt8>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt16 *>(data.get()))    return replicateNumber<UInt16>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt32 *>(data.get()))    return replicateNumber<UInt32>(replicate_offsets);
-    if (typeid_cast<const ColumnUInt64 *>(data.get()))    return replicateNumber<UInt64>(replicate_offsets);
-    if (typeid_cast<const ColumnInt8 *>(data.get()))      return replicateNumber<Int8>(replicate_offsets);
-    if (typeid_cast<const ColumnInt16 *>(data.get()))     return replicateNumber<Int16>(replicate_offsets);
-    if (typeid_cast<const ColumnInt32 *>(data.get()))     return replicateNumber<Int32>(replicate_offsets);
-    if (typeid_cast<const ColumnInt64 *>(data.get()))     return replicateNumber<Int64>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat32 *>(data.get()))   return replicateNumber<Float32>(replicate_offsets);
-    if (typeid_cast<const ColumnFloat64 *>(data.get()))   return replicateNumber<Float64>(replicate_offsets);
-    if (typeid_cast<const ColumnString *>(data.get()))    return replicateString(replicate_offsets);
-    if (typeid_cast<const ColumnConst *>(data.get()))     return replicateConst(replicate_offsets);
-    if (typeid_cast<const ColumnNullable *>(data.get()))  return replicateNullable(replicate_offsets);
-    if (typeid_cast<const ColumnTuple *>(data.get()))     return replicateTuple(replicate_offsets);
+    if (typeid_cast<const ColumnUInt8 *>(data.get()))    return replicateNumber<UInt8>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt16 *>(data.get()))   return replicateNumber<UInt16>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt32 *>(data.get()))   return replicateNumber<UInt32>(replicate_offsets);
+    if (typeid_cast<const ColumnUInt64 *>(data.get()))   return replicateNumber<UInt64>(replicate_offsets);
+    if (typeid_cast<const ColumnInt8 *>(data.get()))     return replicateNumber<Int8>(replicate_offsets);
+    if (typeid_cast<const ColumnInt16 *>(data.get()))    return replicateNumber<Int16>(replicate_offsets);
+    if (typeid_cast<const ColumnInt32 *>(data.get()))    return replicateNumber<Int32>(replicate_offsets);
+    if (typeid_cast<const ColumnInt64 *>(data.get()))    return replicateNumber<Int64>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat32 *>(data.get()))  return replicateNumber<Float32>(replicate_offsets);
+    if (typeid_cast<const ColumnFloat64 *>(data.get()))  return replicateNumber<Float64>(replicate_offsets);
+    if (typeid_cast<const ColumnString *>(data.get()))   return replicateString(replicate_offsets);
+    if (typeid_cast<const ColumnConst *>(data.get()))    return replicateConst(replicate_offsets);
+    if (typeid_cast<const ColumnNullable *>(data.get())) return replicateNullable(replicate_offsets);
+    if (typeid_cast<const ColumnTuple *>(data.get()))    return replicateTuple(replicate_offsets);
     return replicateGeneric(replicate_offsets);
 }
 
@@ -781,11 +780,11 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
     ColumnArray & res_ = static_cast<ColumnArray &>(*res);
 
     const ColumnString & src_string = typeid_cast<const ColumnString &>(*data);
-    const ColumnString::Chars_t & src_chars = src_string.getChars();
+    const ColumnString::Chars & src_chars = src_string.getChars();
     const Offsets & src_string_offsets = src_string.getOffsets();
     const Offsets & src_offsets = getOffsets();
 
-    ColumnString::Chars_t & res_chars = typeid_cast<ColumnString &>(res_.getData()).getChars();
+    ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res_.getData()).getChars();
     Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_.getData()).getOffsets();
     Offsets & res_offsets = res_.getOffsets();
 

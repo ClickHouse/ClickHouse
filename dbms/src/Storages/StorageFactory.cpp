@@ -1,7 +1,6 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -87,19 +86,19 @@ StoragePtr StorageFactory::get(
 
             name = engine_def.name;
 
-            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka")
+            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka" && name != "Join")
             {
                 throw Exception(
                     "Engine " + name + " doesn't support SETTINGS clause. "
-                    "Currently only the MergeTree family of engines and Kafka engine supports it",
+                    "Currently only the MergeTree family of engines, Kafka engine and Join engine support it",
                     ErrorCodes::BAD_ARGUMENTS);
             }
 
-            if ((storage_def->partition_by || storage_def->order_by || storage_def->sample_by)
+            if ((storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, ORDER BY or SAMPLE BY clauses. "
+                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 

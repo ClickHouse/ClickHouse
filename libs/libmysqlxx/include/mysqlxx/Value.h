@@ -69,7 +69,7 @@ public:
         if (unlikely(isNull()))
             throwException("Value is NULL");
 
-        return readUIntText(m_data, m_length);;
+        return readUIntText(m_data, m_length);
     }
 
     /// Получить целое со знаком или дату или дату-время (в unix timestamp согласно текущей тайм-зоне).
@@ -190,7 +190,7 @@ private:
 
     Int64 getIntImpl() const
     {
-        return readIntText(m_data, m_length);;
+        return readIntText(m_data, m_length);
     }
 
 

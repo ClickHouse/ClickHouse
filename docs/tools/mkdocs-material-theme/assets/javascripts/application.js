@@ -4887,7 +4887,14 @@ var Result = function () {
       /* Append trailing wildcard to all terms for prefix querying */
       .query(function (query) {
         _this.value_.toLowerCase().split(" ").filter(Boolean).forEach(function (term) {
-          query.term(term, { wildcard: _exposeLoaderLunrLunr2.default.Query.wildcard.TRAILING });
+          term = _exposeLoaderLunrLunr2.default.stemmer(new _exposeLoaderLunrLunr2.default.Token(term)).toString();
+          for (var lang in _this.lang_) {
+            lang = _this.lang_[lang];
+            if (typeof(_exposeLoaderLunrLunr2.default[lang]) !== 'undefined' && typeof(_exposeLoaderLunrLunr2.default[lang].stemmer) !== 'undefined') {
+              term = _exposeLoaderLunrLunr2.default[lang].stemmer(new _exposeLoaderLunrLunr2.default.Token(term)).toString();
+            }
+          }
+          query.term(term, { wildcard: _exposeLoaderLunrLunr2.default.Query.wildcard.TRAILING | _exposeLoaderLunrLunr2.default.Query.wildcard.LEADING });
         });
       })
 

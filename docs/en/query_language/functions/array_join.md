@@ -1,6 +1,4 @@
-<a name="functions_arrayjoin"></a>
-
-# arrayJoin function
+# arrayJoin function {#functions_arrayjoin}
 
 This is a very unusual function.
 
@@ -17,11 +15,11 @@ Note the ARRAY JOIN syntax in the SELECT query, which provides broader possibili
 
 Example:
 
-```sql
+``` sql
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-```text
+```
 ┌─dst─┬─\'Hello\'─┬─src─────┐
 │   1 │ Hello     │ [1,2,3] │
 │   2 │ Hello     │ [1,2,3] │
@@ -29,3 +27,5 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 └─────┴───────────┴─────────┘
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/array_join/) <!--hide-->

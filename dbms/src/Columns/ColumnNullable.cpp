@@ -22,8 +22,7 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
 {
     /// ColumnNullable cannot have constant nested column. But constant argument could be passed. Materialize it.
-    if (ColumnPtr nested_column_materialized = getNestedColumn().convertToFullColumnIfConst())
-        nested_column = nested_column_materialized;
+    nested_column = getNestedColumn().convertToFullColumnIfConst();
 
     if (!getNestedColumn().canBeInsideNullable())
         throw Exception{getNestedColumn().getName() + " cannot be inside Nullable column", ErrorCodes::ILLEGAL_COLUMN};
@@ -353,8 +352,8 @@ void getExtremesFromNullableContent(const ColumnVector<T> & col, const NullMap &
 
     if (has_not_null)
     {
-        min = typename NearestFieldType<T>::Type(cur_min);
-        max = typename NearestFieldType<T>::Type(cur_max);
+        min = cur_min;
+        max = cur_max;
     }
 }
 

@@ -107,7 +107,7 @@ Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_an
 
 Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host, UInt16 port)
 {
-    return !impl->disable_cache ?  Poco::Net::SocketAddress(impl->cache_host(host), port) : Poco::Net::SocketAddress(host, port);
+    return !impl->disable_cache ? Poco::Net::SocketAddress(impl->cache_host(host), port) : Poco::Net::SocketAddress(host, port);
 }
 
 void DNSResolver::dropCache()
