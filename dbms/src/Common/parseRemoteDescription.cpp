@@ -1,4 +1,4 @@
-#include <TableFunctions/parseRemoteDescription.h>
+#include "parseRemoteDescription.h"
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
