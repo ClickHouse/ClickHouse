@@ -2,10 +2,10 @@
 
 Universally unique identifier (UUID) is a 16-byte number used to identify the records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-The UUID format is represented below: 
+The example of UUID type value is represented below: 
 
 ```
-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
 If you do not specify the UUID column value when inserting a new record, the UUID value is filled with zero:
