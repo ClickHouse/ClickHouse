@@ -13,21 +13,21 @@
 #    include <Columns/IColumn.h>
 #    include <Core/ColumnWithTypeAndName.h>
 #    include <DataTypes/DataTypeDate.h>
+#    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeFactory.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
-#    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/DataTypesDecimal.h>
-#    include <DataTypes/DataTypeDateTime.h>
+#    include <DataTypes/DataTypesNumber.h>
 #    include <Formats/FormatFactory.h>
 #    include <IO/BufferBase.h>
 #    include <IO/ReadBufferFromMemory.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
+#    include <Interpreters/castColumn.h>
 #    include <common/DateLUTImpl.h>
 #    include <ext/range.h>
-#    include <Interpreters/castColumn.h>
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
@@ -38,14 +38,13 @@
 #    include <arrow/api.h>
 #    include <arrow/buffer.h>
 #    include <arrow/io/api.h>
-//#    include <arrow/type.h>
 #    include <parquet/arrow/reader.h>
 #    include <parquet/arrow/writer.h>
 #    include <parquet/exception.h>
 #    include <parquet/file_reader.h>
 #    pragma GCC diagnostic pop
 
-#include <Core/iostream_debug_helpers.h>
+#    include <Core/iostream_debug_helpers.h>
 
 namespace DB
 {
@@ -61,7 +60,8 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
 }
 
-ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_) : istr{istr_}, header{header_}, context{context_}
+ParquetBlockInputStream::ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_)
+    : istr{istr_}, header{header_}, context{context_}
 {
 }
 
@@ -77,7 +77,7 @@ void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, Mu
     auto & column_data = static_cast<ColumnVector<NumericType> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->data()->chunk(chunk_i);
         /// buffers[0] is a null bitmap and buffers[1] are actual values
@@ -97,7 +97,7 @@ void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, Mut
     PaddedPODArray<UInt64> & column_offsets = static_cast<ColumnString &>(*internal_column).getOffsets();
 
     size_t chars_t_size = 0;
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->data()->chunk(chunk_i)));
         const size_t chunk_length = chunk.length();
@@ -109,7 +109,7 @@ void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, Mut
     column_chars_t.reserve(chars_t_size);
     column_offsets.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BinaryArray & chunk = static_cast<arrow::BinaryArray &>(*(arrow_column->data()->chunk(chunk_i)));
         std::shared_ptr<arrow::Buffer> buffer = chunk.value_data();
@@ -134,7 +134,7 @@ void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, Mu
     auto & column_data = static_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.resize(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks= static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BooleanArray & chunk = static_cast<arrow::BooleanArray &>(*(arrow_column->data()->chunk(chunk_i)));
         /// buffers[0] is a null bitmap and buffers[1] are actual values
@@ -151,11 +151,11 @@ void fillColumnWithDate32Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     PaddedPODArray<UInt16> & column_data = static_cast<ColumnVector<UInt16> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::Date32Array & chunk = static_cast<arrow::Date32Array &>(*(arrow_column->data()->chunk(chunk_i)));
 
-        for (size_t value_i = 0; value_i != static_cast<size_t>(chunk.length()); ++value_i)
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             UInt32 days_num = static_cast<UInt32>(chunk.Value(value_i));
             if (days_num > DATE_LUT_MAX_DAY_NUM)
@@ -179,84 +179,34 @@ void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks());chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = static_cast<arrow::Date64Array &>(*(arrow_column->data()->chunk(chunk_i)));
 
-        for (size_t value_i = 0; value_i != static_cast<size_t>(chunk.length()); ++value_i)
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000) ; // ms! TODO: check other 's' 'ns' ...
+            auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // ms! TODO: check other 's' 'ns' ...
             column_data.emplace_back(timestamp);
         }
     }
 }
 
-void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column, const std::shared_ptr<const IDataType> & internal_nested_type)
+void fillColumnWithDecimalData(
+    std::shared_ptr<arrow::Column> & arrow_column,
+    MutableColumnPtr & internal_column
+    )
 {
-(void)internal_nested_type;
-/*    auto & column_data = static_cast<ColumnDecimal<Decimal128> &>(*internal_column).getData();
-    column_data.reserve(arrow_column->length());
-
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
-    {
-        auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->data()->chunk(chunk_i)));
-
-        for (size_t value_i = 0; value_i != static_cast<size_t>(chunk.length()); ++value_i)
-        {
-            const auto * raw_data = reinterpret_cast<const Decimal128 *>(buffer->data());
-            column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
-        }
-    }
-*/
-/*
-    auto & column_data = static_cast<ColumnDecimal<Decimal128> &>(*internal_column).getData();
-    column_data.reserve(arrow_column->length());
-
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
-    {
-        std::shared_ptr<arrow::Array> chunk = arrow_column->data()->chunk(chunk_i);
-        /// buffers[0] is a null bitmap and buffers[1] are actual values
-        std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
-
-        const auto * raw_data = reinterpret_cast<const Decimal128 *>(buffer->data());
-        column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
-    }
-*/
-
-    auto data_type = static_cast<const DataTypeDecimal<Decimal128>*>(internal_nested_type.get());
-    (void)data_type;
-
     auto & column = static_cast<ColumnDecimal<Decimal128> &>(*internal_column);
     auto & column_data = column.getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0; chunk_i != static_cast<size_t>(arrow_column->data()->num_chunks()); ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->data()->chunk(chunk_i)));
 
-        for (size_t value_i = 0; value_i != static_cast<size_t>(chunk.length()); ++value_i)
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-
-            //DUMP(chunk.FormatValue(value_i), data_type->getScale(), data_type->getPrecision());
-            //DUMP((UInt64)static_cast<Decimal128>(*chunk.Value(value_i)));
-            //DUMP((UInt64)(*chunk.Value(value_i)));
-#if defined(__SIZEOF_INT128__)
-            //DUMP((UInt64)(__uint128_t)(*chunk.Value(value_i)), std::stod(chunk.FormatValue(value_i)));
-#endif
-
-            //DUMP(data_type->parseFromString(chunk.FormatValue(value_i)));
-
-            //auto value = static_cast<Decimal128>(chunk.Value(value_i));
-            //column_data.emplace_back(value);
-            //column.insert(DecimalField(static_cast<Decimal128>(*chunk.Value(value_i)), data_type->getScale() /* scale */));
-
-            //DUMP(data_type->parseFromString(chunk.FormatValue(value_i)));
-
-            //column_data.emplace_back(*static_cast<const Decimal128*>(chunk.Value(value_i)));
-            column_data.emplace_back(*reinterpret_cast<const Decimal128*>(chunk.Value(value_i))); // TODO: copy column
-            //column_data.emplace_back(static_cast<Decimal128>(static_cast<__uint128_t>(*chunk.Value(value_i))));
-            //column_data.emplace_back(std::stod(chunk.FormatValue(value_i)) * data_type->getScaleMultiplier(data_type->getScale()) );
-            //column_data.emplace_back(std::stod(chunk.FormatValue(value_i)) * data_type->getScaleMultiplier() ); // TERRIBLY WRONG! but how to get correct value?
+            column_data.emplace_back(*reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
         }
     }
 }
@@ -287,10 +237,9 @@ void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, M
         M(arrow::Type::UINT64, UInt64) \
         M(arrow::Type::INT64, Int64) \
         M(arrow::Type::FLOAT, Float32) \
-        M(arrow::Type::HALF_FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
+        //M(arrow::Type::HALF_FLOAT, Float32) // TODO
 
-// M(arrow::Type::DECIMAL, Decimal)
 
 
 using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
@@ -323,9 +272,9 @@ const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_ty
     //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
     //{arrow::Type::UUID, std::make_shared<DataTypeString>()},
 
-    {arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal<Decimal128>>(1,1)},
+    {arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal<Decimal128>>(1, 1)},
 
-    
+
     // TODO: add other types that are convertable to internal ones:
     // 0. ENUM?
     // 1. UUID -> String
@@ -369,13 +318,13 @@ Block ParquetBlockInputStream::readImpl()
 
 
     NameToColumnPtr name_to_column_ptr;
-    for (size_t i = 0; i != static_cast<size_t>(table->num_columns()); ++i)
+    for (size_t i = 0, num_columns = static_cast<size_t>(table->num_columns()); i < num_columns; ++i)
     {
         std::shared_ptr<arrow::Column> arrow_column = table->column(i);
         name_to_column_ptr[arrow_column->name()] = arrow_column;
     }
 
-    for (size_t column_i = 0; column_i != header.columns(); ++column_i)
+    for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
         ColumnWithTypeAndName header_column = header.getByPosition(column_i);
 
@@ -386,17 +335,17 @@ Block ParquetBlockInputStream::readImpl()
         std::shared_ptr<arrow::Column> arrow_column = name_to_column_ptr[header_column.name];
         arrow::Type::type arrow_type = arrow_column->type()->id();
 
-//DUMP(arrow_type);
+        //DUMP(arrow_type);
         // TODO REWRITE TYPE DETECT!
-        if (arrow_type != arrow::Type::DECIMAL) {
-
-        if (arrow_type_to_internal_type.find(arrow_type) == arrow_type_to_internal_type.end())
+        if (arrow_type != arrow::Type::DECIMAL)
         {
-            throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
-                                + "\""
-                                  " is not supported for conversion from a Parquet data format",
-                            ErrorCodes::CANNOT_CONVERT_TYPE};
-        }
+            if (arrow_type_to_internal_type.find(arrow_type) == arrow_type_to_internal_type.end())
+            {
+                throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
+                                    + "\""
+                                      " is not supported for conversion from a Parquet data format",
+                                ErrorCodes::CANNOT_CONVERT_TYPE};
+            }
         }
 
         // TODO: check if a column is const?
@@ -411,13 +360,15 @@ Block ParquetBlockInputStream::readImpl()
         DataTypePtr internal_nested_type;
 
         // TODO REWRITE TYPE DETECT!
-        if (arrow_type == arrow::Type::DECIMAL) {
+        if (arrow_type == arrow::Type::DECIMAL)
+        {
             //DUMP(static_cast<arrow::DecimalType*>(arrow_column->type().get())->precision(), static_cast<arrow::DecimalType*>(arrow_column->type().get())->scale());
-            const auto decimal_type = static_cast<arrow::DecimalType*>(arrow_column->type().get());
+            const auto decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
             internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(), decimal_type->scale());
             //internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->scale(), decimal_type->precision());
-        } else {
-
+        }
+        else
+        {
             internal_nested_type = arrow_type_to_internal_type.at(arrow_type);
         }
 
@@ -443,7 +394,7 @@ Block ParquetBlockInputStream::readImpl()
         {
             case arrow::Type::STRING:
             case arrow::Type::BINARY:
-            //case arrow::Type::FIXED_SIZE_BINARY:
+                //case arrow::Type::FIXED_SIZE_BINARY:
                 fillColumnWithStringData(arrow_column, read_column);
                 break;
             case arrow::Type::BOOL:
@@ -457,7 +408,7 @@ Block ParquetBlockInputStream::readImpl()
                 fillColumnWithDate64Data(arrow_column, read_column);
                 break;
             case arrow::Type::DECIMAL:
-                fillColumnWithDecimalData(arrow_column, read_column, internal_nested_type);
+                fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
                 break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
         case ARROW_NUMERIC_TYPE: \
@@ -497,10 +448,11 @@ void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerInputFormat(
         "Parquet",
-        [](ReadBuffer & buf, const Block & sample, const Context & context, size_t /*max_block_size */, const FormatSettings & /* settings */)
-        {
-            return std::make_shared<ParquetBlockInputStream>(buf, sample, context);
-        });
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const Context & context,
+           size_t /*max_block_size */,
+           const FormatSettings & /* settings */) { return std::make_shared<ParquetBlockInputStream>(buf, sample, context); });
 }
 
 }

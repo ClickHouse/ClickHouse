@@ -10,7 +10,13 @@ class Array;
 class DataType;
 }
 
-namespace parquet { namespace arrow { class FileWriter; }}
+namespace parquet
+{
+namespace arrow
+{
+    class FileWriter;
+}
+}
 
 namespace DB
 {
