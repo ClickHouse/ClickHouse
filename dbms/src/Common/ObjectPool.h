@@ -5,14 +5,20 @@
 #include <stack>
 #include <mutex>
 
+#include <Common/Exception.h>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int POOL_SIZE_EXCEEDED;
+}
+
 
 /** Pool for objects that cannot be used from different threads simultaneously.
   * Allows to create an object for each thread.
-  * Pool has unbounded size and objects are not destroyed before destruction of pool.
   *
   * Use it in cases when thread local storage is not appropriate
   *  (when maximum number of simultaneously used objects is less
@@ -28,6 +34,14 @@ protected:
     std::mutex mutex;
     std::stack<std::unique_ptr<T>> stack;
 
+    /// Maximum pool size. Zero means unlimited. When exceeded, an exception is thrown.
+    size_t max_objects = 0;
+    /// Maximum number of unused objects kept in the pool. Zero means unlimited. When exceeded, all excessive objects are destroyed.
+    size_t max_free_objects = 0;
+
+    /// Total objects in pool: free and in use.
+    size_t size = 0;
+
     /// Specialized deleter for std::unique_ptr.
     /// Returns underlying pointer back to stack thus reclaiming its ownership.
     struct Deleter
@@ -40,10 +54,31 @@ protected:
         {
             std::lock_guard lock{parent->mutex};
             parent->stack.emplace(owning_ptr);
+
+            if (parent->max_free_objects && parent->stack.size() > parent->max_free_objects)
+            {
+                while (parent->stack.size() > parent->max_free_objects)
+                {
+                    parent->stack.pop();
+                    --parent->size;
+                }
+            }
         }
     };
 
 public:
+    SimpleObjectPool() {};
+
+    SimpleObjectPool(size_t max_objects, size_t max_free_objects)
+        : max_objects(max_objects), max_free_objects(max_free_objects) {};
+
+    void setLimits(size_t max_objects_, size_t max_free_objects_)
+    {
+        std::lock_guard lock(mutex);
+        max_objects = max_objects_;
+        max_free_objects = max_free_objects_;
+    }
+
     using Pointer = std::unique_ptr<T, Deleter>;
 
     /// Extracts and returns a pointer from the stack if it's not empty,
@@ -55,8 +90,23 @@ public:
 
         if (stack.empty())
         {
+            if (max_objects && size >= max_objects)
+                throw Exception("SimpleObjectPool size exceeded", ErrorCodes::POOL_SIZE_EXCEEDED);
+            ++size;
+
             lock.unlock();
-            return { f(), this };
+            try
+            {
+                return { f(), this };
+            }
+            catch (...)
+            {
+                {
+                    std::unique_lock lock(mutex);
+                    --size;
+                }
+                throw;
+            }
         }
 
         auto object = stack.top().release();
