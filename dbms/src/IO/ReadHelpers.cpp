@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <Common/memcpySmall.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
@@ -558,7 +558,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
 
             [&]()
             {
-#if __SSE2__
+#ifdef __SSE2__
                 auto rc = _mm_set1_epi8('\r');
                 auto nc = _mm_set1_epi8('\n');
                 auto dc = _mm_set1_epi8(delimiter);

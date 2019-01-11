@@ -449,9 +449,6 @@ private:
             case Types::Decimal32:  f(field.template get<DecimalField<Decimal32>>()); return;
             case Types::Decimal64:  f(field.template get<DecimalField<Decimal64>>()); return;
             case Types::Decimal128: f(field.template get<DecimalField<Decimal128>>()); return;
-
-            default:
-                throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
         }
     }
 

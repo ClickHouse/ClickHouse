@@ -16,7 +16,7 @@ set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
 include (cmake/version.cmake)
-message (STATUS "Will build ${VERSION_FULL}")
+message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION}")
 configure_file (src/Common/config.h.in ${CONFIG_COMMON})
 configure_file (src/Common/config_version.h.in ${CONFIG_VERSION})
 
@@ -29,13 +29,35 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
-# Add some warnings that are not available even with -Wall -Wextra.
+# Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
+
+option (WEVERYTHING "Enables -Weverything option with some exceptions. This is intended for exploration of new compiler warnings that may be found to be useful. Only makes sense for clang." ON)
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wshadow-uncaptured-local")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wpedantic -Wno-vla-extension -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types")
 
-    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wredundant-parens -Wzero-as-null-pointer-constant")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wshadow -Wshadow-uncaptured-local -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wcovered-switch-default -Wold-style-cast -Wrange-loop-analysis -Wunused-member-function -Wunreachable-code -Wunreachable-code-return -Wnewline-eof -Wembedded-directive -Wgnu-case-range -Wunused-macros -Wconditional-uninitialized -Wdeprecated -Wundef -Wreserved-id-macro -Wredundant-parens -Wzero-as-null-pointer-constant")
+
+    if (WEVERYTHING)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Weverything -Wno-c++98-compat -Wno-c++98-compat-pedantic -Wno-missing-noreturn -Wno-padded -Wno-switch-enum -Wno-shadow-field-in-constructor -Wno-deprecated-dynamic-exception-spec -Wno-float-equal -Wno-weak-vtables -Wno-shift-sign-overflow -Wno-sign-conversion -Wno-conversion -Wno-exit-time-destructors -Wno-undefined-func-template -Wno-documentation-unknown-command -Wno-missing-variable-declarations -Wno-unused-template -Wno-global-constructors -Wno-c99-extensions -Wno-missing-prototypes -Wno-weak-template-vtables -Wno-zero-length-array -Wno-gnu-anonymous-struct -Wno-nested-anon-types -Wno-double-promotion -Wno-disabled-macro-expansion -Wno-used-but-marked-unused -Wno-vla-extension -Wno-vla -Wno-packed")
+
+        # TODO Enable conversion, sign-conversion, double-promotion warnings.
+    endif ()
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
+        if (WEVERYTHING)
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-return-std-move-in-c++11")
+        endif ()
+    endif ()
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi-stmt -Wshadow-field -Wstring-plus-int")
+
+        if (WEVERYTHING)
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+        endif ()
     endif ()
 endif ()
 

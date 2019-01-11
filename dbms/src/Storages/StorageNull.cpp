@@ -30,13 +30,13 @@ void registerStorageNull(StorageFactory & factory)
     });
 }
 
-void StorageNull::alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
+void StorageNull::alter(const AlterCommands & params, const String & current_database_name, const String & current_table_name, const Context & context)
 {
     auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, {});
     setColumns(std::move(new_columns));
 }
 

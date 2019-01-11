@@ -488,7 +488,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             }
 
             ASTPtr query = filter_function;
-            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, available_real_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, available_real_columns);
             filter_expression = ExpressionAnalyzer(filter_function, syntax_result, context).getActions(false);
 
             /// Add columns needed for `sample_by_ast` to `column_names_to_read`.
@@ -848,7 +848,7 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
     arguments->children.push_back(one);
 
     ASTPtr query = function;
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, data.getColumns().getAllPhysical());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, data.getColumns().getAllPhysical());
     out_expression = ExpressionAnalyzer(query, syntax_result, context).getActions(false);
     out_column = function->getColumnName();
 }

@@ -81,10 +81,13 @@ struct DefaultHash<CompactStringRef>
 };
 
 
-#define mix(h) ({                   \
-    (h) ^= (h) >> 23;               \
-    (h) *= 0x2127599bf4325c37ULL;   \
-    (h) ^= (h) >> 47; })
+static inline UInt64 mix(UInt64 h)
+{
+    h ^= h >> 23;
+    h *= 0x2127599bf4325c37ULL;
+    h ^= h >> 47;
+    return h;
+}
 
 struct FastHash64
 {

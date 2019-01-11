@@ -96,13 +96,13 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<HTTPS
     using Parent = detail::ReadWriteBufferFromHTTPBase<HTTPSessionPtr>;
 
 public:
-    explicit ReadWriteBufferFromHTTP(Poco::URI uri,
-        const std::string & method = {},
+    explicit ReadWriteBufferFromHTTP(Poco::URI uri_,
+        const std::string & method_ = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE)
-        : Parent(makeHTTPSession(uri, timeouts), uri, method, out_stream_callback, credentials, buffer_size_)
+        : Parent(makeHTTPSession(uri_, timeouts), uri_, method_, out_stream_callback, credentials, buffer_size_)
     {
     }
 };
@@ -111,16 +111,16 @@ class PooledReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase
     using Parent = detail::ReadWriteBufferFromHTTPBase<PooledHTTPSessionPtr>;
 
 public:
-    explicit PooledReadWriteBufferFromHTTP(Poco::URI uri,
-        const std::string & method = {},
+    explicit PooledReadWriteBufferFromHTTP(Poco::URI uri_,
+        const std::string & method_ = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
         const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
-        : Parent(makePooledHTTPSession(uri, timeouts, max_connections_per_endpoint),
-              uri,
-              method,
+        : Parent(makePooledHTTPSession(uri_, timeouts, max_connections_per_endpoint),
+              uri_,
+              method_,
               out_stream_callback,
               credentials,
               buffer_size_)
