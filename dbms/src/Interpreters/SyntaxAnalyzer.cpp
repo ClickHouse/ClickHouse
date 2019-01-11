@@ -147,7 +147,8 @@ void normalizeTree(
     else
         table_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
 
-    QueryNormalizer(query, result.aliases, context.getSettingsRef(), std::move(table_with_columns)).perform();
+    QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef(), std::move(table_with_columns));
+    QueryNormalizer(normalizer_data).visit(query);
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
