@@ -43,7 +43,7 @@ static const char * cancellationCodeToStatus(CancellationCode code)
             return "waiting";
         default:
             return "unknown_status";
-    };
+    }
 }
 
 

@@ -21,6 +21,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
+#include <algorithm>
 
 
 namespace DB
@@ -289,7 +290,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     if (replica_names.empty())
         return;
 
-    ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
+    ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
         pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();

@@ -600,9 +600,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         }
 
         preprocessed_path = preprocessed_dir + new_path;
-        auto path = Poco::Path(preprocessed_path).makeParent();
-        if (!path.toString().empty())
-            Poco::File(path).createDirectories();
+        auto preprocessed_path_parent = Poco::Path(preprocessed_path).makeParent();
+        if (!preprocessed_path_parent.toString().empty())
+            Poco::File(preprocessed_path_parent).createDirectories();
     }
     try
     {

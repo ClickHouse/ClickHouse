@@ -37,36 +37,24 @@ CC=clang CXX=clang++ cmake -D SANITIZE=thread ..
 ninja
 ```
 
-## Copy binary to your server
-
-```
-scp ./dbms/programs/clickhouse yourserver:~/clickhouse-tsan
-```
-
 ## Start ClickHouse and run tests
 
 ```
-sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
+sudo -u clickhouse TSAN_OPTIONS='halt_on_error=1,suppressions=../dbms/tests/tsan_suppressions.txt' ./clickhouse-tsan server --config /etc/clickhouse-server/config.xml
 ```
 
 
 # How to use Undefined Behaviour Sanitizer
 
 ```
-CC=clang CXX=clang++ mkdir build_ubsan && cd build_ubsan
+mkdir build_ubsan && cd build_ubsan
 ```
 
 Note: clang is mandatory, because gcc (in version 8) has false positives due to devirtualization and it has less amount of checks.
 
 ```
-cmake -D SANITIZE=undefined ..
+CC=clang CXX=clang++ cmake -D SANITIZE=undefined ..
 ninja
-```
-
-## Copy binary to your server
-
-```
-scp ./dbms/programs/clickhouse yourserver:~/clickhouse-ubsan
 ```
 
 ## Start ClickHouse and run tests
