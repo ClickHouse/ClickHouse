@@ -675,7 +675,7 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 {
     return ParserList(
         std::make_unique<TMPParser>(),
-        std::make_unique<ParserToken>(TokenType::Whitespace))
+        std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
 
