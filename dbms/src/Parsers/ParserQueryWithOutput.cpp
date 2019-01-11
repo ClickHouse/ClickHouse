@@ -25,6 +25,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserDescribeTableQuery describe_table_p;
     ParserShowProcesslistQuery show_processlist_p;
     ParserCreateQuery create_p;
+    ParserCreateDictionaryQuery create_dictionary_p;
     ParserAlterQuery alter_p;
     ParserRenameQuery rename_p;
     ParserDropQuery drop_p;
@@ -46,6 +47,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || describe_table_p.parse(pos, query, expected)
         || show_processlist_p.parse(pos, query, expected)
         || create_p.parse(pos, query, expected)
+        || create_dictionary_p.parse(pos, query, expected)
         || alter_p.parse(pos, query, expected)
         || rename_p.parse(pos, query, expected)
         || drop_p.parse(pos, query, expected)
