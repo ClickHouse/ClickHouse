@@ -23,7 +23,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
