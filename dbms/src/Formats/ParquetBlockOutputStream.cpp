@@ -8,9 +8,12 @@
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnVector.h>
 #    include <Columns/ColumnsNumber.h>
+#    include <Columns/ColumnDecimal.h>
 #    include <Core/ColumnWithTypeAndName.h>
+#    include <Core/callOnTypeIndex.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeDateTime.h>
+#    include <DataTypes/DataTypesDecimal.h>
 #    include <Formats/FormatFactory.h>
 #    include <IO/WriteHelpers.h>
 
@@ -23,6 +26,7 @@
 #    endif
 #    include <arrow/api.h>
 #    include <arrow/io/api.h>
+#    include <arrow/util/decimal.h>
 #    include <parquet/arrow/writer.h>
 #    include <parquet/exception.h>
 #    include <parquet/util/memory.h>
@@ -141,8 +145,7 @@ void fillArrowArrayWithDateColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
-void /*ParquetBlockOutputStream::*/fillArrowArrayWithDateTimeColumnData(
-    ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
+void fillArrowArrayWithDateTimeColumnData(ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
     //arrow::Date64Builder date_builder;
@@ -165,6 +168,39 @@ void /*ParquetBlockOutputStream::*/fillArrowArrayWithDateTimeColumnData(
     checkFinishStatus(finish_status, write_column->getName());
 }
 
+template <typename DataType>
+void fillArrowArrayWithDecimalColumnData(ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap, const DataType * decimal_type)
+{
+    //auto & internal_data = static_cast<const ColumnVector<Decimal128> &>(*write_column).getData();
+    //using DT = decltype(decimal_type);
+    const auto & column = static_cast<const typename DataType::ColumnType /*ColumnDecimal<Decimal128>*/ &>(*write_column); // !!!!
+    //const auto & column = static_cast<const DT::ColumnType /*ColumnDecimal<Decimal128>*/ &>(*write_column); // !!!!
+    //const auto & column = static_cast<const decltype(decimal_type*)::ColumnType /*ColumnDecimal<Decimal128>*/ &>(*write_column); // !!!!
+    //DUMP(write_column->size(), column.size());
+    //const auto & internal_data = column.getData();
+    //std::shared_ptr<arrow::decimal> type;
+    //DUMP(decimal_type->getScale(), decimal_type->getPrecision());
+    arrow::DecimalBuilder builder(arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()));
+    arrow::Status status;
+
+    for (size_t value_i = 0, size = /*internal_data.size()*/ column.size(); value_i < size; ++value_i)
+    {
+        if (null_bytemap && (*null_bytemap)[value_i])
+            status = builder.AppendNull();
+        else
+            //append_status = builder.Append(arrow::Decimal128(internal_data[value_i].value));
+            //status = builder.Append(arrow::Decimal128(reinterpret_cast<const uint8_t*>(&internal_data[value_i].value))); //TODO !
+            //status = builder.Append(arrow::Decimal128(reinterpret_cast<const uint8_t*>(column.getElement(value_i).value)));
+            //status = builder.Append(arrow::Decimal128(reinterpret_cast<const uint8_t*>(column.getElement(value_i)())));
+            status = builder.Append(arrow::Decimal128(reinterpret_cast<const uint8_t*>(&column.getElement(value_i).value))); // TODO: try copy column
+
+        checkAppendStatus(status, write_column->getName());
+    }
+
+    status = builder.Finish(&arrow_array);
+    checkFinishStatus(status, write_column->getName());
+}
+
 #    define FOR_INTERNAL_NUMERIC_TYPES(M) \
         M(UInt8, arrow::UInt8Builder) \
         M(Int8, arrow::Int8Builder) \
@@ -177,7 +213,7 @@ void /*ParquetBlockOutputStream::*/fillArrowArrayWithDateTimeColumnData(
         M(Float32, arrow::FloatBuilder) \
         M(Float64, arrow::DoubleBuilder)
 
-const std::unordered_map<String, std::shared_ptr<arrow::DataType>> /*ParquetBlockOutputStream::*/internal_type_to_arrow_type = {
+const std::unordered_map<String, std::shared_ptr<arrow::DataType>> internal_type_to_arrow_type = {
     {"UInt8", arrow::uint8()},
     {"Int8", arrow::int8()},
     {"UInt16", arrow::uint16()},
@@ -198,6 +234,8 @@ const std::unordered_map<String, std::shared_ptr<arrow::DataType>> /*ParquetBloc
     // TODO: ClickHouse can actually store non-utf8 strings!
     {"String", arrow::utf8()},
     {"FixedString", arrow::utf8()},
+
+    //{"Decimal", arrow::uint8()},
 };
 
 const PaddedPODArray<UInt8> * extractNullBytemapPtr(ColumnPtr column)
@@ -254,6 +292,40 @@ void ParquetBlockOutputStream::write(const Block & block)
         //const std::string column_nested_type_name = column_nested_type->getName();
         const std::string column_nested_type_name = column_nested_type->getFamilyName();
 
+        //DUMP(column_nested_type_name, column_nested_type->getName());
+        // TODO REWRITE TYPE DETECT!
+        //if (column_nested_type_name == "Decimal")
+        if (isDecimal(column_type))
+        {
+
+        auto add_decimal_field = [&](const auto & types) -> bool
+        {
+            using Types = std::decay_t<decltype(types)>;
+            using ToDataType = typename Types::LeftType;
+
+            if constexpr (
+                std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
+                std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
+                std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+            {
+
+            const auto & decimal_type = static_cast<const ToDataType*>(column_type.get());
+            arrow_fields.emplace_back(new arrow::Field(column.name, arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()), is_column_nullable));
+
+            }
+
+            return false;
+        };
+
+        callOnIndexAndDataType<void>(column_type->getTypeId(), add_decimal_field);
+
+/*            const auto & decimal_type = static_cast<const DataTypeDecimal<Decimal128>*>(column_type.get());
+DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
+            arrow_fields.emplace_back(new arrow::Field(column.name, arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()), is_column_nullable));
+*/
+
+        } else {
+
         if (internal_type_to_arrow_type.find(column_nested_type_name) == internal_type_to_arrow_type.end())
         {
             throw Exception{"The type \"" + column_nested_type_name + "\" of a column \"" + column.name
@@ -264,6 +336,8 @@ void ParquetBlockOutputStream::write(const Block & block)
 
         arrow_fields.emplace_back(
             new arrow::Field(column.name, internal_type_to_arrow_type.at(column_nested_type_name), is_column_nullable));
+        }
+
         std::shared_ptr<arrow::Array> arrow_array;
 
         ColumnPtr nested_column
@@ -286,6 +360,31 @@ void ParquetBlockOutputStream::write(const Block & block)
         {
             fillArrowArrayWithDateTimeColumnData(nested_column, arrow_array, null_bytemap);
         }
+
+        else if ("Decimal" == column_nested_type_name)
+        {
+
+            auto fill_decimal = [&](const auto & types) -> bool
+            {
+                using Types = std::decay_t<decltype(types)>;
+                using ToDataType = typename Types::LeftType;
+                if constexpr (
+                    std::is_same_v<ToDataType, DataTypeDecimal<Decimal32>> ||
+                    std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> ||
+                    std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
+                {
+                    const auto & decimal_type = static_cast<const ToDataType*>(column_type.get());
+                    fillArrowArrayWithDecimalColumnData(nested_column, arrow_array, null_bytemap, decimal_type);
+                }
+                return false;
+            };
+
+            callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal);
+
+            //const auto & decimal_type = static_cast<const DataTypeDecimal<Decimal128>*>(column_type.get());
+            //fillArrowArrayWithDecimalColumnData(nested_column, arrow_array, null_bytemap, decimal_type);
+
+        }
 #    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
         else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
         { \
@@ -302,15 +401,19 @@ void ParquetBlockOutputStream::write(const Block & block)
                             ErrorCodes::UNKNOWN_TYPE};
         }
 
+
         arrow_arrays.emplace_back(std::move(arrow_array));
+//DUMP("done5", column_nested_type_name, arrow_arrays.size());
     }
+
 
     std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(std::move(arrow_fields));
     std::shared_ptr<arrow::Table> arrow_table = arrow::Table::Make(arrow_schema, arrow_arrays);
 
+//DUMP("done7", arrow_arrays.size());
+
     auto sink = std::make_shared<OstreamOutputStream>(ostr);
 
-    // TODO CHECK RETURN_NOT_OK
     if (!file_writer)
     {
         auto status =     parquet::arrow::FileWriter::Open(
@@ -324,6 +427,7 @@ void ParquetBlockOutputStream::write(const Block & block)
             throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 
+//DUMP(arrow_table->num_rows());
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
 
