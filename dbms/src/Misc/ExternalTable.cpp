@@ -6,12 +6,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <IO/copyData.h>
-//#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromFile.h>
-//#include <IO/LimitReadBuffer.h>
-//#include <Storages/StorageMemory.h>
-//#include <Poco/Net/MessageHeader.h>
-
 
 
 namespace DB
