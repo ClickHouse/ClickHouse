@@ -134,7 +134,7 @@ void fillColumnWithBooleanData(std::shared_ptr<arrow::Column> & arrow_column, Mu
     auto & column_data = static_cast<ColumnVector<UInt8> &>(*internal_column).getData();
     column_data.resize(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks= static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BooleanArray & chunk = static_cast<arrow::BooleanArray &>(*(arrow_column->data()->chunk(chunk_i)));
         /// buffers[0] is a null bitmap and buffers[1] are actual values
@@ -179,7 +179,7 @@ void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks());chunk_i < num_chunks; ++chunk_i)
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = static_cast<arrow::Date64Array &>(*(arrow_column->data()->chunk(chunk_i)));
 
@@ -191,10 +191,7 @@ void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     }
 }
 
-void fillColumnWithDecimalData(
-    std::shared_ptr<arrow::Column> & arrow_column,
-    MutableColumnPtr & internal_column
-    )
+void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column = static_cast<ColumnDecimal<Decimal128> &>(*internal_column);
     auto & column_data = column.getData();
@@ -238,8 +235,7 @@ void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, M
         M(arrow::Type::INT64, Int64) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
-        //M(arrow::Type::HALF_FLOAT, Float32) // TODO
-
+//M(arrow::Type::HALF_FLOAT, Float32) // TODO
 
 
 using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
@@ -272,14 +268,13 @@ const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_ty
     //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
     //{arrow::Type::UUID, std::make_shared<DataTypeString>()},
 
-    {arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal<Decimal128>>(1, 1)},
+    //{arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal<Decimal128>>(1, 1)},
 
 
     // TODO: add other types that are convertable to internal ones:
     // 0. ENUM?
     // 1. UUID -> String
     // 2. JSON -> String
-    // 3. DECIMAL
     // Full list of types: contrib/arrow/cpp/src/arrow/type.h
 };
 
@@ -335,19 +330,6 @@ Block ParquetBlockInputStream::readImpl()
         std::shared_ptr<arrow::Column> arrow_column = name_to_column_ptr[header_column.name];
         arrow::Type::type arrow_type = arrow_column->type()->id();
 
-        //DUMP(arrow_type);
-        // TODO REWRITE TYPE DETECT!
-        if (arrow_type != arrow::Type::DECIMAL)
-        {
-            if (arrow_type_to_internal_type.find(arrow_type) == arrow_type_to_internal_type.end())
-            {
-                throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
-                                    + "\""
-                                      " is not supported for conversion from a Parquet data format",
-                                ErrorCodes::CANNOT_CONVERT_TYPE};
-            }
-        }
-
         // TODO: check if a column is const?
         if (!header_column.type->isNullable() && arrow_column->null_count())
         {
@@ -359,17 +341,20 @@ Block ParquetBlockInputStream::readImpl()
 
         DataTypePtr internal_nested_type;
 
-        // TODO REWRITE TYPE DETECT!
         if (arrow_type == arrow::Type::DECIMAL)
         {
-            //DUMP(static_cast<arrow::DecimalType*>(arrow_column->type().get())->precision(), static_cast<arrow::DecimalType*>(arrow_column->type().get())->scale());
             const auto decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
             internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(), decimal_type->scale());
-            //internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->scale(), decimal_type->precision());
+        }
+        else if (arrow_type_to_internal_type.find(arrow_type) != arrow_type_to_internal_type.end())
+        {
+            internal_nested_type = arrow_type_to_internal_type.at(arrow_type);
         }
         else
         {
-            internal_nested_type = arrow_type_to_internal_type.at(arrow_type);
+            throw Exception{"The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name()
+                                + "\" is not supported for conversion from a Parquet data format",
+                            ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
         const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type) : internal_nested_type;
@@ -421,7 +406,9 @@ Block ParquetBlockInputStream::readImpl()
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
             default:
-                throw Exception{"Unsupported parquet type \"" + arrow_column->type()->name() + "\"", ErrorCodes::UNKNOWN_TYPE};
+                throw Exception{"Unsupported parquet type \"" + arrow_column->type()->name() + "\" of an input column \""
+                                    + arrow_column->name() + "\"",
+                                ErrorCodes::UNKNOWN_TYPE};
         }
 
         if (column.type->isNullable())

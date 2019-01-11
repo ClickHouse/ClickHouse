@@ -51,22 +51,10 @@ void ParquetBlockOutputStream::flush()
     ostr.next();
 }
 
-void checkAppendStatus(arrow::Status & append_status, const std::string & column_name)
+void checkStatus(arrow::Status & status, const std::string & column_name)
 {
-    if (!append_status.ok())
-    {
-        throw Exception{"Error while building a parquet column \"" + column_name + "\": " + append_status.ToString(),
-                        ErrorCodes::UNKNOWN_EXCEPTION};
-    }
-}
-
-void checkFinishStatus(arrow::Status & finish_status, const std::string & column_name)
-{
-    if (!finish_status.ok())
-    {
-        throw Exception(
-            "Error while writing a parquet column \"" + column_name + "\": " + finish_status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION);
-    }
+    if (!status.ok())
+        throw Exception{"Error with a parquet column \"" + column_name + "\": " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
 template <typename NumericType, typename ArrowBuilderType>
@@ -75,7 +63,7 @@ void fillArrowArrayWithNumericColumnData(
 {
     const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
     ArrowBuilderType numeric_builder;
-    arrow::Status append_status;
+    arrow::Status status;
 
     const UInt8 * arrow_null_bytemap_raw_ptr = nullptr;
     PaddedPODArray<UInt8> arrow_null_bytemap;
@@ -89,11 +77,11 @@ void fillArrowArrayWithNumericColumnData(
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
 
-    append_status = numeric_builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
-    checkAppendStatus(append_status, write_column->getName());
+    status = numeric_builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    checkStatus(status, write_column->getName());
 
-    arrow::Status finish_status = numeric_builder.Finish(&arrow_array);
-    checkFinishStatus(finish_status, write_column->getName());
+    status = numeric_builder.Finish(&arrow_array);
+    checkStatus(status, write_column->getName());
 }
 
 template <typename ColumnType>
@@ -102,25 +90,25 @@ void fillArrowArrayWithStringColumnData(
 {
     const auto & internal_column = static_cast<const ColumnType &>(*write_column);
     arrow::StringBuilder string_builder;
-    arrow::Status append_status;
+    arrow::Status status;
 
     for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
     {
         if (null_bytemap && (*null_bytemap)[string_i])
         {
-            append_status = string_builder.AppendNull();
+            status = string_builder.AppendNull();
         }
         else
         {
             StringRef string_ref = internal_column.getDataAt(string_i);
-            append_status = string_builder.Append(string_ref.data, string_ref.size);
+            status = string_builder.Append(string_ref.data, string_ref.size);
         }
 
-        checkAppendStatus(append_status, write_column->getName());
+        checkStatus(status, write_column->getName());
     }
 
-    arrow::Status finish_status = string_builder.Finish(&arrow_array);
-    checkFinishStatus(finish_status, write_column->getName());
+    status = string_builder.Finish(&arrow_array);
+    checkStatus(status, write_column->getName());
 }
 
 void fillArrowArrayWithDateColumnData(
@@ -129,20 +117,20 @@ void fillArrowArrayWithDateColumnData(
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
     //arrow::Date32Builder date_builder;
     arrow::UInt16Builder date_builder;
-    arrow::Status append_status;
+    arrow::Status status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
     {
         if (null_bytemap && (*null_bytemap)[value_i])
-            append_status = date_builder.AppendNull();
+            status = date_builder.AppendNull();
         else
             /// Implicitly converts UInt16 to Int32
-            append_status = date_builder.Append(internal_data[value_i]);
-        checkAppendStatus(append_status, write_column->getName());
+            status = date_builder.Append(internal_data[value_i]);
+        checkStatus(status, write_column->getName());
     }
 
-    arrow::Status finish_status = date_builder.Finish(&arrow_array);
-    checkFinishStatus(finish_status, write_column->getName());
+    status = date_builder.Finish(&arrow_array);
+    checkStatus(status, write_column->getName());
 }
 
 void fillArrowArrayWithDateTimeColumnData(
@@ -151,22 +139,22 @@ void fillArrowArrayWithDateTimeColumnData(
     auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
     //arrow::Date64Builder date_builder;
     arrow::UInt32Builder date_builder;
-    arrow::Status append_status;
+    arrow::Status status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
     {
         if (null_bytemap && (*null_bytemap)[value_i])
-            append_status = date_builder.AppendNull();
+            status = date_builder.AppendNull();
         else
             /// Implicitly converts UInt16 to Int32
-            //append_status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
-            append_status = date_builder.Append(internal_data[value_i]);
+            //status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
+            status = date_builder.Append(internal_data[value_i]);
 
-        checkAppendStatus(append_status, write_column->getName());
+        checkStatus(status, write_column->getName());
     }
 
-    arrow::Status finish_status = date_builder.Finish(&arrow_array);
-    checkFinishStatus(finish_status, write_column->getName());
+    status = date_builder.Finish(&arrow_array);
+    checkStatus(status, write_column->getName());
 }
 
 template <typename DataType>
@@ -188,11 +176,11 @@ void fillArrowArrayWithDecimalColumnData(
             status = builder.Append(
                 arrow::Decimal128(reinterpret_cast<const uint8_t *>(&column.getElement(value_i).value))); // TODO: try copy column
 
-        checkAppendStatus(status, write_column->getName());
+        checkStatus(status, write_column->getName());
     }
 
     status = builder.Finish(&arrow_array);
-    checkFinishStatus(status, write_column->getName());
+    checkStatus(status, write_column->getName());
 }
 
 #    define FOR_INTERNAL_NUMERIC_TYPES(M) \
@@ -280,13 +268,8 @@ void ParquetBlockOutputStream::write(const Block & block)
         const DataTypePtr column_nested_type
             = is_column_nullable ? static_cast<const DataTypeNullable *>(column.type.get())->getNestedType() : column.type;
         const DataTypePtr column_type = column.type;
-        // TODO: do not mix std::string and String
-        //const std::string column_nested_type_name = column_nested_type->getName();
         const std::string column_nested_type_name = column_nested_type->getFamilyName();
 
-        //DUMP(column_nested_type_name, column_nested_type->getName());
-        // TODO REWRITE TYPE DETECT!
-        //if (column_nested_type_name == "Decimal")
         if (isDecimal(column_type))
         {
             auto add_decimal_field = [&](const auto & types) -> bool {
@@ -300,7 +283,7 @@ void ParquetBlockOutputStream::write(const Block & block)
                             Decimal32>> || std::is_same_v<ToDataType, DataTypeDecimal<Decimal64>> || std::is_same_v<ToDataType, DataTypeDecimal<Decimal128>>)
                 {
                     const auto & decimal_type = static_cast<const ToDataType *>(column_type.get());
-                    arrow_fields.emplace_back(new arrow::Field(
+                    arrow_fields.emplace_back(std::make_shared<arrow::Field>(
                         column.name, arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()), is_column_nullable));
                 }
 
@@ -308,11 +291,6 @@ void ParquetBlockOutputStream::write(const Block & block)
             };
 
             callOnIndexAndDataType<void>(column_type->getTypeId(), add_decimal_field);
-
-            /*            const auto & decimal_type = static_cast<const DataTypeDecimal<Decimal128>*>(column_type.get());
-DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
-            arrow_fields.emplace_back(new arrow::Field(column.name, arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()), is_column_nullable));
-*/
         }
         else
         {
@@ -324,8 +302,7 @@ DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
                                 ErrorCodes::UNKNOWN_TYPE};
             }
 
-            arrow_fields.emplace_back(
-                new arrow::Field(column.name, internal_type_to_arrow_type.at(column_nested_type_name), is_column_nullable));
+            arrow_fields.emplace_back(std::make_shared<arrow::Field>(column.name, internal_type_to_arrow_type.at(column_nested_type_name), is_column_nullable));
         }
 
         std::shared_ptr<arrow::Array> arrow_array;
@@ -351,9 +328,10 @@ DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
             fillArrowArrayWithDateTimeColumnData(nested_column, arrow_array, null_bytemap);
         }
 
-        else if ("Decimal" == column_nested_type_name)
+        else if (isDecimal(column_type))
         {
-            auto fill_decimal = [&](const auto & types) -> bool {
+            auto fill_decimal = [&](const auto & types) -> bool
+            {
                 using Types = std::decay_t<decltype(types)>;
                 using ToDataType = typename Types::LeftType;
                 if constexpr (
@@ -369,9 +347,6 @@ DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
             };
 
             callOnIndexAndDataType<void>(column_type->getTypeId(), fill_decimal);
-
-            //const auto & decimal_type = static_cast<const DataTypeDecimal<Decimal128>*>(column_type.get());
-            //fillArrowArrayWithDecimalColumnData(nested_column, arrow_array, null_bytemap, decimal_type);
         }
 #    define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
         else if (#CPP_NUMERIC_TYPE == column_nested_type_name) \
@@ -389,16 +364,12 @@ DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
                             ErrorCodes::UNKNOWN_TYPE};
         }
 
-
         arrow_arrays.emplace_back(std::move(arrow_array));
-        //DUMP("done5", column_nested_type_name, arrow_arrays.size());
     }
 
 
     std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(std::move(arrow_fields));
     std::shared_ptr<arrow::Table> arrow_table = arrow::Table::Make(arrow_schema, arrow_arrays);
-
-    //DUMP("done7", arrow_arrays.size());
 
     auto sink = std::make_shared<OstreamOutputStream>(ostr);
 
@@ -415,7 +386,6 @@ DUMP(column.name,decimal_type->getPrecision(), decimal_type->getScale());
             throw Exception{"Error while opening a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 
-    //DUMP(arrow_table->num_rows());
     // TODO: calculate row_group_size depending on a number of rows and table size
     auto status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
 
@@ -429,7 +399,7 @@ void ParquetBlockOutputStream::writeSuffix()
     {
         auto status = file_writer->Close();
         if (!status.ok())
-            throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
+            throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
     }
 }
 
@@ -437,7 +407,8 @@ void ParquetBlockOutputStream::writeSuffix()
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & /* settings */) {
+        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & /* settings */)
+        {
             return std::make_shared<ParquetBlockOutputStream>(buf, sample /*, format_settings */);
         });
 }
