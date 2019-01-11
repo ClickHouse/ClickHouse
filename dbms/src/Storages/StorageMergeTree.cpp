@@ -489,7 +489,7 @@ bool StorageMergeTree::merge(
             for (const auto & source_part : future_part.parts)
                 part_log_elem.source_part_names.push_back(source_part->name);
 
-            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
+            part_log_elem.rows_read = (*merge_entry)->rows_read;
             part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
             part_log_elem.rows = (*merge_entry)->rows_written;
