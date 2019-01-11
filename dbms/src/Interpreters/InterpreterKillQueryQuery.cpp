@@ -185,7 +185,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     BlockIO res_io;
     if (!query.is_kill_mutation)
     {
-        Block processes_block = getSelectFromSystemProcessesResult();
+        Block processes_block = getSelectResult("query_id, user, query", "system.processes");
         if (!processes_block)
             return res_io;
 
@@ -223,7 +223,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
         /// TODO: check permissions
 
-        Block mutations_block = getSelectFromSystemMutationsResult();
+        Block mutations_block = getSelectResult("database, table, mutation_id", "system.mutations");
         if (!mutations_block)
             return res_io;
 
@@ -264,14 +264,14 @@ BlockIO InterpreterKillQueryQuery::execute()
     return res_io;
 }
 
-Block InterpreterKillQueryQuery::getSelectFromSystemProcessesResult()
+Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const String & table)
 {
-    String system_processes_query = "SELECT query_id, user, query FROM system.processes";
+    String select_query = "SELECT " + columns + " FROM " + table;
     auto & where_expression = static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression;
     if (where_expression)
-        system_processes_query += " WHERE " + queryToString(where_expression);
+        select_query += " WHERE " + queryToString(where_expression);
 
-    BlockIO block_io = executeQuery(system_processes_query, context, true);
+    BlockIO block_io = executeQuery(select_query, context, true);
     Block res = block_io.in->read();
 
     if (res && block_io.in->read())
@@ -279,22 +279,5 @@ Block InterpreterKillQueryQuery::getSelectFromSystemProcessesResult()
 
     return res;
 }
-
-Block InterpreterKillQueryQuery::getSelectFromSystemMutationsResult()
-{
-    String system_mutations_query = "SELECT database, table, mutation_id FROM system.mutations";
-    auto & where_expression = static_cast<ASTKillQueryQuery &>(*query_ptr).where_expression;
-    if (where_expression)
-        system_mutations_query += " WHERE " + queryToString(where_expression);
-
-    BlockIO block_io = executeQuery(system_mutations_query, context, true);
-    Block res = block_io.in->read();
-
-    if (res && block_io.in->read())
-        throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
-
-    return res;
-}
-
 
 }

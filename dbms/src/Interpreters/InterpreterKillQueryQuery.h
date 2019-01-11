@@ -20,8 +20,7 @@ public:
     BlockIO execute() override;
 
 private:
-    Block getSelectFromSystemProcessesResult();
-    Block getSelectFromSystemMutationsResult();
+    Block getSelectResult(const String & columns, const String & table);
 
     ASTPtr query_ptr;
     Context & context;
