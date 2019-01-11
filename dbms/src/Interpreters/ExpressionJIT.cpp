@@ -449,8 +449,6 @@ static CompilableExpression subexpression(size_t i)
     return [=](llvm::IRBuilderBase &, const ValuePlaceholders & inputs) { return inputs[i](); };
 }
 
-
-
 static CompilableExpression subexpression(const IFunctionBase & f, std::vector<CompilableExpression> args)
 {
     return [&, args = std::move(args)](llvm::IRBuilderBase & builder, const ValuePlaceholders & inputs)
