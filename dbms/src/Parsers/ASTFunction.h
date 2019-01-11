@@ -43,6 +43,22 @@ std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... arg
     return function;
 }
 
+
+class ASTPair : public IAST
+{
+public:
+    String first;
+    ASTPtr second;
+
+public:
+    String getID(char delim) const override;
+
+    ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
+
 /// key-value just a pair "key value" separated by space, where key just a word (USER, PASSWORD, HOST etc) and value is just a literal.
 /// KeyValueFunction is a function which arguments consist of either key-value pairs or another KeyValueFunction
 /// For example: SOURCE(USER 'clickhouse' PASSWORD 'qwerty123' PORT 9000 REPLICA(HOST '127.0.0.1' PRIORITY 1) TABLE 'some_table')
@@ -57,6 +73,8 @@ public:
     String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
 }

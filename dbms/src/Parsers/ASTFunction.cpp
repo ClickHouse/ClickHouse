@@ -263,6 +263,34 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 }
 
 
+String ASTPair::getID(char) const
+{
+    return "pair";
+}
+
+
+ASTPtr ASTPair::clone() const
+{
+    auto res = std::make_shared<ASTPair>(*this);
+    res->children.clear();
+
+    if (second)
+    {
+        res->second = second;
+        res->children.push_back(second);
+    }
+
+    return res;
+}
+
+
+void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    settings.ostr << (settings.hilite ? hilite_identifier : "") << first << " ";
+    second->formatImpl(settings, state, frame);
+    settings.ostr << (settings.hilite ? hilite_none : "");
+}
+
 String ASTKeyValueFunction::getID(char delim) const
 {
     return "KeyValueFunction " + (delim + name);
@@ -281,6 +309,15 @@ ASTPtr ASTKeyValueFunction::clone() const
     }
 
     return res;
+}
+
+
+void ASTKeyValueFunction::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << name << (settings.hilite ? hilite_none : "") << "(";
+    elements->formatImpl(settings, state, frame);
+    settings.ostr << ")";
+    settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 }
