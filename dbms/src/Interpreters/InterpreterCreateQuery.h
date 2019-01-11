@@ -2,7 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB

@@ -8,7 +8,7 @@
 #include <functional>
 #include <Poco/File.h>
 #include <Common/escapeForFileName.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 
 
