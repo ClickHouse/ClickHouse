@@ -25,7 +25,7 @@ class LLVMFunction : public IFunctionBase
     DataTypes arg_types;
 
     std::vector<FunctionBasePtr> originals;
-    std::unordered_map<std::string, CompilableExpression> subexpressions;
+    std::unordered_map<StringRef, CompilableExpression> subexpressions;
 
     std::unique_ptr<LLVMModuleState> module_state;
 
