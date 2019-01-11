@@ -1342,12 +1342,14 @@ bool ParserKeyValueFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (pos.get().type != TokenType::OpeningRoundBracket)
         return false;
 
+    ++pos;
     if (!pairs_list_parser.parse(pos, expr_list_args, expected))
         return false;
 
     if (pos.get().type != TokenType::ClosingRoundBracket)
         return false;
 
+    ++pos;
     auto function = std::make_shared<ASTKeyValueFunction>();
     function->name = typeid_cast<ASTIdentifier &>(*identifier.get()).name;
     function->elements = expr_list_args;
