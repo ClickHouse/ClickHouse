@@ -41,9 +41,9 @@ ExternalLoadableLifetime::ExternalLoadableLifetime(const ASTKeyValueFunction * l
     {
         const auto & pair = typeid_cast<const ASTPair &>(*child.get());
         if (pair.first == "MIN")
-            min_sec = typeid_cast<const ASTLiteral &>(*child.get()).value.get<UInt64>();
+            min_sec = typeid_cast<const ASTLiteral &>(*pair.second.get()).value.get<UInt64>();
         else if (pair.first == "MAX")
-            max_sec = typeid_cast<const ASTLiteral &>(*child.get()).value.get<UInt64>();
+            max_sec = typeid_cast<const ASTLiteral &>(*pair.second.get()).value.get<UInt64>();
     }
 
     if (min_sec > max_sec)
