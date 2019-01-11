@@ -34,6 +34,8 @@
 #    pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
 #    if defined(__clang__) && __clang_major__ >= 7
 #        pragma GCC diagnostic ignored "-Wc++98-compat-extra-semi"
+#        pragma GCC diagnostic ignored "-Wreserved-id-macro"
+#        pragma GCC diagnostic ignored "-Wold-style-cast"
 #    endif
 #    include <arrow/api.h>
 #    include <arrow/buffer.h>
