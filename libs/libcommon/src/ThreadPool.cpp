@@ -2,14 +2,21 @@
 #include <iostream>
 
 
-ThreadPool::ThreadPool(size_t m_size)
-    : m_size(m_size)
+template <typename Thread>
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t num_threads)
+    : ThreadPoolImpl(num_threads, num_threads)
 {
-    threads.reserve(m_size);
+}
+
+template <typename Thread>
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t num_threads, size_t queue_size)
+    : num_threads(num_threads), queue_size(queue_size)
+{
+    threads.reserve(num_threads);
 
     try
     {
-        for (size_t i = 0; i < m_size; ++i)
+        for (size_t i = 0; i < num_threads; ++i)
             threads.emplace_back([this] { worker(); });
     }
     catch (...)
@@ -19,25 +26,30 @@ ThreadPool::ThreadPool(size_t m_size)
     }
 }
 
-void ThreadPool::schedule(Job job)
+template <typename Thread>
+void ThreadPoolImpl<Thread>::schedule(Job job, int priority)
 {
     {
         std::unique_lock<std::mutex> lock(mutex);
-        has_free_thread.wait(lock, [this] { return active_jobs < m_size || shutdown; });
+        job_finished.wait(lock, [this] { return !queue_size || active_jobs < queue_size || shutdown; });
         if (shutdown)
             return;
 
-        jobs.push(std::move(job));
+        jobs.emplace(std::move(job), priority);
         ++active_jobs;
+
+        if (threads.size() < std::min(num_threads, active_jobs))
+            threads.emplace_back([this] { worker(); });
     }
-    has_new_job_or_shutdown.notify_one();
+    new_job_or_shutdown.notify_one();
 }
 
-void ThreadPool::wait()
+template <typename Thread>
+void ThreadPoolImpl<Thread>::wait()
 {
     {
         std::unique_lock<std::mutex> lock(mutex);
-        has_free_thread.wait(lock, [this] { return active_jobs == 0; });
+        job_finished.wait(lock, [this] { return active_jobs == 0; });
 
         if (first_exception)
         {
@@ -48,19 +60,21 @@ void ThreadPool::wait()
     }
 }
 
-ThreadPool::~ThreadPool()
+template <typename Thread>
+ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
     finalize();
 }
 
-void ThreadPool::finalize()
+template <typename Thread>
+void ThreadPoolImpl<Thread>::finalize()
 {
     {
         std::unique_lock<std::mutex> lock(mutex);
         shutdown = true;
     }
 
-    has_new_job_or_shutdown.notify_all();
+    new_job_or_shutdown.notify_all();
 
     for (auto & thread : threads)
         thread.join();
@@ -68,14 +82,15 @@ void ThreadPool::finalize()
     threads.clear();
 }
 
-size_t ThreadPool::active() const
+template <typename Thread>
+size_t ThreadPoolImpl<Thread>::active() const
 {
     std::unique_lock<std::mutex> lock(mutex);
     return active_jobs;
 }
 
-
-void ThreadPool::worker()
+template <typename Thread>
+void ThreadPoolImpl<Thread>::worker()
 {
     while (true)
     {
@@ -84,12 +99,12 @@ void ThreadPool::worker()
 
         {
             std::unique_lock<std::mutex> lock(mutex);
-            has_new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
+            new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
             need_shutdown = shutdown;
 
             if (!jobs.empty())
             {
-                job = std::move(jobs.front());
+                job = jobs.top().job;
                 jobs.pop();
             }
             else
@@ -113,8 +128,8 @@ void ThreadPool::worker()
                     shutdown = true;
                     --active_jobs;
                 }
-                has_free_thread.notify_all();
-                has_new_job_or_shutdown.notify_all();
+                job_finished.notify_all();
+                new_job_or_shutdown.notify_all();
                 return;
             }
         }
@@ -124,9 +139,13 @@ void ThreadPool::worker()
             --active_jobs;
         }
 
-        has_free_thread.notify_all();
+        job_finished.notify_all();
     }
 }
+
+
+template class ThreadPoolImpl<std::thread>;
+template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 
 void ExceptionHandler::setException(std::exception_ptr && exception)
