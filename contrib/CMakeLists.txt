@@ -198,6 +198,7 @@ endif()
 
 
 if (USE_INTERNAL_POCO_LIBRARY)
+    set (POCO_VERBOSE_MESSAGES 0 CACHE INTERNAL "")
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
