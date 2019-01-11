@@ -15,7 +15,8 @@ env TEST_RUN=1 \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00416 requires patched poco from contrib/` \
-    TEST_OPT="--skip long compile 00416 $TEST_OPT" \
+    `# 00813 requires MySQL engine` \
+    TEST_OPT="--skip long compile 00416 00813 $TEST_OPT" \
     TEST_TRUE=false \
     DH_VERBOSE=1 \
     CMAKE_FLAGS="-DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 $CMAKE_FLAGS" \
