@@ -94,15 +94,43 @@ public:
 class ThreadFromGlobalPool
 {
 public:
+    ThreadFromGlobalPool() {}
+
     ThreadFromGlobalPool(std::function<void()> func)
     {
-        GlobalThreadPool::instance().schedule(func);
+        mutex = std::make_unique<std::mutex>();
+        /// The function object must be copyable, so we wrap lock_guard in shared_ptr.
+        GlobalThreadPool::instance().schedule([lock = std::make_shared<std::lock_guard<std::mutex>>(*mutex), func = std::move(func)] { func(); });
+    }
+
+    ThreadFromGlobalPool(ThreadFromGlobalPool && rhs)
+    {
+        *this = std::move(rhs);
+    }
+
+    ThreadFromGlobalPool & operator=(ThreadFromGlobalPool && rhs)
+    {
+        if (mutex)
+            std::terminate();
+        mutex = std::move(rhs.mutex);
+        return *this;
+    }
+
+    ~ThreadFromGlobalPool()
+    {
+        if (mutex)
+            std::terminate();
     }
 
     void join()
     {
-        /// noop, the std::thread will continue to run inside global pool.
+        {
+            std::lock_guard lock(*mutex);
+        }
+        mutex.reset();
     }
+private:
+    std::unique_ptr<std::mutex> mutex;  /// Object must be moveable.
 };
 
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
