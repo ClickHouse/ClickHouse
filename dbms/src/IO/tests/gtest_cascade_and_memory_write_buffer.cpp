@@ -1,6 +1,7 @@
 #pragma GCC diagnostic ignored "-Wsign-compare"
 #ifdef __clang__
     #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+    #pragma clang diagnostic ignored "-Wundef"
 #endif
 #include <gtest/gtest.h>
 
@@ -78,30 +79,26 @@ try
                 std::make_shared<MemoryWriteBuffer>(s/2, 1, 2.0),
                 std::make_shared<MemoryWriteBuffer>(s - s/2, 1, 2.0)
             },
-            {}
-        );
+            {});
 
         testCascadeBufferRedability(makeTestArray(s),
             {
                 std::make_shared<MemoryWriteBuffer>(s, 2, 1.5),
             },
-            {}
-        );
+            {});
 
         testCascadeBufferRedability(makeTestArray(s),
             {
                 std::make_shared<MemoryWriteBuffer>(0, 1, 1.0),
             },
-            {}
-        );
+            {});
 
         testCascadeBufferRedability(makeTestArray(s),
             {
                 std::make_shared<MemoryWriteBuffer>(std::max(1ul, s/2), std::max(2ul, s/4), 0.5),
                 std::make_shared<MemoryWriteBuffer>(0, 4, 1.0),
             },
-            {}
-        );
+            {});
 
         testCascadeBufferRedability(makeTestArray(max_s),
             {
@@ -109,16 +106,14 @@ try
             },
             {
                 [=] (auto) { return std::make_shared<MemoryWriteBuffer>(max_s - s, 1, 2.0); }
-            }
-        );
+            });
 
         testCascadeBufferRedability(makeTestArray(max_s),
             {},
             {
                 [=] (auto) { return std::make_shared<MemoryWriteBuffer>(max_s - s, 1, 2.0); },
                 [=] (auto) { return std::make_shared<MemoryWriteBuffer>(s, 1, 2.0); }
-            }
-        );
+            });
     }
 }
 catch (...)
@@ -261,8 +256,7 @@ try
             {},
             {
                 [=] (auto) { return WriteBufferFromTemporaryFile::create(tmp_template); }
-            }
-        );
+            });
 
         testCascadeBufferRedability(makeTestArray(s),
             {
@@ -270,8 +264,7 @@ try
             },
             {
                 [=] (auto) { return WriteBufferFromTemporaryFile::create(tmp_template); }
-            }
-        );
+            });
     }
 }
 catch (...)

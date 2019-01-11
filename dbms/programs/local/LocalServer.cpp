@@ -30,6 +30,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 
@@ -65,11 +66,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     }
 }
 
-void LocalServer::applyCmdSettings(Context & context)
+void LocalServer::applyCmdSettings()
 {
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) \
         if (cmd_settings.NAME.changed) \
-            context.getSettingsRef().NAME = cmd_settings.NAME;
+            context->getSettingsRef().NAME = cmd_settings.NAME;
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 }
@@ -115,9 +116,11 @@ try
     /// Load config files if exists
     if (config().has("config-file") || Poco::File("config.xml").exists())
     {
-        ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
+        const auto config_path = config().getString("config-file", "config.xml");
+        ConfigProcessor config_processor(config_path, false, true);
+        config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", DBMS_DEFAULT_PATH));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
@@ -140,6 +143,7 @@ try
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     /// Maybe useless
     if (config().has("macros"))
@@ -175,7 +179,7 @@ try
     std::string default_database = config().getString("default_database", "_local");
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
-    applyCmdOptions(*context);
+    applyCmdOptions();
 
     if (!context->getPath().empty())
     {
@@ -270,7 +274,7 @@ void LocalServer::processQueries()
 
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
-    applyCmdSettings(*context);
+    applyCmdSettings();
 
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(*context);
@@ -348,7 +352,7 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         users_config = loaded_config.configuration;
     }
     else
@@ -490,10 +494,10 @@ void LocalServer::init(int argc, char ** argv)
         config().setBool("ignore-error", true);
 }
 
-void LocalServer::applyCmdOptions(Context & context)
+void LocalServer::applyCmdOptions()
 {
-    context.setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
-    applyCmdSettings(context);
+    context->setDefaultFormat(config().getString("output-format", config().getString("format", "TSV")));
+    applyCmdSettings();
 }
 
 }

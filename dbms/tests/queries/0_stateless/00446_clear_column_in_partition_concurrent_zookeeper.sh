@@ -34,5 +34,5 @@ wait
 $ch "SELECT DISTINCT * FROM test.clear_column1 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
 $ch "SELECT DISTINCT * FROM test.clear_column2 WHERE d != toDate('2000-03-01') ORDER BY d, i, s"
 
-#$ch "DROP TABLE IF EXISTS test.clear_column1"
-#$ch "DROP TABLE IF EXISTS test.clear_column2"
+$ch "DROP TABLE IF EXISTS test.clear_column1"
+$ch "DROP TABLE IF EXISTS test.clear_column2"

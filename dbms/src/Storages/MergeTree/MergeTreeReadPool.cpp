@@ -1,7 +1,6 @@
-#include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
-#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -10,29 +9,39 @@ namespace ProfileEvents
     extern const Event ReadBackoff;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB
 {
 
 
 MergeTreeReadPool::MergeTreeReadPool(
     const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
-    RangesInDataParts parts, MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
+    RangesInDataParts parts, const MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
     const bool check_columns, const Names & column_names,
     const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
     const bool do_not_steal_tasks)
     : backoff_settings{backoff_settings}, backoff_state{threads}, data{data},
       column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks},
-      predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}
+      predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}, parts_ranges{parts}
 {
+    /// reverse from right-to-left to left-to-right
+    /// because 'reverse' was done in MergeTreeDataSelectExecutor
+    for (auto & part_ranges : parts_ranges)
+        std::reverse(std::begin(part_ranges.ranges), std::end(part_ranges.ranges));
+
     /// parts don't contain duplicate MergeTreeDataPart's.
-    const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_info, check_columns);
+    const auto per_part_sum_marks = fillPerPartInfo(parts, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
 }
 
 
 MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
 {
-    const std::lock_guard<std::mutex> lock{mutex};
+    const std::lock_guard lock{mutex};
 
     /// If number of threads was lowered due to backoff, then will assign work only for maximum 'backoff_state.current_threads' threads.
     if (thread >= backoff_state.current_threads)
@@ -52,7 +61,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     auto & thread_task = thread_tasks.parts_and_ranges.back();
     const auto part_idx = thread_task.part_idx;
 
-    auto & part = parts[part_idx];
+    auto & part = parts_with_idx[part_idx];
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
 
     /// Get whole part to read if it is small enough.
@@ -105,7 +114,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
             need_marks -= marks_to_get_from_range;
         }
 
-        /** Change order to right-to-left, for MergeTreeThreadBlockInputStream to get ranges with .pop_back()
+        /** Change order to right-to-left, for MergeTreeThreadSelectBlockInputStream to get ranges with .pop_back()
             *  (order was changed to left-to-right due to .pop_back() above).
             */
         std::reverse(std::begin(ranges_to_get_from_part), std::end(ranges_to_get_from_part));
@@ -120,6 +129,27 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
+MarkRanges MergeTreeReadPool::getRestMarks(const std::string & part_path, const MarkRange & from) const
+{
+    MarkRanges all_part_ranges;
+    for (const auto & part_ranges : parts_ranges)
+    {
+        if (part_ranges.data_part->getFullPath() == part_path)
+        {
+            all_part_ranges = part_ranges.ranges;
+            break;
+        }
+    }
+    if (all_part_ranges.empty())
+        throw Exception("Trying to read marks range [" + std::to_string(from.begin) + ", " + std::to_string(from.end) + "] from part '"
+                        + part_path + "' which has no ranges in this query", ErrorCodes::LOGICAL_ERROR);
+
+    auto begin = std::lower_bound(all_part_ranges.begin(), all_part_ranges.end(), from, [] (const auto & f, const auto & s) { return f.begin < s.begin; });
+    if (begin == all_part_ranges.end())
+        begin = std::prev(all_part_ranges.end());
+    begin->begin = from.begin;
+    return MarkRanges(begin, all_part_ranges.end());
+}
 
 Block MergeTreeReadPool::getHeader() const
 {
@@ -134,7 +164,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
     if (info.nanoseconds < backoff_settings.min_read_latency_ms * 1000000)
         return;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (backoff_state.current_threads <= 1)
         return;
@@ -168,7 +198,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
 
 
 std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
-    RangesInDataParts & parts, const PrewhereInfoPtr & prewhere_info, const bool check_columns)
+    RangesInDataParts & parts, const bool check_columns)
 {
     std::vector<size_t> per_part_sum_marks;
     Block sample_block = data.getSampleBlock();
@@ -247,7 +277,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_should_reorder.push_back(should_reoder);
 
-        this->parts.push_back({ part.data_part, part.part_index_in_query });
+        parts_with_idx.push_back({ part.data_part, part.part_index_in_query });
 
         if (predict_block_size_bytes)
         {

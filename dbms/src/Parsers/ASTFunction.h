@@ -19,7 +19,7 @@ public:
 
 public:
     /** Get text identifying the AST node. */
-    String getID() const override;
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
 
@@ -30,7 +30,7 @@ protected:
 
 
 template <typename... Args>
-ASTPtr makeASTFunction(const String & name, Args &&... args)
+std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
 {
     const auto function = std::make_shared<ASTFunction>();
 

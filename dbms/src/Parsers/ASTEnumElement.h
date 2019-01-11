@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTLiteral.h>
+#include "IAST.h"
+#include <Core/Field.h>
+#include <Common/FieldVisitors.h>
 
 
 namespace DB
@@ -17,7 +18,7 @@ public:
     ASTEnumElement(const String & name, const Field & value)
         : name{name}, value {value} {}
 
-    String getID() const override { return "EnumElement"; }
+    String getID(char) const override { return "EnumElement"; }
 
     ASTPtr clone() const override
     {

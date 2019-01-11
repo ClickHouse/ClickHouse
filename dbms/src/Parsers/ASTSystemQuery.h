@@ -39,7 +39,7 @@ public:
         START_REPLICATEDS_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
-        FLUSH_SYSTEM_TABLES,
+        FLUSH_LOGS,
         END
     };
 
@@ -51,7 +51,7 @@ public:
     String target_database;
     String target_table;
 
-    String getID() const override { return "SYSTEM query"; }
+    String getID(char) const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
 

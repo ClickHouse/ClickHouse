@@ -87,7 +87,7 @@ SharedLibraryPtr Compiler::getOrCount(
 {
     HashedKey hashed_key = getHash(key);
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     UInt32 count = ++counts[hashed_key];
 
@@ -222,9 +222,9 @@ void Compiler::compile(
 
     std::stringstream command;
 
-    auto compiler_executable_root =  Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
-    auto compiler_headers =  Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
-    auto compiler_headers_root =  Poco::Util::Application::instance().config().getString("compiler_headers_root", INTERNAL_COMPILER_HEADERS_ROOT);
+    auto compiler_executable_root = Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
+    auto compiler_headers = Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
+    auto compiler_headers_root = Poco::Util::Application::instance().config().getString("compiler_headers_root", INTERNAL_COMPILER_HEADERS_ROOT);
     LOG_DEBUG(log, "Using internal compiler: compiler_executable_root=" << compiler_executable_root << "; compiler_headers_root=" << compiler_headers_root << "; compiler_headers=" << compiler_headers);
 
     /// Slightly unconvenient.
@@ -273,7 +273,7 @@ void Compiler::compile(
             << " 2>&1"
         ") || echo Return code: $?";
 
-#if !NDEBUG
+#ifndef NDEBUG
     LOG_TRACE(log, "Compile command: " << command.str());
 #endif
 
@@ -306,7 +306,7 @@ void Compiler::compile(
     SharedLibraryPtr lib(new SharedLibrary(so_file_path));
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         libraries[hashed_key] = lib;
     }
 

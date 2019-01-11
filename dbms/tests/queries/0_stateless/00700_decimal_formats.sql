@@ -1,4 +1,3 @@
-SET allow_experimental_decimal_type = 1;
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.decimal;
 

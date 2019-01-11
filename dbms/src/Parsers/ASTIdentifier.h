@@ -24,7 +24,7 @@ public:
         : name(name_), kind(kind_) { range = StringRange(name.data(), name.data() + name.size()); }
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "Identifier_" + name; }
+    String getID(char delim) const override { return "Identifier" + (delim + name); }
 
     ASTPtr clone() const override { return std::make_shared<ASTIdentifier>(*this); }
 

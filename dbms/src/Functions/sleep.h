@@ -85,14 +85,14 @@ public:
             unsigned useconds = seconds * (variant == FunctionSleepVariant::PerBlock ? 1 : size) * 1e6;
 
             /// When sleeping, the query cannot be cancelled. For abitily to cancel query, we limit sleep time.
-            if (useconds > 3000000)   /// The choice is arbitary
+            if (useconds > 3000000)   /// The choice is arbitrary
                 throw Exception("The maximum sleep time is 3000000 microseconds. Requested: " + toString(useconds), ErrorCodes::TOO_SLOW);
 
             ::usleep(useconds);
         }
 
         /// convertToFullColumn needed, because otherwise (constant expression case) function will not get called on each block.
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, UInt64(0))->convertToFullColumnIfConst();
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, 0u)->convertToFullColumnIfConst();
     }
 };
 

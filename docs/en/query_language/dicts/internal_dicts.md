@@ -1,6 +1,4 @@
-<a name="internal_dicts"></a>
-
-# Internal dictionaries
+# Internal dictionaries {#internal_dicts}
 
 ClickHouse contains a built-in feature for working with a geobase.
 
@@ -46,3 +44,5 @@ Dictionary updates (other than loading at first use) do not block queries. Durin
 We recommend periodically updating the dictionaries with the geobase. During an update, generate new files and write them to a separate location. When everything is ready, rename them to the files used by the server.
 
 There are also functions for working with OS identifiers and Yandex.Metrica search engines, but they shouldn't be used.
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

@@ -123,7 +123,7 @@ UInt64 hash(Ts... xs)
 
 UInt64 maskBits(UInt64 x, size_t num_bits)
 {
-    return x & ((1 << num_bits) - 1);
+    return x & ((1ULL << num_bits) - 1);
 }
 
 
@@ -149,7 +149,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
         bits = feistelRound(bits, num_bits, seed, i);
-    return (x & ~((1 << num_bits) - 1)) ^ bits;
+    return (x & ~((1ULL << num_bits) - 1)) ^ bits;
 }
 
 
@@ -317,8 +317,8 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         if (size >= 16)
         {
-            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(dst);
+            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(hash_dst);
         }
         else
         {
@@ -500,7 +500,7 @@ private:
         return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
-    /// By the way, we don't have to use actual Unicode numbers. We use just arbitary bijective mapping.
+    /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
     CodePoint readCodePoint(const char *& pos, const char * end)
     {
         size_t length = UTF8::seqLength(*pos);
@@ -954,7 +954,7 @@ try
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
-        ("seed", po::value<std::string>(), "seed (arbitary string), must be random string with at least 10 bytes length")
+        ("seed", po::value<std::string>(), "seed (arbitrary string), must be random string with at least 10 bytes length")
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")

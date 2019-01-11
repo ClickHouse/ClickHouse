@@ -22,7 +22,7 @@ struct LengthUTF8Impl
 {
     static constexpr auto is_fixed_to_constant = false;
 
-    static void vector(const ColumnString::Chars_t & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
+    static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets, PaddedPODArray<UInt64> & res)
     {
         size_t size = offsets.size();
 
@@ -34,11 +34,11 @@ struct LengthUTF8Impl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt64 & /*res*/)
+    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/)
     {
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res)
     {
         size_t size = data.size() / n;
 
@@ -63,6 +63,10 @@ using FunctionLengthUTF8 = FunctionStringOrArrayToT<LengthUTF8Impl, NameLengthUT
 void registerFunctionLengthUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLengthUTF8>();
+
+    /// Compatibility aliases.
+    factory.registerFunction<FunctionLengthUTF8>("CHAR_LENGTH", FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionLengthUTF8>("CHARACTER_LENGTH", FunctionFactory::CaseInsensitive);
 }
 
 }

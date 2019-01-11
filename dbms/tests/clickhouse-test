@@ -86,9 +86,8 @@ def main(args):
     server_logs_level = "warning"
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
-    # TODO ! use clickhouse-extract-from-config here:
     if args.zookeeper is None:
-        code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
+        code, out = commands.getstatusoutput(args.extract_from_config +" --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
             if int(out) > 0:
                 args.zookeeper = True
@@ -98,7 +97,7 @@ def main(args):
             args.zookeeper = False
 
     if args.shard is None:
-        code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
+        code, out = commands.getstatusoutput(args.extract_from_config + " --try --config " + args.configserver + ' --key listen_host | grep -E "127.0.0.2|::"')
         if out:
             args.shard = True
         else:
@@ -243,7 +242,7 @@ def main(args):
                                             stderr_element = et.Element("system-err")
                                             stderr_element.text = et.CDATA(stderr)
                                             report_testcase.append(stderr_element)
-                                            print(stderr)
+                                            print(stderr.encode('utf-8'))
 
                                         if args.stop and ('Connection refused' in stderr or 'Attempt to read after eof' in stderr) and not 'Received exception from server' in stderr:
                                             SERVER_DIED = True
@@ -278,7 +277,7 @@ def main(args):
                                         result_is_different = subprocess.call(['cmp', '-s', reference_file, stdout_file], stdout = PIPE)
 
                                         if result_is_different:
-                                            (diff, _) = Popen(['diff', '--side-by-side', reference_file, stdout_file], stdout = PIPE).communicate()
+                                            (diff, _) = Popen(['diff', '--unified', reference_file, stdout_file], stdout = PIPE).communicate()
                                             diff = unicode(diff, errors='replace', encoding='utf-8')
 
                                             failure = et.Element("failure", attrib = {"message": "result differs with reference"})
@@ -333,6 +332,7 @@ if __name__ == '__main__':
     parser.add_argument('--tmp', help = 'Path to tmp dir')
     parser.add_argument('-b', '--binary', default = 'clickhouse', help = 'Main clickhouse binary')
     parser.add_argument('-c', '--client', help = 'Client program')
+    parser.add_argument('--extract_from_config', help = 'extract-from-config program')
     parser.add_argument('--configclient', help = 'Client config (if you use not default ports)')
     parser.add_argument('--configserver', default= '/etc/clickhouse-server/config.xml', help = 'Preprocessed server config')
     parser.add_argument('-o', '--output', help = 'Output xUnit compliant test report directory')
@@ -367,12 +367,21 @@ if __name__ == '__main__':
         args.tmp = args.queries
 
     if args.client is None:
-        args.client = args.binary + '-client'
+        if os.access(args.binary + '-client', os.X_OK):
+            args.client = args.binary + '-client'
+        else:
+            args.client = args.binary + ' client'
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
         if os.getenv("CLICKHOUSE_HOST"):
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
         if os.getenv("CLICKHOUSE_PORT_TCP"):
             args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+
+    if args.extract_from_config is None:
+        if os.access(args.binary + '-extract-from-config', os.X_OK):
+            args.extract_from_config = args.binary + '-extract-from-config'
+        else:
+            args.extract_from_config = args.binary + ' extract-from-config'
 
     main(args)

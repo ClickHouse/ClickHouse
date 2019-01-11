@@ -91,7 +91,7 @@ public:
     using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
 
     /// Objects will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalLoader(const Configuration & config,
+    ExternalLoader(const Configuration & config_main,
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
                    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
@@ -132,6 +132,9 @@ private:
     bool is_initialized = false;
 
     /// Protects only objects map.
+    /** Reading and assignment of "loadable" should be done under mutex.
+      * Creating new versions of "loadable" should not be done under mutex.
+      */
     mutable std::mutex map_mutex;
 
     /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
@@ -151,7 +154,7 @@ private:
 
     pcg64 rnd_engine{randomSeed()};
 
-    const Configuration & config;
+    const Configuration & config_main;
     const ExternalLoaderUpdateSettings & update_settings;
     const ExternalLoaderConfigSettings & config_settings;
 

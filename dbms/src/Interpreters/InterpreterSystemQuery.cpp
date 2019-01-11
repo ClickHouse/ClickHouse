@@ -21,6 +21,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
+#include <algorithm>
 
 
 namespace DB
@@ -204,11 +205,11 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
-        case Type::FLUSH_SYSTEM_TABLES:
+        case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
+                    [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
+                    [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
+                    [&] () { if (auto query_thread_log = context.getQueryThreadLog()) query_thread_log->flush(); }
             );
             break;
         case Type::STOP_LISTEN_QUERIES:
@@ -238,7 +239,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         table->shutdown();
 
         /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+        auto table_lock = table->lockForAlter();
         create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
@@ -289,7 +290,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     if (replica_names.empty())
         return;
 
-    ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
+    ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
         pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();

@@ -22,13 +22,13 @@ class JSONEachRowRowInputStream : public IRowInputStream
 public:
     JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings);
 
-    bool read(MutableColumns & columns) override;
+    bool read(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
 private:
     const String & columnName(size_t i) const;
-    size_t columnIndex(const StringRef & name) const;
+    size_t columnIndex(const StringRef & name, size_t key_index);
     bool advanceToNextKey(size_t key_index);
     void skipUnknownField(const StringRef & name_ref);
     StringRef readColumnName(ReadBuffer & buf);
@@ -60,6 +60,9 @@ private:
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
     NameMap name_map;
+
+    /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
+    std::vector<NameMap::iterator> prev_positions;
 };
 
 }

@@ -1,8 +1,7 @@
-#include <Functions/FunctionFactory.h>
-
-
 namespace DB
 {
+
+class FunctionFactory;
 
 void registerFunctionToYear(FunctionFactory &);
 void registerFunctionToQuarter(FunctionFactory &);
@@ -48,6 +47,7 @@ void registerFunctionAddHours(FunctionFactory &);
 void registerFunctionAddDays(FunctionFactory &);
 void registerFunctionAddWeeks(FunctionFactory &);
 void registerFunctionAddMonths(FunctionFactory &);
+void registerFunctionAddQuarters(FunctionFactory &);
 void registerFunctionAddYears(FunctionFactory &);
 void registerFunctionSubtractSeconds(FunctionFactory &);
 void registerFunctionSubtractMinutes(FunctionFactory &);
@@ -55,6 +55,7 @@ void registerFunctionSubtractHours(FunctionFactory &);
 void registerFunctionSubtractDays(FunctionFactory &);
 void registerFunctionSubtractWeeks(FunctionFactory &);
 void registerFunctionSubtractMonths(FunctionFactory &);
+void registerFunctionSubtractQuarters(FunctionFactory &);
 void registerFunctionSubtractYears(FunctionFactory &);
 void registerFunctionDateDiff(FunctionFactory &);
 void registerFunctionToTimeZone(FunctionFactory &);
@@ -107,6 +108,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionAddDays(factory);
     registerFunctionAddWeeks(factory);
     registerFunctionAddMonths(factory);
+    registerFunctionAddQuarters(factory);
     registerFunctionAddYears(factory);
     registerFunctionSubtractSeconds(factory);
     registerFunctionSubtractMinutes(factory);
@@ -114,6 +116,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionSubtractDays(factory);
     registerFunctionSubtractWeeks(factory);
     registerFunctionSubtractMonths(factory);
+    registerFunctionSubtractQuarters(factory);
     registerFunctionSubtractYears(factory);
     registerFunctionDateDiff(factory);
     registerFunctionToTimeZone(factory);

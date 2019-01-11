@@ -4,7 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -16,11 +16,12 @@ class ASTStorage : public IAST
 public:
     ASTFunction * engine = nullptr;
     IAST * partition_by = nullptr;
+    IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     ASTSetQuery * settings = nullptr;
 
-    String getID() const override { return "Storage definition"; }
+    String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override
     {
@@ -31,6 +32,8 @@ public:
             res->set(res->engine, engine->clone());
         if (partition_by)
             res->set(res->partition_by, partition_by->clone());
+        if (primary_key)
+            res->set(res->primary_key, primary_key->clone());
         if (order_by)
             res->set(res->order_by, order_by->clone());
         if (sample_by)
@@ -53,6 +56,11 @@ public:
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PARTITION BY " << (s.hilite ? hilite_none : "");
             partition_by->formatImpl(s, state, frame);
         }
+        if (primary_key)
+        {
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PRIMARY KEY " << (s.hilite ? hilite_none : "");
+            primary_key->formatImpl(s, state, frame);
+        }
         if (order_by)
         {
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORDER BY " << (s.hilite ? hilite_none : "");
@@ -74,7 +82,7 @@ public:
 
 
 /// CREATE TABLE or ATTACH TABLE query
-class ASTCreateQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
+class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
@@ -82,9 +90,6 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_populate{false};
-    bool is_temporary{false};
-    String database;
-    String table;
     ASTExpressionList * columns = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
@@ -94,7 +99,7 @@ public:
     ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; }
+    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
@@ -115,14 +120,7 @@ public:
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {
-        auto query_ptr = clone();
-        ASTCreateQuery & query = static_cast<ASTCreateQuery &>(*query_ptr);
-
-        query.cluster.clear();
-        if (query.database.empty())
-            query.database = new_database;
-
-        return query_ptr;
+        return removeOnCluster<ASTCreateQuery>(clone(), new_database);
     }
 
 protected:
@@ -155,7 +153,7 @@ protected:
             settings.ostr
                 << (settings.hilite ? hilite_keyword : "")
                     << (attach ? "ATTACH " : "CREATE ")
-                    << (is_temporary ? "TEMPORARY " : "")
+                    << (temporary ? "TEMPORARY " : "")
                     << what << " "
                     << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")

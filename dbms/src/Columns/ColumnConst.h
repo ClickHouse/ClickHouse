@@ -15,7 +15,7 @@ namespace ErrorCodes
 
 
 /** ColumnConst contains another column with single element,
-  *  but looks like a column with arbitary amount of same elements.
+  *  but looks like a column with arbitrary amount of same elements.
   */
 class ColumnConst final : public COWPtrHelper<IColumn, ColumnConst>
 {
@@ -209,7 +209,7 @@ public:
     Field getField() const { return getDataColumn()[0]; }
 
     template <typename T>
-    T getValue() const { return getField().safeGet<typename NearestFieldType<T>::Type>(); }
+    T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };
 
 }

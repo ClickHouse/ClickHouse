@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Core/NamesAndTypes.h>
 #include <port/clock.h>
 
@@ -13,8 +14,6 @@ namespace DB
 
 class IDataType;
 class CachedCompressedReadBuffer;
-class CompressedReadBufferFromFile;
-
 
 /// Reads the data between pairs of marks in the same part. When reading consecutive ranges, avoids unnecessary seeks.
 /// When ranges are almost consecutive, seeks are fast because they are performed inside the buffer.
@@ -30,7 +29,7 @@ public:
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         bool save_marks_in_cache,
-        MergeTreeData & storage, const MarkRanges & all_mark_ranges,
+        const MergeTreeData & storage, const MarkRanges & all_mark_ranges,
         size_t aio_threshold, size_t max_read_buffer_size,
         const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
         const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{},
@@ -52,6 +51,10 @@ public:
     void evaluateMissingDefaults(Block & res);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+
+    /// Return the number of rows has been read or zero if there is no columns to read.
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
+    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
 private:
     class Stream
@@ -111,13 +114,13 @@ private:
     /// If save_marks_in_cache is false, then, if marks are not in cache, we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache;
 
-    MergeTreeData & storage;
+    const MergeTreeData & storage;
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
     size_t index_granularity;
 
-    void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+    void addStreams(const String & name, const IDataType & type,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
     void readData(
@@ -125,9 +128,6 @@ private:
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
         bool read_offsets = true);
 
-    /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
-    size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res);
 
     friend class MergeTreeRangeReader::DelayedStream;
 };

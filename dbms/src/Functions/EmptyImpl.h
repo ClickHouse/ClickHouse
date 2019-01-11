@@ -1,3 +1,4 @@
+#pragma once
 #include <cstring>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
@@ -18,7 +19,7 @@ struct EmptyImpl
     /// If the function will return constant value for FixedString data type.
     static constexpr auto is_fixed_to_constant = false;
 
-    static void vector(const ColumnString::Chars_t & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
+    static void vector(const ColumnString::Chars & /*data*/, const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)
     {
         size_t size = offsets.size();
         ColumnString::Offset prev_offset = 1;
@@ -30,18 +31,18 @@ struct EmptyImpl
     }
 
     /// Only make sense if is_fixed_to_constant.
-    static void vector_fixed_to_constant(const ColumnString::Chars_t & /*data*/, size_t /*n*/, UInt8 & /*res*/)
+    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/)
     {
         throw Exception("Logical error: 'vector_fixed_to_constant method' is called", ErrorCodes::LOGICAL_ERROR);
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars_t & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
     {
         std::vector<char> empty_chars(n);
         size_t size = data.size() / n;
 
         for (size_t i = 0; i < size; ++i)
-            res[i] = negative ^ (0 == memcmp(&data[i * size], empty_chars.data(), n));
+            res[i] = negative ^ (0 == memcmp(&data[i * n], empty_chars.data(), n));
     }
 
     static void array(const ColumnString::Offsets & offsets, PaddedPODArray<UInt8> & res)

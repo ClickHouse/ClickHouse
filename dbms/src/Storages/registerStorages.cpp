@@ -24,9 +24,15 @@ void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 
+#if USE_HDFS
+void registerStorageHDFS(StorageFactory & factory);
+#endif
+
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerStorageODBC(StorageFactory & factory);
 #endif
+
+void registerStorageJDBC(StorageFactory & factory);
 
 #if USE_MYSQL
 void registerStorageMySQL(StorageFactory & factory);
@@ -58,9 +64,15 @@ void registerStorages()
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
 
+    #if USE_HDFS
+    registerStorageHDFS(factory);
+    #endif
+
     #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerStorageODBC(factory);
     #endif
+    registerStorageJDBC(factory);
+
 
     #if USE_MYSQL
     registerStorageMySQL(factory);

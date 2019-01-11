@@ -5,7 +5,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Access Operators
 
-`a[N]`  Access to an element of an array; ` arrayElement(a, N) function`.
+`a[N]` Access to an element of an array; ` arrayElement(a, N) function`.
 
 `a.N` – Access to a tuble element; `tupleElement(a, N)` function.
 
@@ -53,7 +53,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 ## Operators for Working With Data Sets
 
-*See the section "IN operators".*
+*See the section [IN operators](select.md#select-in-operators).*
 
 `a IN ...` – The `in(a, b) function`
 
@@ -83,19 +83,21 @@ Note:
 
 The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](functions/array_join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
 
-<a name="operator_case"><a>
+## Conditional Expression {#operator_case}
 
-## Conditional Expression
-
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
-    ELSE c
+    [ELSE c]
 END
 ```
 
-If "x" is specified, then transform(x, \[a, ...\], \[b, ...\], c). Otherwise – multiIf(a, b, ..., c).
+If `x` is specified, then `transform(x, [a, ...], [b, ...], c)` function is used. Otherwise – `multiIf(a, b, ..., c)`.
+
+If there is no `ELSE c` clause in the expression, the default value is `NULL`.
+
+The `transform` function does not work with `NULL`.
 
 ## Concatenation Operator
 
@@ -118,7 +120,7 @@ The following operators do not have a priority, since they are brackets:
 ## Associativity
 
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
-Sometimes this doesn't work the way you expect. For example, ` SELECT 4 > 2 > 3`  will result in 0.
+Sometimes this doesn't work the way you expect. For example, ` SELECT 4 > 2 > 3` will result in 0.
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed to a single call of these functions.
 
@@ -126,11 +128,9 @@ For efficiency, the `and` and `or` functions accept any number of arguments. The
 
 ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 
-<a name="operator-is-null"></a>
+### IS NULL {#operator-is-null}
 
-### IS NULL
-
-- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NULL` operator returns:
+- For [Nullable](../data_types/nullable.md) type values, the `IS NULL` operator returns:
     - `1`, if the value is `NULL`.
     - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
@@ -149,11 +149,10 @@ WHERE isNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-<a name="operator-is-not-null"></a>
 
 ### IS NOT NULL
 
-- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NOT NULL` operator returns:
+- For [Nullable](../data_types/nullable.md) type values, the `IS NOT NULL` operator returns:
     - `0`, if the value is `NULL`.
     - `1` otherwise.
 - For other values, the `IS NOT NULL` operator always returns `1`.
@@ -171,3 +170,5 @@ WHERE isNotNull(y)
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/operators/) <!--hide-->

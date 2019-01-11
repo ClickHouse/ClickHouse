@@ -18,7 +18,7 @@ You can use `turbostat` to view the CPU's actual clock rate under a load.
 
 ## CPU Scaling Governor
 
-Always use the `performance` scaling governor.  The `on-demand` scaling governor works much worse with constantly high demand.
+Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
 sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
@@ -34,6 +34,11 @@ The restriction can also be set externally at the datacenter level. You can use 
 For small amounts of data (up to \~200 GB compressed), it is best to use as much memory as the volume of data.
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
 Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
+
+Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
+```
+echo 0 | sudo tee /proc/sys/vm/overcommit_memory
+```
 
 ## Swap File
 
@@ -74,7 +79,7 @@ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1025 KB is sufficient for all RAID configurations.
+A block size of 1024 KB is sufficient for all RAID configurations.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
@@ -91,8 +96,7 @@ Most other file systems should also work fine. File systems with delayed allocat
 
 ## Linux Kernel
 
-Don't use an outdated Linux kernel. In 2015, 3.18.19 was new enough.
-Consider using the kernel build from Yandex:<https://github.com/yandex/smart> – it provides at least a 5% performance increase.
+Don't use an outdated Linux kernel.
 
 ## Network
 
@@ -179,7 +183,7 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 
 Java version:
 
-```text
+```
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
@@ -227,7 +231,7 @@ JAVA_OPTS="-Xms{{ cluster.get('xms','128M') }} \
 
 Salt init:
 
-```text
+```
 description "zookeeper-{{ cluster['name'] }} centralized coordination service"
 
 start on runlevel [2345]
@@ -256,3 +260,5 @@ script
 end script
 ```
 
+
+[Original article](https://clickhouse.yandex/docs/en/operations/tips/) <!--hide-->

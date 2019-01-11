@@ -15,30 +15,26 @@
 
   <ul id="md-extra-nav" class="md-nav__list" data-md-scrollfix>
     <li class="md-nav__item md-nav__item--active">
-      {% if config.theme.language == 'ru' %}
         {% if config.extra.single_page %}
-          <a href="{{ base_url }}" class="md-nav__link md-nav__link--active">Многостраничная версия</a>
+          <a href="{{ base_url }}" class="md-nav__link md-nav__link--active">{{ lang.t("nav.multi_page") }}</a>
         {% else %}
-          <a href="{{ base_url }}/single/" class="md-nav__link md-nav__link--active">Одностраничная версия</a>
+          <a href="{{ base_url }}/single/" class="md-nav__link md-nav__link--active">{{ lang.t("nav.single_page") }}</a>
         {% endif %}
-      {% else %}
-        {% if config.extra.single_page %}
-          <a href="{{ base_url }}" class="md-nav__link md-nav__link--active">Multi page version</a>
-        {% else %}
-          <a href="{{ base_url }}/single/" class="md-nav__link md-nav__link--active">Single page version</a>
-        {% endif %}
-      {% endif %}
+    </li>
+    <li class="md-nav__item md-nav__item--active">
+          <a href="{{ base_url }}/single/clickhouse_{{ config.theme.language }}.pdf" class="md-nav__link md-nav__link--active">{{ lang.t("nav.pdf") }}</a>
     </li>
     {% if config.repo_url %}
     <li class="md-nav__item md-nav__item--active">
       <a href="{{ config.repo_url }}" rel="external nofollow" target="_blank" class="md-nav__link">
-        {% if config.theme.language == 'ru' %}
-          Исходники ClickHouse
-        {% else %}
-          ClickHouse sources
-        {% endif %}
+        {{ lang.t("nav.source") }}
       </a>
     </li>
     {% endif %}
+    <li class="md-nav__item md-nav__item--active">
+        <span id="md-sidebar-flags" class="md-nav__link">
+        {% include "partials/flags.html" %}
+        </span>
+    </li>
   </ul>
 </nav>

@@ -1,8 +1,11 @@
 add_definitions(-Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor -U_LIBCPP_DEBUG)
 
+link_directories(${LLVM_LIBRARY_DIRS})
+
 add_library(clickhouse-compiler-lib ${LINK_MODE}
     driver.cpp
     cc1_main.cpp
+    cc1gen_reproducer_main.cpp
     cc1as_main.cpp
     lld.cpp)
 
@@ -19,7 +22,6 @@ target_include_directories(clickhouse-compiler-lib SYSTEM PRIVATE ${LLVM_INCLUDE
 # This is extracted almost directly from CMakeFiles/.../link.txt in LLVM build directory.
 
 target_link_libraries(clickhouse-compiler-lib PRIVATE
-
 clangBasic clangCodeGen clangDriver
 clangFrontend
 clangFrontendTool

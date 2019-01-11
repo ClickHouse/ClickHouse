@@ -31,7 +31,7 @@ The rounded number of the same type as the input number `x`
 
 **Example:**
 
-```sql
+``` sql
 SELECT
     number / 2 AS x,
     round(x)
@@ -66,3 +66,5 @@ Accepts a number. If the number is less than one, it returns 0. Otherwise, it ro
 
 Accepts a number. If the number is less than 18, it returns 0. Otherwise, it rounds the number down to a number from the set: 18, 25, 35, 45, 55. This function is specific to Yandex.Metrica and used for implementing the report on user age.
 
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/functions/rounding_functions/) <!--hide-->

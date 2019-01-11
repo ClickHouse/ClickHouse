@@ -57,10 +57,10 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             res_columns[i++]->insert(dict_struct.getKeyDescription());
             res_columns[i++]->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.name; }));
             res_columns[i++]->insert(ext::map<Array>(dict_struct.attributes, [] (auto & attr) { return attr.type->getName(); }));
-            res_columns[i++]->insert(static_cast<UInt64>(dict_ptr->getBytesAllocated()));
-            res_columns[i++]->insert(static_cast<UInt64>(dict_ptr->getQueryCount()));
+            res_columns[i++]->insert(dict_ptr->getBytesAllocated());
+            res_columns[i++]->insert(dict_ptr->getQueryCount());
             res_columns[i++]->insert(dict_ptr->getHitRate());
-            res_columns[i++]->insert(static_cast<UInt64>(dict_ptr->getElementCount()));
+            res_columns[i++]->insert(dict_ptr->getElementCount());
             res_columns[i++]->insert(dict_ptr->getLoadFactor());
             res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict_ptr->getCreationTime())));
             res_columns[i++]->insert(dict_ptr->getSource()->toString());

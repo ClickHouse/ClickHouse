@@ -19,8 +19,8 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
@@ -62,6 +62,8 @@ namespace ErrorCodes
     extern const int TOO_DEEP_AST;
     extern const int TOO_BIG_AST;
     extern const int UNEXPECTED_AST_STRUCTURE;
+
+    extern const int SYNTAX_ERROR;
 
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_FUNCTION;
@@ -108,6 +110,8 @@ static Poco::Net::HTTPResponse::HTTPStatus exceptionCodeToHTTPStatus(int excepti
              exception_code == ErrorCodes::TOO_DEEP_AST ||
              exception_code == ErrorCodes::TOO_BIG_AST ||
              exception_code == ErrorCodes::UNEXPECTED_AST_STRUCTURE)
+        return HTTPResponse::HTTP_BAD_REQUEST;
+    else if (exception_code == ErrorCodes::SYNTAX_ERROR)
         return HTTPResponse::HTTP_BAD_REQUEST;
     else if (exception_code == ErrorCodes::UNKNOWN_TABLE ||
              exception_code == ErrorCodes::UNKNOWN_FUNCTION ||
@@ -266,7 +270,6 @@ void HTTPHandler::processQuery(
     std::string query_id = params.get("query_id", "");
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
-    CurrentThread::attachQueryContext(context);
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.

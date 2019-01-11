@@ -10,7 +10,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/SelectQueryInfo.h>
 
 
@@ -233,7 +232,6 @@ public:
     KeyCondition(
         const SelectQueryInfo & query_info,
         const Context & context,
-        const NamesAndTypesList & all_columns,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
@@ -255,7 +253,7 @@ public:
     /// Get the maximum number of the key element used in the condition.
     size_t getMaxKeyColumn() const;
 
-    /// Impose an additional condition: the value in the column column must be in the `range` range.
+    /// Impose an additional condition: the value in the column `column` must be in the range `range`.
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
@@ -270,7 +268,7 @@ public:
 
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
+        const ASTPtr & query, const SyntaxAnalyzerResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,

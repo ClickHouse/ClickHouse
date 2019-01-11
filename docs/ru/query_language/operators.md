@@ -53,7 +53,7 @@
 
 ## Операторы для работы с множествами
 
-*Смотрите раздел "Операторы IN".*
+*Смотрите раздел [Операторы IN](select.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 
@@ -83,11 +83,9 @@
 
 Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](functions/array_join.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
 
-<a name="operator_case"><a>
+## Условное выражение {#operator_case}
 
-## Условное выражение
-
-```sql
+``` sql
 CASE [x]
     WHEN a THEN b
     [WHEN ... THEN ...]
@@ -95,9 +93,9 @@ CASE [x]
 END
 ```
 
-В случае указания x - функция transform(x, \[a, ...\], \[b, ...\], c). Иначе - multiIf(a, b, ..., c).
-При отсутствии секции `ELSE c`, значением по умолчанию будет NULL.
-P.S. Функция transform не умеет работать с NULL.
+В случае указания `x` - функция `transform(x, [a, ...], [b, ...], c)`. Иначе — `multiIf(a, b, ..., c)`.
+При отсутствии секции `ELSE c`, значением по умолчанию будет `NULL`.
+P.S. Функция `transform` не умеет работать с `NULL`.
 
 ## Оператор склеивания строк
 
@@ -128,11 +126,9 @@ P.S. Функция transform не умеет работать с NULL.
 
 ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL`.
 
-<a name="operator-is-null"></a>
+### IS NULL {#operator-is-null}
 
-### IS NULL
-
-- Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NULL` возвращает:
+- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
     - `1`, если значение — `NULL`.
     - `0` в обратном случае.
 - Для прочих значений оператор `IS NULL` всегда возвращает `0`.
@@ -151,11 +147,10 @@ WHERE isNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-<a name="operator-is-not-null"></a>
 
 ### IS NOT NULL
 
-- Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NOT NULL` возвращает:
+- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
     - `0`, если значение — `NULL`.
     - `1`, в обратном случае.
 - Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
@@ -173,3 +168,5 @@ WHERE isNotNull(y)
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/operators/) <!--hide-->

@@ -4,15 +4,17 @@
 
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
+#include <Core/AccurateComparison.h>
 
 #include <ext/range.h>
+
 
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
 
-namespace  DB::GatherUtils
+namespace DB::GatherUtils
 {
 
 /// Methods to copy Slice to Sink, overloaded for various combinations of types.
@@ -31,7 +33,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-        sink.elements[sink.current_offset] = slice.data[i];
+        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
         ++sink.current_offset;
     }
 }
@@ -79,7 +81,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 {
     for (size_t i = 0; i < slice.size; ++i)
     {
-        Field field = static_cast<typename NearestFieldType<T>::Type>(slice.data[i]);
+        Field field = T(slice.data[i]);
         sink.elements.insert(field);
     }
     sink.current_offset += slice.size;
@@ -147,7 +149,7 @@ inline ALWAYS_INLINE void writeSlice(const GenericValueSlice & slice, NumericArr
 template <typename T>
 inline ALWAYS_INLINE void writeSlice(const NumericValueSlice<T> & slice, GenericArraySink & sink)
 {
-    Field field = static_cast<typename NearestFieldType<T>::Type>(slice.value);
+    Field field = T(slice.value);
     sink.elements.insert(field);
     ++sink.current_offset;
 }
@@ -294,7 +296,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 {
     const bool is_null = offset_column.onlyNull();
     const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
     const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
 
     while (!src.isEnd())
@@ -325,12 +327,12 @@ void NO_INLINE sliceDynamicOffsetBounded(Source && src, Sink && sink, const ICol
 {
     const bool is_offset_null = offset_column.onlyNull();
     const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
     const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
 
     const bool is_length_null = length_column.onlyNull();
     const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
-    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapColumn().getData() : nullptr;
+    const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
     const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
 
     while (!src.isEnd())
@@ -421,16 +423,11 @@ bool sliceHasImpl(const FirstSliceType & first, const SecondSliceType & second,
     return all;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
 template <typename T, typename U>
 bool sliceEqualElements(const NumericArraySlice<T> & first, const NumericArraySlice<U> & second, size_t first_ind, size_t second_ind)
 {
-    return first.data[first_ind] == second.data[second_ind];
+    return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
 }
-
-#pragma GCC diagnostic pop
 
 template <typename T>
 bool sliceEqualElements(const NumericArraySlice<T> &, const GenericArraySlice &, size_t, size_t)

@@ -12,12 +12,10 @@ namespace DB
 class ASTSelectWithUnionQuery : public ASTQueryWithOutput
 {
 public:
-    String getID() const override { return "SelectWithUnionQuery"; }
+    String getID(char) const override { return "SelectWithUnionQuery"; }
 
     ASTPtr clone() const override;
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-
-    void setDatabaseIfNeeded(const String & database_name);
 
     ASTPtr list_of_selects;
 };

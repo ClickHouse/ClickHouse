@@ -1,6 +1,4 @@
-<a name="aggregate_functions_parametric"></a>
-
-# Parametric aggregate functions
+# Parametric aggregate functions {#aggregate_functions_parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
@@ -23,7 +21,7 @@ Example: `sequenceMatch ('(?1).*(?2)')(EventTime, URL LIKE '%company%', URL LIKE
 
 This is a singular example. You could write it using other aggregate functions:
 
-```text
+```
 minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 ```
 
@@ -39,7 +37,7 @@ Pattern syntax:
 
 Any quantity of any type of events is allowed over the specified time.
 
-Instead of `>=`,  the following operators can be used:`<`, `>`, `<=`.
+Instead of `>=`, the following operators can be used:`<`, `>`, `<=`.
 
 Any number may be specified in place of 1800.
 
@@ -61,7 +59,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Parameters:**
 
 - `window` — Length of the sliding window in seconds.
-- `timestamp` — Name of the column containing the timestamp. Data type: [DateTime](../../data_types/datetime.md#data_type-datetime) or [UInt32](../../data_types/int_uint.md#data_type-int).
+- `timestamp` — Name of the column containing the timestamp. Data type: [DateTime](../../data_types/datetime.md) or [UInt32](../../data_types/int_uint.md).
 - `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
 
 **Algorithm**
@@ -151,7 +149,9 @@ It works as fast as possible, except for cases when a large N value is used and 
 
 Usage example:
 
-```text
+```
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
+
+[Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->

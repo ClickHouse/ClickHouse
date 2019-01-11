@@ -1,6 +1,4 @@
-<a name="aggregate_functions_parametric"></a>
-
-# Параметрические агрегатные функции
+# Параметрические агрегатные функции {#aggregate_functions_parametric}
 
 Некоторые агрегатные функции могут принимать не только столбцы-аргументы (по которым производится свёртка), но и набор параметров - констант для инициализации. Синтаксис - две пары круглых скобок вместо одной. Первая - для параметров, вторая - для аргументов.
 
@@ -23,7 +21,7 @@
 
 Это вырожденный пример. Его можно записать с помощью других агрегатных функций:
 
-```text
+```
 minIf(EventTime, URL LIKE '%company%') < maxIf(EventTime, URL LIKE '%cart%').
 ```
 
@@ -62,7 +60,7 @@ windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 **Параметры**
 
 - `window` — ширина скользящего окна по времени в секундах.
-- `timestamp` — имя столбца, содержащего отметки времени. Тип данных [DateTime](../../data_types/datetime.md#data_type-datetime) или [UInt32](../../data_types/int_uint.md#data_type-int).
+- `timestamp` — имя столбца, содержащего отметки времени. Тип данных [DateTime](../../data_types/datetime.md#data_type-datetime) или [UInt32](../../data_types/int_uint.md).
 - `cond1`, `cond2`... — условия или данные, описывающие цепочку событий. Тип данных — `UInt8`. Значения могут быть 0 или 1.
 
 **Алгоритм**
@@ -123,7 +121,9 @@ ORDER BY level
 
 Пример применения:
 
-```text
+```
 Задача: показывать в отчёте только поисковые фразы, по которым было хотя бы 5 уникальных посетителей.
 Решение: пишем в запросе GROUP BY SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/agg_functions/parametric_functions/) <!--hide-->

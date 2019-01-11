@@ -1,5 +1,7 @@
 add_definitions(-Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor -U_LIBCPP_DEBUG)
 
+link_directories(${LLVM_LIBRARY_DIRS})
+
 add_library(clickhouse-compiler-lib ${LINK_MODE}
     driver.cpp
     cc1_main.cpp

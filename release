@@ -32,7 +32,7 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 cd $CURDIR
 
-source "./release_lib.sh"
+source "./utils/release/release_lib.sh"
 
 PBUILDER_AUTOUPDATE=${PBUILDER_AUTOUPDATE=4320}
 

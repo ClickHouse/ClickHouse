@@ -11,3 +11,5 @@ Distributed sorting is one of the main causes of reduced performance when runnin
 
 Most MapReduce implementations allow you to execute arbitrary code on a cluster. But a declarative query language is better suited to OLAP in order to run experiments quickly. For example, Hadoop has Hive and Pig. Also consider Cloudera Impala or Shark (outdated) for Spark, as well as Spark SQL, Presto, and Apache Drill. Performance when running such tasks is highly sub-optimal compared to specialized systems, but relatively high latency makes it unrealistic to use these systems as the backend for a web interface.
 
+
+[Original article](https://clickhouse.yandex/docs/en/faq/general/) <!--hide-->
