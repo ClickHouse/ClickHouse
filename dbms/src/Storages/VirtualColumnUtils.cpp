@@ -157,7 +157,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return;
 
     /// Let's analyze and calculate the expression.
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(expression_ast, block.getNamesAndTypesList());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false);
 

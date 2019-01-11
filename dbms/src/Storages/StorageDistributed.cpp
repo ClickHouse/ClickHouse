@@ -170,7 +170,7 @@ StorageDistributed::~StorageDistributed() = default;
 static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, NamesAndTypesList columns, bool project)
 {
     ASTPtr query = sharding_key;
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 

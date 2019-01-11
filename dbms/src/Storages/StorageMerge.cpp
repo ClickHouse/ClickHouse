@@ -26,6 +26,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <ext/range.h>
+#include <algorithm>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
@@ -219,7 +220,7 @@ BlockInputStreams StorageMerge::read(
         size_t current_need_streams = tables_count >= num_streams ? 1 : (num_streams / tables_count);
         size_t current_streams = std::min(current_need_streams, remaining_streams);
         remaining_streams -= current_streams;
-        current_streams = std::max(1, current_streams);
+        current_streams = std::max(size_t(1), current_streams);
 
         StoragePtr storage = it->first;
         TableStructureReadLockPtr struct_lock = it->second;
@@ -452,7 +453,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
             NameAndTypePair virtual_column = getColumn("_table");
             source_columns.insert(source_columns.end(), virtual_column);
-            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(where_expression, source_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
 

@@ -3,7 +3,6 @@
 #include <memory>
 #include <common/logger_useful.h>
 #include "ThreadStatus.h"
-#include "ObjectPool.h"
 #include "TaskStatsInfoGetter.h"
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
@@ -22,8 +21,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
-
-SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
 
 // Smoker's implementation to avoid thread_local usage: error: undefined symbol: __cxa_thread_atexit
 #if defined(ARCADIA_ROOT)
