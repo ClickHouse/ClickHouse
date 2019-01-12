@@ -190,7 +190,7 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 #endif
 
 #if LLVM_VERSION_MAJOR >= 7
-using ModulePtr = std::shared_ptr<llvm::Module>;
+using ModulePtr = std::unique_ptr<llvm::Module>;
 #else
 using ModulePtr = std::shared_ptr<llvm::Module>;
 #endif
