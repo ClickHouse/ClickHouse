@@ -93,14 +93,12 @@ void ASTAlterCommand::formatImpl(
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << " AFTER " << (settings.hilite ? hilite_none : "");
             index->formatImpl(settings, state, frame);
         }
-        throw Exception("ADD/DROP INDEX is not implemented", ErrorCodes::LOGICAL_ERROR);
     }
     else if (type == ASTAlterCommand::DROP_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str
                       << "DROP INDEX " << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "");
         index->formatImpl(settings, state, frame);
-        throw Exception("ADD/DROP INDEX is not implemented", ErrorCodes::LOGICAL_ERROR);
     }
     else if (type == ASTAlterCommand::DROP_PARTITION)
     {
