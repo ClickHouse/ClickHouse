@@ -1042,7 +1042,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     auto new_columns = getColumns();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    commands.apply(new_columns, new_order_by_ast, new_primary_key_ast);
+    ASTPtr new_indexes_ast = skip_indexes_ast;
+    commands.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -1122,7 +1123,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
-    setSkipIndexes(skip_indexes_ast, /* only_check = */ true);
+    setSkipIndexes(new_indexes_ast, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
