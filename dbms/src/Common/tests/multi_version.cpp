@@ -23,7 +23,7 @@ void thread2(MV & x, const char * result)
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     try
     {
