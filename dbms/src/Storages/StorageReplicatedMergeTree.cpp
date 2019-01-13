@@ -1084,14 +1084,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     auto table_lock = lockStructure(false);
 
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
-
-    MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
+    FutureMergedMutatedPart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
     {
         throw Exception("Future merged part name `" + future_merged_part.name + "` differs from part name in log entry: `"
                         + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
     }
+
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_merged_part);
 
     MergeTreeData::Transaction transaction(data);
     MergeTreeData::MutableDataPartPtr part;
@@ -1217,13 +1217,13 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MergeTreeData::MutableDataPartPtr new_part;
     MergeTreeData::Transaction transaction(data);
 
-    MergeTreeDataMergerMutator::FuturePart future_mutated_part;
+    FutureMergedMutatedPart future_mutated_part;
     future_mutated_part.parts.push_back(source_part);
     future_mutated_part.part_info = new_part_info;
     future_mutated_part.name = entry.new_part_name;
 
     MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(
-        database_name, table_name, future_mutated_part.name, future_mutated_part.parts);
+        database_name, table_name, future_mutated_part);
 
     Stopwatch stopwatch;
 
@@ -2205,7 +2205,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             if (max_source_parts_size > 0)
             {
-                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                FutureMergedMutatedPart future_merged_part;
                 if (merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size, merge_pred))
                 {
                     success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
@@ -3030,7 +3030,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
             for (const String & partition_id : partition_ids)
             {
-                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                FutureMergedMutatedPart future_merged_part;
                 bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                     future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
                 if (selected &&
@@ -3040,7 +3040,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
         else
         {
-            MergeTreeDataMergerMutator::FuturePart future_merged_part;
+            FutureMergedMutatedPart future_merged_part;
             String disable_reason;
             bool selected = false;
             if (!partition)
