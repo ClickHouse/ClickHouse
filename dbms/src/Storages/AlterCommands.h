@@ -23,6 +23,8 @@ struct AlterCommand
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
+        ADD_INDEX,
+        DROP_INDEX,
         UKNOWN_TYPE,
     };
 
@@ -51,6 +53,13 @@ struct AlterCommand
 
     /// For MODIFY_ORDER_BY
     ASTPtr order_by;
+
+    /// For ADD INDEX
+    ASTPtr index_decl;
+    String after_index_name;
+
+    /// For ADD/DROP INDEX
+    String index_name;
 
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
