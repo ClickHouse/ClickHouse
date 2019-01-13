@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -111,6 +112,36 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.type = AlterCommand::MODIFY_ORDER_BY;
         command.order_by = command_ast->order_by;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::ADD_INDEX;
+
+        const auto & ast_index_decl = typeid_cast<const ASTIndexDeclaration &>(*command_ast->index_decl);
+
+        command.index_name = ast_index_decl.name;
+
+        if (command_ast->index)
+            command.after_index_name = typeid_cast<const ASTIdentifier &>(*command_ast->index).name;
+
+        command.if_not_exists = command_ast->if_not_exists;
+
+        throw Exception("\"ALTER TABLE table ADD/DROP INDEX ...\" queries are not supported yet.", ErrorCodes::NOT_IMPLEMENTED);
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX)
+    {
+        if (command_ast->clear_column)
+            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
+        AlterCommand command;
+        command.type = AlterCommand::DROP_INDEX;
+        command.index_name = typeid_cast<const ASTIdentifier &>(*(command_ast->index)).name;
+        command.if_exists = command_ast->if_exists;
+
+        throw Exception("\"ALTER TABLE table ADD/DROP INDEX ...\" queries are not supported yet.", ErrorCodes::NOT_IMPLEMENTED);
         return command;
     }
     else
