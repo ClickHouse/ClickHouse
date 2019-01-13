@@ -15,7 +15,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Poco/Path.h>
-#include <TableFunctions/parseRemoteDescription.h>
+#include <Common/parseRemoteDescription.h>
 #include <Common/typeid_cast.h>
 
 
