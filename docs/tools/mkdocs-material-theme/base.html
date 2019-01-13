@@ -40,8 +40,10 @@
     {% block htmltitle %}
       {% if page and page.meta and page.meta.title %}
         <title>{{ page.meta.title }}</title>
-      {% elif page and page.title and not page.is_homepage %}
+      {% elif page and page.title and not page.is_homepage and page.title != 'hidden' %}
         <title>{{ page.title }} - {{ config.site_name }}</title>
+      {% elif page and page.title and not page.is_homepage and page.title == 'hidden' and page.ancestors %}
+        <title>{{ (page.ancestors | first).title }} - {{ config.site_name }}</title>
       {% else %}
         <title>{{ config.site_name }}</title>
       {% endif %}
