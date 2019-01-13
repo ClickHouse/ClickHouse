@@ -69,7 +69,7 @@ static const double DISK_USAGE_COEFFICIENT_TO_SELECT = 2;
 static const double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 
 
-void MergeTreeDataMergerMutator::FuturePart::assign(MergeTreeData::DataPartsVector parts_)
+void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
 {
     if (parts_.empty())
         return;
@@ -155,7 +155,7 @@ UInt64 MergeTreeDataMergerMutator::getMaxSourcePartsSize(size_t pool_size, size_
 
 
 bool MergeTreeDataMergerMutator::selectPartsToMerge(
-    FuturePart & future_part,
+    FutureMergedMutatedPart & future_part,
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
@@ -242,7 +242,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
 
 bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
-    FuturePart & future_part,
+    FutureMergedMutatedPart & future_part,
     UInt64 & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
@@ -492,7 +492,7 @@ public:
 
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
-    const FuturePart & future_part, MergeList::Entry & merge_entry,
+    const FutureMergedMutatedPart & future_part, MergeList::Entry & merge_entry,
     time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
@@ -806,7 +806,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
-    const FuturePart & future_part,
+    const FutureMergedMutatedPart & future_part,
     const std::vector<MutationCommand> & commands,
     MergeListEntry & merge_entry,
     const Context & context)

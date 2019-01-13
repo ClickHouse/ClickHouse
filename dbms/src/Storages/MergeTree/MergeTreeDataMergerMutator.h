@@ -14,6 +14,23 @@ namespace DB
 class MergeListEntry;
 class MergeProgressCallback;
 
+/// Auxiliary struct holding metainformation for the future merged or mutated part.
+struct FutureMergedMutatedPart
+{
+    String name;
+    MergeTreePartInfo part_info;
+    MergeTreeData::DataPartsVector parts;
+
+    const MergeTreePartition & getPartition() const { return parts.front()->partition; }
+
+    FutureMergedMutatedPart() = default;
+    explicit FutureMergedMutatedPart(MergeTreeData::DataPartsVector parts_)
+    {
+        assign(std::move(parts_));
+    }
+
+    void assign(MergeTreeData::DataPartsVector parts_);
+};
 
 /** Can select the parts to merge and merge them.
   */
@@ -21,23 +38,6 @@ class MergeTreeDataMergerMutator
 {
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
-
-    struct FuturePart
-    {
-        String name;
-        MergeTreePartInfo part_info;
-        MergeTreeData::DataPartsVector parts;
-
-        const MergeTreePartition & getPartition() const { return parts.front()->partition; }
-
-        FuturePart() = default;
-        explicit FuturePart(MergeTreeData::DataPartsVector parts_)
-        {
-            assign(std::move(parts_));
-        }
-
-        void assign(MergeTreeData::DataPartsVector parts_);
-    };
 
 public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
@@ -60,7 +60,7 @@ public:
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
     bool selectPartsToMerge(
-        FuturePart & future_part,
+        FutureMergedMutatedPart & future_part,
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
@@ -70,7 +70,7 @@ public:
       * final - choose to merge even a single part - that is, allow to merge one part "with itself".
       */
     bool selectAllPartsToMergeWithinPartition(
-        FuturePart & future_part,
+        FutureMergedMutatedPart & future_part,
         UInt64 & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
@@ -88,13 +88,13 @@ public:
       * Important when using ReplicatedGraphiteMergeTree to provide the same merge on replicas.
       */
     MergeTreeData::MutableDataPartPtr mergePartsToTemporaryPart(
-        const FuturePart & future_part,
+        const FutureMergedMutatedPart & future_part,
         MergeListEntry & merge_entry, time_t time_of_merge,
         DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
 
     /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
-        const FuturePart & future_part,
+        const FutureMergedMutatedPart & future_part,
         const std::vector<MutationCommand> & commands,
         MergeListEntry & merge_entry, const Context & context);
 

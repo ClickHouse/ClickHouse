@@ -255,7 +255,7 @@ void StorageMergeTree::alter(
 /// While exists, marks parts as 'currently_merging' and reserves free space on filesystem.
 struct CurrentlyMergingPartsTagger
 {
-    MergeTreeDataMergerMutator::FuturePart future_part;
+    FutureMergedMutatedPart future_part;
     DiskSpaceMonitor::ReservationPtr reserved_space;
 
     bool is_successful = false;
@@ -264,7 +264,7 @@ struct CurrentlyMergingPartsTagger
     StorageMergeTree & storage;
 
 public:
-    CurrentlyMergingPartsTagger(const MergeTreeDataMergerMutator::FuturePart & future_part_, size_t total_size, StorageMergeTree & storage_)
+    CurrentlyMergingPartsTagger(const FutureMergedMutatedPart & future_part_, size_t total_size, StorageMergeTree & storage_)
         : future_part(future_part_), storage(storage_)
     {
         /// Assume mutex is already locked, because this method is called from mergeTask.
@@ -424,7 +424,7 @@ bool StorageMergeTree::merge(
 {
     auto structure_lock = lockStructure(true);
 
-    MergeTreeDataMergerMutator::FuturePart future_part;
+    FutureMergedMutatedPart future_part;
 
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
@@ -458,7 +458,7 @@ bool StorageMergeTree::merge(
         merging_tagger.emplace(future_part, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
 
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part);
 
     /// Logging
     Stopwatch stopwatch;
@@ -531,7 +531,7 @@ bool StorageMergeTree::tryMutatePart()
 {
     auto structure_lock = lockStructure(true);
 
-    MergeTreeDataMergerMutator::FuturePart future_part;
+    FutureMergedMutatedPart future_part;
     MutationCommands commands;
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> tagger;
@@ -575,7 +575,7 @@ bool StorageMergeTree::tryMutatePart()
     if (!tagger)
         return false;
 
-    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
+    MergeList::EntryPtr merge_entry = global_context.getMergeList().insert(database_name, table_name, future_part);
 
     Stopwatch stopwatch;
     MergeTreeData::MutableDataPartPtr new_part;
