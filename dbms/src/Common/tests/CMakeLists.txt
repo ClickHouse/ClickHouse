@@ -58,6 +58,7 @@ target_link_libraries (thread_pool_2 PRIVATE clickhouse_common_io)
 
 add_executable (multi_version multi_version.cpp)
 target_link_libraries (multi_version PRIVATE clickhouse_common_io)
+add_check(multi_version)
 
 add_executable (array_cache array_cache.cpp)
 target_link_libraries (array_cache PRIVATE clickhouse_common_io)
