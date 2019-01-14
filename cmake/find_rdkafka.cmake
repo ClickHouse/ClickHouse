@@ -20,6 +20,7 @@ if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
     if (USE_STATIC_LIBRARIES AND NOT OS_FREEBSD)
        find_library (SASL2_LIBRARY sasl2)
     endif ()
+    set (CPPKAFKA_LIBRARY cppkafka) # TODO: try to use unbundled version.
 endif ()
 
 if (RDKAFKA_LIB AND RDKAFKA_INCLUDE_DIR)
