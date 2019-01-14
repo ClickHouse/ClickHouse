@@ -512,8 +512,8 @@ static std::optional<DataTypes> removeNullables(const DataTypes & types)
         if (!typeid_cast<const DataTypeNullable *>(type.get()))
             continue;
         DataTypes filtered;
-        for (const auto & type : types)
-            filtered.emplace_back(removeNullable(type));
+        for (const auto & sub_type : types)
+            filtered.emplace_back(removeNullable(sub_type));
         return filtered;
     }
     return {};

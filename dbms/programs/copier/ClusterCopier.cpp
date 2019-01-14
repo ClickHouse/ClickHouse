@@ -1997,7 +1997,7 @@ protected:
         };
 
         {
-            ThreadPool thread_pool(std::min(num_shards, UInt64(getNumberOfPhysicalCPUCores())));
+            ThreadPool thread_pool(std::min<UInt64>(num_shards, getNumberOfPhysicalCPUCores()));
 
             for (UInt64 shard_index = 0; shard_index < num_shards; ++shard_index)
                 thread_pool.schedule([=] { do_for_shard(shard_index); });
