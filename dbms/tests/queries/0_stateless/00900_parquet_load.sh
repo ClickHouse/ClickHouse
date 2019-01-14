@@ -22,7 +22,7 @@ DATA_DIR=$CUR_DIR/data_parquet
 # why? repeated_no_annotation.parquet
 
 #for DATA_SOURCE_DIR in $ROOT_DIR/contrib/arrow/cpp/submodules/parquet-testing/data $ROOT_DIR/contrib/arrow/python/pyarrow/tests/data/parquet; do
-#  for NAME in `ls -1 $DATA_SOURCE_DIR/*.parquet | xargs -n 1 basename | sort`; do
+#  for NAME in `ls -1 $DATA_SOURCE_DIR/*.parquet | xargs -n 1 basename | sort --stable`; do
     #[ ! -f "$DATA_DIR/$NAME" ] && DATA_DIR=$DATA_SOURCE_DIR
 for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do
     echo === Try load data from $NAME
