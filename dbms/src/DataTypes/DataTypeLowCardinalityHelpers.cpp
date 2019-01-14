@@ -16,31 +16,19 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-DataTypePtr recursiveRemoveLowCardinality(const IDataType * type)
+DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
 {
     if (!type)
-        return nullptr;
+        return type;
 
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type))
-        if (auto nested = recursiveRemoveLowCardinality(array_type->getNestedType().get()))
-            return std::make_shared<DataTypeArray>(nested);
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type))
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         DataTypes elements = tuple_type->getElements();
-        bool has_removed = false;
-
         for (auto & element : elements)
-        {
-            if (auto removed = recursiveRemoveLowCardinality(element.get()))
-            {
-                element = removed;
-                has_removed = true;
-            }
-        }
-
-        if (!has_removed)
-            return nullptr;
+            element = recursiveRemoveLowCardinality(element);
 
         if (tuple_type->haveExplicitNames())
             return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
@@ -48,49 +36,49 @@ DataTypePtr recursiveRemoveLowCardinality(const IDataType * type)
             return std::make_shared<DataTypeTuple>(elements);
     }
 
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type))
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
         return low_cardinality_type->getDictionaryType();
 
-    return nullptr;
+    return type;
 }
 
-ColumnPtr recursiveRemoveLowCardinality(const IColumn * column)
+ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
 {
     if (!column)
-        return nullptr;
+        return column;
 
-    if (const auto * column_array = typeid_cast<const ColumnArray *>(column))
-        if (auto nested = recursiveRemoveLowCardinality(&column_array->getData()))
-            return ColumnArray::create(nested, column_array->getOffsetsPtr());
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
+    {
+        auto & data = column_array->getDataPtr();
+        auto data_no_lc = recursiveRemoveLowCardinality(data);
+        if (data.get() == data_no_lc.get())
+            return column;
 
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-        if (auto nested = recursiveRemoveLowCardinality(&column_const->getDataColumn()))
-            return ColumnConst::create(nested, column_const->size());
+        return ColumnArray::create(data_no_lc, column_array->getOffsetsPtr());
+    }
 
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column))
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+    {
+        auto & nested = column_const->getDataColumnPtr();
+        auto nested_no_lc = recursiveRemoveLowCardinality(nested);
+        if (nested.get() == nested_no_lc.get())
+            return column;
+
+        return ColumnConst::create(nested_no_lc, column_const->size());
+    }
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
         Columns columns = column_tuple->getColumns();
-        bool removed_any = false;
-
         for (auto & element : columns)
-        {
-            if (auto nested = recursiveRemoveLowCardinality(element.get()))
-            {
-                element = nested;
-                removed_any = true;
-            }
-        }
-
-        if (!removed_any)
-            return nullptr;
-
+            element = recursiveRemoveLowCardinality(element);
         return ColumnTuple::create(columns);
     }
 
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column))
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
         return column_low_cardinality->convertToFullColumn();
 
-    return nullptr;
+    return column;
 }
 
 ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)
@@ -102,8 +90,14 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
         return column;
 
     if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(recursiveLowCardinalityConversion(column_const->getDataColumnPtr(), from_type, to_type),
-                                   column_const->size());
+    {
+        auto & nested = column_const->getDataColumnPtr();
+        auto nested_no_lc = recursiveLowCardinalityConversion(nested, from_type, to_type);
+        if (nested.get() == nested_no_lc.get())
+            return column;
+
+        return ColumnConst::create(nested_no_lc, column_const->size());
+    }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(from_type.get()))
     {
@@ -151,11 +145,23 @@ ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const Data
             Columns columns = column_tuple->getColumns();
             auto & from_elements = from_tuple_type->getElements();
             auto & to_elements = to_tuple_type->getElements();
+
+            bool has_converted = false;
+
             for (size_t i = 0; i < columns.size(); ++i)
             {
                 auto & element = columns[i];
-                element = recursiveLowCardinalityConversion(element, from_elements.at(i), to_elements.at(i));
+                auto element_no_lc = recursiveLowCardinalityConversion(element, from_elements.at(i), to_elements.at(i));
+                if (element.get() != element_no_lc.get())
+                {
+                    element = element_no_lc;
+                    has_converted = true;
+                }
             }
+
+            if (!has_converted)
+                return column;
+
             return ColumnTuple::create(columns);
         }
     }
