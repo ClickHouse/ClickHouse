@@ -28,7 +28,7 @@ UInt8 CompressionCodecZSTD::getMethodByte() const
 
 String CompressionCodecZSTD::getCodecDesc() const
 {
-    return "ZSTD";
+    return "ZSTD(" + toString(level) + ")";
 }
 
 UInt32 CompressionCodecZSTD::getCompressedDataSize(UInt32 uncompressed_size) const
