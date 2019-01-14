@@ -86,7 +86,7 @@ UUIDNumToString(FixedString(16))
 
 **Returned value**
 
-The UUID type value.
+String.
 
 **Usage example**
 
