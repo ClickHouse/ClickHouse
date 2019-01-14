@@ -468,7 +468,8 @@ bool Join::insertFromBlock(const Block & block)
 
     if (kind != ASTTableJoin::Kind::Cross)
     {
-        dispatch([&](auto, auto strictness_, auto & map) {
+        dispatch([&](auto, auto strictness_, auto & map)
+        {
             insertFromBlockImpl<strictness_>(type, map, rows, key_columns, keys_size, key_sizes, stored_block, null_map, pool);
         });
     }
@@ -919,10 +920,13 @@ void Join::joinBlock(Block & block, const Names & key_names_left, const NameSet 
 
     checkTypesOfKeys(block, key_names_left, sample_block_with_keys);
 
-    if (dispatch([&](auto kind_, auto strictness_, auto & map) {
+    if (dispatch([&](auto kind_, auto strictness_, auto & map)
+        {
             joinBlockImpl<kind_, strictness_>(block, key_names_left, needed_key_names_right, sample_block_with_columns_to_add, map);
         }))
-        ;
+    {
+        /// Joined
+    }
     else if (kind == ASTTableJoin::Kind::Cross)
         joinBlockImplCross(block);
     else
