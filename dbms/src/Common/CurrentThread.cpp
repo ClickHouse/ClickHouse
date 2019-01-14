@@ -34,7 +34,7 @@ ThreadStatus & CurrentThread::get()
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
-    return get().performance_counters;
+    return current_thread ? get().performance_counters : ProfileEvents::global_counters;
 }
 
 MemoryTracker & CurrentThread::getMemoryTracker()
