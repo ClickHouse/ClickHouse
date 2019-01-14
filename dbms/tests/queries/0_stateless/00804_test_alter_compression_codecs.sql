@@ -36,6 +36,10 @@ INSERT INTO test.alter_compression_codec VALUES('2018-01-01', 8, '8');
 OPTIMIZE TABLE test.alter_compression_codec FINAL;
 SELECT * FROM test.alter_compression_codec ORDER BY id;
 
+ALTER TABLE test.alter_compression_codec MODIFY COLUMN alter_column FixedString(100);
+SELECT compression_codec FROM system.columns WHERE database = 'test' AND table = 'alter_compression_codec' AND name = 'alter_column';
+
+
 DROP TABLE IF EXISTS test.alter_compression_codec;
 
 DROP TABLE IF EXISTS test.alter_bad_codec;
