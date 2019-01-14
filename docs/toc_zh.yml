@@ -180,7 +180,7 @@ nav:
   - 'hidden': 'development/index.md'
   - 'ClickHouse架构概述': 'development/architecture.md'
   - '如何在Linux中编译ClickHouse': 'development/build.md'
-  - '如何在Mac OS X中编译ClickHouse: 'development/build_osx.md'
+  - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
   - '如何编写C++代码': 'development/style.md'
   - '如何运行ClickHouse测试': 'development/tests.md'
 
