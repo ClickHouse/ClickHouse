@@ -50,3 +50,35 @@ ALTER TABLE test.alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-
 ALTER TABLE test.alter_bad_codec ADD COLUMN alter_column DateTime DEFAULT '2019-01-01 00:00:00' CODEC(ZSTD(100)); -- { serverError 433 }
 
 DROP TABLE IF EXISTS test.alter_bad_codec;
+
+DROP TABLE IF EXISTS test.large_alter_table;
+DROP TABLE IF EXISTS test.store_of_hash;
+
+CREATE TABLE test.large_alter_table (
+    somedate Date CODEC(ZSTD, ZSTD, ZSTD(12), LZ4HC(12)),
+    id UInt64 CODEC(LZ4, ZSTD, NONE, LZ4HC),
+    data String CODEC(ZSTD(2), LZ4HC, NONE, LZ4, LZ4)
+) ENGINE = MergeTree() PARTITION BY somedate ORDER BY id SETTINGS index_granularity = 2;
+
+INSERT INTO test.large_alter_table SELECT toDate('2019-01-01'), number, toString(number + rand()) FROM system.numbers LIMIT 300000;
+
+CREATE TABLE test.store_of_hash (hash UInt64) ENGINE = Memory();
+
+INSERT INTO test.store_of_hash SELECT sum(cityHash64(*)) FROM test.large_alter_table;
+
+ALTER TABLE test.large_alter_table MODIFY COLUMN data CODEC(NONE, LZ4, LZ4HC, ZSTD);
+
+OPTIMIZE TABLE test.large_alter_table;
+
+SELECT compression_codec FROM system.columns WHERE database = 'test' AND table = 'large_alter_table' AND name = 'data';
+
+DETACH TABLE test.large_alter_table;
+ATTACH TABLE test.large_alter_table;
+
+INSERT INTO test.store_of_hash SELECT sum(cityHash64(*)) FROM test.large_alter_table;
+
+SELECT COUNT(hash) FROM test.store_of_hash;
+SELECT COUNT(DISTINCT hash) FROM test.store_of_hash;
+
+DROP TABLE IF EXISTS test.large_alter_table;
+DROP TABLE IF EXISTS test.store_of_hash;
