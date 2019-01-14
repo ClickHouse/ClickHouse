@@ -78,9 +78,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
-/// From SyntaxAnalyzer.cpp
-extern void removeDuplicateColumns(NamesAndTypesList & columns);
-
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,

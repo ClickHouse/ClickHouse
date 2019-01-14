@@ -8,6 +8,8 @@ namespace DB
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
+NameSet removeDuplicateColumns(NamesAndTypesList & columns);
+
 struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
