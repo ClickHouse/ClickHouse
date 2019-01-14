@@ -770,9 +770,10 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
         if (!result.isLowCardinality())
         {
-            if (auto column = recursiveRemoveLowCardinality(key_columns[i]))
+            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
+            if (column_no_lc.get() != key_columns[i])
             {
-                materialized_columns.emplace_back(std::move(column));
+                materialized_columns.emplace_back(std::move(column_no_lc));
                 key_columns[i] = materialized_columns.back().get();
             }
         }
@@ -788,9 +789,10 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
             materialized_columns.push_back(block.safeGetByPosition(params.aggregates[i].arguments[j]).column->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
-            if (auto column = recursiveRemoveLowCardinality(aggregate_columns[i][j]))
+            auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
+            if (column_no_lc.get() != aggregate_columns[i][j])
             {
-                materialized_columns.emplace_back(std::move(column));
+                materialized_columns.emplace_back(std::move(column_no_lc));
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
         }

@@ -165,10 +165,10 @@ private:
 DataTypePtr removeLowCardinality(const DataTypePtr & type);
 
 /// Remove LowCardinality recursively from all nested types.
-DataTypePtr recursiveRemoveLowCardinality(const IDataType * type);
+DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type);
 
 /// Remove LowCardinality recursively from all nested columns.
-ColumnPtr recursiveRemoveLowCardinality(const IColumn * column);
+ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column);
 
 /// Convert column of type from_type to type to_type by converting nested LowCardinality columns.
 ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type);

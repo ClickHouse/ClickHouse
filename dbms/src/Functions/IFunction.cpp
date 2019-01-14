@@ -385,10 +385,8 @@ static void convertLowCardinalityColumnsToFull(Block & block, const ColumnNumber
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
 
-        if (auto col = recursiveRemoveLowCardinality(column.column.get()))
-            column.column = col;
-        if (auto type = recursiveRemoveLowCardinality(column.type.get()))
-            column.type = type;
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
 
@@ -601,10 +599,8 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
         for (auto & arg : args_without_low_cardinality)
         {
-            if (auto column = recursiveRemoveLowCardinality(arg.column.get()))
-                arg.column = column;
-            if (auto type = recursiveRemoveLowCardinality(arg.type.get()))
-                arg.type = type;
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+            arg.type = recursiveRemoveLowCardinality(arg.type);
         }
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
