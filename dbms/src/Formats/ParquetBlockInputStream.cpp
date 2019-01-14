@@ -194,7 +194,6 @@ void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     }
 }
 
-/// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
 void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
     auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
@@ -203,13 +202,32 @@ void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = static_cast<arrow::TimestampArray &>(*(arrow_column->data()->chunk(chunk_i)));
-//DUMP(chunk.unit());
-//DUMP(chunk.type()::TypeClass
-//DUMP(chunk.tchunkype()->unit());
-//DUMP(decltype(chunk)::)
+        const auto & type = static_cast<const ::arrow::TimestampType &>(*chunk.type());
+
+        UInt32 divide = 1;
+        const auto unit = type.unit();
+        switch (unit)
+        {
+            case arrow::TimeUnit::SECOND:
+                divide = 1;
+                break;
+            case arrow::TimeUnit::MILLI:
+                divide = 1000;
+                break;
+            case arrow::TimeUnit::MICRO:
+                divide = 1000000;
+                break;
+            case arrow::TimeUnit::NANO:
+                divide = 1000000000;
+                break;
+            default:
+                throw Exception{"Unknown unit (" + std::to_string(static_cast<int16_t>(unit)) + ") in timestamp type",
+                                ErrorCodes::CANNOT_CONVERT_TYPE};
+        }
+
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
-            auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // ms! TODO: check other 's' 'ns' ...
+            auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / divide); // ms! TODO: check other 's' 'ns' ...
             column_data.emplace_back(timestamp);
         }
     }
