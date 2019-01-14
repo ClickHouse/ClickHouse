@@ -5,6 +5,7 @@
 #include <optional>
 #include <unordered_map>
 #include <ext/singleton.h>
+#include <DataTypes/IDataType.h>
 #include <Common/IFactoryWithAliases.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>

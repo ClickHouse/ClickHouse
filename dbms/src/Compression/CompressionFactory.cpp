@@ -10,7 +10,6 @@
 #include <Parsers/queryToString.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecLZ4.h>
-#include <Compression/CompressionCodecNone.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -135,7 +134,7 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecMultiple(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
-//void registerCodecDelta(CompressionCodecFactory & factory);
+void registerCodecDelta(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -145,7 +144,7 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecZSTD(*this);
     registerCodecMultiple(*this);
     registerCodecLZ4HC(*this);
-//    registerCodecDelta(*this);
+    registerCodecDelta(*this);
 }
 
 }

@@ -41,7 +41,7 @@ protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
 private:
-    int level;
+    const int level;
 };
 
 }
