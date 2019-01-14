@@ -1,6 +1,7 @@
 #include <Compression/CompressionCodecDelta.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <common/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/WriteHelpers.h>
@@ -39,6 +40,9 @@ namespace
 template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest)
 {
+    if (source_size % sizeof(T) != 0)
+        throw Exception("Cannot delta compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
+
     const auto * source_with_type = reinterpret_cast<const T *>(source);
     auto * dest_with_type = reinterpret_cast<T *>(dest);
 
@@ -46,12 +50,15 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
         dest_with_type[0] = source_with_type[0];
 
     for (size_t dest_index = 1, dest_end = source_size / sizeof(T); dest_index < dest_end; ++dest_index)
-        dest_with_type[dest_index] = source_with_type[dest_index] - source_with_type[dest_index - 1];
+        unalignedStore<T>(&dest_with_type[dest_index], source_with_type[dest_index] - source_with_type[dest_index - 1]);
 }
 
 template <typename T>
 void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 {
+    if (source_size % sizeof(T) != 0)
+        throw Exception("Cannot delta decompress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_DECOMPRESS);
+
     const auto * source_with_type = reinterpret_cast<const T *>(source);
     auto * dest_with_type = reinterpret_cast<T *>(dest);
 
@@ -59,7 +66,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         dest_with_type[0] = source_with_type[0];
 
     for (size_t dest_index = 1, dest_end = source_size / sizeof(T); dest_index < dest_end; ++dest_index)
-        dest_with_type[dest_index] = source_with_type[dest_index] + dest_with_type[dest_index - 1];
+        unalignedStore<T>(&dest_with_type[dest_index], source_with_type[dest_index] + dest_with_type[dest_index - 1]);
 }
 
 }
@@ -95,19 +102,20 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
     UInt8 bytes_to_skip = source[1];
 
     memcpy(dest, &source[2], bytes_to_skip);
+    UInt32 source_size_no_header = source_size - bytes_to_skip - 2;
     switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size - bytes_to_skip, &dest[bytes_to_skip]);
+        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size - bytes_to_skip, &dest[bytes_to_skip]);
+        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size - bytes_to_skip, &dest[bytes_to_skip]);
+        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size - bytes_to_skip, &dest[bytes_to_skip]);
+        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
         break;
     }
 }
