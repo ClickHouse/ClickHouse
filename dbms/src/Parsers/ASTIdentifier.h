@@ -1,13 +1,14 @@
 #pragma once
 
+#include <optional>
+
 #include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
 {
 
-/** Identifier (column or alias)
-  */
+/// Identifier (column, table or alias)
 class ASTIdentifier : public ASTWithAlias
 {
     enum Kind    /// TODO This is semantic, not syntax. Remove it.
@@ -33,10 +34,6 @@ public:
         set.insert(name);
     }
 
-    void setSpecial() { kind = Special; }
-    bool general() const { return kind == General; }
-    bool special() const { return kind == Special; }
-
     static std::shared_ptr<ASTIdentifier> createSpecial(const String & name_)
     {
         return std::make_shared<ASTIdentifier>(name_, ASTIdentifier::Special);
@@ -48,6 +45,35 @@ protected:
 
 private:
     Kind kind;
+
+    void setSpecial() { kind = Special; }
+    bool special() const { return kind == Special; }
+
+    friend void setIdentifierSpecial(ASTPtr &);
+    friend std::optional<String> getColumnIdentifierName(const ASTIdentifier & node);
+    friend std::optional<String> getColumnIdentifierName(const ASTPtr & ast);
+    friend std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
+    friend std::optional<String> getTableIdentifierName(const ASTPtr & ast);
 };
+
+
+/// ASTIdentifier Helpers: hide casts and semantic.
+
+bool isIdentifier(const IAST * const ast);
+inline bool isIdentifier(const ASTPtr & ast) { return isIdentifier(ast.get()); }
+
+std::optional<String> getIdentifierName(const IAST * const ast);
+inline std::optional<String> getIdentifierName(const ASTPtr & ast) { return getIdentifierName(ast.get()); }
+bool getIdentifierName(const ASTPtr & ast, String & name);
+
+/// @returns name for column identifiers
+std::optional<String> getColumnIdentifierName(const ASTIdentifier & node);
+std::optional<String> getColumnIdentifierName(const ASTPtr & ast);
+
+/// @returns name for 'not a column' identifiers
+std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
+std::optional<String> getTableIdentifierName(const ASTPtr & ast);
+
+void setIdentifierSpecial(ASTPtr & ast);
 
 }

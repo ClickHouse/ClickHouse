@@ -443,7 +443,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             const String nested_table_name = ast->getColumnName();
             const String nested_table_alias = ast->getAliasOrColumnName();
 
-            if (nested_table_alias == nested_table_name && !typeid_cast<const ASTIdentifier *>(ast.get()))
+            if (nested_table_alias == nested_table_name && !isIdentifier(ast))
                 throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name,
                                 ErrorCodes::ALIAS_REQUIRED);
 
@@ -471,7 +471,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             String result_name = expr->getAliasOrColumnName();
 
             /// This is an array.
-            if (!typeid_cast<ASTIdentifier *>(expr.get()) || source_columns_set.count(source_name))
+            if (!isIdentifier(expr) || source_columns_set.count(source_name))
             {
                 result.array_join_result_to_source[result_name] = source_name;
             }
@@ -528,10 +528,10 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<TableBelonging(const ASTPtr &)> get_table_belonging;
     get_table_belonging = [&](const ASTPtr & ast) -> TableBelonging
     {
-        auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
-        if (identifier)
+        if (getColumnIdentifierName(ast))
         {
-            if (identifier->general())
+            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+
             {
                 auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
                 auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
@@ -567,9 +567,10 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<void(ASTPtr &, const DatabaseAndTableWithAlias &, bool)> translate_qualified_names;
     translate_qualified_names = [&](ASTPtr & ast, const DatabaseAndTableWithAlias & source_names, bool right_table)
     {
-        if (auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (getColumnIdentifierName(ast))
         {
-            if (identifier->general())
+            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+
             {
                 auto num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, source_names);
                 stripIdentifier(ast, num_components);
