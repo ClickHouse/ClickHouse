@@ -403,6 +403,7 @@ public:
     bool dispatch(Func && func)
     {
         if (overwrite)
+        {
             return static_for<0, KINDS.size()>([&](auto i)
             {
                 if (kind == KINDS[i] && strictness == ASTTableJoin::Strictness::Any)
@@ -418,7 +419,9 @@ public:
                 }
                 return false;
             });
+        }
         else
+        {
             return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
             {
                 // NOTE: Avoid using nested static loop as GCC and CLANG have bugs in different ways
@@ -438,6 +441,7 @@ public:
                 }
                 return false;
             });
+        }
     }
 
     template <typename Func>
