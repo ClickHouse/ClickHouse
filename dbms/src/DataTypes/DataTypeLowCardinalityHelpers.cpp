@@ -16,19 +16,31 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
-DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
+DataTypePtr recursiveRemoveLowCardinality(const IDataType * type)
 {
     if (!type)
-        return type;
+        return nullptr;
 
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type))
+        if (auto nested = recursiveRemoveLowCardinality(array_type->getNestedType().get()))
+            return std::make_shared<DataTypeArray>(nested);
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type))
     {
         DataTypes elements = tuple_type->getElements();
+        bool has_removed = false;
+
         for (auto & element : elements)
-            element = recursiveRemoveLowCardinality(element);
+        {
+            if (auto removed = recursiveRemoveLowCardinality(element.get()))
+            {
+                element = removed;
+                has_removed = true;
+            }
+        }
+
+        if (!has_removed)
+            return nullptr;
 
         if (tuple_type->haveExplicitNames())
             return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
@@ -36,35 +48,49 @@ DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
             return std::make_shared<DataTypeTuple>(elements);
     }
 
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type))
         return low_cardinality_type->getDictionaryType();
 
-    return type;
+    return nullptr;
 }
 
-ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
+ColumnPtr recursiveRemoveLowCardinality(const IColumn * column)
 {
     if (!column)
-        return column;
+        return nullptr;
 
-    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
-        return ColumnArray::create(recursiveRemoveLowCardinality(column_array->getDataPtr()), column_array->getOffsetsPtr());
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(column))
+        if (auto nested = recursiveRemoveLowCardinality(&column_array->getData()))
+            return ColumnArray::create(nested, column_array->getOffsetsPtr());
 
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), column_const->size());
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        if (auto nested = recursiveRemoveLowCardinality(&column_const->getDataColumn()))
+            return ColumnConst::create(nested, column_const->size());
 
-    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column))
     {
         Columns columns = column_tuple->getColumns();
+        bool removed_any = false;
+
         for (auto & element : columns)
-            element = recursiveRemoveLowCardinality(element);
+        {
+            if (auto nested = recursiveRemoveLowCardinality(element.get()))
+            {
+                element = nested;
+                removed_any = true;
+            }
+        }
+
+        if (!removed_any)
+            return nullptr;
+
         return ColumnTuple::create(columns);
     }
 
-    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column))
         return column_low_cardinality->convertToFullColumn();
 
-    return column;
+    return nullptr;
 }
 
 ColumnPtr recursiveLowCardinalityConversion(const ColumnPtr & column, const DataTypePtr & from_type, const DataTypePtr & to_type)

@@ -101,8 +101,10 @@ void NativeBlockOutputStream::write(const Block & block)
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))
         {
-            column.column = recursiveRemoveLowCardinality(column.column);
-            column.type = recursiveRemoveLowCardinality(column.type);
+            if (auto col = recursiveRemoveLowCardinality(column.column.get()))
+                column.column = col;
+            if (auto type = recursiveRemoveLowCardinality(column.type.get()))
+                column.type = type;
         }
 
         /// Name
