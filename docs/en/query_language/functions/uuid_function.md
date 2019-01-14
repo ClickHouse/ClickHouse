@@ -10,7 +10,7 @@ generateUUIDv4()
 
 **Returned value**
 
-The UUID value.
+The UUID type value.
 
 **Usage example**
 
@@ -29,10 +29,17 @@ This example demonstrates creating a table with the UUID type column and inserti
 ```
 
 ## toUUID (x)	
-Converts String type value to UUID. 
+
+Converts String type value to UUID type. 
+
+```sql
+toUUID(<String>)
+```
+
+Note that the String value has to correspond to the UUID format.
 
 **Returned value**
-UUID.
+The UUID type value.
 
 **Usage example**
 ``` sql
@@ -43,7 +50,7 @@ UUID.
 └──────────────────────────────────────┘
 ```
 
-Note that the String value has to correspond to the UUID format.
+The `toUUID()` function returns an error if the String value does not correspond to the UUID format. For example:
 
 ``` sql
 :) SELECT toUUID('61f0c4045cb3-11e7907ba6006ad3dba0') AS uuid
@@ -56,14 +63,42 @@ Code: 376. DB::Exception: Received from clickhouse-server:9000, 172.17.0.2. DB::
 
 Accepts a string containing 36 characters in the format `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, and returns it as a set of bytes in a FixedString(16).
 
+``` sql
+UUIDStringToNum('123e4567-e89b-12d3-a456-426655440000')
+```
+
 **Returned value**
 
 FixedString(16)
 
+**Usage example**
+
+``` sql
+SELECT UUIDStringToNum('123e4567-e89b-12d3-a456-426655440000') AS NUM
+
+┌─NUM───────┐
+│ >Eg?ӤVBfUD│
+└───────────┘
+```
+
 ## UUIDNumToString
+
+Accepts a FixedString(16) value. Returns a string containing 36 characters in text format.
+
+**Returned value**
 
 ## dictGetUUID
 
+```sql
+dictGetUUID('dict_name', 'attr_name', id)
+```
+
+**Returned value**
+
 ## dictGetUUIDOrDefault	
+
+The same as the dictGetUUID function, but the default value is taken from the function's last argument.
+
+**Returned value**
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/uuid_function/) <!--hide-->
