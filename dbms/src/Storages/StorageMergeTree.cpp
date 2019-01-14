@@ -336,7 +336,8 @@ void StorageMergeTree::mutate(const MutationCommands & commands, const Context &
         Int64 version = increment.get();
         entry.commit(version);
         file_name = entry.file_name;
-        current_mutations_by_version.emplace(version, std::move(entry));
+        auto insertion = current_mutations_by_id.emplace(file_name, std::move(entry));
+        current_mutations_by_version.emplace(version, insertion.first->second);
     }
 
     LOG_INFO(log, "Added mutation: " << file_name);
@@ -389,7 +390,26 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
 void StorageMergeTree::killMutation(const String & mutation_id)
 {
-    LOG_TRACE(log, "KILL MUTATION " << mutation_id);
+    LOG_TRACE(log, "Killing mutation " << mutation_id);
+
+    std::optional<MergeTreeMutationEntry> to_kill;
+    {
+        std::lock_guard lock(currently_merging_mutex);
+        auto it = current_mutations_by_id.find(mutation_id);
+        if (it != current_mutations_by_id.end())
+        {
+            to_kill.emplace(std::move(it->second));
+            current_mutations_by_id.erase(it);
+            current_mutations_by_version.erase(to_kill->block_number);
+        }
+    }
+
+    if (to_kill)
+    {
+        global_context.getMergeList().cancelMutation(to_kill->block_number);
+        to_kill->removeFile();
+        LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+    }
 }
 
 
@@ -402,7 +422,8 @@ void StorageMergeTree::loadMutations()
         {
             MergeTreeMutationEntry entry(full_path, it.name());
             Int64 block_number = entry.block_number;
-            current_mutations_by_version.emplace(block_number, std::move(entry));
+            auto insertion = current_mutations_by_id.emplace(it.name(), std::move(entry));
+            current_mutations_by_version.emplace(block_number, insertion.first->second);
         }
         else if (startsWith(it.name(), "tmp_mutation_"))
         {
@@ -720,6 +741,7 @@ void StorageMergeTree::clearOldMutations()
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             mutations_to_delete.push_back(std::move(it->second));
+            current_mutations_by_id.erase(mutations_to_delete.back().file_name);
             it = current_mutations_by_version.erase(it);
         }
     }
