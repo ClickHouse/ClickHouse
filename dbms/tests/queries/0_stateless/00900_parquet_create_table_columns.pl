@@ -3,7 +3,7 @@ package parquet_create_table_columns;
 use strict;
 no warnings 'experimental';
 use feature 'signatures';
-use JSON;
+use JSON::XS;
 #use Data::Dumper;
 
 sub file_read($file) {
@@ -16,6 +16,8 @@ sub file_read($file) {
 
 our $type_parquet_logical_to_clickhouse = {
     DECIMAL    => 'Decimal128(1)',
+    TIMESTAMP_MICROS => 'DateTime',
+    TIMESTAMP_MILLIS => 'DateTime',
 };
 our $type_parquet_physical_to_clickhouse = {
     BOOLEAN    => 'UInt8',
@@ -45,7 +47,7 @@ sub columns ($json) {
 }
 
 sub columns_file ($file) {
-    return columns(JSON::decode_json(file_read($file)));
+    return columns(JSON::XS::decode_json(file_read($file)));
 }
 
 columns_file(shift) unless caller;

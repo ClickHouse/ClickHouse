@@ -197,9 +197,9 @@ Code: 33. DB::Ex---tion: Error while reading parquet data: NotImplemented: lists
 0.24	62.3	57	336	3.95	3.98	2.47	Very Good	I	VVS1
 0.24	62.8	57	336	3.94	3.96	2.48	Very Good	J	VVS2
 === Try load data from v0.7.1.column-metadata-handling.parquet
-1	0.1	1461482880	a	1461482880
-2	0.2	1547882880	b	1547882880
-3	0.3	1634282880	c	1634282880
+1	0.1	2016-04-24 10:28:00	a	2016-04-24 10:28:00
+2	0.2	2019-01-19 10:28:00	b	2019-01-19 10:28:00
+3	0.3	2021-10-15 10:28:00	c	2021-10-15 10:28:00
 === Try load data from v0.7.1.parquet
 0.23	Ideal	E	SI2	61.5	55	326	3.95	3.98	2.43	0
 0.21	Premium	E	SI1	59.8	61	326	3.89	3.84	2.31	1

@@ -186,7 +186,27 @@ void fillColumnWithDate64Data(std::shared_ptr<arrow::Column> & arrow_column, Mut
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         auto & chunk = static_cast<arrow::Date64Array &>(*(arrow_column->data()->chunk(chunk_i)));
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        {
+            auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // Always? in ms
+            column_data.emplace_back(timestamp);
+        }
+    }
+}
 
+/// Arrow stores Parquet::DATETIME in Int64, while ClickHouse stores DateTime in UInt32. Therefore, it should be checked before saving
+void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+{
+    auto & column_data = static_cast<ColumnVector<UInt32> &>(*internal_column).getData();
+    column_data.reserve(arrow_column->length());
+
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = static_cast<arrow::TimestampArray &>(*(arrow_column->data()->chunk(chunk_i)));
+//DUMP(chunk.unit());
+//DUMP(chunk.type()::TypeClass
+//DUMP(chunk.tchunkype()->unit());
+//DUMP(decltype(chunk)::)
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
         {
             auto timestamp = static_cast<UInt32>(chunk.Value(value_i) / 1000); // ms! TODO: check other 's' 'ns' ...
@@ -393,8 +413,10 @@ Block ParquetBlockInputStream::readImpl()
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
             case arrow::Type::DATE64:
-            case arrow::Type::TIMESTAMP:
                 fillColumnWithDate64Data(arrow_column, read_column);
+                break;
+            case arrow::Type::TIMESTAMP:
+                fillColumnWithTimestampData(arrow_column, read_column);
                 break;
             case arrow::Type::DECIMAL:
                 fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
