@@ -403,7 +403,8 @@ public:
     bool dispatch(Func && func)
     {
         if (overwrite)
-            return static_for<0, KINDS.size()>([&](auto i) {
+            return static_for<0, KINDS.size()>([&](auto i)
+            {
                 if (kind == KINDS[i] && strictness == ASTTableJoin::Strictness::Any)
                 {
                     if constexpr (std::is_same_v<Func, MapInitTag>)
@@ -418,7 +419,8 @@ public:
                 return false;
             });
         else
-            return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij) {
+            return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
+            {
                 // NOTE: Avoid using nested static loop as GCC and CLANG have bugs in different ways
                 // See https://stackoverflow.com/questions/44386415/gcc-and-clang-disagree-about-c17-constexpr-lambda-captures
                 constexpr auto i = ij / STRICTNESSES.size();
