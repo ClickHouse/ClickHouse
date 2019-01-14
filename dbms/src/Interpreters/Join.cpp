@@ -257,10 +257,12 @@ void Join::setSampleBlock(const Block & block)
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        key_columns[i] = block.getByName(key_names_right[i]).column.get();
-        if (auto col = recursiveRemoveLowCardinality(key_columns[i]))
+        auto & column = block.getByName(key_names_right[i]).column;
+        key_columns[i] = column.get();
+        auto column_no_lc = recursiveRemoveLowCardinality(column);
+        if (column.get() != column_no_lc.get())
         {
-            materialized_columns.emplace_back(std::move(col));
+            materialized_columns.emplace_back(std::move(column_no_lc));
             key_columns[i] = materialized_columns[i].get();
         }
 
@@ -282,10 +284,8 @@ void Join::setSampleBlock(const Block & block)
         if (key_names_right.end() != std::find(key_names_right.begin(), key_names_right.end(), name))
         {
             auto & col = sample_block_with_columns_to_add.getByPosition(pos);
-            if (auto column = recursiveRemoveLowCardinality(col.column.get()))
-                col.column = column;
-            if (auto type = recursiveRemoveLowCardinality(col.type.get()))
-                col.type = type;
+            col.column = recursiveRemoveLowCardinality(col.column);
+            col.type = recursiveRemoveLowCardinality(col.type);
             sample_block_with_keys.insert(col);
             sample_block_with_columns_to_add.erase(pos);
         }
@@ -435,9 +435,7 @@ bool Join::insertFromBlock(const Block & block)
     /// Memoize key columns to work.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.getByName(key_names_right[i]).column->convertToFullColumnIfConst());
-        if (auto col = recursiveRemoveLowCardinality(materialized_columns.back().get()))
-            materialized_columns.back() = col;
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column->convertToFullColumnIfConst()));
         key_columns[i] = materialized_columns.back().get();
     }
 
@@ -675,9 +673,7 @@ void Join::joinBlockImpl(
     /// Memoize key columns to work with.
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.getByName(key_names_left[i]).column->convertToFullColumnIfConst());
-        if (auto col = recursiveRemoveLowCardinality(materialized_columns.back().get()))
-            materialized_columns.back() = col;
+        materialized_columns.emplace_back(recursiveRemoveLowCardinality(block.getByName(key_names_left[i]).column->convertToFullColumnIfConst()));
         key_columns[i] = materialized_columns.back().get();
     }
 
@@ -878,17 +874,8 @@ void Join::checkTypesOfKeys(const Block & block_left, const Names & key_names_le
     {
         /// Compare up to Nullability.
 
-        DataTypePtr left_type = block_left.getByName(key_names_left[i]).type;
-        DataTypePtr right_type = block_right.getByName(key_names_right[i]).type;
-
-        if (auto type = recursiveRemoveLowCardinality(left_type.get()))
-            left_type = type;
-
-        if (auto type = recursiveRemoveLowCardinality(right_type.get()))
-            right_type = type;
-
-        left_type = removeNullable(left_type);
-        right_type = removeNullable(right_type);
+        DataTypePtr left_type = removeNullable(recursiveRemoveLowCardinality(block_left.getByName(key_names_left[i]).type));
+        DataTypePtr right_type = removeNullable(recursiveRemoveLowCardinality(block_right.getByName(key_names_right[i]).type));
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
@@ -933,7 +920,7 @@ void Join::joinGetImpl(Block & block, const String & column_name, const Maps & m
 
 
 // TODO: support composite key
-// TODO: return multible columns as named tuple
+// TODO: return multiple columns as named tuple
 // TODO: return array of values when strictness == ASTTableJoin::Strictness::All
 void Join::joinGet(Block & block, const String & column_name) const
 {
