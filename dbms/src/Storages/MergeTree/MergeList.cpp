@@ -15,8 +15,10 @@ namespace DB
 {
 
 MergeListElement::MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part)
-    : database{database}, table{table}
-    , result_part_name{future_part.name}, num_parts{future_part.parts.size()}
+    : database{database}, table{table}, partition_id{future_part.part_info.partition_id}
+    , result_part_name{future_part.name}
+    , result_data_version{future_part.part_info.getDataVersion()}
+    , num_parts{future_part.parts.size()}
     , thread_number{Poco::ThreadNumber::get()}
 {
     for (const auto & source_part : future_part.parts)
@@ -31,8 +33,8 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
 
     if (!future_part.parts.empty())
     {
-        partition_id = future_part.parts[0]->info.partition_id;
-        is_mutation = future_part.parts[0]->info.getDataVersion() != future_part.part_info.getDataVersion();
+        source_data_version = future_part.parts[0]->info.getDataVersion();
+        is_mutation = (result_data_version != source_data_version);
     }
 
     /// Each merge is executed into separate background processing pool thread

@@ -51,13 +51,20 @@ struct MergeListElement : boost::noncopyable
 {
     const std::string database;
     const std::string table;
-    const std::string result_part_name;
     std::string partition_id;
-    bool is_mutation = false;
-    Stopwatch watch;
-    std::atomic<Float64> progress{};
+
+    const std::string result_part_name;
+    Int64 result_data_version{};
+    bool is_mutation{};
+
     UInt64 num_parts{};
     Names source_part_names;
+    Int64 source_data_version{};
+
+    Stopwatch watch;
+    std::atomic<Float64> progress{};
+    std::atomic<bool> is_cancelled{};
+
     UInt64 total_size_bytes_compressed{};
     UInt64 total_size_marks{};
     std::atomic<UInt64> bytes_read_uncompressed{};
@@ -137,6 +144,17 @@ public:
         for (const auto & merge_element : merges)
             res.emplace_back(merge_element.getInfo());
         return res;
+    }
+
+    void cancelMutation(Int64 mutation_version)
+    {
+        std::lock_guard lock{mutex};
+        for (auto & merge_element : merges)
+        {
+            if (merge_element.source_data_version < mutation_version
+                && merge_element.result_data_version >= mutation_version)
+                merge_element.is_cancelled = true;
+        }
     }
 };
 

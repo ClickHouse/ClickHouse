@@ -117,7 +117,8 @@ private:
 
     mutable std::mutex currently_merging_mutex;
     MergeTreeData::DataParts currently_merging;
-    std::multimap<Int64, MergeTreeMutationEntry> current_mutations_by_version;
+    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
+    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     Logger * log;
 

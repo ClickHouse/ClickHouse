@@ -813,7 +813,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 {
     auto check_not_cancelled = [&]()
     {
-        if (actions_blocker.isCancelled())
+        if (actions_blocker.isCancelled() || merge_entry->is_cancelled)
             throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
 
         return true;
