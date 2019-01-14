@@ -17,7 +17,6 @@ target_link_libraries (date_lut4 common ${PLATFORM_LIBS})
 target_link_libraries (date_lut_default_timezone common ${PLATFORM_LIBS})
 target_link_libraries (local_date_time_comparison common)
 target_link_libraries (realloc-perf common)
-add_check(multi_version)
 add_check(local_date_time_comparison)
 
 add_executable (unit_tests_libcommon gtest_json_test.cpp gtest_strong_typedef.cpp gtest_find_symbols.cpp)
