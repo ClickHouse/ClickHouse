@@ -68,9 +68,12 @@ void QueryNormalizer::visit(ASTFunction & node, const ASTPtr &, Data & data)
 
     /// `IN t` can be specified, where t is a table, which is equivalent to `IN (SELECT * FROM t)`.
     if (functionIsInOrGlobalInOperator(func_name))
-        if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_arguments->children.at(1).get()))
-            if (!aliases.count(right->name))
-                right->setSpecial();
+    {
+        auto & ast = func_arguments->children.at(1);
+        if (auto opt_name = getIdentifierName(ast))
+            if (!aliases.count(*opt_name))
+                setIdentifierSpecial(ast);
+    }
 
     /// Special cases for count function.
     String func_name_lowercase = Poco::toLower(func_name);
@@ -97,7 +100,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
-    if (!node.general())
+    if (!getColumnIdentifierName(node))
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
@@ -114,9 +117,8 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
         {
             /// Avoid infinite recursion here
-            auto replace_to_identifier = typeid_cast<ASTIdentifier *>(alias_node.get());
-            bool is_cycle = replace_to_identifier && replace_to_identifier->general()
-                && replace_to_identifier->name == node.name;
+            auto opt_name = getColumnIdentifierName(alias_node);
+            bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
             {
@@ -195,10 +197,8 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 {
     if (node.table_expression)
     {
-        auto & database_and_table_name = static_cast<ASTTableExpression &>(*node.table_expression).database_and_table_name;
-        if (database_and_table_name)
-            if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(database_and_table_name.get()))
-                right->setSpecial();
+        auto & expr = static_cast<ASTTableExpression &>(*node.table_expression);
+        setIdentifierSpecial(expr.database_and_table_name);
     }
 }
 
