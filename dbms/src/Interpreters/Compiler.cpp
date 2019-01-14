@@ -142,40 +142,37 @@ SharedLibraryPtr Compiler::getOrCount(
     {
         /// The min_count_to_compile value of zero indicates the need for synchronous compilation.
 
-        /// Are there any free threads?
-        if (min_count_to_compile == 0 || pool.active() < pool.size())
+        /// Indicates that the library is in the process of compiling.
+        libraries[hashed_key] = nullptr;
+
+        LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
+
+        if (min_count_to_compile == 0)
         {
-            /// Indicates that the library is in the process of compiling.
-            libraries[hashed_key] = nullptr;
-
-            LOG_INFO(log, "Compiling code " << file_name << ", key: " << key);
-
-            if (min_count_to_compile == 0)
             {
-                {
-                    ext::unlock_guard<std::mutex> unlock(mutex);
-                    compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
-                }
+                ext::unlock_guard<std::mutex> unlock(mutex);
+                compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+            }
 
-                return libraries[hashed_key];
-            }
-            else
-            {
-                pool.schedule([=]
-                {
-                    try
-                    {
-                        compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
-                    }
-                    catch (...)
-                    {
-                        tryLogCurrentException("Compiler");
-                    }
-                });
-            }
+            return libraries[hashed_key];
         }
         else
-            LOG_INFO(log, "All threads are busy.");
+        {
+            bool res = pool.trySchedule([=]
+            {
+                try
+                {
+                    compile(hashed_key, file_name, additional_compiler_flags, get_code, on_ready);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException("Compiler");
+                }
+            });
+
+            if (!res)
+                LOG_INFO(log, "All threads are busy.");
+        }
     }
 
     return nullptr;

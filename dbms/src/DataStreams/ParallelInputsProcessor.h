@@ -13,6 +13,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -306,8 +307,8 @@ private:
 
     Handler & handler;
 
-    /// Streams.
-    using ThreadsData = std::vector<std::thread>;
+    /// Threads.
+    using ThreadsData = std::vector<ThreadFromGlobalPool>;
     ThreadsData threads;
 
     /** A set of available sources that are not currently processed by any thread.

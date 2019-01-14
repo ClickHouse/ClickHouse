@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 #include <IO/ReadBuffer.h>
@@ -209,8 +210,8 @@ private:
     Watches watches;
     std::mutex watches_mutex;
 
-    std::thread send_thread;
-    std::thread receive_thread;
+    ThreadFromGlobalPool send_thread;
+    ThreadFromGlobalPool receive_thread;
 
     void connect(
         const Addresses & addresses,

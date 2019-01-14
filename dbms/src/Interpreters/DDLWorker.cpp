@@ -241,7 +241,7 @@ DDLWorker::DDLWorker(const std::string & zk_root_dir, Context & context_, const 
 
     event_queue_updated = std::make_shared<Poco::Event>();
 
-    thread = std::thread(&DDLWorker::run, this);
+    thread = ThreadFromGlobalPool(&DDLWorker::run, this);
 }
 
 

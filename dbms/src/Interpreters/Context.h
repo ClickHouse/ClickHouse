@@ -12,6 +12,7 @@
 #include <Common/config.h>
 #include <Common/MultiVersion.h>
 #include <Common/LRUCache.h>
+#include <Common/ThreadPool.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Block.h>
@@ -521,7 +522,7 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     std::atomic<bool> quit{false};
-    std::thread thread{&SessionCleaner::run, this};
+    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
 };
 
 }
