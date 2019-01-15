@@ -245,7 +245,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Удаляет все данные из таблицы. Если условие `IF EXISTS` не указано, запрос вернет ошибку, если таблицы не существует.
 
-Запрос `TRUNCATE` не поддерживается для следующих движков: [View](../operations/table_engines/view.md), [File](../operations/table_engines/file.md), [URL](../operations/table_engines/url.md) and [Null](../operations/table_engines/null.md).
+Запрос `TRUNCATE` не поддерживается для следующих движков: [View](../operations/table_engines/view.md), [File](../operations/table_engines/file.md), [URL](../operations/table_engines/url.md) и [Null](../operations/table_engines/null.md).
 
 ## USE
 
