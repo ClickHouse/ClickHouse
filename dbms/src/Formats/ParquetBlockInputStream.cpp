@@ -220,9 +220,6 @@ void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, 
             case arrow::TimeUnit::NANO:
                 divide = 1000000000;
                 break;
-            default:
-                throw Exception{"Unknown unit (" + std::to_string(static_cast<int16_t>(unit)) + ") in timestamp type",
-                                ErrorCodes::CANNOT_CONVERT_TYPE};
         }
 
         for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
