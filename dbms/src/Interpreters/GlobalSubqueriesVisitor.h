@@ -112,7 +112,7 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = createDatabaseAndTableNode("", external_table_name);
+            auto database_and_table_name = createTableIdentifier("", external_table_name);
 
             if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
             {

@@ -39,9 +39,7 @@ struct ColumnNamesContext
         std::optional<String> name() const
         {
             if (expr)
-                if (auto * node = expr->database_and_table_name.get())
-                    if (auto * identifier = typeid_cast<const ASTIdentifier *>(node))
-                        return identifier->name;
+                return getIdentifierName(expr->database_and_table_name);
             return {};
         }
 

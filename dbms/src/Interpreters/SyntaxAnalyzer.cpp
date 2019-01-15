@@ -42,9 +42,9 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
-void removeDuplicateColumns(NamesAndTypesList & columns)
+NameSet removeDuplicateColumns(NamesAndTypesList & columns)
 {
-    std::set<String> names;
+    NameSet names;
     for (auto it = columns.begin(); it != columns.end();)
     {
         if (names.emplace(it->name).second)
@@ -52,6 +52,7 @@ void removeDuplicateColumns(NamesAndTypesList & columns)
         else
             columns.erase(it++);
     }
+    return names;
 }
 
 namespace
@@ -77,8 +78,6 @@ void collectSourceColumns(ASTSelectQuery * select_query, StoragePtr storage, Nam
             source_columns.insert(source_columns.end(), storage_aliases.begin(), storage_aliases.end());
         }
     }
-
-    removeDuplicateColumns(source_columns);
 }
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to unqualified names.
@@ -102,12 +101,11 @@ void normalizeTree(
     SyntaxAnalyzerResult & result,
     const Names & source_columns,
     const NameSet & source_columns_set,
-    const StoragePtr & storage,
     const Context & context,
     const ASTSelectQuery * select_query,
     bool asterisk_left_columns_only)
 {
-    Names all_columns_name = storage ? storage->getColumns().ordinary.getNames() : source_columns;
+    Names all_columns_name = source_columns;
 
     if (!asterisk_left_columns_only)
     {
@@ -119,16 +117,19 @@ void normalizeTree(
     if (all_columns_name.empty())
         throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    TableNamesAndColumnNames table_names_and_column_names;
+    std::vector<QueryNormalizer::TableWithColumnNames> table_with_columns;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
         std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
 
         bool first = true;
+        String current_database = context.getCurrentDatabase();
         for (const auto * table_expression : tables_expression)
         {
-            DatabaseAndTableWithAlias table_name(*table_expression, context.getCurrentDatabase());
+            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
             NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
+
+            removeDuplicateColumns(names_and_types);
 
             if (!first)
             {
@@ -140,12 +141,14 @@ void normalizeTree(
 
             first = false;
 
-            table_names_and_column_names.emplace_back(std::pair(table_name, names_and_types.getNames()));
+            table_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
         }
     }
+    else
+        table_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
 
-    auto & settings = context.getSettingsRef();
-    QueryNormalizer(query, result.aliases, settings, all_columns_name, table_names_and_column_names).perform();
+    QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef(), std::move(table_with_columns));
+    QueryNormalizer(normalizer_data).visit(query);
 }
 
 bool hasArrayJoin(const ASTPtr & ast)
@@ -440,7 +443,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             const String nested_table_name = ast->getColumnName();
             const String nested_table_alias = ast->getAliasOrColumnName();
 
-            if (nested_table_alias == nested_table_name && !typeid_cast<const ASTIdentifier *>(ast.get()))
+            if (nested_table_alias == nested_table_name && !isIdentifier(ast))
                 throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name,
                                 ErrorCodes::ALIAS_REQUIRED);
 
@@ -468,7 +471,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
             String result_name = expr->getAliasOrColumnName();
 
             /// This is an array.
-            if (!typeid_cast<ASTIdentifier *>(expr.get()) || source_columns_set.count(source_name))
+            if (!isIdentifier(expr) || source_columns_set.count(source_name))
             {
                 result.array_join_result_to_source[result_name] = source_name;
             }
@@ -525,10 +528,10 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<TableBelonging(const ASTPtr &)> get_table_belonging;
     get_table_belonging = [&](const ASTPtr & ast) -> TableBelonging
     {
-        auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
-        if (identifier)
+        if (getColumnIdentifierName(ast))
         {
-            if (identifier->general())
+            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+
             {
                 auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
                 auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
@@ -564,9 +567,10 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<void(ASTPtr &, const DatabaseAndTableWithAlias &, bool)> translate_qualified_names;
     translate_qualified_names = [&](ASTPtr & ast, const DatabaseAndTableWithAlias & source_names, bool right_table)
     {
-        if (auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get()))
+        if (getColumnIdentifierName(ast))
         {
-            if (identifier->general())
+            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+
             {
                 auto num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, source_names);
                 stripIdentifier(ast, num_components);
@@ -739,6 +743,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     result.source_columns = source_columns_;
 
     collectSourceColumns(select_query, result.storage, result.source_columns);
+    NameSet source_columns_set = removeDuplicateColumns(result.source_columns);
 
     const auto & settings = context.getSettingsRef();
 
@@ -746,7 +751,9 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     source_columns_list.reserve(result.source_columns.size());
     for (const auto & type_name : result.source_columns)
         source_columns_list.emplace_back(type_name.name);
-    NameSet source_columns_set(source_columns_list.begin(), source_columns_list.end());
+
+    if (source_columns_set.size() != source_columns_list.size())
+        throw Exception("Unexpected duplicates in source columns list.", ErrorCodes::LOGICAL_ERROR);
 
     if (select_query)
     {
@@ -768,7 +775,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    normalizeTree(query, result, source_columns_list, source_columns_set, result.storage,
+    normalizeTree(query, result, (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
                   context, select_query, settings.asterisk_left_columns_only != 0);
 
     /// Remove unneeded columns according to 'required_result_columns'.
