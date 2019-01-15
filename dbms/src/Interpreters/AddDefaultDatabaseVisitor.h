@@ -103,7 +103,7 @@ private:
     void visit(const ASTIdentifier & identifier, ASTPtr & ast) const
     {
         if (ast->children.empty())
-            ast = createDatabaseAndTableNode(database_name, identifier.name);
+            ast = createTableIdentifier(database_name, identifier.name);
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
