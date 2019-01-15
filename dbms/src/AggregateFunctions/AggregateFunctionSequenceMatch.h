@@ -235,6 +235,11 @@ private:
         actions.clear();
         actions.emplace_back(PatternActionType::KleeneStar);
 
+        dfa_states.clear();
+        dfa_states.emplace_back(true);
+
+        pattern_has_time = false;
+
         const char * pos = pattern.data();
         const char * begin = pos;
         const char * end = pos + pattern.size();
@@ -285,6 +290,7 @@ private:
                         actions.back().type != PatternActionType::KleeneStar)
                         throw Exception{"Temporal condition should be preceeded by an event condition", ErrorCodes::BAD_ARGUMENTS};
 
+                    pattern_has_time = true;
                     actions.emplace_back(type, duration);
                 }
                 else
@@ -299,16 +305,24 @@ private:
                         throw Exception{"Event number " + toString(event_number) + " is out of range", ErrorCodes::BAD_ARGUMENTS};
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
+                    dfa_states.back().transition = DFATransition::SpecificEvent;
+                    dfa_states.back().event = event_number - 1;
+                    dfa_states.emplace_back();
                 }
 
                 if (!match(")"))
                     throw_exception("Expected closing parenthesis, found");
 
             }
-            else if (match(".*"))
+            else if (match(".*")) {
                 actions.emplace_back(PatternActionType::KleeneStar);
-            else if (match("."))
+                dfa_states.back().has_kleene = true;
+            }
+            else if (match(".")) {
                 actions.emplace_back(PatternActionType::AnyEvent);
+                dfa_states.back().transition = DFATransition::AnyEvent;
+                dfa_states.emplace_back();
+            }
             else
                 throw_exception("Could not parse pattern, unexpected starting symbol");
         }
@@ -316,7 +330,53 @@ private:
 
 protected:
     template <typename T>
-    bool match(T & events_it, const T events_end) const
+    bool dfa_match(T & events_it, const T events_end) const
+    {
+        using ActiveStates = std::vector<bool>;
+
+        ActiveStates active_states(dfa_states.size(), false);
+        ActiveStates next_active_states(dfa_states.size(), false);
+        active_states[0] = true;
+
+        size_t n_active = 1;
+
+        for (/* empty */; events_it != events_end && n_active > 0 && !active_states.back(); ++events_it) {
+            n_active = 0;
+            next_active_states.assign(dfa_states.size(), false);
+
+            for (size_t state = 0; state < dfa_states.size(); ++state) {
+                if (!active_states[state]) {
+                    continue;
+                }
+
+                switch (dfa_states[state].transition) {
+                case DFATransition::None:
+                    break;
+                case DFATransition::AnyEvent:
+                    next_active_states[state + 1] = true;
+                    ++n_active;
+                    break;
+                case DFATransition::SpecificEvent:
+                    if (events_it->second.test(dfa_states[state].event)) {
+                        next_active_states[state + 1] = true;
+                        ++n_active;
+                    }
+                    break;
+                }
+
+                if (dfa_states[state].has_kleene) {
+                    next_active_states[state] = true;
+                    ++n_active;
+                }
+            }
+            swap(active_states, next_active_states);
+        }
+
+        return active_states.back();
+    }
+
+    template <typename T>
+    bool backtracking_match(T & events_it, const T events_end) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -446,9 +506,35 @@ protected:
     }
 
 private:
+    enum class DFATransition : char
+    {
+        None,
+        SpecificEvent,
+        AnyEvent,
+    };
+
+    struct DFAState
+    {
+        DFAState(bool has_kleene = false)
+            : has_kleene{has_kleene}, event{0}, transition{DFATransition::None}
+        {}
+
+        bool has_kleene;
+        uint32_t event;
+        DFATransition transition;
+    };
+
+    using DFAStates = std::vector<DFAState>;
+
+protected:
+    bool pattern_has_time;
+
+private:
     std::string pattern;
     size_t arg_count;
     PatternActions actions;
+
+    DFAStates dfa_states;
 };
 
 
@@ -471,7 +557,8 @@ public:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        static_cast<ColumnUInt8 &>(to).getData().push_back(match(events_it, events_end));
+        bool match = pattern_has_time ? backtracking_match(events_it, events_end) : dfa_match(events_it, events_end);
+        static_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
 
@@ -501,7 +588,7 @@ private:
         auto events_it = events_begin;
 
         size_t count = 0;
-        while (events_it != events_end && match(events_it, events_end))
+        while (events_it != events_end && backtracking_match(events_it, events_end))
             ++count;
 
         return count;
