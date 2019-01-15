@@ -383,12 +383,11 @@ void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & ord
     auto new_columns_description = columns_description;
     auto new_order_by_ast = order_by_ast;
     auto new_primary_key_ast = primary_key_ast;
-    auto new_indexes_decl_ast = indexes_decl_ast;
+    auto new_indexes_decl_ast = indexes_decl_ast->clone();
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
             command.apply(new_columns_description, new_order_by_ast, new_primary_key_ast, new_indexes_decl_ast);
-
     columns_description = std::move(new_columns_description);
     order_by_ast = std::move(new_order_by_ast);
     primary_key_ast = std::move(new_primary_key_ast);
