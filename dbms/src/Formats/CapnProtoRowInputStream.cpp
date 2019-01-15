@@ -108,16 +108,16 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
 bool checkEqualFrom(const std::vector<std::string> &a,const std::vector<std::string> &b, const size_t index) {
-		for(int i = index; i >= 0; i++) {
-			if(a[i] != b[i]) {
-				return false;
-			}
-		}
-		return true;
+        for(int i = index; i >= 0; i++) {
+            if(a[i] != b[i]) {
+                return false;
+            }
+        }
+        return true;
 }
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
-	//Store parents and their tokens in order to backtrack
+    //Store parents and their tokens in order to backtrack
     std::vector<capnp::StructSchema::Field> parents;
     std::vector<std::string> tokens;
 
@@ -125,7 +125,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
     size_t level = 0;
     for (const auto & field : sortedFields)
     {
-		//Backtrackt to common parent
+        //Backtrackt to common parent
         while(level > (field.tokens.size()-1) || !checkEqualFrom(tokens,field.tokens,level-1)) {
             level--;
             actions.push_back({Action::POP});
@@ -138,7 +138,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
                 break;
             }
         }
-		//Go forward
+        //Go forward
         for (; level < field.tokens.size() - 1; ++level)
         {
 
