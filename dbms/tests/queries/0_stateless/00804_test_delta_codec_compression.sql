@@ -22,9 +22,18 @@ OPTIMIZE TABLE test.default_codec_synthetic FINAL;
 SELECT
     floor(big_size / small_size) AS ratio
 FROM
-    (SELECT 1 AS key, sum(bytes_on_disk) AS small_size FROM system.parts WHERE database = 'test' and table = 'delta_codec_synthetic')
-    INNER JOIN
-    (SELECT 1 AS key, sum(bytes_on_disk) as big_size FROM system.parts WHERE database = 'test' and table = 'default_codec_synthetic') USING(key);
+    (SELECT 1 AS key, sum(bytes_on_disk) AS small_size FROM system.parts WHERE database == 'test' and table == 'delta_codec_synthetic')
+INNER JOIN
+    (SELECT 1 AS key, sum(bytes_on_disk) as big_size FROM system.parts WHERE database == 'test' and table == 'default_codec_synthetic')
+USING(key);
+
+SELECT
+    small_hash == big_hash
+FROM
+    (SELECT 1 AS key, sum(cityHash64(*)) AS small_hash FROM test.delta_codec_synthetic)
+INNER JOIN
+    (SELECT 1 AS key, sum(cityHash64(*)) AS big_hash FROM test.default_codec_synthetic)
+USING(key);
 
 DROP TABLE IF EXISTS test.delta_codec_synthetic;
 DROP TABLE IF EXISTS test.default_codec_synthetic;
@@ -55,6 +64,14 @@ FROM
 INNER JOIN
     (SELECT 1 AS key, sum(bytes_on_disk) as big_size FROM system.parts WHERE database = 'test' and table = 'default_codec_float') USING(key);
 
+SELECT
+    small_hash == big_hash
+FROM
+    (SELECT 1 AS key, sum(cityHash64(*)) AS small_hash FROM test.delta_codec_float)
+INNER JOIN
+    (SELECT 1 AS key, sum(cityHash64(*)) AS big_hash FROM test.default_codec_float)
+USING(key);
+
 DROP TABLE IF EXISTS test.delta_codec_float;
 DROP TABLE IF EXISTS test.default_codec_float;
 
@@ -84,6 +101,14 @@ FROM
     (SELECT 1 AS key, sum(bytes_on_disk) AS small_size FROM system.parts WHERE database = 'test' and table = 'delta_codec_string')
 INNER JOIN
     (SELECT 1 AS key, sum(bytes_on_disk) as big_size FROM system.parts WHERE database = 'test' and table = 'default_codec_string') USING(key);
+
+SELECT
+    small_hash == big_hash
+FROM
+    (SELECT 1 AS key, sum(cityHash64(*)) AS small_hash FROM test.delta_codec_string)
+INNER JOIN
+    (SELECT 1 AS key, sum(cityHash64(*)) AS big_hash FROM test.default_codec_string)
+USING(key);
 
 DROP TABLE IF EXISTS test.delta_codec_string;
 DROP TABLE IF EXISTS test.default_codec_string;
