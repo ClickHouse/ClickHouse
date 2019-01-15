@@ -26,23 +26,33 @@ SQL-style and C-style comments are supported.
 SQL-style comments: from `--` to the end of the line. The space after `--` can be omitted.
 Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces are not required here, either.
 
-## Keywords
+## Keywords {#syntax-keywords}
 
-Keywords (such as `SELECT`) are not case-sensitive. Everything else (column names, functions, and so on), in contrast to standard SQL, is case-sensitive. Keywords are not reserved (they are just parsed as keywords in the corresponding context).
+Keywords (such as `SELECT`) are not case-sensitive. Everything else (column names, functions, and so on), in contrast to standard SQL, is case-sensitive.
 
-## Identifiers
+Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes, for example, `"column_name"`. The query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
-Identifiers (column names, functions, and data types) can be quoted or non-quoted.
-Non-quoted identifiers start with a Latin letter or underscore, and continue with a Latin letter, underscore, or number. In other words, they must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$`. Examples: `x, _1, X_y__Z123_.`
+## Identifiers {#syntax-identifiers}
 
-Quoted identifiers are placed in reversed quotation marks `` `id` `` (the same as in MySQL), and can indicate any set of bytes (non-empty). In addition, symbols (for example, the reverse quotation mark) inside this type of identifier can be backslash-escaped. Escaping rules are the same as for string literals (see below).
-We recommend using identifiers that do not need to be quoted.
+Identifiers are:
+
+- Cluster, database, table, partition and column names;
+- Functions;
+- Data types;
+- [Expression aliases](#syntax-expression_aliases).
+
+Identifiers can be quoted or non-quoted. It is recommended to use non-quoted identifiers.
+
+Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords).  Examples: `x, _1, X_y__Z123_.`
+
+If you want to use identifiers the same as keywords or you want to use any symbols in identifiers, quote it. Use `"id"` or `` `id` `` syntax.
 
 ## Literals
 
-There are numeric literals, string literals, and compound literals.
+There are: numeric, string, compound and `NULL` literals.
 
-### Numeric Literals
+
+### Numeric
 
 A numeric literal tries to be parsed:
 
@@ -57,13 +67,13 @@ For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more informa
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 
-### String Literals
+### String
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where "c" is any character, are converted to "c". This means that you can use the sequences `\'`and`\\`. The value will have the String type.
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the String type.
 
-The minimum set of characters that you need to escape in string literals: `'` and `\`.
+The minimum set of characters that you need to escape in string literals: `'` and `\`. Single quote can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
 
-### Compound Literals
+### Compound
 
 Constructions are supported for arrays: `[1, 2, 3]` and tuples: `(1, 'Hello, world!', 2)`..
 Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
@@ -71,7 +81,7 @@ For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
 
-### NULL Literal {#null-literal}
+### NULL {#null-literal}
 
 Indicates that the value is missing.
 
@@ -98,17 +108,17 @@ For more information, see the section "Operators" below.
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 
-## Expression Aliases
+## Expression Aliases {#syntax-expression_aliases}
 
-Alias is a user defined name for an expression in a query.
+Alias is a user defined identifier for an expression in a query.
 
 ```
 expr AS alias
 ```
 
-- `AS` — keyword for defining aliases. You can define alias for a table name or a column name in SELECT clause skipping `AS` keyword.
+- `AS` — keyword for defining aliases. You can define alias for a table name or a column name in the `SELECT` clause skipping `AS` keyword.
 
-    For example, `SELECT b.column_name from t b`.
+    For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
     In the [CAST function](functions/type_conversion_functions.md), the `AS` keyword has another meaning. See the description of the function.
 
@@ -116,17 +126,17 @@ expr AS alias
 
     For example `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — [string literal](#string-literals). If an alias contains spaces, enclose it in double quotes or backticks.
+- `alias` — [identifier](#syntax-identifiers).
 
-    For example, `SELECT "table t".col_name FROM t AS "table t"`.
+    For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
 ### Peculiarities of Use
 
 Aliases are global for a query or subquery and you can define alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
 
-Aliases are not visible in between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates exception `Unknown identifier: num`.
+Aliases are not visible in subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
 
-If alias is defined for result columns in SELECT clause in a subquery, these columns are visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
+If an alias is defined for result columns in `SELECT` clause in a subquery, these columns are visible in outer query. For example, `SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 Be careful with aliases the same as column or table names. Let's consider the following example:
 
