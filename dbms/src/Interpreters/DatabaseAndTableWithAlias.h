@@ -23,6 +23,8 @@ struct DatabaseAndTableWithAlias
     String table;
     String alias;
 
+    DatabaseAndTableWithAlias() = default;
+    DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
     DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
     DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database);
 

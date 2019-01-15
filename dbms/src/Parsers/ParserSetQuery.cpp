@@ -31,7 +31,7 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
     if (!value_p.parse(pos, value, expected))
         return false;
 
-    change.name = typeid_cast<const ASTIdentifier &>(*name).name;
+    getIdentifierName(name, change.name);
     change.value = typeid_cast<const ASTLiteral &>(*value).value;
 
     return true;
