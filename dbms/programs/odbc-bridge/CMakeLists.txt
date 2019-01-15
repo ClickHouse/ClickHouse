@@ -9,7 +9,7 @@ add_library (clickhouse-odbc-bridge-lib ${LINK_MODE}
     validateODBCConnectionString.cpp
 )
 
-target_link_libraries (clickhouse-odbc-bridge-lib PRIVATE clickhouse_common_io clickhouse_dictionaries daemon dbms)
+target_link_libraries (clickhouse-odbc-bridge-lib PRIVATE clickhouse_common_io daemon dbms clickhouse_dictionaries)
 target_include_directories (clickhouse-odbc-bridge-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
 
 if (USE_POCO_SQLODBC)
