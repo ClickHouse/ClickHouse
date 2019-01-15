@@ -1,1 +1,1 @@
-id Int32, bool_col UInt8, tinyint_col Int32, smallint_col Int32, int_col Int32, bigint_col Int64, float_col Float32, double_col Float64, date_string_col String, string_col String, timestamp_col Int64
+id Nullable(Int32), bool_col Nullable(UInt8), tinyint_col Nullable(Int32), smallint_col Nullable(Int32), int_col Nullable(Int32), bigint_col Nullable(Int64), float_col Nullable(Float32), double_col Nullable(Float64), date_string_col Nullable(String), string_col Nullable(String), timestamp_col Nullable(Int64)

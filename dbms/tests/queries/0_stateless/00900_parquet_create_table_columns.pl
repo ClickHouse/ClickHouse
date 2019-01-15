@@ -40,6 +40,7 @@ sub columns ($json) {
         unless ($type) {
             warn "Unknown type [$column->{'PhysicalType'}:$column->{'LogicalType'}] of column [$name]";
         }
+        $type = "Nullable($type)";
         $name .= $column->{'Id'} if $uniq{$name}++; # Names can be non-unique
         push @list, {name => $name, type => $type};
     }

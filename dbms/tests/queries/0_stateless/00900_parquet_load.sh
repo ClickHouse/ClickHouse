@@ -7,7 +7,13 @@
 
 # To regenerate data install perl JSON::XS module: sudo apt install libjson-xs-perl
 
-set -x
+# Also 5 sample files from
+# wget https://github.com/Teradata/kylo/raw/master/samples/sample-data/parquet/userdata1.parquet
+# ...
+# wget https://github.com/Teradata/kylo/raw/master/samples/sample-data/parquet/userdata5.parquet
+
+
+# set -x
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CUR_DIR/../shell_config.sh
@@ -29,11 +35,11 @@ for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do
     echo === Try load data from $NAME
 
     JSON=$DATA_DIR/$NAME.json
+    COLUMNS_FILE=$DATA_DIR/$NAME.columns
 
     # If you want change or add .parquet file - rm data_parquet/*.json data_parquet/*.columns
-    [ -n "$BUILD_DIR" ] && [ ! -e $COLUMNS_FILE ] && [ ! -s $JSON ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader --json $DATA_DIR/$NAME > $JSON
-    COLUMNS_FILE=$DATA_DIR/$NAME.columns
-    [ -n "$BUILD_DIR" ] && [ ! -e $COLUMNS_FILE ] && $CUR_DIR/00900_parquet_create_table_columns.pl $JSON > $COLUMNS_FILE
+    [ -n "$BUILD_DIR" ] && [ ! -s $COLUMNS_FILE ] && [ ! -s $JSON ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader --json $DATA_DIR/$NAME > $JSON
+    [ -n "$BUILD_DIR" ] && [ ! -s $COLUMNS_FILE ] && $CUR_DIR/00900_parquet_create_table_columns.pl $JSON > $COLUMNS_FILE
 
     # Debug only:
     # [ -n "$BUILD_DIR" ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader $DATA_DIR/$NAME > $DATA_DIR/$NAME.dump
@@ -47,6 +53,6 @@ for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do
     # Some files is broken, exception is ok.
     cat $DATA_DIR/$NAME | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.parquet_load FORMAT Parquet" 2>&1 | sed 's/Exception/Ex---tion/'
 
-    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_load"
+    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.parquet_load LIMIT 100"
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.parquet_load"
 done

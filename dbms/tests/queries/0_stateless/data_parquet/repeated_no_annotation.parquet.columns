@@ -1,1 +1,1 @@
-id Int32, number Int64, kind String
+id Nullable(Int32), number Nullable(Int64), kind Nullable(String)

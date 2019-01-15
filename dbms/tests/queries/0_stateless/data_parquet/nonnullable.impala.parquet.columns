@@ -1,1 +1,1 @@
-ID Int64, element Int32, element2 Int32, key String, value Int32, key5 String, value6 Int32, a Int32, element8 Int32, e Int32, f String, key11 String, element12 Float64
+ID Nullable(Int64), element Nullable(Int32), element2 Nullable(Int32), key Nullable(String), value Nullable(Int32), key5 Nullable(String), value6 Nullable(Int32), a Nullable(Int32), element8 Nullable(Int32), e Nullable(Int32), f Nullable(String), key11 Nullable(String), element12 Nullable(Float64)

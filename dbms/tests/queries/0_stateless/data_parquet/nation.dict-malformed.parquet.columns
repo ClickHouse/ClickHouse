@@ -1,1 +1,1 @@
-nation_key Int32, name String, region_key Int32, comment_col String
+nation_key Nullable(Int32), name Nullable(String), region_key Nullable(Int32), comment_col Nullable(String)

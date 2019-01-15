@@ -1,1 +1,1 @@
-b_c_int Int32
+b_c_int Nullable(Int32)

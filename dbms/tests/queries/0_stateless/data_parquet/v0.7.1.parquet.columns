@@ -1,1 +1,1 @@
-carat Float64, cut String, color String, clarity String, depth Float64, table Float64, price Int64, x Float64, y Float64, z Float64, __index_level_0__ Int64
+carat Nullable(Float64), cut Nullable(String), color Nullable(String), clarity Nullable(String), depth Nullable(Float64), table Nullable(Float64), price Nullable(Int64), x Nullable(Float64), y Nullable(Float64), z Nullable(Float64), __index_level_0__ Nullable(Int64)

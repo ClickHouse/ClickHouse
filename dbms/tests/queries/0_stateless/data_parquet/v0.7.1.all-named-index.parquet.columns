@@ -1,1 +1,1 @@
-carat Float64, depth Float64, table Float64, price Int64, x Float64, y Float64, z Float64, cut String, color String, clarity String
+carat Nullable(Float64), depth Nullable(Float64), table Nullable(Float64), price Nullable(Int64), x Nullable(Float64), y Nullable(Float64), z Nullable(Float64), cut Nullable(String), color Nullable(String), clarity Nullable(String)
