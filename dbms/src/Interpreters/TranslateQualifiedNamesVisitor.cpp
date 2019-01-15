@@ -55,7 +55,7 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier 
     const NameSet & source_columns = data.source_columns;
     const std::vector<DatabaseAndTableWithAlias> & tables = data.tables;
 
-    if (identifier.general())
+    if (getColumnIdentifierName(identifier))
     {
         /// Select first table name with max number of qualifiers which can be stripped.
         size_t max_num_qualifiers_to_strip = 0;

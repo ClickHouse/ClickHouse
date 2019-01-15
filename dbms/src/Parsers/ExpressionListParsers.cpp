@@ -1,10 +1,9 @@
+#include <Common/typeid_cast.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
