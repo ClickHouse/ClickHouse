@@ -54,8 +54,6 @@ size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifie
 {
     size_t num_qualifiers_to_strip = 0;
 
-    auto get_identifier_name = [](const ASTPtr & ast) { return static_cast<const ASTIdentifier &>(*ast).name; };
-
     /// It is compound identifier
     if (!identifier.children.empty())
     {
@@ -64,16 +62,16 @@ size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifie
         /// database.table.column
         if (num_components >= 3
             && !names.database.empty()
-            && get_identifier_name(identifier.children[0]) == names.database
-            && get_identifier_name(identifier.children[1]) == names.table)
+            && *getIdentifierName(identifier.children[0]) == names.database
+            && *getIdentifierName(identifier.children[1]) == names.table)
         {
             num_qualifiers_to_strip = 2;
         }
 
         /// table.column or alias.column. If num_components > 2, it is like table.nested.column.
         if (num_components >= 2
-            && ((!names.table.empty() && get_identifier_name(identifier.children[0]) == names.table)
-                || (!names.alias.empty() && get_identifier_name(identifier.children[0]) == names.alias)))
+            && ((!names.table.empty() && *getIdentifierName(identifier.children[0]) == names.table)
+                || (!names.alias.empty() && *getIdentifierName(identifier.children[0]) == names.alias)))
         {
             num_qualifiers_to_strip = 1;
         }
@@ -94,26 +92,24 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
         if (identifier.children.size() != 2)
             throw Exception("Logical error: number of components in table expression not equal to two", ErrorCodes::LOGICAL_ERROR);
 
-        const ASTIdentifier * db_identifier = typeid_cast<const ASTIdentifier *>(identifier.children[0].get());
-        const ASTIdentifier * table_identifier = typeid_cast<const ASTIdentifier *>(identifier.children[1].get());
-        if (!db_identifier || !table_identifier)
-            throw Exception("Logical error: identifiers expected", ErrorCodes::LOGICAL_ERROR);
-
-        database = db_identifier->name;
-        table = table_identifier->name;
+        getIdentifierName(identifier.children[0], database);
+        getIdentifierName(identifier.children[1], table);
     }
+}
+
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
+{
+    const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get());
+    if (!identifier)
+        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
+
+    *this = DatabaseAndTableWithAlias(*identifier, current_database);
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database)
 {
     if (table_expression.database_and_table_name)
-    {
-        const auto * identifier = typeid_cast<const ASTIdentifier *>(table_expression.database_and_table_name.get());
-        if (!identifier)
-            throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-        *this = DatabaseAndTableWithAlias(*identifier, current_database);
-    }
+        *this = DatabaseAndTableWithAlias(table_expression.database_and_table_name, current_database);
     else if (table_expression.table_function)
         alias = table_expression.table_function->tryGetAlias();
     else if (table_expression.subquery)
@@ -207,14 +203,10 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name)
+    if (!database_and_table_name || !isIdentifier(database_and_table_name))
         return {};
 
-    const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(database_and_table_name.get());
-    if (!identifier)
-        return {};
-
-    return *identifier;
+    return DatabaseAndTableWithAlias(database_and_table_name);
 }
 
 ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number)

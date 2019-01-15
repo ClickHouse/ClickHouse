@@ -1,6 +1,6 @@
 # Functions for working with external dictionaries {#ext_dict_functions}
 
-For information on connecting and configuring external dictionaries, see "[External dictionaries](../dicts/external_dicts.md)".
+For information on connecting and configuring external dictionaries, see [External dictionaries](../dicts/external_dicts.md).
 
 ## dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64
 
@@ -19,7 +19,7 @@ For information on connecting and configuring external dictionaries, see "[Exter
 - Get the value of the attr_name attribute from the dict_name dictionary using the 'id' key.`dict_name` and `attr_name` are constant strings.`id`must be UInt64.
 If there is no `id` key in the dictionary, it returns the default value specified in the dictionary description.
 
-## dictGetTOrDefault
+## dictGetTOrDefault {#ext_dict_functions_dictGetTOrDefault}
 
 `dictGetT('dict_name', 'attr_name', id, default)`
 

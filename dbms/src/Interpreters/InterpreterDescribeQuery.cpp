@@ -95,13 +95,11 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
                 auto database_ptr = identifier->children[0];
                 auto table_ptr = identifier->children[1];
 
-                if (database_ptr)
-                    database_name = typeid_cast<ASTIdentifier &>(*database_ptr).name;
-                if (table_ptr)
-                    table_name = typeid_cast<ASTIdentifier &>(*table_ptr).name;
+                getIdentifierName(database_ptr, database_name);
+                getIdentifierName(table_ptr, table_name);
             }
             else
-                table_name = typeid_cast<ASTIdentifier &>(*identifier).name;
+                getIdentifierName(identifier, table_name);
 
             table = context.getTable(database_name, table_name);
         }
