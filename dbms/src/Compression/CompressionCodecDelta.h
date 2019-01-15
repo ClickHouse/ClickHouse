@@ -1,33 +1,26 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Compression/ICompressionCodec.h>
-#include <IO/BufferWithOwnMemory.h>
-#include <Parsers/StringRange.h>
-
 namespace DB
 {
 
-class CompressionCodecZSTD : public ICompressionCodec
+class CompressionCodecDelta : public ICompressionCodec
 {
 public:
-    static constexpr auto ZSTD_DEFAULT_LEVEL = 1;
-
-    CompressionCodecZSTD(int level_);
+    CompressionCodecDelta(UInt8 delta_bytes_size_);
 
     UInt8 getMethodByte() const override;
 
     String getCodecDesc() const override;
-
-    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
     void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override { return uncompressed_size + 2; }
 private:
-    const int level;
+    const UInt8 delta_bytes_size;
 };
-
 }
+

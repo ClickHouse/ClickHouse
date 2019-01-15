@@ -195,9 +195,11 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
     {
         auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
 
+        DataTypePtr column_type = nullptr;
         if (col_decl.type)
         {
-            columns.emplace_back(col_decl.name, DataTypeFactory::instance().get(col_decl.type));
+            column_type = DataTypeFactory::instance().get(col_decl.type);
+            columns.emplace_back(col_decl.name, column_type);
         }
         else
             /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
@@ -228,7 +230,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
         if (col_decl.codec)
         {
-            auto codec = CompressionCodecFactory::instance().get(col_decl.codec);
+            auto codec = CompressionCodecFactory::instance().get(col_decl.codec, column_type);
             codecs.emplace(col_decl.name, codec);
         }
 
