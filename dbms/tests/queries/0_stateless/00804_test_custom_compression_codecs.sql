@@ -117,3 +117,20 @@ INSERT INTO test.compression_codec_multiple_with_key SELECT toDate('2018-10-12')
 SELECT COUNT(DISTINCT data) FROM test.compression_codec_multiple_with_key WHERE id < 222;
 
 DROP TABLE IF EXISTS test.compression_codec_multiple_with_key;
+
+DROP TABLE IF EXISTS test.test_default_delta;
+
+CREATE TABLE test.test_default_delta(
+    id UInt64 CODEC(Delta),
+    data String CODEC(Delta),
+    somedate Date CODEC(Delta),
+    somenum Float64 CODEC(Delta),
+    somestr FixedString(3) CODEC(Delta),
+    othernum Int64 CODEC(Delta),
+    yetothernum Float32 CODEC(Delta),
+    ddd Nested (age UInt8, Name String, OName String, BName String) CODEC(Delta)
+) ENGINE = MergeTree() ORDER BY tuple();
+
+SHOW CREATE TABLE test.test_default_delta;
+
+DROP TABLE IF EXISTS test.test_default_delta;

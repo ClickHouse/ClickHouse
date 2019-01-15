@@ -123,9 +123,16 @@ void CompressionCodecDelta::doDecompressData(const char * source, UInt32 source_
 void registerCodecDelta(CompressionCodecFactory & factory)
 {
     UInt8 method_code = UInt8(CompressionMethodByte::Delta);
-    factory.registerCompressionCodec("Delta", method_code, [&](const ASTPtr & arguments) -> CompressionCodecPtr
+    factory.registerCompressionCodecWithType("Delta", method_code, [&](const ASTPtr & arguments, DataTypePtr column_type) -> CompressionCodecPtr
     {
-        UInt8 delta_bytes_size = CompressionCodecDelta::DEFAULT_BYTES_SIZE;
+        UInt8 delta_bytes_size = 1;
+        if (column_type && column_type->haveMaximumSizeOfValue())
+        {
+            size_t max_size = column_type->getSizeOfValueInMemory();
+            if (max_size == 1 || max_size == 2 || max_size == 4 || max_size == 8)
+                delta_bytes_size = static_cast<UInt8>(max_size);
+        }
+
         if (arguments && !arguments->children.empty())
         {
             if (arguments->children.size() > 1)
@@ -138,7 +145,6 @@ void registerCodecDelta(CompressionCodecFactory & factory)
                 throw Exception("Delta value for delta codec can be 1, 2, 4 or 8, given " + toString(user_bytes_size), ErrorCodes::ILLEGAL_CODEC_PARAMETER);
             delta_bytes_size = static_cast<UInt8>(user_bytes_size);
         }
-
         return std::make_shared<CompressionCodecDelta>(delta_bytes_size);
     });
 }
