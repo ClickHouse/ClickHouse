@@ -107,8 +107,17 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
     else
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
+bool checkEqualFrom(const std::vector<std::string> &a,const std::vector<std::string> &b, const size_t index) {
+		for(int i = index; i >= 0; i++) {
+			if(a[i] != b[i]) {
+				return false;
+			}
+		}
+		return true;
+}
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
+	//Store parents and their tokens in order to backtrack
     std::vector<capnp::StructSchema::Field> parents;
     std::vector<std::string> tokens;
 
@@ -116,7 +125,8 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
     size_t level = 0;
     for (const auto & field : sortedFields)
     {
-        while(level > (field.tokens.size()-1) || (level > 0 && tokens[level-1] != field.tokens[level-1])) {
+		//Backtrackt to common parent
+        while(level > (field.tokens.size()-1) || !checkEqualFrom(tokens,field.tokens,level-1)) {
             level--;
             actions.push_back({Action::POP});
             tokens.pop_back();
@@ -127,8 +137,8 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
                 cur_reader = reader;
                 break;
             }
-
         }
+		//Go forward
         for (; level < field.tokens.size() - 1; ++level)
         {
 
@@ -193,7 +203,7 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     for (size_t i = 0; i < num_columns; ++i)
         list.push_back(split(header, i));
 
-    // Reorder list to make sure we don't have to backtrack
+    // Order list first by value of strings then by length of sting vector.
     std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b)
     {
         size_t min = std::min(a.tokens.size(),b.tokens.size());
@@ -204,7 +214,6 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
         }
         return a.tokens.size() < b.tokens.size();
     });
-
     createActions(list, root);
 }
 
