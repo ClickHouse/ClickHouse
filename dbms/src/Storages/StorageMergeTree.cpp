@@ -216,7 +216,7 @@ void StorageMergeTree::alter(
     auto new_columns = data.getColumns();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    ASTPtr new_indexes_ast = data.skip_indexes_ast;
+    ASTPtr new_indexes_ast = data.skip_indexes_ast->clone();
     params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
