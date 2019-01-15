@@ -1,7 +1,22 @@
 project (ClickHouse)
-cmake_minimum_required (VERSION 3.3)
+cmake_minimum_required (VERSION 3.9)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
+
+set(ENABLE_IPO OFF CACHE STRING "Enable inter-procedural optimization (aka LTO)")
+
+if (ENABLE_IPO)
+include(CheckIPOSupported)
+check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
+if(IPO_SUPPORTED)
+    message(STATUS "IPO/LTO is supported, enabling")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+    message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+endif()
+else()
+    message(STATUS "IPO/LTO not enabled.")
+endif()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
