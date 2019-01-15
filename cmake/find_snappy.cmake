@@ -20,4 +20,8 @@ elseif(NOT MISSING_INTERNAL_SNAPPY_LIBRARY)
     set(SNAPPY_LIBRARY snappy)
 endif()
 
-message(STATUS "Using snappy: ${SNAPPY_INCLUDE_DIR} : ${SNAPPY_LIBRARY}")
+if(SNAPPY_LIBRARY AND SNAPPY_INCLUDE_DIR)
+    set(USE_SNAPPY 1)
+endif()
+
+message(STATUS "Using snappy=${USE_SNAPPY}: ${SNAPPY_INCLUDE_DIR} : ${SNAPPY_LIBRARY}")

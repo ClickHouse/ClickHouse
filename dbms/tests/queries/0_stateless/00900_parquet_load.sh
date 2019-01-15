@@ -28,7 +28,7 @@ DATA_DIR=$CUR_DIR/data_parquet
 # To update:
 # cp $ROOT_DIR/contrib/arrow/cpp/submodules/parquet-testing/data/*.parquet $ROOT_DIR/contrib/arrow/python/pyarrow/tests/data/parquet/*.parquet $CUR_DIR/data_parquet/
 
-# BUG! nulls.snappy.parquet
+# BUG! nulls.snappy.parquet - parquet-reader shows wrong structure. Actual structure is {"type":"struct","fields":[{"name":"b_struct","type":{"type":"struct","fields":[{"name":"b_c_int","type":"integer","nullable":true,"metadata":{}}]},"nullable":true,"metadata":{}}]}
 # why? repeated_no_annotation.parquet
 
 for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do

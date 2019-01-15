@@ -379,11 +379,17 @@ void ParquetBlockOutputStream::write(const Block & block)
 
     if (!file_writer)
     {
+
+        parquet::WriterProperties::Builder builder;
+#if USE_SNAPPY
+        builder.compression(parquet::Compression::SNAPPY);
+#endif
+        auto props = builder.build();
         auto status = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
             arrow::default_memory_pool(),
             sink,
-            parquet::default_writer_properties(),
+            props, /*parquet::default_writer_properties(),*/
             parquet::arrow::default_arrow_writer_properties(),
             &file_writer);
         if (!status.ok())
@@ -391,7 +397,7 @@ void ParquetBlockOutputStream::write(const Block & block)
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
-    auto status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows());
+    auto status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows()); // todo: maybe num_rows via setting?
 
     if (!status.ok())
         throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
