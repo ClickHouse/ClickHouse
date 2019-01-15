@@ -5,6 +5,10 @@
 # TODO: Add more files.
 #
 
+# To regenerate data install perl JSON::XS module: sudo apt install libjson-xs-perl
+
+set -x
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CUR_DIR/../shell_config.sh
 
@@ -26,13 +30,16 @@ for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do
 
     JSON=$DATA_DIR/$NAME.json
 
-    # If you want change or add .parquet file - rm data_parquet/*.json
+    # If you want change or add .parquet file - rm data_parquet/*.json data_parquet/*.columns
     [ -n "$BUILD_DIR" ] && [ ! -s $JSON ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader --json $DATA_DIR/$NAME > $JSON
+    COLUMNS_FILE=$DATA_DIR/$NAME.columns
+    [ -n "$BUILD_DIR" ] && [ ! -e $COLUMNS_FILE ] && $CUR_DIR/00900_parquet_create_table_columns.pl $JSON > $COLUMNS_FILE
 
     # Debug only:
     # [ -n "$BUILD_DIR" ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader $DATA_DIR/$NAME > $DATA_DIR/$NAME.dump
 
-    COLUMNS=`$CUR_DIR/00900_parquet_create_table_columns.pl $JSON` 2>&1 || continue
+    #COLUMNS=`$CUR_DIR/00900_parquet_create_table_columns.pl $JSON` 2>&1 || continue
+    COLUMNS=`cat $COLUMNS_FILE` || continue
 
     ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.parquet_load"
     ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.parquet_load ($COLUMNS) ENGINE = Memory"

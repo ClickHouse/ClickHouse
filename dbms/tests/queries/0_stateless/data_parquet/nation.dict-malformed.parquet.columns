@@ -1,0 +1,1 @@
+nation_key Int32, name String, region_key Int32, comment_col String
