@@ -27,7 +27,7 @@ for NAME in `ls -1 $DATA_DIR/*.parquet | xargs -n 1 basename | sort`; do
     JSON=$DATA_DIR/$NAME.json
 
     # If you want change or add .parquet file - rm data_parquet/*.json
-    [ -n "$BUILD_DIR" ] && [ ! -e $JSON ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader --json $DATA_DIR/$NAME > $JSON
+    [ -n "$BUILD_DIR" ] && [ ! -s $JSON ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader --json $DATA_DIR/$NAME > $JSON
 
     # Debug only:
     # [ -n "$BUILD_DIR" ] && $BUILD_DIR/contrib/arrow-cmake/parquet-reader $DATA_DIR/$NAME > $DATA_DIR/$NAME.dump
