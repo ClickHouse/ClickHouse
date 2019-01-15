@@ -13,7 +13,7 @@
      {
        "Id": "0",  "TotalBytes": "27",  "Rows": "8",
        "ColumnChunks": [
-          {"Id": "0", "Values": "8", "StatsSet": "True", "Stats": {"NumNulls": "8", "DistinctValues": "0", "Max": "0", "Min": "0" },
+          {"Id": "0", "Values": "8", "StatsSet": "True", "Stats": {"NumNulls": "8", "DistinctValues": "0", "Max": "-1228966144", "Min": "-1228966400" },
            "Compression": "SNAPPY", "Encodings": "PLAIN BIT_PACKED RLE ", "UncompressedSize": "27", "CompressedSize": "29" }
         ]
      }

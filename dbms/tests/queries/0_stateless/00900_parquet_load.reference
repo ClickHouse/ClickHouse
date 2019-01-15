@@ -41,7 +41,7 @@
 === Try load data from datapage_v2.snappy.parquet
 Code: 33. DB::Ex---tion: Error while reading parquet data: IOError: Arrow error: IOError: Corrupt snappy compressed data.
 
-=== Try load data from fixed_length_decimal_legacy.parquet
+=== Try load data from fixed_length_decimal_1.parquet
 1.0
 2.0
 3.0
@@ -66,7 +66,7 @@ Code: 33. DB::Ex---tion: Error while reading parquet data: IOError: Arrow error:
 22.0
 23.0
 24.0
-=== Try load data from fixed_length_decimal.parquet
+=== Try load data from fixed_length_decimal_legacy.parquet
 1.0
 2.0
 3.0

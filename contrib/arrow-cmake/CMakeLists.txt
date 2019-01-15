@@ -36,9 +36,10 @@ set(thriftcpp_SOURCES
    ${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp
 )
 set( thriftcpp_threads_SOURCES
-    ${LIBRARY_DIR}/src/thrift/concurrency/PosixThreadFactory.cpp
-    ${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp
+    ${LIBRARY_DIR}/src/thrift/concurrency/ThreadFactory.cpp
+    ${LIBRARY_DIR}/src/thrift/concurrency/Thread.cpp
     ${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp
+    ${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp
 )
 add_library(${THRIFT_LIBRARY} ${LINK_MODE} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
