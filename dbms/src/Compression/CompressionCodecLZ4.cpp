@@ -36,7 +36,7 @@ String CompressionCodecLZ4::getCodecDesc() const
     return "LZ4";
 }
 
-UInt32 CompressionCodecLZ4::getCompressedDataSize(UInt32 uncompressed_size) const
+UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return LZ4_COMPRESSBOUND(uncompressed_size);
 }

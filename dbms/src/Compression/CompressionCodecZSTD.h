@@ -19,7 +19,7 @@ public:
 
     String getCodecDesc() const override;
 
-    UInt32 getCompressedDataSize(UInt32 uncompressed_size) const override;
+    UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
