@@ -41,7 +41,7 @@ public:
     virtual UInt32 decompress(char * source, UInt32 source_size, char * dest) const;
 
     /// Number of bytes, that will be used to compress uncompressed_size bytes with current codec
-    virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const { return getHeaderSize() + getCompressedDataSize(uncompressed_size); }
+    virtual UInt32 getCompressedReserveSize(UInt32 uncompressed_size) const { return getHeaderSize() + getMaxCompressedDataSize(uncompressed_size); }
 
     /// Some codecs (LZ4, for example) require additional bytes at end of buffer
     virtual UInt32 getAdditionalSizeAtTheEndOfBuffer() const { return 0; }
@@ -61,7 +61,7 @@ public:
 protected:
 
     /// Return size of compressed data without header
-    virtual UInt32 getCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
+    virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }
 
     /// Actually compress data, without header
     virtual UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const = 0;
