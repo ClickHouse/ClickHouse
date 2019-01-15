@@ -508,6 +508,10 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
+    /// Do not write anything for empty column. (May happen while writing empty arrays.)
+    if (limit == 0)
+        return;
+
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
@@ -709,7 +713,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min(limit, low_cardinality_state->num_pending_rows);
+        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
         readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
