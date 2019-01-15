@@ -45,7 +45,7 @@ Identifiers can be quoted or non-quoted. It is recommended to use non-quoted ide
 
 Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords).  Examples: `x, _1, X_y__Z123_.`
 
-If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backtics, for example, `"id"`, `` `id` ``.
+If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backticks, for example, `"id"`, `` `id` ``.
 
 ## Literals
 
@@ -125,7 +125,7 @@ expr AS alias
 
     For example `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — Name for `expr`. Aliases should comply [identifier](#syntax-identifiers) syntax.
+- `alias` — Name for `expr`. Aliases should comply with the [identifiers](#syntax-identifiers) syntax.
 
     For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
