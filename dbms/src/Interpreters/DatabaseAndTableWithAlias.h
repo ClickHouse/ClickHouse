@@ -44,6 +44,6 @@ std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query);
-ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number);
+ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);
 
 }

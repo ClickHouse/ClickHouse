@@ -90,12 +90,7 @@ private:
     void visit(ASTTableExpression & table_expression, ASTPtr &) const
     {
         if (table_expression.database_and_table_name)
-        {
             tryVisit<ASTIdentifier>(table_expression.database_and_table_name);
-
-            if (table_expression.database_and_table_name->children.size() != 2)
-                throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
-        }
         else if (table_expression.subquery)
             tryVisit<ASTSubquery>(table_expression.subquery);
     }

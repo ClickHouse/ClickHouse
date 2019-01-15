@@ -209,21 +209,13 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
     return DatabaseAndTableWithAlias(database_and_table_name);
 }
 
-ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number)
+ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number)
 {
-    const ASTTableExpression * table_expression = getTableExpression(select, table_number);
-    if (table_expression)
+    if (const ASTTableExpression * table_expression = getTableExpression(select, table_number))
     {
-#if 1   /// TODO: It hides some logical error in InterpreterSelectQuery & distributed tables
         if (table_expression->database_and_table_name)
-        {
-            if (table_expression->database_and_table_name->children.empty())
-                return table_expression->database_and_table_name;
+            return table_expression->database_and_table_name;
 
-            if (table_expression->database_and_table_name->children.size() == 2)
-                return table_expression->database_and_table_name->children[1];
-        }
-#endif
         if (table_expression->table_function)
             return table_expression->table_function;
 
