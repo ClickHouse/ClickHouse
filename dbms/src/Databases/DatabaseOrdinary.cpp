@@ -205,6 +205,18 @@ void DatabaseOrdinary::loadTables(
 }
 
 
+void DatabaseOrdinary::loadDictionaries(Context &, ThreadPool *, bool)
+{
+    throw Exception("DatabaseOrdinary: loadDictionaries() isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+void DatabaseOrdinary::createDictionary(const Context &, const String &, const DictionaryPtr &, const ASTPtr &)
+{
+    throw Exception("DatabaseOrdinary: createDictionary() isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
