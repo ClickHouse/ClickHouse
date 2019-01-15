@@ -456,7 +456,8 @@ private:
             else
             {
                 /// put all bigrams
-                auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) {
+                auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset)
+                {
                     return this->putNGramBase(ngram, offset, this->last);
                 };
 
