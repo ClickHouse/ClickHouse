@@ -117,6 +117,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
     {
         AlterCommand command;
+        command.index_decl = command_ast->index_decl;
         command.type = AlterCommand::ADD_INDEX;
 
         const auto & ast_index_decl = typeid_cast<const ASTIndexDeclaration &>(*command_ast->index_decl);
@@ -128,7 +129,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         command.if_not_exists = command_ast->if_not_exists;
 
-        throw Exception("\"ALTER TABLE table ADD/DROP INDEX ...\" queries are not supported yet.", ErrorCodes::NOT_IMPLEMENTED);
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::DROP_INDEX)
@@ -141,7 +141,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_name = typeid_cast<const ASTIdentifier &>(*(command_ast->index)).name;
         command.if_exists = command_ast->if_exists;
 
-        throw Exception("\"ALTER TABLE table ADD/DROP INDEX ...\" queries are not supported yet.", ErrorCodes::NOT_IMPLEMENTED);
         return command;
     }
     else
