@@ -251,3 +251,6 @@ website/package-lock.json
 
 # cquery cache
 /.cquery-cache
+
+# ccls cache
+/.ccls-cache
