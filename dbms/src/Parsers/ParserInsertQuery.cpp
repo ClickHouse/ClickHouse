@@ -9,8 +9,6 @@
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -136,14 +134,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        if (database)
-            query->database = typeid_cast<ASTIdentifier &>(*database).name;
-
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+        getIdentifierName(database, query->database);
+        getIdentifierName(table, query->table);
     }
 
-    if (format)
-        query->format = typeid_cast<ASTIdentifier &>(*format).name;
+    getIdentifierName(format, query->format);
 
     query->columns = columns;
     query->select = select;

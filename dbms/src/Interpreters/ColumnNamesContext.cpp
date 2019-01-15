@@ -31,7 +31,7 @@ bool ColumnNamesContext::addColumnAliasIfAny(const IAST & ast, bool is_public)
 
 void ColumnNamesContext::addColumnIdentifier(const ASTIdentifier & node, bool is_public)
 {
-    if (!node.general())
+    if (!getColumnIdentifierName(node))
         return;
 
     required_names.insert(node.name);
