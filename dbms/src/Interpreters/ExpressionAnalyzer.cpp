@@ -78,9 +78,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
-/// From SyntaxAnalyzer.cpp
-extern void removeDuplicateColumns(NamesAndTypesList & columns);
-
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
@@ -551,8 +548,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        const auto & identifier = static_cast<const ASTIdentifier &>(*table_to_join.database_and_table_name);
-        DatabaseAndTableWithAlias database_table(identifier);
+        DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
         StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
         if (table)
