@@ -47,7 +47,7 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     auto * dest_with_type = reinterpret_cast<T *>(dest);
 
     if (source_size > 0)
-        dest_with_type[0] = source_with_type[0];
+        unalignedStore<T>(&dest_with_type[0], source_with_type[0]);
 
     for (size_t dest_index = 1, dest_end = source_size / sizeof(T); dest_index < dest_end; ++dest_index)
         unalignedStore<T>(&dest_with_type[dest_index], source_with_type[dest_index] - source_with_type[dest_index - 1]);
@@ -63,7 +63,7 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     auto * dest_with_type = reinterpret_cast<T *>(dest);
 
     if (source_size > 0)
-        dest_with_type[0] = source_with_type[0];
+        unalignedStore<T>(&dest_with_type[0], source_with_type[0]);
 
     for (size_t dest_index = 1, dest_end = source_size / sizeof(T); dest_index < dest_end; ++dest_index)
         unalignedStore<T>(&dest_with_type[dest_index], source_with_type[dest_index] + dest_with_type[dest_index - 1]);
