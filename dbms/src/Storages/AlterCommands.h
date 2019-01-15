@@ -55,6 +55,9 @@ struct AlterCommand
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
+    /// For ADD and MODIFY
+    CompressionCodecPtr codec;
+
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,
                  const ColumnDefaultKind default_kind, const ASTPtr & default_expression,

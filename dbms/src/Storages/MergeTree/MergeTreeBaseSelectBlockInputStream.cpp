@@ -91,7 +91,7 @@ Block MergeTreeBaseSelectBlockInputStream::readFromPart()
         UInt64 rows_to_read = current_task.size_predictor->estimateNumRows(current_preferred_block_size_bytes);
         if (!rows_to_read)
             return rows_to_read;
-        rows_to_read = std::max(index_granularity, rows_to_read);
+        rows_to_read = std::max<UInt64>(index_granularity, rows_to_read);
 
         if (current_preferred_max_column_in_block_size_bytes)
         {

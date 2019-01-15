@@ -68,7 +68,7 @@ private:
       *
       * Also, disallow moving expressions with GLOBAL [NOT] IN.
       */
-    bool cannotBeMoved(const IAST * ptr) const;
+    bool cannotBeMoved(const ASTPtr & ptr) const;
 
     void determineArrayJoinedNames(ASTSelectQuery & select);
 
