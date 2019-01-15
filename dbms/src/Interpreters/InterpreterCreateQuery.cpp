@@ -242,7 +242,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!defaulted_columns.empty())
     {
-        auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, columns);
+        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
         const auto block = actions->getSampleBlock();
 

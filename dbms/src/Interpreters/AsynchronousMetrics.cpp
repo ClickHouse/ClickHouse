@@ -137,10 +137,7 @@ void AsynchronousMetrics::update()
 #if USE_EMBEDDED_COMPILER
     {
         if (auto compiled_expression_cache = context.getCompiledExpressionCache())
-        {
-            set("CompiledExpressionCacheBytes", compiled_expression_cache->weight());
             set("CompiledExpressionCacheCount", compiled_expression_cache->count());
-        }
     }
 #endif
 

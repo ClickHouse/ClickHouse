@@ -6,7 +6,6 @@
 #include <Storages/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadBufferFromHDFS.h>
 #include <Formats/FormatFactory.h>
@@ -15,8 +14,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Poco/Path.h>
-#include <TableFunctions/parseRemoteDescription.h>
-#include <Common/typeid_cast.h>
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB

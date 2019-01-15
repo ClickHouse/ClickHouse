@@ -107,13 +107,13 @@ int main(int argc, char ** argv)
     AggregateFunctionPtr func_avg = factory.get("avg", data_types_uint64);
     AggregateFunctionPtr func_uniq = factory.get("uniq", data_types_uint64);
 
-    #define INIT                \
-    {                            \
-        value.resize(3);        \
-                                \
-        value[0] = func_count.get();\
-        value[1] = func_avg.get();    \
-        value[2] = func_uniq.get();    \
+    #define INIT \
+    { \
+        value.resize(3); \
+        \
+        value[0] = func_count.get(); \
+        value[1] = func_avg.get(); \
+        value[2] = func_uniq.get(); \
     }
 
     INIT
@@ -162,7 +162,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value(std::move(value));
+                new(&it->second) Value;
+                std::swap(it->second, value);
                 INIT
             }
         }
@@ -192,7 +193,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value(std::move(value));
+                new(&it->second) Value;
+                std::swap(it->second, value);
                 INIT
             }
         }
@@ -223,7 +225,8 @@ int main(int argc, char ** argv)
             map.emplace(data[i], it, inserted);
             if (inserted)
             {
-                new(&it->second) Value(std::move(value));
+                new(&it->second) Value;
+                std::swap(it->second, value);
                 INIT
             }
         }
@@ -248,7 +251,7 @@ int main(int argc, char ** argv)
         std::unordered_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
-            it = map.insert(std::make_pair(data[i], std::move(value))).first;
+            it = map.insert(std::make_pair(data[i], value)).first;
             INIT
         }
 
@@ -269,7 +272,7 @@ int main(int argc, char ** argv)
         map.set_empty_key(-1ULL);
         for (size_t i = 0; i < n; ++i)
         {
-            it = map.insert(std::make_pair(data[i], std::move(value))).first;
+            it = map.insert(std::make_pair(data[i], value)).first;
             INIT
         }
 
@@ -289,7 +292,7 @@ int main(int argc, char ** argv)
         GOOGLE_NAMESPACE::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
-            map.insert(std::make_pair(data[i], std::move(value)));
+            map.insert(std::make_pair(data[i], value));
             INIT
         }
 

@@ -317,9 +317,9 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row[i] = lit->value;
         }
     }
-    else if (const ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(arguments->children[0].get()))
+    else if (auto opt_name = getIdentifierName(arguments->children[0]))
     {
-        function_name = identifier->name;
+        function_name = *opt_name;
     }
     else if (typeid_cast<ASTLiteral *>(arguments->children[0].get()))
     {

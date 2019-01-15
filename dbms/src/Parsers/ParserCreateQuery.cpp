@@ -35,7 +35,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto func = std::make_shared<ASTFunction>();
-    func->name = typeid_cast<ASTIdentifier &>(*name).name;
+    getIdentifierName(name, func->name);
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -70,7 +70,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (non_parametric.parse(pos, ident, expected))
     {
         auto func = std::make_shared<ASTFunction>();
-        func->name = typeid_cast<ASTIdentifier &>(*ident).name;
+        getIdentifierName(ident, func->name);
         node = func;
         return true;
     }
@@ -257,10 +257,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             query->if_not_exists = if_not_exists;
             query->cluster = cluster_str;
 
-            if (database)
-                query->database = typeid_cast<ASTIdentifier &>(*database).name;
-            if (table)
-                query->table = typeid_cast<ASTIdentifier &>(*table).name;
+            getIdentifierName(database, query->database);
+            getIdentifierName(table, query->table);
 
             return true;
         }
@@ -405,23 +403,18 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_populate = is_populate;
     query->temporary = is_temporary;
 
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-    if (table)
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    getIdentifierName(database, query->database);
+    getIdentifierName(table, query->table);
     query->cluster = cluster_str;
 
-    if (to_database)
-        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
-    if (to_table)
-        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
+    getIdentifierName(to_database, query->to_database);
+    getIdentifierName(to_table, query->to_table);
 
     query->set(query->columns, columns);
     query->set(query->storage, storage);
-    if (as_database)
-        query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
-    if (as_table)
-        query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
+
+    getIdentifierName(as_database, query->as_database);
+    getIdentifierName(as_table, query->as_table);
     query->set(query->select, select);
 
     return true;
