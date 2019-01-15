@@ -321,7 +321,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
         if (std::any_of(
                 indexes_decl_ast->children.cbegin(),
                 indexes_decl_ast->children.cend(),
-                [this](const ASTPtr & index_ast){
+                [this](const ASTPtr & index_ast) {
                     return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
                 }))
         {
@@ -332,12 +332,37 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
                                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        //auto insert_it = indexes_decl_ast->children.end();
-        // TODO: implementation
+        auto insert_it = indexes_decl_ast->children.end();
+
+        if (!after_index_name.empty())
+        {
+            insert_it = std::find_if(
+                    indexes_decl_ast->children.begin(),
+                    indexes_decl_ast->children.end(),
+                    [this](const ASTPtr & index_ast) {
+                        return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == after_index_name;
+                    });
+            if (insert_it == indexes_decl_ast->children.end()) {
+                throw Exception("Wrong index name. Cannot find index `" + after_index_name + "` to insert after.",
+                        ErrorCodes::LOGICAL_ERROR);
+            }
+        }
+        indexes_decl_ast->children.emplace(insert_it, index_decl);
     }
     else if (type == DROP_INDEX)
     {
-        // TODO: implementation
+        auto erase_it = std::find_if(
+                indexes_decl_ast->children.begin(),
+                indexes_decl_ast->children.end(),
+                [this](const ASTPtr & index_ast) {
+                    return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
+                });
+        if (erase_it == indexes_decl_ast->children.end())
+        {
+            throw Exception("Wrong index name. Cannot find index `" + index_name + "` to drop.",
+                    ErrorCodes::LOGICAL_ERROR);
+        }
+        indexes_decl_ast->children.erase(erase_it);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);

@@ -245,7 +245,7 @@ void StorageMergeTree::alter(
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndexes(data.skip_indexes_ast);
+    data.setSkipIndexes(new_indexes_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
