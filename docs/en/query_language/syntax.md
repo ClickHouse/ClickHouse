@@ -30,7 +30,7 @@ Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces 
 
 Keywords (such as `SELECT`) are not case-sensitive. Everything else (column names, functions, and so on), in contrast to standard SQL, is case-sensitive.
 
-Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes, for example, `"column_name"`. The query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
+Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
 ## Identifiers {#syntax-identifiers}
 
@@ -45,7 +45,7 @@ Identifiers can be quoted or non-quoted. It is recommended to use non-quoted ide
 
 Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords).  Examples: `x, _1, X_y__Z123_.`
 
-If you want to use identifiers the same as keywords or you want to use any symbols in identifiers, quote it. Use `"id"` or `` `id` `` syntax.
+If you want to use identifiers the same as keywords or you want to use other symbols in identifiers, quote it using double quotes or backtics, for example, `"id"`, `` `id` ``.
 
 ## Literals
 
@@ -56,13 +56,13 @@ There are: numeric, string, compound and `NULL` literals.
 
 A numeric literal tries to be parsed:
 
-- First as a 64-bit signed number, using the 'strtoull' function.
-- If unsuccessful, as a 64-bit unsigned number, using the 'strtoll' function.
-- If unsuccessful, as a floating-point number using the 'strtod' function.
+- First as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+- If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
+- If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
 - Otherwise, an error is returned.
 
 The corresponding value will have the smallest type that the value fits in.
-For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more information, see "Data types".
+For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../data_types/index.md).
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
@@ -77,9 +77,8 @@ The minimum set of characters that you need to escape in string literals: `'` an
 
 Constructions are supported for arrays: `[1, 2, 3]` and tuples: `(1, 'Hello, world!', 2)`..
 Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
-For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
-Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
+Tuples have a special purpose for use in the `IN` clause of a `SELECT` query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of [Memory](../operations/table_engines/memory.md) tables).
 
 ### NULL {#null-literal}
 
@@ -102,7 +101,7 @@ There are regular and aggregate functions (see the section "Aggregate functions"
 
 Operators are converted to their corresponding functions during query parsing, taking their priority and associativity into account.
 For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, multiply(2, 3)), 4)`.
-For more information, see the section "Operators" below.
+
 
 ## Data Types and Database Table Engines
 
@@ -110,23 +109,23 @@ Data types and table engines in the `CREATE` query are written the same way as i
 
 ## Expression Aliases {#syntax-expression_aliases}
 
-Alias is a user defined identifier for an expression in a query.
+Alias is a user defined name for an expression in a query.
 
 ```
 expr AS alias
 ```
 
-- `AS` — keyword for defining aliases. You can define alias for a table name or a column name in the `SELECT` clause skipping `AS` keyword.
+- `AS` — Keyword for defining aliases. You can define alias for a table name or a column name in the `SELECT` clause skipping `AS` keyword.
 
     For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
     In the [CAST function](functions/type_conversion_functions.md), the `AS` keyword has another meaning. See the description of the function.
 
-- `expr` — any expression supported by ClickHouse.
+- `expr` — Any expression supported by ClickHouse.
 
     For example `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — [identifier](#syntax-identifiers).
+- `alias` — Name for `expr`. Aliases should comply [identifier](#syntax-identifiers) syntax.
 
     For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
