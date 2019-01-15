@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/hex.h>
+#include <sstream>
 
 
 namespace DB
@@ -20,14 +21,16 @@ extern const int CORRUPTED_DATA;
 CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs)
     : codecs(codecs)
 {
+    std::ostringstream ss;
     for (size_t idx = 0; idx < codecs.size(); idx++)
     {
         if (idx != 0)
-            codec_desc = codec_desc + ',';
+            ss << ',' << ' ';
 
         const auto codec = codecs[idx];
-        codec_desc = codec_desc + codec->getCodecDesc();
+        ss << codec->getCodecDesc();
     }
+    codec_desc = ss.str();
 }
 
 UInt8 CompressionCodecMultiple::getMethodByte() const
