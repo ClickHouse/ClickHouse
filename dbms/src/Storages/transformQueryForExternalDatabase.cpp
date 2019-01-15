@@ -76,7 +76,7 @@ static bool isCompatible(const IAST & node)
         return true;
     }
 
-    if (typeid_cast<const ASTIdentifier *>(&node))
+    if (isIdentifier(&node))
         return true;
 
     return false;

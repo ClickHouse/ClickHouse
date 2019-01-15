@@ -5,7 +5,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 
 
@@ -82,12 +81,7 @@ void forEachTable(IAST * node, F && f)
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(database_and_table.get());
-    if (!id)
-        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-    DatabaseAndTableWithAlias db_and_table(*id);
-
+    DatabaseAndTableWithAlias db_and_table(database_and_table);
     return context.tryGetTable(db_and_table.database, db_and_table.table);
 }
 

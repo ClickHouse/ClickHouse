@@ -287,6 +287,7 @@ endif ()
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms PRIVATE ${RDKAFKA_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${CPPKAFKA_LIBRARY})
     if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
