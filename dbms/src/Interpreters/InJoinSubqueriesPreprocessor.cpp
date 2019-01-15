@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/StorageDistributed.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -167,8 +168,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
                 std::string table;
                 std::tie(database, table) = getRemoteDatabaseAndTableName(*storage);
 
-                /// TODO: find a way to avoid AST node replacing
-                database_and_table = createDatabaseAndTableNode(database, table);
+                database_and_table = createTableIdentifier(database, table);
             }
             else
                 throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting", ErrorCodes::LOGICAL_ERROR);
