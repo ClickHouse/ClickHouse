@@ -184,10 +184,19 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
     }
 
     if (skip_indexes != from_zk.skip_indexes)
-        throw Exception("Existing table metadata in ZooKeeper differs in skip indexes."
-                        " Stored in ZooKeeper: " + from_zk.skip_indexes +
-                        ", local: " + skip_indexes,
-                        ErrorCodes::METADATA_MISMATCH);
+    {
+        if (allow_alter)
+        {
+            diff.skip_indices_changed = true;
+            diff.new_skip_indices = from_zk.skip_indexes;
+        }
+        else
+            throw Exception(
+                    "Existing table metadata in ZooKeeper differs in skip indexes."
+                    " Stored in ZooKeeper: " + from_zk.skip_indexes +
+                    ", local: " + skip_indexes,
+                    ErrorCodes::METADATA_MISMATCH);
+    }
 
     return diff;
 }
