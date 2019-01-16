@@ -10,6 +10,7 @@
 #define ENABLE_SHAREDPTR_DEBUG 0
 #define ENABLE_LZ4_EXT 1
 #define ENABLE_SSL 1
+//#define WITH_HDRHISTOGRAM 0
 //#define ENABLE_SASL 1
 #define MKL_APP_NAME "librdkafka"
 #define MKL_APP_DESC_ONELINE "The Apache Kafka C/C++ library"
@@ -51,6 +52,8 @@
 //#define WITH_PLUGINS 1
 // zlib
 #define WITH_ZLIB 1
+// zstd
+#define WITH_ZSTD 1
 // WITH_SNAPPY
 #define WITH_SNAPPY 1
 // WITH_SOCKEM
