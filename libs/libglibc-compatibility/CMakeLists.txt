@@ -19,7 +19,8 @@ musl/sched_cpucount.c
 musl/glob.c
 musl/exp2f.c
 musl/pwritev.c
-musl/getrandom.c)
+musl/getrandom.c
+musl/fcntl.c)
 
 if (MAKE_STATIC_LIBRARIES)
     set (GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}

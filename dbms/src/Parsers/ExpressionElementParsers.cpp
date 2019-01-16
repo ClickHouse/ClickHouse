@@ -5,6 +5,8 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Common/typeid_cast.h>
+#include <Parsers/DumpASTNode.h>
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
@@ -25,6 +27,7 @@
 #include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/queryToString.h>
+#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -171,7 +174,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     {
         if (!name.empty())
             name += '.';
-        name += static_cast<const ASTIdentifier &>(*child.get()).name;
+        name += *getIdentifierName(child);
     }
 
     node = std::make_shared<ASTIdentifier>(name);
@@ -220,7 +223,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
       * If you do not report that the first option is an error, then the argument will be interpreted as 2014 - 01 - 01 - some number,
       *  and the query silently returns an unexpected result.
       */
-    if (typeid_cast<const ASTIdentifier &>(*identifier).name == "toDate"
+    if (*getIdentifierName(identifier) == "toDate"
         && contents_end - contents_begin == strlen("2014-01-01")
         && contents_begin[0] >= '2' && contents_begin[0] <= '3'
         && contents_begin[1] >= '0' && contents_begin[1] <= '9'
@@ -262,7 +265,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     auto function_node = std::make_shared<ASTFunction>();
-    function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
+    getIdentifierName(identifier, function_node->name);
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
     if (has_distinct_modifier)
@@ -281,6 +284,36 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+bool ParserCodecDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIdentifierWithOptionalParameters>(),
+        std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+}
+
+bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserCodecDeclarationList codecs;
+    ASTPtr expr_list_args;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+
+    ++pos;
+    if (!codecs.parse(pos, expr_list_args, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = "CODEC";
+    function_node->arguments = expr_list_args;
+    function_node->children.push_back(function_node->arguments);
+
+    node = function_node;
+    return true;
+}
 
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -949,7 +982,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
     {
         if (negative)
-            res = -static_cast<Int64>(uint_value);
+            res = static_cast<Int64>(-uint_value);
         else
             res = uint_value;
     }
@@ -1125,7 +1158,7 @@ bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
           *  and in the query "SELECT x FRO FROM t", the word FRO was considered an alias.
           */
 
-        const String & name = static_cast<const ASTIdentifier &>(*node.get()).name;
+        const String name = *getIdentifierName(node);
 
         for (const char ** keyword = restricted_keywords; *keyword != nullptr; ++keyword)
             if (0 == strcasecmp(name.data(), *keyword))
@@ -1217,18 +1250,16 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
       */
     bool allow_alias_without_as_keyword_now = allow_alias_without_as_keyword;
     if (allow_alias_without_as_keyword)
-        if (const ASTIdentifier * id = typeid_cast<const ASTIdentifier *>(node.get()))
-            if (0 == strcasecmp(id->name.data(), "FROM"))
+        if (auto opt_id = getIdentifierName(node))
+            if (0 == strcasecmp(opt_id->data(), "FROM"))
                 allow_alias_without_as_keyword_now = false;
 
     ASTPtr alias_node;
     if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, alias_node, expected))
     {
-        String alias_name = typeid_cast<const ASTIdentifier &>(*alias_node).name;
-
         if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
-            ast_with_alias->alias = alias_name;
+            getIdentifierName(alias_node, ast_with_alias->alias);
             ast_with_alias->prefer_alias_to_column_name = prefer_alias_to_column_name;
         }
         else

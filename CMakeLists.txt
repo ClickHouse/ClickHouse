@@ -25,11 +25,6 @@ endif ()
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-
-set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "")
-set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "")
-include (cmake/limit_jobs.cmake)
-
 include (cmake/find_ccache.cmake)
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -95,8 +90,6 @@ if (GLIBC_COMPATIBILITY)
     set (USE_INTERNAL_MEMCPY ON)
 endif ()
 
-set (COMPILER_FLAGS "${COMPILER_FLAGS}")
-
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
 find_program (LLD_PATH NAMES "lld${COMPILER_POSTFIX}" "lld")
@@ -113,10 +106,15 @@ if (LINKER_NAME)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
-option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
-if (PIPE)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pipe")
-endif ()
+cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
+if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
+    option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
+endif()
+if(COMPILER_PIPE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -pipe")
+else()
+    message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
+endif()
 
 include (cmake/test_cpu.cmake)
 

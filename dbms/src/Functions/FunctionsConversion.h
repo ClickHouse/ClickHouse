@@ -99,7 +99,7 @@ struct ConvertImpl
     using ToFieldType = typename ToDataType::FieldType;
 
     template <typename Additions = void *>
-    static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
+    static void NO_SANITIZE_UNDEFINED execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/,
                         Additions additions [[maybe_unused]] = Additions())
     {
         const ColumnWithTypeAndName & named_from = block.getByPosition(arguments[0]);
@@ -177,7 +177,7 @@ struct ToDateTransform32Or64
 {
     static constexpr auto name = "toDate";
 
-    static inline ToType execute(const FromType & from, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         return (from < 0xFFFF) ? from : time_zone.toDayNum(from);
     }
@@ -1662,7 +1662,7 @@ private:
         element_wrappers.reserve(from_element_types.size());
 
         /// Create conversion wrapper for each element in tuple
-        for (const auto & idx_type : ext::enumerate(from_type->getElements()))
+        for (const auto idx_type : ext::enumerate(from_type->getElements()))
             element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
@@ -1688,7 +1688,7 @@ private:
             element_block.insert({ nullptr, std::make_shared<DataTypeTuple>(to_element_types), "" });
 
             /// invoke conversion for each element
-            for (const auto & idx_element_wrapper : ext::enumerate(element_wrappers))
+            for (const auto idx_element_wrapper : ext::enumerate(element_wrappers))
                 idx_element_wrapper.second(element_block, { idx_element_wrapper.first },
                     tuple_size + idx_element_wrapper.first, input_rows_count);
 
@@ -2098,35 +2098,35 @@ private:
     {
         if (const auto type = checkAndGetDataType<DataTypeUInt8>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeUInt16>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeUInt32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeUInt64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt8>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt16>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeInt64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeFloat32>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeFloat64>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeDate>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeDateTime>(to_type))
             return monotonicityForType(type);
-        else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
+        if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
-        else if (isEnum(from_type))
+        if (isEnum(from_type))
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);
-            else if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
+            if (const auto type = checkAndGetDataType<DataTypeEnum16>(to_type))
                 return monotonicityForType(type);
         }
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined

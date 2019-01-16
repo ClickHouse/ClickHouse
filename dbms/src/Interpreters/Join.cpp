@@ -112,9 +112,6 @@ static void initImpl(Maps & maps, Join::Type type)
         case Join::Type::TYPE: maps.TYPE = std::make_unique<typename decltype(maps.TYPE)::element_type>(); break;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
 
@@ -130,10 +127,9 @@ static size_t getTotalRowCountImpl(const Maps & maps, Join::Type type)
         case Join::Type::NAME: return maps.NAME ? maps.NAME->size() : 0;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
+
+    __builtin_unreachable();
 }
 
 template <typename Maps>
@@ -148,10 +144,9 @@ static size_t getTotalByteCountImpl(const Maps & maps, Join::Type type)
         case Join::Type::NAME: return maps.NAME ? maps.NAME->getBufferSizeInBytes() : 0;
         APPLY_FOR_JOIN_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
+
+    __builtin_unreachable();
 }
 
 
@@ -354,7 +349,7 @@ namespace
                  * We will insert each time the element into the second place.
                  * That is, the former second element, if it was, will be the third, and so on.
                  */
-                auto elem = reinterpret_cast<typename Map::mapped_type *>(pool.alloc(sizeof(typename Map::mapped_type)));
+                auto elem = pool.alloc<typename Map::mapped_type>();
 
                 elem->next = it->second.next;
                 it->second.next = elem;
@@ -412,9 +407,6 @@ namespace
                     break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
         }
     }
 }
@@ -1170,7 +1162,7 @@ private:
         {
         #define M(TYPE) \
             case Join::Type::TYPE: \
-                rows_added = fillColumns<STRICTNESS>(*maps.TYPE, num_columns_left, columns_left, num_columns_right, columns_keys_and_right); \
+                rows_added = fillColumns<STRICTNESS>(*maps.TYPE); \
                 break;
             APPLY_FOR_JOIN_VARIANTS(M)
         #undef M
@@ -1193,10 +1185,11 @@ private:
 
 
     template <ASTTableJoin::Strictness STRICTNESS, typename Map>
-    size_t fillColumns(const Map & map,
-        size_t num_columns_left, MutableColumns & columns_left,
-        size_t num_columns_right, MutableColumns & columns_right)
+    size_t fillColumns(const Map & map)
     {
+        size_t num_columns_left = column_indices_left.size();
+        size_t num_columns_right = column_indices_keys_and_right.size();
+
         size_t rows_added = 0;
 
         if (!position)
@@ -1212,7 +1205,7 @@ private:
             if (it->second.getUsed())
                 continue;
 
-            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, num_columns_left, columns_left, num_columns_right, columns_right);
+            AdderNonJoined<STRICTNESS, typename Map::mapped_type>::add(it->second, rows_added, num_columns_left, columns_left, num_columns_right, columns_keys_and_right);
 
             if (rows_added >= max_block_size)
             {

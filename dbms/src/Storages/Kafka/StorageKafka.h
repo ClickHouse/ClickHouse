@@ -1,24 +1,24 @@
 #pragma once
+
 #include <Common/config.h>
+
 #if USE_RDKAFKA
 
-#include <mutex>
-
-#include <ext/shared_ptr_helper.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Storages/IStorage.h>
+#include <Core/NamesAndTypes.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <Storages/IStorage.h>
 #include <Poco/Event.h>
 #include <Poco/Semaphore.h>
+#include <ext/shared_ptr_helper.h>
 
-struct rd_kafka_s;
-struct rd_kafka_conf_s;
+#include <cppkafka/cppkafka.h>
+#include <mutex>
 
 namespace DB
 {
 
-class StorageKafka;
+using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
@@ -53,26 +53,10 @@ public:
     void updateDependencies() override;
 
 private:
-    /// Each engine typically has one consumer (able to process 1..N partitions)
-    /// It is however possible to create multiple consumers per table, as long
-    /// as the total number of consumers is <= number of partitions.
-    struct Consumer
-    {
-        Consumer(struct rd_kafka_conf_s * conf);
-        ~Consumer();
-
-        void subscribe(const Names & topics);
-        void unsubscribe();
-        void close();
-
-        struct rd_kafka_s * stream = nullptr;
-    };
-    using ConsumerPtr = std::shared_ptr<Consumer>;
-
     // Configuration and state
     String table_name;
     String database_name;
-    Context & context;
+    Context global_context;
     Names topics;
     const String brokers;
     const String group;
@@ -100,7 +84,7 @@ private:
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
-    void consumerConfiguration(struct rd_kafka_conf_s * conf);
+    cppkafka::Configuration createConsumerConfiguration();
     ConsumerPtr claimConsumer();
     ConsumerPtr tryClaimConsumer(long wait_ms);
     void pushConsumer(ConsumerPtr c);

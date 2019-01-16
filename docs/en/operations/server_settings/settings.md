@@ -625,11 +625,11 @@ Path to temporary data for processing large queries.
 ```
 
 
-## uncompressed_cache_size
+## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md).
 
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md) is enabled.
+There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
 
 The uncompressed cache is advantageous for very short queries in individual cases.
 

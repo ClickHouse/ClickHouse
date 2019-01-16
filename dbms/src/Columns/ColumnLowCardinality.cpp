@@ -236,6 +236,9 @@ void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
     auto unique_ptr = dictionary.getColumnUniquePtr();
+    if (size == 0)
+        unique_ptr = unique_ptr->cloneEmpty();
+
     return ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
 }
 
@@ -632,11 +635,11 @@ void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
         throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & dictionary)
+void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)
 {
-    checkColumn(*dictionary);
+    checkColumn(*column_unique_);
 
-    column_unique = dictionary;
+    column_unique = column_unique_;
     shared = true;
 }
 
