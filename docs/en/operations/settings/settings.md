@@ -110,6 +110,56 @@ Used for the same purpose as `max_block_size`, but it sets the recommended block
 However, the block size cannot be more than `max_block_size` rows.
 Disabled by default (set to 0). It only works when reading from MergeTree engines.
 
+## merge_tree_uniform_read_distribution {#setting-merge_tree_uniform_read_distribution}
+
+When reading from [MergeTree*](../table_engines/mergetree.md) tables, ClickHouse uses several threads. This setting turns on/off the uniform distribution of reading tasks over the working threads. The algorithm of the uniform distribution aims to make execution time for all the threads approximately equal in a `SELECT` query.
+
+**Possible values**
+
+- 0 — Uniform read distribution turned off.
+- 1 — Uniform read distribution turned on.
+
+**Default value** — 1.
+
+## merge_tree_min_rows_for_concurrent_read {#setting-merge_tree_min_rows_for_concurrent_read}
+
+If a number of rows to be read from a file of [MergeTree*](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file by several threads.
+
+**Possible values**
+
+Any positive integer.
+
+**Default value** — 163840.
+
+## merge_tree_min_rows_for_seek {#setting-merge_tree_min_rows_for_seek}
+
+If the distance between two data blocks to be read in one file less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file, it reads the data sequentially.
+
+**Possible values**
+
+Any positive integer.
+
+**Default value** — 0.
+
+## merge_tree_coarse_index_granularity {#setting-merge_tree_coarse_index_granularity}
+
+When searching data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range for `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
+
+**Possible values**
+
+Any positive even integer.
+
+**Default value** — 8.
+
+## merge_tree_max_rows_to_use_cache {#setting-merge_tree_max_rows_to_use_cache}
+
+If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cash of uncompressed blocks. The [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+
+**Possible values**
+
+Any positive integer.
+
+**Default value** — 1048576.
 
 ## log_queries
 
@@ -242,10 +292,10 @@ Whether to count extreme values (the minimums and maximums in columns of a query
 For more information, see the section "Extreme values".
 
 
-## use_uncompressed_cache
+## use_uncompressed_cache {#setting-use_uncompressed_cache}
 
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-The uncompressed cache (only for tables in the MergeTree family) allows significantly reducing latency and increasing throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the 'uncompressed_cache_size' configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed; the least-used data is automatically deleted.
+The uncompressed cache (only for tables in the MergeTree family) allows significantly reducing latency and increasing throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed; the least-used data is automatically deleted.
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically in order to save space for truly small queries. So you can keep the 'use_uncompressed_cache' setting always set to 1.
 

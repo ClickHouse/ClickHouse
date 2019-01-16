@@ -123,7 +123,7 @@ UInt64 hash(Ts... xs)
 
 UInt64 maskBits(UInt64 x, size_t num_bits)
 {
-    return x & ((1 << num_bits) - 1);
+    return x & ((1ULL << num_bits) - 1);
 }
 
 
@@ -149,7 +149,7 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
     UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
         bits = feistelRound(bits, num_bits, seed, i);
-    return (x & ~((1 << num_bits) - 1)) ^ bits;
+    return (x & ~((1ULL << num_bits) - 1)) ^ bits;
 }
 
 
@@ -317,8 +317,8 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         if (size >= 16)
         {
-            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-            hash.get128(dst);
+            char * hash_dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(hash_dst);
         }
         else
         {

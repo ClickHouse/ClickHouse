@@ -1,4 +1,4 @@
-#include <TableFunctions/parseRemoteDescription.h>
+#include "parseRemoteDescription.h"
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
@@ -123,18 +123,19 @@ std::vector<String> parseRemoteDescription(const String & description, size_t l,
                         ErrorCodes::BAD_ARGUMENTS);
                 bool add_leading_zeroes = false;
                 size_t len = last_dot - 1 - (i + 1);
-                 /// If the left and right borders have equal numbers, then you must add leading zeros.
+                /// If the left and right borders have equal numbers, then you must add leading zeros.
+                /// TODO The code is somewhat awful.
                 if (last_dot - 1 - (i + 1) == m - (last_dot + 1))
                     add_leading_zeroes = true;
                 for (size_t id = left; id <= right; ++id)
                 {
-                    String cur = toString<UInt64>(id);
+                    String id_str = toString<UInt64>(id);
                     if (add_leading_zeroes)
                     {
-                        while (cur.size() < len)
-                            cur = "0" + cur;
+                        while (id_str.size() < len)
+                            id_str = "0" + id_str;
                     }
-                    buffer.push_back(cur);
+                    buffer.push_back(id_str);
                 }
             }
             else if (have_splitter) /// If there is a current delimiter inside, then generate a set of resulting rows

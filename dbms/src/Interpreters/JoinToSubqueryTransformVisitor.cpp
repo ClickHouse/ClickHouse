@@ -83,8 +83,8 @@ static void appendTableNameAndAlias(std::vector<String> & hidden, const ASTPtr &
     if (!alias.empty())
         hidden.push_back(alias);
 
-    if (auto * identifier = typeid_cast<const ASTIdentifier *>(table_expression->children[0].get()))
-        hidden.push_back(identifier->name);
+    if (auto opt_name = getIdentifierName(table_expression->children[0]))
+        hidden.push_back(*opt_name);
     else if (alias.empty())
         throw Exception("Expected Identifier or subquery with alias", ErrorCodes::LOGICAL_ERROR);
 }

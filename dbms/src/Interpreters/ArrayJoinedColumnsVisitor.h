@@ -58,7 +58,7 @@ private:
         NameToNameMap & array_join_alias_to_name = data.array_join_alias_to_name;
         NameToNameMap & array_join_result_to_source = data.array_join_result_to_source;
 
-        if (!node.general())
+        if (!getColumnIdentifierName(node))
             return;
 
         auto splitted = Nested::splitName(node.name);  /// ParsedParams, Key1

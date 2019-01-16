@@ -231,7 +231,7 @@ public:
             nested_state += nested_size_of_data;
         }
 
-        offsets_to.push_back(offsets_to.empty() ? state.dynamic_array_size : offsets_to.back() + state.dynamic_array_size);
+        offsets_to.push_back(offsets_to.back() + state.dynamic_array_size);
     }
 
     bool allocatesMemoryInArena() const override

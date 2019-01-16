@@ -4,9 +4,6 @@ target_link_libraries (system_numbers PRIVATE dbms clickhouse_storages_system cl
 add_executable (storage_log storage_log.cpp)
 target_link_libraries (storage_log PRIVATE dbms)
 
-add_executable (seek_speed_test seek_speed_test.cpp)
-target_link_libraries (seek_speed_test PRIVATE dbms)
-
 add_executable (part_checker part_checker.cpp)
 target_link_libraries (part_checker PRIVATE dbms)
 

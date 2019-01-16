@@ -96,11 +96,9 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
         if (!isValidFunction(expression->children[i], columns))
             return false;
 
-    if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&*expression))
-    {
-        if (identifier->general())
-            return columns.count(identifier->name);
-    }
+    if (auto opt_name = getColumnIdentifierName(expression))
+        return columns.count(*opt_name);
+
     return true;
 }
 
@@ -157,7 +155,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return;
 
     /// Let's analyze and calculate the expression.
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(expression_ast, block.getNamesAndTypesList());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_ast, block.getNamesAndTypesList());
     ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false);
 
