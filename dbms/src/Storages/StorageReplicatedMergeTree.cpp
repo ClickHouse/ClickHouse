@@ -418,26 +418,36 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 {
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_order_by_ast = data.order_by_ast;
+    ASTPtr new_indices_ast = data.skip_indexes_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
     {
-        ParserNotEmptyExpressionList parser(false);
-        auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
-
-        if (new_sorting_key_expr_list->children.size() == 1)
-            new_order_by_ast = new_sorting_key_expr_list->children[0];
-        else
+        if (metadata_diff.sorting_key_changed)
         {
-            auto tuple = makeASTFunction("tuple");
-            tuple->arguments->children = new_sorting_key_expr_list->children;
-            new_order_by_ast = tuple;
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+
+            if (new_sorting_key_expr_list->children.size() == 1)
+                new_order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                new_order_by_ast = tuple;
+            }
+
+            if (!data.primary_key_ast)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                new_primary_key_ast = data.order_by_ast->clone();
+            }
         }
 
-        if (!data.primary_key_ast)
+        if (metadata_diff.skip_indices_changed)
         {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            new_primary_key_ast = data.order_by_ast->clone();
+            ParserIndexDeclaration parser;
+            new_indices_ast = parseQuery(parser, metadata_diff.new_skip_indices, 0);
         }
 
         storage_modifier = [&](IAST & ast)
@@ -453,6 +463,8 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
+
+            storage_ast.set(storage_ast.indexes, new_indices_ast);
         };
     }
 
@@ -461,7 +473,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndexes(data.skip_indexes_ast);
+    data.setSkipIndexes(new_indices_ast);
 }
 
 
