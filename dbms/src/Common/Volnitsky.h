@@ -3,17 +3,13 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnVector.h>
 #include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/StringRef.h>
 #include <common/unaligned.h>
-#include <ext/range.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/
@@ -32,7 +28,7 @@
   * - if it did not match, we check the next cell of the hash table from the collision resolution chain;
   * - if not found, skip to haystack almost the size of the needle bytes;
   *
-  * MultiVersion:
+  * MultiVolnitsky - search for multiple substrings in a string:
   * - Add bigrams to hash table with string index. Then the usual Volnitsky search is used.
   * - We are adding while searching, limiting the number of fallback searchers and the total number of added bigrams
   */
@@ -43,7 +39,7 @@ namespace DB
 namespace VolnitskyTraits
 {
     using Offset = UInt8; /// Offset in the needle. For the basic algorithm, the length of the needle must not be greater than 255.
-    using Id = UInt8; /// Index of the string, must not be greater than 255.
+    using Id = UInt8; /// Index of the string (within the array of multiple needles), must not be greater than 255.
     using Ngram = UInt16; /// n-gram (2 bytes).
 
     /** Fits into the L2 cache (of common Intel CPUs).
@@ -62,7 +58,7 @@ namespace VolnitskyTraits
 
     static inline Ngram toNGram(const UInt8 * const pos) { return unalignedLoad<Ngram>(pos); }
 
-    template <class Callback>
+    template <typename Callback>
     static inline void putNGramASCIICaseInsensitive(const UInt8 * const pos, const int offset, const Callback & putNGramBase)
     {
         struct Chars
@@ -112,16 +108,19 @@ namespace VolnitskyTraits
             putNGramBase(n, offset);
     }
 
-    template <bool CaseSensitive, bool ASCII, class Callback>
-    static inline void
-    putNGram(const UInt8 * const pos, const int offset, [[maybe_unused]] const UInt8 * const begin, const Callback & putNGramBase)
+    template <bool CaseSensitive, bool ASCII, typename Callback>
+    static inline void putNGram(const UInt8 * const pos, const int offset, [[maybe_unused]] const UInt8 * const begin, const Callback & putNGramBase)
     {
         if constexpr (CaseSensitive)
+        {
             putNGramBase(toNGram(pos), offset);
+        }
         else
         {
             if constexpr (ASCII)
+            {
                 putNGramASCIICaseInsensitive(pos, offset, putNGramBase);
+            }
             else
             {
                 struct Chars
@@ -304,10 +303,102 @@ namespace VolnitskyTraits
             }
         }
     }
+}
 
-} // namespace VolnitskyTraits
 
-template <bool CaseSensitive, bool ASCII, class FallbackSearcher>
+/// @todo store lowercase needle to speed up in case there are numerous occurrences of bigrams from needle in haystack
+template <bool CaseSensitive, bool ASCII, typename FallbackSearcher>
+class VolnitskyBase
+{
+protected:
+    const UInt8 * const needle;
+    const size_t needle_size;
+    const UInt8 * const needle_end = needle + needle_size;
+    /// For how long we move, if the n-gram from haystack is not found in the hash table.
+    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
+
+    /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
+      *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
+    VolnitskyTraits::Offset hash[VolnitskyTraits::hash_size]; /// Hash table.
+
+    const bool fallback; /// Do we need to use the fallback algorithm.
+
+    FallbackSearcher fallback_searcher;
+
+public:
+    /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
+      * If you specify it small enough, the fallback algorithm will be used,
+      *  since it is considered that it's useless to waste time initializing the hash table.
+      */
+    VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
+        : needle{reinterpret_cast<const UInt8 *>(needle)}
+        , needle_size{needle_size}
+        , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
+        , fallback_searcher{needle, needle_size}
+    {
+        if (fallback)
+            return;
+
+        memset(hash, 0, sizeof(hash));
+
+        auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
+        /// ssize_t is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
+        for (auto i = static_cast<ssize_t>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
+            VolnitskyTraits::putNGram<CaseSensitive, ASCII>(this->needle + i, i + 1, this->needle, callback);
+    }
+
+
+    /// If not found, the end of the haystack is returned.
+    const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size) const
+    {
+        if (needle_size == 0)
+            return haystack;
+
+        const auto haystack_end = haystack + haystack_size;
+
+        if (fallback || haystack_size <= needle_size)
+            return fallback_searcher.search(haystack, haystack_end);
+
+        /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
+        const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
+        for (; pos <= haystack_end - needle_size; pos += step)
+        {
+            /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
+            for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num];
+                 cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
+            {
+                /// When found - compare bytewise, using the offset from the hash table.
+                const auto res = pos - (hash[cell_num] - 1);
+
+                /// pointer in the code is always padded array so we can use pagesafe semantics
+                if (fallback_searcher.compare(res))
+                    return res;
+            }
+        }
+
+        return fallback_searcher.search(pos - step + 1, haystack_end);
+    }
+
+    const char * search(const char * haystack, size_t haystack_size) const
+    {
+        return reinterpret_cast<const char *>(search(reinterpret_cast<const UInt8 *>(haystack), haystack_size));
+    }
+
+protected:
+    void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset)
+    {
+        /// Put the offset for the n-gram in the corresponding cell or the nearest free cell.
+        size_t cell_num = ngram % VolnitskyTraits::hash_size;
+
+        while (hash[cell_num])
+            cell_num = (cell_num + 1) % VolnitskyTraits::hash_size; /// Search for the next free cell.
+
+        hash[cell_num] = offset;
+    }
+};
+
+
+template <bool CaseSensitive, bool ASCII, typename FallbackSearcher>
 class MultiVolnitskyBase
 {
 private:
@@ -344,7 +435,7 @@ public:
     }
 
     /// returns vector of the positions
-    std::vector<const char *> search_all(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
+    std::vector<const char *> searchAll(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
     {
         const size_t haystack_string_size = haystack_offsets.size();
         const size_t needles_size = needles.size();
@@ -405,14 +496,14 @@ public:
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                ans[j] = search_one(haystack, haystack_end);
+                ans[j] = searchOne(haystack, haystack_end);
                 prev_offset = haystack_offsets[j];
             }
         }
         return ans;
     }
 
-    std::vector<size_t> search_index(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
+    std::vector<size_t> searchIndex(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
     {
         const size_t haystack_string_size = haystack_offsets.size();
         std::vector<size_t> ans(haystack_string_size, 0);
@@ -423,7 +514,7 @@ public:
             {
                 const auto * haystack = &haystack_data[prev_offset];
                 const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                ans[j] = search_one_index(haystack, haystack_end);
+                ans[j] = searchOneIndex(haystack, haystack_end);
                 prev_offset = haystack_offsets[j];
             }
         }
@@ -483,7 +574,7 @@ private:
         return false;
     }
 
-    inline bool search_one(const UInt8 * haystack, const UInt8 * haystack_end)
+    inline bool searchOne(const UInt8 * haystack, const UInt8 * haystack_end)
     {
         const size_t fallback_size = fallback_needles.size();
         for (size_t i = 0; i < fallback_size; ++i)
@@ -512,7 +603,7 @@ private:
         return false;
     }
 
-    inline size_t search_one_index(const UInt8 * haystack, const UInt8 * haystack_end)
+    inline size_t searchOneIndex(const UInt8 * haystack, const UInt8 * haystack_end)
     {
         const size_t fallback_size = fallback_needles.size();
 
@@ -560,96 +651,6 @@ private:
     }
 };
 
-/// @todo store lowercase needle to speed up in case there are numerous occurrences of bigrams from needle in haystack
-template <bool CaseSensitive, bool ASCII, class FallbackSearcher>
-class VolnitskyBase
-{
-protected:
-    const UInt8 * const needle;
-    const size_t needle_size;
-    const UInt8 * const needle_end = needle + needle_size;
-    /// For how long we move, if the n-gram from haystack is not found in the hash table.
-    const size_t step = needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
-
-    /** max needle length is 255, max distinct ngrams for case-sensitive is (255 - 1), case-insensitive is 4 * (255 - 1)
-      *  storage of 64K ngrams (n = 2, 128 KB) should be large enough for both cases */
-    VolnitskyTraits::Offset hash[VolnitskyTraits::hash_size]; /// Hash table.
-
-    const bool fallback; /// Do we need to use the fallback algorithm.
-
-    FallbackSearcher fallback_searcher;
-
-public:
-    /** haystack_size_hint - the expected total size of the haystack for `search` calls. Optional (zero means unspecified).
-      * If you specify it small enough, the fallback algorithm will be used,
-      *  since it is considered that it's useless to waste time initializing the hash table.
-      */
-    VolnitskyBase(const char * const needle, const size_t needle_size, size_t haystack_size_hint = 0)
-        : needle{reinterpret_cast<const UInt8 *>(needle)}
-        , needle_size{needle_size}
-        , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle, needle_size}
-    {
-        if (fallback)
-            return;
-
-        memset(hash, 0, sizeof(hash));
-
-        auto callback = [this](const VolnitskyTraits::Ngram ngram, const int offset) { return this->putNGramBase(ngram, offset); };
-        /// int is used here because unsigned can't be used with condition like `i >= 0`, unsigned always >= 0
-        for (auto i = static_cast<int>(needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
-            VolnitskyTraits::putNGram<CaseSensitive, ASCII>(this->needle + i, i + 1, this->needle, callback);
-    }
-
-
-    /// If not found, the end of the haystack is returned.
-    const UInt8 * search(const UInt8 * const haystack, const size_t haystack_size) const
-    {
-        if (needle_size == 0)
-            return haystack;
-
-        const auto haystack_end = haystack + haystack_size;
-
-        if (fallback || haystack_size <= needle_size)
-            return fallback_searcher.search(haystack, haystack_end);
-
-        /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
-        const auto * pos = haystack + needle_size - sizeof(VolnitskyTraits::Ngram);
-        for (; pos <= haystack_end - needle_size; pos += step)
-        {
-            /// We look at all the cells of the hash table that can correspond to the n-gram from haystack.
-            for (size_t cell_num = VolnitskyTraits::toNGram(pos) % VolnitskyTraits::hash_size; hash[cell_num];
-                 cell_num = (cell_num + 1) % VolnitskyTraits::hash_size)
-            {
-                /// When found - compare bytewise, using the offset from the hash table.
-                const auto res = pos - (hash[cell_num] - 1);
-
-                /// pointer in the code is always padded array so we can use pagesafe semantics
-                if (fallback_searcher.compare(res))
-                    return res;
-            }
-        }
-
-        return fallback_searcher.search(pos - step + 1, haystack_end);
-    }
-
-    const char * search(const char * haystack, size_t haystack_size) const
-    {
-        return reinterpret_cast<const char *>(search(reinterpret_cast<const UInt8 *>(haystack), haystack_size));
-    }
-
-protected:
-    void putNGramBase(const VolnitskyTraits::Ngram ngram, const int offset)
-    {
-        /// Put the offset for the n-gram in the corresponding cell or the nearest free cell.
-        size_t cell_num = ngram % VolnitskyTraits::hash_size;
-
-        while (hash[cell_num])
-            cell_num = (cell_num + 1) % VolnitskyTraits::hash_size; /// Search for the next free cell.
-
-        hash[cell_num] = offset;
-    }
-};
 
 using Volnitsky = VolnitskyBase<true, true, ASCIICaseSensitiveStringSearcher>;
 using VolnitskyUTF8 = VolnitskyBase<true, false, ASCIICaseSensitiveStringSearcher>; /// exactly same as Volnitsky
