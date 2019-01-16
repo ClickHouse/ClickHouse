@@ -447,7 +447,10 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.skip_indices_changed)
         {
             ParserIndexDeclaration parser;
-            new_indices_ast = parseQuery(parser, metadata_diff.new_skip_indices, 0);
+            if (metadata_diff.new_skip_indices.empty())
+                new_indices_ast.reset();
+            else
+                new_indices_ast = parseQuery(parser, metadata_diff.new_skip_indices, 0);
         }
 
         storage_modifier = [&](IAST & ast)
@@ -464,7 +467,10 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
 
-            storage_ast.set(storage_ast.indexes, new_indices_ast);
+            if (new_indices_ast)
+                storage_ast.set(storage_ast.indexes, new_indices_ast);
+            else
+                storage_ast.indexes = nullptr;
         };
     }
 
@@ -3082,6 +3088,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         ASTPtr new_primary_key_ast = data.primary_key_ast;
         ASTPtr new_indexes_ast = data.skip_indexes_ast;
         params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
+        if (new_indexes_ast && new_indexes_ast->children.empty())
+        {
+            new_indexes_ast.reset();
+        }
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
@@ -3092,7 +3102,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
         if (new_indexes_ast.get() != data.skip_indexes_ast.get())
         {
-            if (new_indexes_ast && !new_indexes_ast->children.empty())
+            if (new_indexes_ast)
                 new_metadata.skip_indexes = serializeAST(*new_indexes_ast.get());
             else
                 new_metadata.skip_indexes = {};
