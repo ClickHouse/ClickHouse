@@ -33,6 +33,9 @@ struct DatabaseAndTableWithAlias
 
     /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
     void makeQualifiedName(const ASTPtr & ast) const;
+
+    /// Check if it satisfies another db_table name. @note opterion is not symmetric.
+    bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
 };
 
 void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip);
