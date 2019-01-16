@@ -53,7 +53,7 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -83,7 +83,7 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -109,7 +109,7 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -142,7 +142,7 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -319,28 +319,15 @@ struct MultiPositionImpl
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<String> & needles,
+        const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const size_t needles_size = needles.size();
-        const size_t haystack_offsets_size = haystack_offsets.size();
-        size_t k = 0;
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).searchAll(haystack_data, haystack_offsets);
-        for (size_t j = 0; j < haystack_offsets_size; ++j)
+        auto resCallback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
-            for (size_t i = 0; i < needles_size; ++i)
-            {
-                const char * ptr = result[k];
-                if (ptr)
-                {
-                    const char * start = reinterpret_cast<const char *>(&haystack_data[j == 0 ? 0 : haystack_offsets[j - 1]]);
-                    res[k] = 1 + Impl::countChars(start, ptr);
-                }
-                else
-                    res[k] = 0;
-                ++k;
-            }
-        }
+            return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
+        };
+
+        Impl::createMultiSearcherInBigHaystack(needles).searchAll(haystack_data, haystack_offsets, resCallback, res);
     }
 };
 
@@ -352,11 +339,10 @@ struct MultiSearchImpl
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<String> & needles,
+        const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets);
-        std::copy(result.begin(), result.end(), res.begin());
+        Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets, res);
     }
 };
 
@@ -368,11 +354,10 @@ struct FirstMatchImpl
     static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<String> & needles,
+        const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).searchIndex(haystack_data, haystack_offsets);
-        std::copy(result.begin(), result.end(), res.begin());
+        Impl::createMultiSearcherInBigHaystack(needles).searchIndex(haystack_data, haystack_offsets, res);
     }
 };
 
