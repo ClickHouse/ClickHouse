@@ -43,14 +43,17 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source_size % sizeof(T) != 0)
         throw Exception("Cannot delta compress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_COMPRESS);
 
-    const auto * source_with_type = reinterpret_cast<const T *>(source);
-    auto * dest_with_type = reinterpret_cast<T *>(dest);
+    T prev_src{};
+    const char * source_end = source + source_size;
+    while (source < source_end)
+    {
+        T curr_src = unalignedLoad<T>(source);
+        unalignedStore(dest, curr_src - prev_src);
+        prev_src = curr_src;
 
-    if (source_size > 0)
-        dest_with_type[0] = source_with_type[0];
-
-    for (size_t dest_index = 1, dest_end = source_size / sizeof(T); dest_index < dest_end; ++dest_index)
-        unalignedStore<T>(&dest_with_type[dest_index], source_with_type[dest_index] - source_with_type[dest_index - 1]);
+        source += sizeof(T);
+        dest += sizeof(T);
+    }
 }
 
 template <typename T>
@@ -59,14 +62,16 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
     if (source_size % sizeof(T) != 0)
         throw Exception("Cannot delta decompress, data size " + toString(source_size) + " is not aligned to " + toString(sizeof(T)), ErrorCodes::CANNOT_DECOMPRESS);
 
-    const auto * source_with_type = reinterpret_cast<const T *>(source);
-    auto * dest_with_type = reinterpret_cast<T *>(dest);
+    T accumulator{};
+    const char * source_end = source + source_size;
+    while (source < source_end)
+    {
+        accumulator += unalignedLoad<T>(source);
+        unalignedStore(dest, accumulator);
 
-    if (source_size > 0)
-        dest_with_type[0] = source_with_type[0];
-
-    for (size_t dest_index = 1, dest_end = source_size / sizeof(T); dest_index < dest_end; ++dest_index)
-        unalignedStore<T>(&dest_with_type[dest_index], source_with_type[dest_index] + dest_with_type[dest_index - 1]);
+        source += sizeof(T);
+        dest += sizeof(T);
+    }
 }
 
 }
