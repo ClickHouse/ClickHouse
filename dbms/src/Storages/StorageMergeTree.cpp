@@ -219,6 +219,11 @@ void StorageMergeTree::alter(
     ASTPtr new_indexes_ast = data.skip_indexes_ast;
     params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
+    if (new_indexes_ast && new_indexes_ast->children.empty())
+    {
+        new_indexes_ast.reset();
+    }
+
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
@@ -242,10 +247,10 @@ void StorageMergeTree::alter(
 
         if (new_indexes_ast.get() != data.skip_indexes_ast.get())
         {
-            if (new_indexes_ast && !new_indexes_ast->children.empty())
-                storage_ast.set(storage_ast.indexes, new_indexes_ast);
+            if (new_indexes_ast == nullptr)
+                storage_ast.indexes = nullptr;
             else
-                storage_ast.set(storage_ast.indexes, nullptr);
+                storage_ast.set(storage_ast.indexes, new_indexes_ast);
         }
     };
 

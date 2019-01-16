@@ -355,7 +355,7 @@ void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
     {
         if (!only_check)
         {
-            skip_indexes_ast = indexes_asts;
+            skip_indexes_ast = nullptr;
             indexes.clear();
         }
         return;
