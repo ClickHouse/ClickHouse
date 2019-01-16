@@ -5,6 +5,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Poco/String.h>
+
 
 namespace DB
 {
@@ -286,7 +288,7 @@ ASTPtr ASTPair::clone() const
 
 void ASTPair::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_identifier : "") << first << " ";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
     second->formatImpl(settings, state, frame);
     settings.ostr << (settings.hilite ? hilite_none : "");
 }
@@ -314,7 +316,7 @@ ASTPtr ASTKeyValueFunction::clone() const
 
 void ASTKeyValueFunction::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << name << (settings.hilite ? hilite_none : "") << "(";
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << "(";
     elements->formatImpl(settings, state, frame);
     settings.ostr << ")";
     settings.ostr << (settings.hilite ? hilite_none : "");
