@@ -27,4 +27,7 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     dpkg -i package_folder/clickhouse-server_*.deb;  \
     dpkg -i package_folder/clickhouse-client_*.deb; \
     dpkg -i package_folder/clickhouse-test_*.deb; \
+    echo "TSAN_OPTIONS='halt_on_error=1'" >> /etc/init.d/clickhouse-server; \
+    echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/init.d/clickhouse-server; \
+    echo "ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/init.d/clickhouse-server; \
     service clickhouse-server start && sleep 1 && ./stress --output-folder test_output
