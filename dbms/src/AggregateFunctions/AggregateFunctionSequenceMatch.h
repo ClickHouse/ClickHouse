@@ -329,15 +329,27 @@ private:
     }
 
 protected:
+    /// Uses a DFA based approach in order to better handle patterns without
+    /// time assertions.
+    ///
+    /// NOTE: This implementation relies on the assumption that the pattern are *small*.
+    ///
+    /// This algorithm performs in O(mn) (with m the number of DFA states and N the number
+    /// of events) with a memory consumption and memory allocations in O(m). It means that
+    /// if n >>> m (which is expected to be the case), this algorithm can be considered linear.
     template <typename T>
     bool dfa_match(T & events_it, const T events_end) const
     {
         using ActiveStates = std::vector<bool>;
 
+        /// Those two vectors keep track of which states should be considered for the current
+        /// event as well as the states which should be considered for the next event.
         ActiveStates active_states(dfa_states.size(), false);
         ActiveStates next_active_states(dfa_states.size(), false);
         active_states[0] = true;
 
+        /// Keeps track of dead-ends in order not to iterate over all the events to realize that
+        /// the match failed.
         size_t n_active = 1;
 
         for (/* empty */; events_it != events_end && n_active > 0 && !active_states.back(); ++events_it) {
@@ -508,8 +520,17 @@ protected:
 private:
     enum class DFATransition : char
     {
+        ///   .-------.
+        ///   |       |
+        ///   `-------'
         None,
+        ///   .-------.  (?[0-9])
+        ///   |       | ----------
+        ///   `-------'
         SpecificEvent,
+        ///   .-------.      .
+        ///   |       | ----------
+        ///   `-------'
         AnyEvent,
     };
 
@@ -519,14 +540,22 @@ private:
             : has_kleene{has_kleene}, event{0}, transition{DFATransition::None}
         {}
 
+        ///   .-------.
+        ///   |       | - - -
+        ///   `-------'
+        ///     |_^
         bool has_kleene;
+        /// In the case of a state transitions with a `SpecificEvent`,
+        /// `event` contains the value of the event.
         uint32_t event;
+        /// The kind of transition out of this state.
         DFATransition transition;
     };
 
     using DFAStates = std::vector<DFAState>;
 
 protected:
+    /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
     bool pattern_has_time;
 
 private:
