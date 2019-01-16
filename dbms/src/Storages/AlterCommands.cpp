@@ -321,7 +321,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
         if (indexes_decl_ast)
             new_indexes_decl_ast = indexes_decl_ast->clone();
         else
-            new_indexes_decl_ast = ASTExpressionList().ptr();
+            new_indexes_decl_ast = std::make_shared<ASTExpressionList>();
 
         if (std::any_of(
                 new_indexes_decl_ast->children.cbegin(),
@@ -363,7 +363,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
         if (indexes_decl_ast)
             new_indexes_decl_ast = indexes_decl_ast->clone();
         else
-            new_indexes_decl_ast = ASTExpressionList().ptr();
+            new_indexes_decl_ast = std::make_shared<ASTExpressionList>();
 
         auto erase_it = std::find_if(
                 new_indexes_decl_ast->children.begin(),
