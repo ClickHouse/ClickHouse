@@ -267,7 +267,7 @@ struct PositionImpl
         }
     }
 
-    /// Find many substrings in one line.
+    /// Find many substrings in single string.
     static void constant_vector(
         const String & haystack,
         const ColumnString::Chars & needle_data,
@@ -316,7 +316,7 @@ struct MultiPositionImpl
 {
     using ResultType = UInt64;
 
-    static void multi_constant_vector(
+    static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<String> & needles,
@@ -325,7 +325,7 @@ struct MultiPositionImpl
         const size_t needles_size = needles.size();
         const size_t haystack_offsets_size = haystack_offsets.size();
         size_t k = 0;
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).search_all(haystack_data, haystack_offsets);
+        const auto result = Impl::createMultiSearcherInBigHaystack(needles).searchAll(haystack_data, haystack_offsets);
         for (size_t j = 0; j < haystack_offsets_size; ++j)
         {
             for (size_t i = 0; i < needles_size; ++i)
@@ -349,7 +349,7 @@ struct MultiSearchImpl
 {
     using ResultType = UInt64;
 
-    static void multi_constant_vector(
+    static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<String> & needles,
@@ -365,13 +365,13 @@ struct FirstMatchImpl
 {
     using ResultType = UInt64;
 
-    static void multi_constant_vector(
+    static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<String> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).search_index(haystack_data, haystack_offsets);
+        const auto result = Impl::createMultiSearcherInBigHaystack(needles).searchIndex(haystack_data, haystack_offsets);
         std::copy(result.begin(), result.end(), res.begin());
     }
 };
@@ -543,7 +543,7 @@ struct MatchImpl
                             size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
 
                             /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
-                              *  so that it can match when `required_substring` occurs into the line several times,
+                              *  so that it can match when `required_substring` occurs into the string several times,
                               *  and at the first occurrence, the regexp is not a match.
                               */
 
@@ -875,7 +875,7 @@ struct ReplaceStringImpl
             if (i == offsets.size())
                 break;
 
-            /// Is it true that this line no longer needs to perform transformations.
+            /// Is it true that this string no longer needs to perform transformations.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not go through the boundaries of strings.
@@ -964,7 +964,7 @@ struct ReplaceStringImpl
             memcpy(&res_data[res_offset], pos, match - pos);
             res_offset += (match - pos);
 
-            /// Is it true that this line no longer needs to perform conversions.
+            /// Is it true that this string no longer needs to perform conversions.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not pass through the boundaries of strings.

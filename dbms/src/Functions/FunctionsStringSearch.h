@@ -258,7 +258,7 @@ public:
         vec_res.resize(column_haystack_size * refs.size());
 
         if (col_haystack_vector)
-            Impl::multi_constant_vector(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
+            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
@@ -339,7 +339,7 @@ public:
         vec_res.resize(column_haystack_size);
 
         if (col_haystack_vector)
-            Impl::multi_constant_vector(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
+            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
