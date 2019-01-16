@@ -10,3 +10,5 @@ INSERT INTO test.rollup_having VALUES ('a', 'b');
 
 SELECT a, b, count(*) FROM test.rollup_having GROUP BY a, b WITH ROLLUP HAVING a IS NOT NULL;
 SELECT a, b, count(*) FROM test.rollup_having GROUP BY a, b WITH ROLLUP HAVING a IS NOT NULL and b IS NOT NULL;
+
+DROP TABLE test.rollup_having;
