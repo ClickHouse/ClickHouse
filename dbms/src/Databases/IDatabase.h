@@ -68,6 +68,12 @@ public:
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
+    /// Load a set of existing dictionaries.
+    virtual void loadDictionaries(
+        const Context & context,
+        ThreadPool * thread_pool,
+        bool has_force_restore_data_flag) = 0;
+
     /// Check the existence of the table.
     virtual bool isTableExist(
         const Context & context,
