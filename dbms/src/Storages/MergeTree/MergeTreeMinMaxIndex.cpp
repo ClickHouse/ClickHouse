@@ -174,7 +174,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     DataTypes data_types;
 
     Poco::Logger * log = &Poco::Logger::get("minmax_idx");
-    LOG_DEBUG(log, "new minmax index");
+    LOG_DEBUG(log, "new minmax index" << node->name);
     for (size_t i = 0; i < expr_list->children.size(); ++i)
     {
         const auto & column = sample.getByPosition(i);

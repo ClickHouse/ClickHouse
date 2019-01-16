@@ -28,6 +28,9 @@ public:
         COMMENT_COLUMN,
         MODIFY_ORDER_BY,
 
+        ADD_INDEX,
+        DROP_INDEX,
+
         DROP_PARTITION,
         ATTACH_PARTITION,
         REPLACE_PARTITION,
@@ -57,6 +60,15 @@ public:
     /** For MODIFY ORDER BY
      */
     ASTPtr order_by;
+
+    /** The ADD INDEX query stores the IndexDeclaration there.
+     */
+    ASTPtr index_decl;
+
+    /** The ADD INDEX query stores the name of the index following AFTER.
+     *  The DROP INDEX query stores the name for deletion.
+     */
+     ASTPtr index;
 
     /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
