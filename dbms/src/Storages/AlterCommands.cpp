@@ -346,6 +346,7 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
                 throw Exception("Wrong index name. Cannot find index `" + after_index_name + "` to insert after.",
                         ErrorCodes::LOGICAL_ERROR);
             }
+            ++insert_it;
         }
 
         new_indexes_decl_ast->children.emplace(insert_it, index_decl);
