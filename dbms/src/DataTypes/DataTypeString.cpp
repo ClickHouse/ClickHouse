@@ -14,7 +14,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #endif
 
@@ -129,7 +129,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
-#if __SSE2__
+#ifdef __SSE2__
             /// An optimistic branch in which more efficient copying is possible.
             if (offset + 16 * UNROLL_TIMES <= data.allocated_bytes() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {

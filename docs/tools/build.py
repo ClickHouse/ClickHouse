@@ -99,7 +99,7 @@ def build_for_lang(lang, args):
             site_dir=os.path.join(args.output_dir, lang),
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2018 Yandex LLC',
+            copyright='©2016–2019 Yandex LLC',
             use_directory_urls=True,
             repo_name='yandex/ClickHouse',
             repo_url='https://github.com/yandex/ClickHouse/',

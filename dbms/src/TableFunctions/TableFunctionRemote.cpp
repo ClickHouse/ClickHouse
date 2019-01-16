@@ -1,3 +1,5 @@
+#include "TableFunctionRemote.h"
+
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,10 +10,8 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
-
-#include <TableFunctions/TableFunctionRemote.h>
+#include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseRemoteDescription.h>
 
 
 namespace DB
@@ -65,9 +65,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
     else
     {
-        if (auto ast_cluster = typeid_cast<const ASTIdentifier *>(args[arg_num].get()))
-            cluster_name = ast_cluster->name;
-        else
+        if (!getIdentifierName(args[arg_num], cluster_name))
             cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
@@ -132,9 +130,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
     /// We need to mark them as the name of the database or table, because the default value is column.
-    for (auto & arg : args)
-        if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
-            id->setSpecial();
+    for (auto ast : args)
+        setIdentifierSpecial(ast);
 
     ClusterPtr cluster;
     if (!cluster_name.empty())

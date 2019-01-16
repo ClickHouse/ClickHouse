@@ -229,7 +229,7 @@ private:
                 report(info_per_interval);
                 delay_watch.restart();
             }
-        };
+        }
 
         return true;
     }
@@ -324,7 +324,7 @@ private:
 
         double seconds = watch.elapsedSeconds();
 
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         info_per_interval.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
         info_total.add(seconds, progress.rows, progress.bytes, info.rows, info.bytes);
     }
@@ -332,7 +332,7 @@ private:
 
     void report(Stats & info)
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         /// Avoid zeros, nans or exceptions
         if (0 == info.queries)
@@ -369,7 +369,7 @@ private:
     {
         WriteBufferFromFile json_out(filename);
 
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         auto print_key_value = [&](auto key, auto value, bool with_comma = true)
         {
@@ -503,6 +503,4 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
         std::cerr << getCurrentExceptionMessage(print_stacktrace, true) << std::endl;
         return getCurrentExceptionCode();
     }
-
-    return 0;
 }

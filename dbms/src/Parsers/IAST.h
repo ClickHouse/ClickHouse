@@ -40,6 +40,8 @@ class ISemantic
 {
 public:
     virtual ~ISemantic() = default;
+    ISemantic() = default;
+    ISemantic(const ISemantic &) = default;
     virtual SemanticPtr clone() const = 0;
 };
 
@@ -59,6 +61,9 @@ public:
     SemanticPtr semantic;
 
     virtual ~IAST() = default;
+    IAST() = default;
+    IAST(const IAST &) = default;
+    IAST & operator=(const IAST &) = default;
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;

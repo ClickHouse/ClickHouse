@@ -52,7 +52,7 @@ private:
     String name;
     String source_database;
     OptimizedRegularExpression table_name_regexp;
-    const Context & context;
+    Context global_context;
 
     using StorageListWithLocks = std::list<std::pair<StoragePtr, TableStructureReadLockPtr>>;
 
