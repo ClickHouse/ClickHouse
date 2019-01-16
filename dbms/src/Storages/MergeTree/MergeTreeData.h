@@ -487,6 +487,7 @@ public:
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
+        const ASTPtr & new_indices_ast,
         bool skip_sanity_checks);
 
     /// Freezes all parts.
@@ -739,7 +740,8 @@ private:
     /// Files to be deleted are mapped to an empty string in out_rename_map.
     /// If part == nullptr, just checks that all type conversions are possible.
     void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-        ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
+                                 const ASTPtr & old_indices_ast, const ASTPtr & new_indices_ast,
+                                 ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
     void calculateColumnSizesImpl();
