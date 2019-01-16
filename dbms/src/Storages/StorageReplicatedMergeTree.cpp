@@ -3091,7 +3091,12 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         if (new_order_by_ast.get() != data.order_by_ast.get())
             new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
         if (new_indexes_ast.get() != data.skip_indexes_ast.get())
-            new_metadata.skip_indexes = serializeAST(*new_indexes_ast.get());
+        {
+            if (new_indexes_ast && !new_indexes_ast->children.empty())
+                new_metadata.skip_indexes = serializeAST(*new_indexes_ast.get());
+            else
+                new_metadata.skip_indexes = {};
+        }
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
