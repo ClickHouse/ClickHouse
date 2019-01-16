@@ -1042,7 +1042,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     auto new_columns = getColumns();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    ASTPtr new_indexes_ast = skip_indexes_ast->clone();
+    ASTPtr new_indexes_ast = skip_indexes_ast;
     commands.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
     /// Set of columns that shouldn't be altered.
@@ -1130,11 +1130,13 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     NameToNameMap unused_map;
     bool unused_bool;
 
-    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(), unused_expression, unused_map, unused_bool);
+    createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
+            skip_indexes_ast, new_indexes_ast,unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
+    const ASTPtr & old_indices_ast, const ASTPtr & new_indices_ast, ExpressionActionsPtr & out_expression,
+    NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     out_expression = nullptr;
     out_rename_map = {};
@@ -1147,6 +1149,22 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     /// For every column that need to be converted: source column name, column name of calculated expression for conversion.
     std::vector<std::pair<String, String>> conversions;
+
+
+    /// Remove old indices
+    std::set<String> new_indices;
+    for (const auto & index_decl : new_indices_ast->children)
+        new_indices.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
+
+    for (const auto & index_decl : old_indices_ast->children)
+    {
+        const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
+        if (!new_indices.count(index.name))
+        {
+            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+        }
+    }
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -1278,12 +1296,15 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
+    const ASTPtr & new_indices_ast,
     bool skip_sanity_checks)
 {
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
-    createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
+    createConvertExpression(part, part->columns, new_columns,
+            skip_indexes_ast, new_indices_ast,
+            expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();
     size_t num_files_to_remove = 0;

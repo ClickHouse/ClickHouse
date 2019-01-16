@@ -331,37 +331,44 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
                                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        auto insert_it = indexes_decl_ast->children.end();
+        auto new_indexes_decl_ast = indexes_decl_ast->clone();
+        auto insert_it = new_indexes_decl_ast->children.end();
 
         if (!after_index_name.empty())
         {
             insert_it = std::find_if(
-                    indexes_decl_ast->children.begin(),
-                    indexes_decl_ast->children.end(),
+                    new_indexes_decl_ast->children.begin(),
+                    new_indexes_decl_ast->children.end(),
                     [this](const ASTPtr & index_ast) {
                         return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == after_index_name;
                     });
-            if (insert_it == indexes_decl_ast->children.end()) {
+            if (insert_it == new_indexes_decl_ast->children.end()) {
                 throw Exception("Wrong index name. Cannot find index `" + after_index_name + "` to insert after.",
                         ErrorCodes::LOGICAL_ERROR);
             }
         }
-        indexes_decl_ast->children.emplace(insert_it, index_decl);
+
+        new_indexes_decl_ast->children.emplace(insert_it, index_decl);
+        indexes_decl_ast = new_indexes_decl_ast;
     }
     else if (type == DROP_INDEX)
     {
+        auto new_indexes_decl_ast = indexes_decl_ast->clone();
+
         auto erase_it = std::find_if(
-                indexes_decl_ast->children.begin(),
-                indexes_decl_ast->children.end(),
+                new_indexes_decl_ast->children.begin(),
+                new_indexes_decl_ast->children.end(),
                 [this](const ASTPtr & index_ast) {
                     return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
                 });
-        if (erase_it == indexes_decl_ast->children.end())
+        if (erase_it == new_indexes_decl_ast->children.end())
         {
             throw Exception("Wrong index name. Cannot find index `" + index_name + "` to drop.",
                     ErrorCodes::LOGICAL_ERROR);
         }
-        indexes_decl_ast->children.erase(erase_it);
+
+        new_indexes_decl_ast->children.erase(erase_it);
+        indexes_decl_ast = new_indexes_decl_ast;
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
@@ -383,7 +390,7 @@ void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & ord
     auto new_columns_description = columns_description;
     auto new_order_by_ast = order_by_ast;
     auto new_primary_key_ast = primary_key_ast;
-    auto new_indexes_decl_ast = indexes_decl_ast->clone();
+    auto new_indexes_decl_ast = indexes_decl_ast;
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
