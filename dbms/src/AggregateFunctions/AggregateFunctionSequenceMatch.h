@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/RadixSort.h>
 #include <ext/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
@@ -25,17 +26,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// helper type for comparing `std::pair`s using solely the .first member
-template <template <typename> class Comparator>
-struct ComparePairFirst final
-{
-    template <typename T1, typename T2>
-    bool operator()(const std::pair<T1, T2> & lhs, const std::pair<T1, T2> & rhs) const
-    {
-        return Comparator<T1>{}(lhs.first, rhs.first);
-    }
-};
-
 struct AggregateFunctionSequenceMatchData final
 {
     static constexpr auto max_events = 32;
@@ -43,11 +33,33 @@ struct AggregateFunctionSequenceMatchData final
     using Timestamp = std::uint32_t;
     using Events = std::bitset<max_events>;
     using TimestampEvents = std::pair<Timestamp, Events>;
-    using Comparator = ComparePairFirst<std::less>;
 
     bool sorted = true;
     static constexpr size_t bytes_in_arena = 64;
     PODArray<TimestampEvents, bytes_in_arena, AllocatorWithStackMemory<Allocator<false>, bytes_in_arena>> events_list;
+
+
+    struct RadixSortAllocator : private Allocator<false>
+    {
+        void * allocate(size_t size) { return alloc(size); }
+        void deallocate(void * ptr, size_t size) { free(ptr, size); }
+    };
+
+    struct RadixSortTraits
+    {
+        using Element = TimestampEvents;
+        using Key = Timestamp;
+        using CountType = uint32_t;
+        using KeyBits = Key;
+
+        static constexpr size_t PART_SIZE_BITS = 8;
+
+        using Transform = RadixSortIdentityTransform<KeyBits>;
+        using Allocator = RadixSortAllocator;
+
+        /// The function to get the key from an array element.
+        static Key & extractKey(Element & elem) { return elem.first; }
+    };
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -67,20 +79,22 @@ struct AggregateFunctionSequenceMatchData final
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+        {
+            RadixSort<RadixSortTraits>::execute(events_list.data(), events_list.size());
+        }
         else
         {
-            const auto begin = std::begin(events_list);
-            const auto middle = std::next(begin, size);
-            const auto end = std::end(events_list);
+            const auto begin = events_list.data();
+            const auto middle = begin + size;
+            const auto end = middle + other.events_list.size();
 
             if (!sorted)
-                std::sort(begin, middle, Comparator{});
+                RadixSort<RadixSortTraits>::execute(begin, size);
 
             if (!other.sorted)
-                std::sort(middle, end, Comparator{});
+                RadixSort<RadixSortTraits>::execute(middle, other.events_list.size());
 
-            std::inplace_merge(begin, middle, end, Comparator{});
+            std::inplace_merge(begin, middle, end, [](auto & a, auto & b) { return a.first < b.first; });
         }
 
         sorted = true;
@@ -90,7 +104,7 @@ struct AggregateFunctionSequenceMatchData final
     {
         if (!sorted)
         {
-            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+            RadixSort<RadixSortTraits>::execute(events_list.data(), events_list.size());
             sorted = true;
         }
     }
