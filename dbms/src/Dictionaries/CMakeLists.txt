@@ -37,7 +37,7 @@ if(USE_POCO_MONGODB)
 endif()
 
 if(USE_POCO_REDIS)
-    target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_Redis_LIBRARY})
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${Poco_Redis_INCLUDE_DIR})
 endif()
 
 add_subdirectory(Embedded)
