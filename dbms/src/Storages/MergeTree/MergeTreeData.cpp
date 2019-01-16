@@ -353,6 +353,11 @@ void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
 {
     if (!indexes_asts)
     {
+        if (!only_check)
+        {
+            skip_indexes_ast = indexes_asts;
+            indexes.clear();
+        }
         return;
     }
 
