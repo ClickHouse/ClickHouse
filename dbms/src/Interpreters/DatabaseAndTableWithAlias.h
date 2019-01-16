@@ -2,8 +2,9 @@
 
 #include <memory>
 #include <optional>
+
 #include <Core/Types.h>
-#include <Parsers/ASTSelectQuery.h>
+
 
 namespace DB
 {

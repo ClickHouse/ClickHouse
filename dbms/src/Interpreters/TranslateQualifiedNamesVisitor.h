@@ -2,6 +2,7 @@
 
 #include <vector>
 
+#include <Core/Names.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
