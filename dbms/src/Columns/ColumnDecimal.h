@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include <Columns/IColumn.h>
+#include <Columns/ColumnVectorHelper.h>
 
 
 namespace DB
@@ -53,13 +54,13 @@ private:
 
 /// A ColumnVector for Decimals
 template <typename T>
-class ColumnDecimal final : public COWPtrHelper<IColumn, ColumnDecimal<T>>
+class ColumnDecimal final : public COWPtrHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
     static_assert(IsDecimalNumber<T>);
 
 private:
     using Self = ColumnDecimal;
-    friend class COWPtrHelper<IColumn, Self>;
+    friend class COWPtrHelper<ColumnVectorHelper, Self>;
 
 public:
     using Container = DecimalPaddedPODArray<T>;

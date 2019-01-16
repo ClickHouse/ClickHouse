@@ -19,7 +19,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
+#include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -185,6 +187,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     {
         if (!internal)
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
+
+        if (settings.allow_experimental_multiple_joins_emulation)
+        {
+            JoinToSubqueryTransformVisitor::Data join_to_subs_data;
+            JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
+            if (join_to_subs_data.done)
+                logQuery(queryToString(*ast), context);
+        }
 
         /// Check the limits.
         checkASTSizeLimits(*ast, settings);
@@ -489,7 +499,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->format).name
+                ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());

@@ -6,7 +6,7 @@
 
 #include <Common/HTMLForm.h>
 #include <Common/setThreadName.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <Interpreters/InterserverIOHandler.h>

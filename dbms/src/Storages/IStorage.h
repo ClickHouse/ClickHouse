@@ -6,7 +6,6 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
 #include <shared_mutex>
@@ -215,7 +214,7 @@ public:
     /** Clear the table data and leave it empty.
       * Must be called under lockForAlter.
       */
-    virtual void truncate(const ASTPtr & /*query*/)
+    virtual void truncate(const ASTPtr & /*query*/, const Context & /* context */)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -234,20 +233,7 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
-    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
-    {
-        for (const auto & param : params)
-        {
-            if (param.is_mutable())
-                throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-        }
-
-        auto lock = lockStructureForAlter();
-        auto new_columns = getColumns();
-        params.apply(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
-        setColumns(std::move(new_columns));
-    }
+    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context);
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.

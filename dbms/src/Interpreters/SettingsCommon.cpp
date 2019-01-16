@@ -355,10 +355,9 @@ String SettingTotalsMode::toString() const
         case TotalsMode::AFTER_HAVING_EXCLUSIVE: return "after_having_exclusive";
         case TotalsMode::AFTER_HAVING_INCLUSIVE: return "after_having_inclusive";
         case TotalsMode::AFTER_HAVING_AUTO:      return "after_having_auto";
-
-        default:
-            throw Exception("Unknown TotalsMode enum value", ErrorCodes::UNKNOWN_TOTALS_MODE);
     }
+
+    __builtin_unreachable();
 }
 
 void SettingTotalsMode::set(TotalsMode x)
@@ -457,58 +456,6 @@ void SettingOverflowMode<enable_mode_any>::write(WriteBuffer & buf) const
 
 template struct SettingOverflowMode<false>;
 template struct SettingOverflowMode<true>;
-
-
-CompressionMethod SettingCompressionMethod::getCompressionMethod(const String & s)
-{
-    if (s == "lz4")
-        return CompressionMethod::LZ4;
-    if (s == "lz4hc")
-        return CompressionMethod::LZ4HC;
-    if (s == "zstd")
-        return CompressionMethod::ZSTD;
-
-    throw Exception("Unknown compression method: '" + s + "', must be one of 'lz4', 'lz4hc', 'zstd'", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-}
-
-String SettingCompressionMethod::toString() const
-{
-    const char * strings[] = { nullptr, "lz4", "lz4hc", "zstd" };
-
-    if (value < CompressionMethod::LZ4 || value > CompressionMethod::ZSTD)
-        throw Exception("Unknown compression method", ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-
-    return strings[static_cast<size_t>(value)];
-}
-
-void SettingCompressionMethod::set(CompressionMethod x)
-{
-    value = x;
-    changed = true;
-}
-
-void SettingCompressionMethod::set(const Field & x)
-{
-    set(safeGet<const String &>(x));
-}
-
-void SettingCompressionMethod::set(const String & x)
-{
-    set(getCompressionMethod(x));
-}
-
-void SettingCompressionMethod::set(ReadBuffer & buf)
-{
-    String x;
-    readBinary(x, buf);
-    set(x);
-}
-
-void SettingCompressionMethod::write(WriteBuffer & buf) const
-{
-    writeBinary(toString(), buf);
-}
-
 
 DistributedProductMode SettingDistributedProductMode::getDistributedProductMode(const String & s)
 {

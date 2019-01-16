@@ -6,7 +6,6 @@
 #include <Storages/StorageHDFS.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadBufferFromHDFS.h>
 #include <Formats/FormatFactory.h>
@@ -15,8 +14,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Poco/Path.h>
-#include <TableFunctions/parseRemoteDescription.h>
-#include <Common/typeid_cast.h>
+#include <Common/parseRemoteDescription.h>
 
 
 namespace DB
@@ -39,38 +37,36 @@ StorageHDFS::StorageHDFS(const String & uri_,
 
 namespace
 {
-    class StorageHDFSBlockInputStream : public IProfilingBlockInputStream
+    class HDFSBlockInputStream : public IProfilingBlockInputStream
     {
     public:
-        StorageHDFSBlockInputStream(const String & uri,
+        HDFSBlockInputStream(const String & uri,
             const String & format,
-            const String & name_,
             const Block & sample_block,
             const Context & context,
             size_t max_block_size)
-            : name(name_)
         {
             // Assume no query and fragment in uri, todo, add sanity check
-            String fuzzyFileNames;
-            String uriPrefix = uri.substr(0, uri.find_last_of('/'));
-            if (uriPrefix.length() == uri.length())
+            String glob_file_names;
+            String url_prefix = uri.substr(0, uri.find_last_of('/'));
+            if (url_prefix.length() == uri.length())
             {
-                fuzzyFileNames = uri;
-                uriPrefix.clear();
+                glob_file_names = uri;
+                url_prefix.clear();
             }
             else
             {
-                uriPrefix += "/";
-                fuzzyFileNames = uri.substr(uriPrefix.length());
+                url_prefix += "/";
+                glob_file_names = uri.substr(url_prefix.length());
             }
 
-            std::vector<String> fuzzyNameList = parseRemoteDescription(fuzzyFileNames, 0, fuzzyFileNames.length(), ',' , 100/* hard coded max files */);
+            std::vector<String> glob_names_list = parseRemoteDescription(glob_file_names, 0, glob_file_names.length(), ',' , 100/* hard coded max files */);
 
             BlockInputStreams inputs;
 
-            for (auto & name: fuzzyNameList)
+            for (const auto & name : glob_names_list)
             {
-                std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(uriPrefix + name);
+                std::unique_ptr<ReadBuffer> read_buf = std::make_unique<ReadBufferFromHDFS>(url_prefix + name);
 
                 inputs.emplace_back(
                     std::make_shared<OwningBlockInputStream<ReadBuffer>>(
@@ -93,7 +89,7 @@ namespace
 
         String getName() const override
         {
-            return name;
+            return "HDFS";
         }
 
         Block readImpl() override
@@ -113,14 +109,13 @@ namespace
 
         void readSuffixImpl() override
         {
-            auto explicitReader = dynamic_cast<UnionBlockInputStream *>(reader.get());
-            if (explicitReader) explicitReader->cancel(false); // skip Union read suffix assertion
+            if (auto concrete_reader = dynamic_cast<UnionBlockInputStream *>(reader.get()))
+                concrete_reader->cancel(false); // skip Union read suffix assertion
 
             reader->readSuffix();
         }
 
     private:
-        String name;
         BlockInputStreamPtr reader;
     };
 
@@ -135,10 +130,9 @@ BlockInputStreams StorageHDFS::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<StorageHDFSBlockInputStream>(
+    return {std::make_shared<HDFSBlockInputStream>(
         uri,
         format_name,
-        getName(),
         getSampleBlock(),
         context,
         max_block_size)};
@@ -149,7 +143,6 @@ void StorageHDFS::rename(const String & /*new_path_to_db*/, const String & /*new
 BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     throw Exception("StorageHDFS write is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
-    return {};
 }
 
 void registerStorageHDFS(StorageFactory & factory)

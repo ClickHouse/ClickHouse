@@ -3,6 +3,13 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+if(MAKE_STATIC_LIBRARIES)
+    set(MAX_LINKER_MEMORY 3500)
+else()
+    set(MAX_LINKER_MEMORY 2500)
+endif()
+include(../cmake/limit_jobs.cmake)
+
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)

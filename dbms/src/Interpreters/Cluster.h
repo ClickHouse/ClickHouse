@@ -62,6 +62,8 @@ public:
         UInt32 replica_num;
         /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local;
+        bool user_specified = false;
+
         Protocol::Compression compression = Protocol::Compression::Enable;
         Protocol::Secure secure = Protocol::Secure::Disable;
 

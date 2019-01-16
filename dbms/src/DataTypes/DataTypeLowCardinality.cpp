@@ -508,6 +508,10 @@ void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
+    /// Do not write anything for empty column. (May happen while writing empty arrays.)
+    if (limit == 0)
+        return;
+
     auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
@@ -709,7 +713,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min(limit, low_cardinality_state->num_pending_rows);
+        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
         readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
@@ -766,7 +770,7 @@ namespace
         void operator()()
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
-                column = creator((ColumnVector<T> *)(nullptr));
+                column = creator(static_cast<ColumnVector<T> *>(nullptr));
         }
     };
 }
@@ -780,13 +784,13 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         type = nullable_type->getNestedType().get();
 
     if (isString(type))
-        return creator((ColumnString *)(nullptr));
+        return creator(static_cast<ColumnString *>(nullptr));
     if (isFixedString(type))
-        return creator((ColumnFixedString *)(nullptr));
+        return creator(static_cast<ColumnFixedString *>(nullptr));
     if (typeid_cast<const DataTypeDate *>(type))
-        return creator((ColumnVector<UInt16> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
-        return creator((ColumnVector<UInt32> *)(nullptr));
+        return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     if (isNumber(type))
     {
         MutableColumnUniquePtr column;

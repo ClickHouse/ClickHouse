@@ -19,7 +19,7 @@
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/HexWriteBuffer.h>
@@ -99,7 +99,7 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : context(context_),
+    : global_context(context_),
     merging_params(merging_params_),
     index_granularity(settings_.index_granularity),
     settings(settings_),
@@ -126,8 +126,8 @@ MergeTreeData::MergeTreeData(
             && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        auto syntax = SyntaxAnalyzer(context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
-        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, context)
+        auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
+        columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
             .getRequiredSourceColumns();
     }
 
@@ -174,7 +174,9 @@ MergeTreeData::MergeTreeData(
     else if (Poco::File(version_file_path).exists())
     {
         ReadBufferFromFile buf(version_file_path);
-        readIntText(format_version, buf);
+        UInt32 read_format_version;
+        readIntText(read_format_version, buf);
+        format_version = read_format_version;
         if (!buf.eof())
             throw Exception("Bad version file: " + version_file_path, ErrorCodes::CORRUPTED_DATA);
     }
@@ -280,8 +282,8 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = SyntaxAnalyzer(context, {}).analyze(added_key_column_expr_list, all_columns);
-            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, context)
+            auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
+            Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
                 .getRequiredSourceColumns();
 
             NamesAndTypesList deleted_columns;
@@ -303,17 +305,17 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         }
     }
 
-    auto new_sorting_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_sorting_key_expr_list, all_columns);
-    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
+    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context).analyze(new_sorting_key_expr_list, all_columns);
+    auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
         .getActions(false);
     auto new_sorting_key_sample =
-        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, context)
+        ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
         .getActions(true)->getSampleBlock();
 
     checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
 
-    auto new_primary_key_syntax = SyntaxAnalyzer(context, {}).analyze(new_primary_key_expr_list, all_columns);
-    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, context)
+    auto new_primary_key_syntax = SyntaxAnalyzer(global_context).analyze(new_primary_key_expr_list, all_columns);
+    auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, global_context)
         .getActions(false);
 
     Block new_primary_key_sample;
@@ -374,8 +376,8 @@ void MergeTreeData::initPartitionKey()
         return;
 
     {
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
-        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, context).getActions(false);
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(partition_key_expr_list, getColumns().getAllPhysical());
+        partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
     }
 
     for (const ASTPtr & ast : partition_key_expr_list->children)
@@ -388,7 +390,7 @@ void MergeTreeData::initPartitionKey()
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_key_expr->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context);
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, global_context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -547,16 +549,15 @@ String MergeTreeData::MergingParams::getModeName() const
         case Replacing:     return "Replacing";
         case Graphite:      return "Graphite";
         case VersionedCollapsing: return "VersionedCollapsing";
-
-        default:
-            throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(mode), ErrorCodes::LOGICAL_ERROR);
     }
+
+    __builtin_unreachable();
 }
 
 
 Int64 MergeTreeData::getMaxBlockNumber()
 {
-    std::lock_guard<std::mutex> lock_all(data_parts_mutex);
+    std::lock_guard lock_all(data_parts_mutex);
 
     Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
@@ -585,7 +586,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     DataPartsVector broken_parts_to_detach;
     size_t suspicious_broken_parts = 0;
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
     data_parts_indexes.clear();
 
     for (const String & file_name : part_file_names)
@@ -764,7 +765,7 @@ static bool isOldPartDirectory(Poco::File & directory, time_t threshold)
 void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
-    std::unique_lock<std::mutex> lock(clear_old_temporary_directories_mutex, std::defer_lock);
+    std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
     if (!lock.try_lock())
         return;
 
@@ -803,7 +804,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     DataPartsVector res;
 
     /// If the method is already called from another thread, then we don't need to do anything.
-    std::unique_lock<std::mutex> lock(grab_old_parts_mutex, std::defer_lock);
+    std::unique_lock lock(grab_old_parts_mutex, std::defer_lock);
     if (!lock.try_lock())
         return res;
 
@@ -811,7 +812,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
     std::vector<DataPartIteratorByStateAndInfo> parts_to_delete;
 
     {
-        std::lock_guard<std::mutex> lock_parts(data_parts_mutex);
+        std::lock_guard lock_parts(data_parts_mutex);
 
         auto outdated_parts_range = getDataPartsStateRange(DataPartState::Outdated);
         for (auto it = outdated_parts_range.begin(); it != outdated_parts_range.end(); ++it)
@@ -845,7 +846,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts()
 
 void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector & parts)
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
     for (auto & part : parts)
     {
         /// We should modify it under data_parts_mutex
@@ -857,7 +858,7 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts)
 {
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
 
         /// TODO: use data_parts iterators instead of pointers
         for (auto & part : parts)
@@ -874,7 +875,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
-    if (auto part_log = context.getPartLog(database_name))
+    if (auto part_log = global_context.getPartLog(database_name))
     {
         PartLogElement part_log_elem;
 
@@ -916,7 +917,7 @@ void MergeTreeData::setPath(const String & new_full_path)
 
     Poco::File(full_path).renameTo(new_full_path);
 
-    context.dropCaches();
+    global_context.dropCaches();
     full_path = new_full_path;
 }
 
@@ -924,14 +925,14 @@ void MergeTreeData::dropAllData()
 {
     LOG_TRACE(log, "dropAllData: waiting for locks.");
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
 
     LOG_TRACE(log, "dropAllData: removing data from memory.");
 
     data_parts_indexes.clear();
     column_sizes.clear();
 
-    context.dropCaches();
+    global_context.dropCaches();
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
@@ -1146,7 +1147,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 /// Need to modify column type.
                 if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
+                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), global_context);
 
                 out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
@@ -1157,7 +1158,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 out_expression->add(ExpressionAction::addColumn(
                     { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
 
-                const auto & function = FunctionFactory::instance().get("CAST", context);
+                const auto & function = FunctionFactory::instance().get("CAST", global_context);
                 out_expression->add(ExpressionAction::applyFunction(
                     function, Names{column.name, new_type_name_column}), out_names);
 
@@ -1301,7 +1302,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
             *this, part, expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
 
-        auto compression_settings = this->context.chooseCompressionSettings(
+        auto compression_codec = global_context.chooseCompressionCodec(
             part->bytes_on_disk,
             static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
         ExpressionBlockInputStream in(part_in, expression);
@@ -1315,7 +1316,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
           */
         IMergedBlockOutputStream::WrittenOffsetColumns unused_written_offsets;
         MergedColumnOnlyOutputStream out(
-            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_settings, true /* skip_offsets */, unused_written_offsets);
+            *this, in.getHeader(), full_path + part->name + '/', true /* sync */, compression_codec, true /* skip_offsets */, unused_written_offsets);
 
         in.readPrefix();
         out.writePrefix();
@@ -1409,7 +1410,7 @@ void MergeTreeData::AlterDataPartTransaction::commit()
         mutable_part.bytes_on_disk = new_checksums.getTotalSizeOnDisk();
 
         /// TODO: we can skip resetting caches when the column is added.
-        data_part->storage.context.dropCaches();
+        data_part->storage.global_context.dropCaches();
 
         clear();
     }
@@ -1628,7 +1629,7 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
 
     DataPartsVector covered_parts;
     {
-        std::unique_lock<std::mutex> lock(data_parts_mutex);
+        std::unique_lock lock(data_parts_mutex);
         renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts);
     }
     return covered_parts;
@@ -1842,7 +1843,7 @@ void MergeTreeData::tryRemovePartImmediately(DataPartPtr && part)
 {
     DataPartPtr part_to_delete;
     {
-        std::lock_guard<std::mutex> lock_parts(data_parts_mutex);
+        std::lock_guard lock_parts(data_parts_mutex);
 
         LOG_TRACE(log, "Trying to immediately remove part " << part->getNameWithState());
 
@@ -1878,7 +1879,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 {
     size_t res = 0;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
             res += part->bytes_on_disk;
@@ -1890,7 +1891,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
 
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
 
     size_t res = 0;
     size_t cur_count = 0;
@@ -2014,7 +2015,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
 {
     DataPartStateAndPartitionID state_with_partition{state, partition_id};
 
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
     return DataPartsVector(
         data_parts_by_state_and_info.lower_bound(state_with_partition),
         data_parts_by_state_and_info.upper_bound(state_with_partition));
@@ -2023,7 +2024,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
 
 MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const MergeTreePartInfo & part_info, const MergeTreeData::DataPartStates & valid_states)
 {
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
+    std::lock_guard lock(data_parts_mutex);
 
     auto it = data_parts_by_info.find(part_info);
     if (it == data_parts_by_info.end())
@@ -2264,11 +2265,11 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
     DataPartsVector res;
     DataPartsVector buf;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
 
         for (auto state : affordable_states)
         {
-            buf = std::move(res);
+            std::swap(buf, res);
             res.clear();
 
             auto range = getDataPartsStateRange(state);
@@ -2290,7 +2291,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeDat
 {
     DataPartsVector res;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
         res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
 
         if (out_states != nullptr)
@@ -2308,7 +2309,7 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
 {
     DataParts res;
     {
-        std::lock_guard<std::mutex> lock(data_parts_mutex);
+        std::lock_guard lock(data_parts_mutex);
         for (auto state : affordable_states)
         {
             auto range = getDataPartsStateRange(state);

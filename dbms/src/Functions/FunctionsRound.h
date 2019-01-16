@@ -1,21 +1,22 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
-#include <Functions/FunctionUnaryArithmetic.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <Interpreters/castColumn.h>
 
-#include <common/intExp.h>
+#include <Common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
 #include <ext/bit_cast.h>
 #include <algorithm>
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
     #include <smmintrin.h>
 #endif
 
@@ -61,7 +62,7 @@ enum class ScaleMode
 
 enum class RoundingMode
 {
-#if __SSE4_1__
+#ifdef __SSE4_1__
     Round   = _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC,
     Floor   = _MM_FROUND_TO_NEG_INF | _MM_FROUND_NO_EXC,
     Ceil    = _MM_FROUND_TO_POS_INF | _MM_FROUND_NO_EXC,
@@ -117,8 +118,6 @@ struct IntegerRoundingComputation
                     x = -x;
                 return x;
             }
-            default:
-                __builtin_unreachable();
         }
     }
 
@@ -132,8 +131,6 @@ struct IntegerRoundingComputation
                 return x;
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
-            default:
-                __builtin_unreachable();
         }
     }
 
@@ -148,7 +145,7 @@ struct IntegerRoundingComputation
 };
 
 
-#if __SSE4_1__
+#ifdef __SSE4_1__
 
 template <typename T>
 class BaseFloatRoundingComputation;

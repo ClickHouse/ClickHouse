@@ -134,12 +134,12 @@ StringRef ColumnArray::getDataAt(size_t n) const
       *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t array_size = sizeAt(n);
-    if (array_size == 0)
-        return StringRef();
-
     size_t offset_of_first_elem = offsetAt(n);
     StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+
+    size_t array_size = sizeAt(n);
+    if (array_size == 0)
+        return StringRef(first.data, 0);
 
     size_t offset_of_last_elem = getOffsets()[n] - 1;
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
@@ -233,7 +233,10 @@ void ColumnArray::insertFrom(const IColumn & src_, size_t n)
 
 void ColumnArray::insertDefault()
 {
-    getOffsets().push_back(getOffsets().back());
+    /// NOTE 1: We can use back() even if the array is empty (due to zero -1th element in PODArray).
+    /// NOTE 2: We cannot use reference in push_back, because reference get invalidated if array is reallocated.
+    auto last_offset = getOffsets().back();
+    getOffsets().push_back(last_offset);
 }
 
 

@@ -6,8 +6,17 @@ ThreadPool::ThreadPool(size_t m_size)
     : m_size(m_size)
 {
     threads.reserve(m_size);
-    for (size_t i = 0; i < m_size; ++i)
-        threads.emplace_back([this] { worker(); });
+
+    try
+    {
+        for (size_t i = 0; i < m_size; ++i)
+            threads.emplace_back([this] { worker(); });
+    }
+    catch (...)
+    {
+        finalize();
+        throw;
+    }
 }
 
 void ThreadPool::schedule(Job job)
@@ -41,6 +50,11 @@ void ThreadPool::wait()
 
 ThreadPool::~ThreadPool()
 {
+    finalize();
+}
+
+void ThreadPool::finalize()
+{
     {
         std::unique_lock<std::mutex> lock(mutex);
         shutdown = true;
@@ -50,6 +64,8 @@ ThreadPool::~ThreadPool()
 
     for (auto & thread : threads)
         thread.join();
+
+    threads.clear();
 }
 
 size_t ThreadPool::active() const

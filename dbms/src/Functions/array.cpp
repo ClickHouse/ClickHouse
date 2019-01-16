@@ -58,7 +58,7 @@ public:
             */
 
         Columns columns_holder(num_elements);
-        const IColumn * columns[num_elements];
+        ColumnRawPtrs columns(num_elements);
 
         for (size_t i = 0; i < num_elements; ++i)
         {

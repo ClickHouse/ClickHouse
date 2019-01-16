@@ -63,6 +63,4 @@ int main(int argc, char ** argv)
         std::cerr << "Some exception" << std::endl;
         return 2;
     }
-
-    return 0;
 }
