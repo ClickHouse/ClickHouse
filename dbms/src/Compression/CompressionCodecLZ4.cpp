@@ -8,6 +8,7 @@
 #include "CompressionCodecLZ4.h"
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/WriteHelpers.h>
 
 #ifdef __clang__
     #pragma clang diagnostic ignored "-Wold-style-cast"
@@ -35,7 +36,7 @@ String CompressionCodecLZ4::getCodecDesc() const
     return "LZ4";
 }
 
-UInt32 CompressionCodecLZ4::getCompressedDataSize(UInt32 uncompressed_size) const
+UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     return LZ4_COMPRESSBOUND(uncompressed_size);
 }
@@ -61,7 +62,7 @@ void registerCodecLZ4(CompressionCodecFactory & factory)
 
 String CompressionCodecLZ4HC::getCodecDesc() const
 {
-    return "LZ4HC";
+    return "LZ4HC(" + toString(level) + ")";
 }
 
 UInt32 CompressionCodecLZ4HC::doCompressData(const char * source, UInt32 source_size, char * dest) const

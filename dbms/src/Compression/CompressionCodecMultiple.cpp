@@ -43,7 +43,7 @@ String CompressionCodecMultiple::getCodecDesc() const
     return codec_desc;
 }
 
-UInt32 CompressionCodecMultiple::getCompressedDataSize(UInt32 uncompressed_size) const
+UInt32 CompressionCodecMultiple::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
     UInt32 compressed_size = uncompressed_size;
     for (auto & codec : codecs)
