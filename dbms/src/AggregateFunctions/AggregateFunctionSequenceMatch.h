@@ -340,7 +340,7 @@ protected:
     /// of events) with a memory consumption and memory allocations in O(m). It means that
     /// if n >>> m (which is expected to be the case), this algorithm can be considered linear.
     template <typename T>
-    bool dfa_match(T & events_it, const T events_end) const
+    bool dfaMatch(T & events_it, const T events_end) const
     {
         using ActiveStates = std::vector<bool>;
 
@@ -368,19 +368,19 @@ protected:
 
                 switch (dfa_states[state].transition)
                 {
-                case DFATransition::None:
-                    break;
-                case DFATransition::AnyEvent:
-                    next_active_states[state + 1] = true;
-                    ++n_active;
-                    break;
-                case DFATransition::SpecificEvent:
-                    if (events_it->second.test(dfa_states[state].event))
-                    {
+                    case DFATransition::None:
+                        break;
+                    case DFATransition::AnyEvent:
                         next_active_states[state + 1] = true;
                         ++n_active;
-                    }
-                    break;
+                        break;
+                    case DFATransition::SpecificEvent:
+                        if (events_it->second.test(dfa_states[state].event))
+                        {
+                            next_active_states[state + 1] = true;
+                            ++n_active;
+                        }
+                        break;
                 }
 
                 if (dfa_states[state].has_kleene)
@@ -396,7 +396,7 @@ protected:
     }
 
     template <typename T>
-    bool backtracking_match(T & events_it, const T events_end) const
+    bool backtrackingMatch(T & events_it, const T events_end) const
     {
         const auto action_begin = std::begin(actions);
         const auto action_end = std::end(actions);
@@ -594,7 +594,7 @@ public:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        bool match = pattern_has_time ? backtracking_match(events_it, events_end) : dfa_match(events_it, events_end);
+        bool match = pattern_has_time ? backtrackingMatch(events_it, events_end) : dfaMatch(events_it, events_end);
         static_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
@@ -625,7 +625,7 @@ private:
         auto events_it = events_begin;
 
         size_t count = 0;
-        while (events_it != events_end && backtracking_match(events_it, events_end))
+        while (events_it != events_end && backtrackingMatch(events_it, events_end))
             ++count;
 
         return count;
