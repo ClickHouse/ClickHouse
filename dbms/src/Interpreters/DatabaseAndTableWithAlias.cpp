@@ -52,32 +52,16 @@ void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
 size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
                                                               const DatabaseAndTableWithAlias & names)
 {
-    size_t num_qualifiers_to_strip = 0;
+    /// database.table.column
+    if (doesIdentifierBelongTo(identifier, names.database, names.table))
+        return 2;
 
-    /// It is compound identifier
-    if (!identifier.children.empty())
-    {
-        size_t num_components = identifier.children.size();
+    /// table.column or alias.column.
+    if (doesIdentifierBelongTo(identifier, names.table) ||
+        doesIdentifierBelongTo(identifier, names.alias))
+        return 1;
 
-        /// database.table.column
-        if (num_components >= 3
-            && !names.database.empty()
-            && *getIdentifierName(identifier.children[0]) == names.database
-            && *getIdentifierName(identifier.children[1]) == names.table)
-        {
-            num_qualifiers_to_strip = 2;
-        }
-
-        /// table.column or alias.column. If num_components > 2, it is like table.nested.column.
-        if (num_components >= 2
-            && ((!names.table.empty() && *getIdentifierName(identifier.children[0]) == names.table)
-                || (!names.alias.empty() && *getIdentifierName(identifier.children[0]) == names.alias)))
-        {
-            num_qualifiers_to_strip = 1;
-        }
-    }
-
-    return num_qualifiers_to_strip;
+    return 0;
 }
 
 
@@ -149,17 +133,7 @@ void DatabaseAndTableWithAlias::makeQualifiedName(const ASTPtr & ast) const
         String prefix = getQualifiedNamePrefix();
         identifier->name.insert(identifier->name.begin(), prefix.begin(), prefix.end());
 
-        Names qualifiers;
-        if (!alias.empty())
-            qualifiers.push_back(alias);
-        else
-        {
-            qualifiers.push_back(database);
-            qualifiers.push_back(table);
-        }
-
-        for (const auto & qualifier : qualifiers)
-            identifier->children.emplace_back(std::make_shared<ASTIdentifier>(qualifier));
+        addIdentifierQualifier(*identifier, database, table, alias);
     }
 }
 
