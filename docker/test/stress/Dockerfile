@@ -19,6 +19,10 @@ RUN apt-get update -y \
             netcat-openbsd \
             telnet
 
+ENV TSAN_OPTIONS='halt_on_error=1'
+ENV UBSAN_OPTIONS='print_stacktrace=1'
+ENV ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer
+
 COPY ./stress /stress
 COPY log_queries.xml /etc/clickhouse-server/users.d/log_queries.xml
 COPY part_log.xml /etc/clickhouse-server/config.d/part_log.xml
