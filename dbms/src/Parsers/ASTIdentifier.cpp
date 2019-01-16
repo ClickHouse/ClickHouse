@@ -117,4 +117,35 @@ void setIdentifierSpecial(ASTPtr & ast)
             id->setSpecial();
 }
 
+void addIdentifierQualifier(ASTIdentifier & identifier, const String & database, const String & table, const String & alias)
+{
+    if (!alias.empty())
+    {
+        identifier.children.emplace_back(std::make_shared<ASTIdentifier>(alias));
+    }
+    else
+    {
+        if (!database.empty())
+            identifier.children.emplace_back(std::make_shared<ASTIdentifier>(database));
+        identifier.children.emplace_back(std::make_shared<ASTIdentifier>(table));
+    }
+}
+
+bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
+{
+    size_t num_components = identifier.children.size();
+    if (num_components >= 3)
+        return  *getIdentifierName(identifier.children[0]) == database &&
+                *getIdentifierName(identifier.children[1]) == table;
+    return false;
+}
+
+bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table)
+{
+    size_t num_components = identifier.children.size();
+    if (num_components >= 2)
+        return *getIdentifierName(identifier.children[0]) == table;
+    return false;
+}
+
 }
