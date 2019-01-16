@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
@@ -113,6 +114,35 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.order_by = command_ast->order_by;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
+    {
+        AlterCommand command;
+        command.index_decl = command_ast->index_decl;
+        command.type = AlterCommand::ADD_INDEX;
+
+        const auto & ast_index_decl = typeid_cast<const ASTIndexDeclaration &>(*command_ast->index_decl);
+
+        command.index_name = ast_index_decl.name;
+
+        if (command_ast->index)
+            command.after_index_name = typeid_cast<const ASTIdentifier &>(*command_ast->index).name;
+
+        command.if_not_exists = command_ast->if_not_exists;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX)
+    {
+        if (command_ast->clear_column)
+            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
+        AlterCommand command;
+        command.type = AlterCommand::DROP_INDEX;
+        command.index_name = typeid_cast<const ASTIdentifier &>(*(command_ast->index)).name;
+        command.if_exists = command_ast->if_exists;
+
+        return command;
+    }
     else
         return {};
 }
@@ -125,7 +155,8 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
     return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
-void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
+void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast,
+                        ASTPtr & primary_key_ast, ASTPtr & indexes_decl_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -284,6 +315,62 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
     {
         columns_description.comments[column_name] = comment;
     }
+    else if (type == ADD_INDEX)
+    {
+        if (std::any_of(
+                indexes_decl_ast->children.cbegin(),
+                indexes_decl_ast->children.cend(),
+                [this](const ASTPtr & index_ast) {
+                    return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
+                }))
+        {
+            if (if_not_exists)
+                return;
+            else
+                throw Exception{"Cannot add index " + index_name + ": index with this name already exists",
+                                ErrorCodes::ILLEGAL_COLUMN};
+        }
+
+        auto new_indexes_decl_ast = indexes_decl_ast->clone();
+        auto insert_it = new_indexes_decl_ast->children.end();
+
+        if (!after_index_name.empty())
+        {
+            insert_it = std::find_if(
+                    new_indexes_decl_ast->children.begin(),
+                    new_indexes_decl_ast->children.end(),
+                    [this](const ASTPtr & index_ast) {
+                        return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == after_index_name;
+                    });
+            if (insert_it == new_indexes_decl_ast->children.end()) {
+                throw Exception("Wrong index name. Cannot find index `" + after_index_name + "` to insert after.",
+                        ErrorCodes::LOGICAL_ERROR);
+            }
+            ++insert_it;
+        }
+
+        new_indexes_decl_ast->children.emplace(insert_it, index_decl);
+        indexes_decl_ast = new_indexes_decl_ast;
+    }
+    else if (type == DROP_INDEX)
+    {
+        auto new_indexes_decl_ast = indexes_decl_ast->clone();
+
+        auto erase_it = std::find_if(
+                new_indexes_decl_ast->children.begin(),
+                new_indexes_decl_ast->children.end(),
+                [this](const ASTPtr & index_ast) {
+                    return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
+                });
+        if (erase_it == new_indexes_decl_ast->children.end())
+        {
+            throw Exception("Wrong index name. Cannot find index `" + index_name + "` to drop.",
+                    ErrorCodes::LOGICAL_ERROR);
+        }
+
+        new_indexes_decl_ast->children.erase(erase_it);
+        indexes_decl_ast = new_indexes_decl_ast;
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
@@ -298,19 +385,21 @@ bool AlterCommand::is_mutable() const
     return true;
 }
 
-void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
+void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast,
+        ASTPtr & primary_key_ast, ASTPtr & indexes_decl_ast) const
 {
     auto new_columns_description = columns_description;
     auto new_order_by_ast = order_by_ast;
     auto new_primary_key_ast = primary_key_ast;
+    auto new_indexes_decl_ast = indexes_decl_ast;
 
     for (const AlterCommand & command : *this)
         if (!command.ignore)
-            command.apply(new_columns_description, new_order_by_ast, new_primary_key_ast);
-
+            command.apply(new_columns_description, new_order_by_ast, new_primary_key_ast, new_indexes_decl_ast);
     columns_description = std::move(new_columns_description);
     order_by_ast = std::move(new_order_by_ast);
     primary_key_ast = std::move(new_primary_key_ast);
+    indexes_decl_ast = std::move(new_indexes_decl_ast);
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
@@ -527,12 +616,15 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
     auto out_columns_description = columns_description;
     ASTPtr out_order_by;
     ASTPtr out_primary_key;
-    apply(out_columns_description, out_order_by, out_primary_key);
+    ASTPtr out_indexes_decl;
+    apply(out_columns_description, out_order_by, out_primary_key, out_indexes_decl);
 
     if (out_order_by)
         throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
     if (out_primary_key)
         throw Exception("Storage doesn't support modifying PRIMARY KEY expression", ErrorCodes::NOT_IMPLEMENTED);
+    if (out_indexes_decl)
+        throw Exception("Storage doesn't support modifying INDEXES", ErrorCodes::NOT_IMPLEMENTED);
 
     columns_description = std::move(out_columns_description);
 }

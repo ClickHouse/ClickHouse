@@ -216,14 +216,15 @@ void StorageMergeTree::alter(
     auto new_columns = data.getColumns();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
+    ASTPtr new_indexes_ast = data.skip_indexes_ast;
+    params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indexes_ast, false))
             transactions.push_back(std::move(transaction));
     }
 
@@ -238,13 +239,16 @@ void StorageMergeTree::alter(
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
+
+        if (new_indexes_ast.get() != data.skip_indexes_ast.get())
+            storage_ast.set(storage_ast.indexes, new_indexes_ast);
     };
 
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndexes(data.skip_indexes_ast);
+    data.setSkipIndexes(new_indexes_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -702,7 +706,8 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto new_columns = getColumns();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast);
+    ASTPtr ignored_indexes_ast;
+    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast, ignored_indexes_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
@@ -710,7 +715,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, ignored_indexes_ast, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);

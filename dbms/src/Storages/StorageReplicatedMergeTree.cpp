@@ -1489,7 +1489,8 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     auto new_columns = getColumns();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast);
+    ASTPtr ignored_indexes_ast;
+    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast, ignored_indexes_ast);
 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
@@ -1509,7 +1510,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
         LOG_DEBUG(log, "Clearing column " << entry.column_name << " in part " << part->name);
 
-        auto transaction = data.alterDataPart(part, columns_for_parts, false);
+        auto transaction = data.alterDataPart(part, columns_for_parts, ignored_indexes_ast, false);
         if (!transaction)
             continue;
 
@@ -3067,7 +3068,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         ColumnsDescription new_columns = data.getColumns();
         ASTPtr new_order_by_ast = data.order_by_ast;
         ASTPtr new_primary_key_ast = data.primary_key_ast;
-        params.apply(new_columns, new_order_by_ast, new_primary_key_ast);
+        ASTPtr new_indexes_ast = data.skip_indexes_ast;
+        params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
@@ -3076,6 +3078,8 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         ReplicatedMergeTreeTableMetadata new_metadata(data);
         if (new_order_by_ast.get() != data.order_by_ast.get())
             new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
+        if (new_indexes_ast.get() != data.skip_indexes_ast.get())
+            new_metadata.skip_indexes = serializeAST(*new_indexes_ast.get());
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
