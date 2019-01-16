@@ -23,6 +23,10 @@ RUN apt-get update -y \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+ENV TSAN_OPTIONS='halt_on_error=1'
+ENV UBSAN_OPTIONS='print_stacktrace=1'
+ENV ASAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer
+
 COPY zookeeper.xml /etc/clickhouse-server/config.d/zookeeper.xml
 COPY listen.xml /etc/clickhouse-server/config.d/listen.xml
 COPY part_log.xml /etc/clickhouse-server/config.d/part_log.xml
