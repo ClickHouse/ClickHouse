@@ -107,7 +107,7 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
     else
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
-    
+
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
     // Store parents and their tokens in order to backtrack
