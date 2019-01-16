@@ -28,6 +28,7 @@
 #    include <Interpreters/castColumn.h>
 #    include <common/DateLUTImpl.h>
 #    include <ext/range.h>
+/*
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-parameter"
 #    pragma GCC diagnostic ignored "-Wignored-qualifiers"
@@ -39,6 +40,7 @@
 #    if defined(__clang__) && __clang_major__ >= 7
 #        pragma GCC diagnostic ignored "-Wc++98-compat-extra-semi"
 #    endif
+*/
 #    include <arrow/api.h>
 #    include <arrow/buffer.h>
 #    include <arrow/io/api.h>
@@ -46,7 +48,7 @@
 #    include <parquet/arrow/writer.h>
 #    include <parquet/exception.h>
 #    include <parquet/file_reader.h>
-#    pragma GCC diagnostic pop
+//#    pragma GCC diagnostic pop
 
 #    include <Core/iostream_debug_helpers.h>
 
