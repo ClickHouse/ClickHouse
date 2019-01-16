@@ -34,15 +34,15 @@ ExternalLoadableLifetime::ExternalLoadableLifetime(const Poco::Util::AbstractCon
 
 ExternalLoadableLifetime::ExternalLoadableLifetime(const ASTKeyValueFunction * lifetime)
 {
-    if (lifetime->name != "LIFETIME")
-        throw Exception("ExternalLoadableLifetime: AST should be in the folowing form LIFETIME(MIN 0 MAX 1)", ErrorCodes::BAD_ARGUMENTS);
+    if (lifetime->name != "lifetime")
+        throw Exception("ExternalLoadableLifetime: AST should be in the following form LIFETIME(MIN 0 MAX 1)", ErrorCodes::BAD_ARGUMENTS);
 
     for (const auto & child : lifetime->elements->children)
     {
         const auto & pair = typeid_cast<const ASTPair &>(*child.get());
-        if (pair.first == "MIN")
+        if (pair.first == "min")
             min_sec = typeid_cast<const ASTLiteral &>(*pair.second.get()).value.get<UInt64>();
-        else if (pair.first == "MAX")
+        else if (pair.first == "max")
             max_sec = typeid_cast<const ASTLiteral &>(*pair.second.get()).value.get<UInt64>();
     }
 
