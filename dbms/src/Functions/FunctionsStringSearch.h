@@ -12,7 +12,6 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <common/StringRef.h>
-#include <ext/range.h>
 
 namespace DB
 {
@@ -241,11 +240,9 @@ public:
 
         Array src_arr = col_const_arr->getValue<Array>();
 
-        std::vector<String> refs;
+        std::vector<StringRef> refs;
         for (const auto & el : src_arr)
-        {
-            refs.push_back(el.get<String>());
-        }
+            refs.emplace_back(el.get<String>());
 
         const size_t column_haystack_size = column_haystack->size();
 
@@ -266,9 +263,7 @@ public:
         size_t accum = refs_size;
 
         for (size_t i = 0; i < column_haystack_size; ++i, accum += refs_size)
-        {
             offsets_res[i] = accum;
-        }
 
         block.getByPosition(result).column = ColumnArray::create(std::move(col_res), std::move(col_offsets));
     }
@@ -324,7 +319,7 @@ public:
 
         Array src_arr = col_const_arr->getValue<Array>();
 
-        std::vector<String> refs;
+        std::vector<StringRef> refs;
         refs.reserve(src_arr.size());
 
         for (const auto & el : src_arr)

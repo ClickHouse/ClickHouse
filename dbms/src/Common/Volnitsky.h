@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <vector>
 #include <stdint.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <common/StringRef.h>
 #include <common/unaligned.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
@@ -403,7 +405,7 @@ class MultiVolnitskyBase
 {
 private:
     /// needles and their offsets
-    const std::vector<String> & needles;
+    const std::vector<StringRef> & needles;
 
 
     /// fallback searchers
@@ -429,17 +431,24 @@ private:
     static constexpr size_t small_limit = VolnitskyTraits::hash_size / 8;
 
 public:
-    MultiVolnitskyBase(const std::vector<String> & needles_) : needles{needles_}, step{0}, last{0}
+    MultiVolnitskyBase(const std::vector<StringRef> & needles_) : needles{needles_}, step{0}, last{0}
     {
         fallback_searchers.reserve(needles.size());
     }
 
-    /// returns vector of the positions
-    std::vector<const char *> searchAll(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
+    template <typename ResultType, typename AnsCallback>
+    void searchAll(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const AnsCallback & ansCallback,
+        ResultType & ans)
     {
         const size_t haystack_string_size = haystack_offsets.size();
         const size_t needles_size = needles.size();
-        std::vector<const char *> ans(needles_size * haystack_string_size, nullptr);
+
+        /// something can be uninitialized after
+        std::fill(ans.begin(), ans.end(), 0);
+
         while (!reset())
         {
             size_t fallback_size = fallback_needles.size();
@@ -452,7 +461,7 @@ public:
                 {
                     const UInt8 * ptr = fallback_searchers[fallback_needles[i]].search(haystack, haystack_end);
                     if (ptr != haystack_end)
-                        ans[from + fallback_needles[i]] = reinterpret_cast<const char *>(ptr);
+                        ans[from + fallback_needles[i]] = ansCallback(haystack, ptr);
                 }
 
                 /// check if we have one non empty volnitsky searcher
@@ -466,13 +475,13 @@ public:
                         {
                             if (pos >= haystack + hash[cell_num].off - 1)
                             {
-                                const auto res = pos - (hash[cell_num].off - 1);
+                                const auto * res = pos - (hash[cell_num].off - 1);
                                 const size_t ind = hash[cell_num].id;
-                                if (!ans[from + ind] && res + needles[ind].size() <= haystack_end)
+                                if (ans[from + ind] == 0 && res + needles[ind].size <= haystack_end)
                                 {
                                     if (fallback_searchers[ind].compare(res))
                                     {
-                                        ans[from + ind] = reinterpret_cast<const char *>(res);
+                                        ans[from + ind] = ansCallback(haystack, res);
                                     }
                                 }
                             }
@@ -482,46 +491,42 @@ public:
                 prev_offset = haystack_offsets[j];
             }
         }
-        return ans;
     }
 
-    std::vector<char> search(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
+    template <typename ResultType>
+    void search(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, ResultType & ans)
     {
-        const size_t haystack_string_size = haystack_offsets.size();
-        std::vector<char> ans(haystack_string_size, 0);
-        while (!reset())
+        auto callback = [this](const UInt8 * haystack, const UInt8 * haystack_end) -> bool
         {
-            size_t prev_offset = 0;
-            for (size_t j = 0; j < haystack_string_size; ++j)
-            {
-                const auto * haystack = &haystack_data[prev_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                ans[j] = searchOne(haystack, haystack_end);
-                prev_offset = haystack_offsets[j];
-            }
-        }
-        return ans;
+            return this->searchOne(haystack, haystack_end);
+        };
+        searchInternal(haystack_data, haystack_offsets, callback, ans);
     }
 
-    std::vector<size_t> searchIndex(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets)
+    template <typename ResultType>
+    void searchIndex(const ColumnString::Chars & haystack_data, const ColumnString::Offsets & haystack_offsets, ResultType & ans)
     {
-        const size_t haystack_string_size = haystack_offsets.size();
-        std::vector<size_t> ans(haystack_string_size, 0);
-        while (!reset())
+        auto callback = [this](const UInt8 * haystack, const UInt8 * haystack_end) -> size_t
         {
-            size_t prev_offset = 0;
-            for (size_t j = 0; j < haystack_string_size; ++j)
-            {
-                const auto * haystack = &haystack_data[prev_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
-                ans[j] = searchOneIndex(haystack, haystack_end);
-                prev_offset = haystack_offsets[j];
-            }
-        }
-        return ans;
+            return this->searchOneIndex(haystack, haystack_end);
+        };
+        searchInternal(haystack_data, haystack_offsets, callback, ans);
     }
 
 private:
+    /**
+     * This function is needed to initialize hash table
+     * Returns `true` if there is nothing to initialize
+     * and `false` if we have something to initialize and initializes it.
+     * This function is a kind of fallback if there are many needles.
+     * We actually destroy the hash table and initialize it with uninitialized needles
+     * and search through the haystack again.
+     * The actual usage of this function is like this:
+     * while (!reset())
+     * {
+     *     search inside the haystack with the known needles
+     * }
+     */
     bool reset()
     {
         if (last == needles.size())
@@ -536,8 +541,8 @@ private:
 
         for (; last < size; ++last)
         {
-            const char * cur_needle_data = needles[last].data();
-            const size_t cur_needle_size = needles[last].size();
+            const char * cur_needle_data = needles[last].data;
+            const size_t cur_needle_size = needles[last].size;
 
             /// save the indices of fallback searchers
             if (VolnitskyTraits::isFallbackNeedle(cur_needle_size))
@@ -554,10 +559,9 @@ private:
 
                 buf += cur_needle_size - sizeof(VolnitskyTraits::Ngram) + 1;
 
+                /// this is the condition when we actually need to stop and start searching with known needles
                 if (buf > small_limit)
-                {
                     break;
-                }
 
                 step = std::min(step, cur_needle_size - sizeof(VolnitskyTraits::Ngram) + 1);
                 for (auto i = static_cast<int>(cur_needle_size - sizeof(VolnitskyTraits::Ngram)); i >= 0; --i)
@@ -574,7 +578,28 @@ private:
         return false;
     }
 
-    inline bool searchOne(const UInt8 * haystack, const UInt8 * haystack_end)
+    template <typename OneSearcher, typename ResultType>
+    inline void searchInternal(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const OneSearcher & searchFallback,
+        ResultType & ans)
+    {
+        const size_t haystack_string_size = haystack_offsets.size();
+        while (!reset())
+        {
+            size_t prev_offset = 0;
+            for (size_t j = 0; j < haystack_string_size; ++j)
+            {
+                const auto * haystack = &haystack_data[prev_offset];
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_offset - 1;
+                ans[j] = searchFallback(haystack, haystack_end);
+                prev_offset = haystack_offsets[j];
+            }
+        }
+    }
+
+    inline bool searchOne(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();
         for (size_t i = 0; i < fallback_size; ++i)
@@ -594,7 +619,7 @@ private:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
                             return true;
                     }
                 }
@@ -603,7 +628,7 @@ private:
         return false;
     }
 
-    inline size_t searchOneIndex(const UInt8 * haystack, const UInt8 * haystack_end)
+    inline size_t searchOneIndex(const UInt8 * haystack, const UInt8 * haystack_end) const
     {
         const size_t fallback_size = fallback_needles.size();
 
@@ -626,7 +651,7 @@ private:
                     {
                         const auto res = pos - (hash[cell_num].off - 1);
                         const size_t ind = hash[cell_num].id;
-                        if (res + needles[ind].size() <= haystack_end && fallback_searchers[ind].compare(res))
+                        if (res + needles[ind].size <= haystack_end && fallback_searchers[ind].compare(res))
                             ans = std::min(ans, ind);
                     }
                 }
@@ -634,8 +659,8 @@ private:
         }
 
         /*
-        * NOTE!!! if nothing was found, ans + 1 will be equal to zero and we can
-        * std::copy it into the result because we need to return the position starting with one
+        * if nothing was found, ans + 1 will be equal to zero and we can
+        * assign it into the result because we need to return the position starting with one
         */
         return ans + 1;
     }
