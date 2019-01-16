@@ -118,6 +118,22 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & 
         throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
 }
 
+bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias)
+{
+    /// table.*, alias.* or database.table.*
+
+    if (database.empty())
+    {
+        if (!db_table.table.empty() && table == db_table.table)
+            return true;
+
+        if (!db_table.alias.empty())
+            return (alias == db_table.alias) || (table_may_be_an_alias && table == db_table.alias);
+    }
+
+    return database == db_table.database && table == db_table.table;
+}
+
 String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
 {
     if (alias.empty() && table.empty())
