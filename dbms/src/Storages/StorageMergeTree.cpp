@@ -241,7 +241,12 @@ void StorageMergeTree::alter(
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
         if (new_indexes_ast.get() != data.skip_indexes_ast.get())
-            storage_ast.set(storage_ast.indexes, new_indexes_ast);
+        {
+            if (new_indexes_ast && !new_indexes_ast->children.empty())
+                storage_ast.set(storage_ast.indexes, new_indexes_ast);
+            else
+                storage_ast.set(storage_ast.indexes, nullptr);
+        }
     };
 
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, storage_modifier);
