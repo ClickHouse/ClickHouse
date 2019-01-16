@@ -53,7 +53,7 @@ struct PositionCaseSensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -83,7 +83,7 @@ struct PositionCaseInsensitiveASCII
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -109,7 +109,7 @@ struct PositionCaseSensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -142,7 +142,7 @@ struct PositionCaseInsensitiveUTF8
         return SearcherInSmallHaystack(needle_data, needle_size);
     }
 
-    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<String> & needles)
+    static MultiSearcherInBigHaystack createMultiSearcherInBigHaystack(const std::vector<StringRef> & needles)
     {
         return MultiSearcherInBigHaystack(needles);
     }
@@ -267,7 +267,7 @@ struct PositionImpl
         }
     }
 
-    /// Find many substrings in one line.
+    /// Find many substrings in single string.
     static void constant_vector(
         const String & haystack,
         const ColumnString::Chars & needle_data,
@@ -316,31 +316,18 @@ struct MultiPositionImpl
 {
     using ResultType = UInt64;
 
-    static void multi_constant_vector(
+    static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<String> & needles,
+        const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const size_t needles_size = needles.size();
-        const size_t haystack_offsets_size = haystack_offsets.size();
-        size_t k = 0;
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).search_all(haystack_data, haystack_offsets);
-        for (size_t j = 0; j < haystack_offsets_size; ++j)
+        auto resCallback = [](const UInt8 * start, const UInt8 * end) -> UInt64
         {
-            for (size_t i = 0; i < needles_size; ++i)
-            {
-                const char * ptr = result[k];
-                if (ptr)
-                {
-                    const char * start = reinterpret_cast<const char *>(&haystack_data[j == 0 ? 0 : haystack_offsets[j - 1]]);
-                    res[k] = 1 + Impl::countChars(start, ptr);
-                }
-                else
-                    res[k] = 0;
-                ++k;
-            }
-        }
+            return 1 + Impl::countChars(reinterpret_cast<const char *>(start), reinterpret_cast<const char *>(end));
+        };
+
+        Impl::createMultiSearcherInBigHaystack(needles).searchAll(haystack_data, haystack_offsets, resCallback, res);
     }
 };
 
@@ -349,14 +336,13 @@ struct MultiSearchImpl
 {
     using ResultType = UInt64;
 
-    static void multi_constant_vector(
+    static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<String> & needles,
+        const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets);
-        std::copy(result.begin(), result.end(), res.begin());
+        Impl::createMultiSearcherInBigHaystack(needles).search(haystack_data, haystack_offsets, res);
     }
 };
 
@@ -365,14 +351,13 @@ struct FirstMatchImpl
 {
     using ResultType = UInt64;
 
-    static void multi_constant_vector(
+    static void vector_constant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
-        const std::vector<String> & needles,
+        const std::vector<StringRef> & needles,
         PaddedPODArray<UInt64> & res)
     {
-        const auto result = Impl::createMultiSearcherInBigHaystack(needles).search_index(haystack_data, haystack_offsets);
-        std::copy(result.begin(), result.end(), res.begin());
+        Impl::createMultiSearcherInBigHaystack(needles).searchIndex(haystack_data, haystack_offsets, res);
     }
 };
 
@@ -543,7 +528,7 @@ struct MatchImpl
                             size_t str_size = (i != 0 ? offsets[i] - offsets[i - 1] : offsets[0]) - 1;
 
                             /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
-                              *  so that it can match when `required_substring` occurs into the line several times,
+                              *  so that it can match when `required_substring` occurs into the string several times,
                               *  and at the first occurrence, the regexp is not a match.
                               */
 
@@ -875,7 +860,7 @@ struct ReplaceStringImpl
             if (i == offsets.size())
                 break;
 
-            /// Is it true that this line no longer needs to perform transformations.
+            /// Is it true that this string no longer needs to perform transformations.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not go through the boundaries of strings.
@@ -964,7 +949,7 @@ struct ReplaceStringImpl
             memcpy(&res_data[res_offset], pos, match - pos);
             res_offset += (match - pos);
 
-            /// Is it true that this line no longer needs to perform conversions.
+            /// Is it true that this string no longer needs to perform conversions.
             bool can_finish_current_string = false;
 
             /// We check that the entry does not pass through the boundaries of strings.
