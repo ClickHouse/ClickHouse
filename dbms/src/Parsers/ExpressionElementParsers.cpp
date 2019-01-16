@@ -1351,7 +1351,7 @@ bool ParserKeyValueFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     ++pos;
     auto function = std::make_shared<ASTKeyValueFunction>();
-    function->name = typeid_cast<ASTIdentifier &>(*identifier.get()).name;
+    function->name = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
     function->elements = expr_list_args;
     function->children.push_back(function->elements);
     node = function;
