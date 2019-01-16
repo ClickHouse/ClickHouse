@@ -314,11 +314,13 @@ private:
                     throw_exception("Expected closing parenthesis, found");
 
             }
-            else if (match(".*")) {
+            else if (match(".*"))
+            {
                 actions.emplace_back(PatternActionType::KleeneStar);
                 dfa_states.back().has_kleene = true;
             }
-            else if (match(".")) {
+            else if (match("."))
+            {
                 actions.emplace_back(PatternActionType::AnyEvent);
                 dfa_states.back().transition = DFATransition::AnyEvent;
                 dfa_states.emplace_back();
@@ -352,16 +354,20 @@ protected:
         /// the match failed.
         size_t n_active = 1;
 
-        for (/* empty */; events_it != events_end && n_active > 0 && !active_states.back(); ++events_it) {
+        for (/* empty */; events_it != events_end && n_active > 0 && !active_states.back(); ++events_it)
+        {
             n_active = 0;
             next_active_states.assign(dfa_states.size(), false);
 
-            for (size_t state = 0; state < dfa_states.size(); ++state) {
-                if (!active_states[state]) {
+            for (size_t state = 0; state < dfa_states.size(); ++state)
+            {
+                if (!active_states[state])
+                {
                     continue;
                 }
 
-                switch (dfa_states[state].transition) {
+                switch (dfa_states[state].transition)
+                {
                 case DFATransition::None:
                     break;
                 case DFATransition::AnyEvent:
@@ -369,14 +375,16 @@ protected:
                     ++n_active;
                     break;
                 case DFATransition::SpecificEvent:
-                    if (events_it->second.test(dfa_states[state].event)) {
+                    if (events_it->second.test(dfa_states[state].event))
+                    {
                         next_active_states[state + 1] = true;
                         ++n_active;
                     }
                     break;
                 }
 
-                if (dfa_states[state].has_kleene) {
+                if (dfa_states[state].has_kleene)
+                {
                     next_active_states[state] = true;
                     ++n_active;
                 }
