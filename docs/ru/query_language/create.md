@@ -16,8 +16,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 ``` sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 (
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [compression_codec],
     ...
 ) ENGINE = engine
 ```
@@ -80,6 +80,11 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name ENGINE = engine AS SELECT ...
 Если добавить в таблицу новый столбец, а через некоторое время изменить его выражение по умолчанию, то используемые значения для старых данных (для данных, где значения не хранились на диске) поменяются. Также заметим, что при выполнении фоновых слияний, данные для столбцов, отсутствующих в одном из сливаемых кусков, записываются в объединённый кусок.
 
 Отсутствует возможность задать значения по умолчанию для элементов вложенных структур данных.
+
+### Форматы сжатия для колонок
+
+Таблица может использовать общий формат сжатия, установленный в настройках сервера, или применять к каждой колонке свой формат, указанный в `compression_codec`.
+[Подробное описание](../operations/table_engines/custom_compression_codec.md).
 
 ### Временные таблицы
 
