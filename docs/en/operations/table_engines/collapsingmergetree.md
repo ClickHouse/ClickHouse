@@ -95,7 +95,7 @@ As we need only the last state of user activity, the rows
 
 can be deleted collapsing the invalid (old) state of an object. `CollapsingMergeTree` does this while merging of the data parts.
 
-Why we need 2 rows for each change read in the "Algorithm" paragraph.
+Why we need 2 rows for each change read in the [Algorithm](#table_engine-collapsingmergetree-collapsing-algorithm) paragraph.
 
 **Peculiar properties of such approach**
 
@@ -103,7 +103,7 @@ Why we need 2 rows for each change read in the "Algorithm" paragraph.
 2. Long growing arrays in columns reduce the efficiency of the engine due to load for writing. The more straightforward data, the higher efficiency.
 3. The `SELECT` results depend strongly on the consistency of object changes history. Be accurate when preparing data for inserting. You can get unpredictable results in inconsistent data, for example, negative values for non-negative metrics such as session depth.
 
-### Algorithm
+### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
 When ClickHouse merges data parts, each group of consecutive rows with the same primary key is reduced to not more than two rows, one with `Sign = 1` ("state" row) and another with `Sign = -1` ("cancel" row). In other words, entries collapse.
 
