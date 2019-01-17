@@ -2,8 +2,9 @@
 
 #include <memory>
 #include <optional>
+
 #include <Core/Types.h>
-#include <Parsers/ASTSelectQuery.h>
+
 
 namespace DB
 {
@@ -33,6 +34,9 @@ struct DatabaseAndTableWithAlias
 
     /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
     void makeQualifiedName(const ASTPtr & ast) const;
+
+    /// Check if it satisfies another db_table name. @note opterion is not symmetric.
+    bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
 };
 
 void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip);
@@ -44,6 +48,6 @@ std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query);
-ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number);
+ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number);
 
 }
