@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 static String getSchemaPath(const String & schema_dir, const String & schema_file)
@@ -108,7 +109,8 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
 
-void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
+
+void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_fields, capnp::StructSchema reader)
 {
     // Store parents and their tokens in order to backtrack
     std::vector<capnp::StructSchema::Field> parents;
@@ -116,16 +118,21 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
 
     capnp::StructSchema cur_reader = reader;
     size_t level = 0;
-    for (const auto & field : sortedFields)
+    for (const auto & field : sorted_fields)
     {
+        if (field.tokens.empty())
+            throw Exception("Logical error in CapnProtoRowInputStream", ErrorCodes::LOGICAL_ERROR);
+
         // Backtrack to common parent
-        while(level > (field.tokens.size() - 1) || !checkEqualFrom(tokens, field.tokens, level - 1))
+        while (level > (field.tokens.size() - 1)
+            || tokens.size() != field.tokens.size()
+            || !std::equal(tokens.begin() + level - 1, tokens.end(), field.tokens.begin() + level - 1))
         {
-            level--;
+            --level;
             actions.push_back({Action::POP});
             tokens.pop_back();
             parents.pop_back();
-            
+
             if (level > 0)
             {
                 cur_reader = parents[level-1].getType().asStruct();
@@ -136,7 +143,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
                 break;
             }
         }
-        
+
         // Go forward
         for (; level < field.tokens.size() - 1; ++level)
         {
@@ -202,7 +209,7 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     for (size_t i = 0; i < num_columns; ++i)
         list.push_back(split(header, i));
 
-    // Order list first by value of strings then by length of sting vector.
+    // Order list first by value of strings then by length of string vector.
     std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b) { return a.tokens < b.tokens; });
     createActions(list, root);
 }
