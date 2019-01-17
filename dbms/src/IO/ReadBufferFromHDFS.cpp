@@ -15,7 +15,7 @@ namespace ErrorCodes
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 {
     std::string hdfs_uri;
-    struct hdfsBuilder * builder;
+    hdfsBuilder * builder;
     hdfsFS fs;
     hdfsFile fin;
 
@@ -36,6 +36,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
         /// TODO Allow to tune from query Settings.
         hdfsBuilderConfSetStr(builder, "input.read.timeout", "60000"); // 1 min
+        hdfsBuilderConfSetStr(builder, "input.write.timeout", "60000"); // 1 min
         hdfsBuilderConfSetStr(builder, "input.connect.timeout", "60000"); // 1 min
 
         hdfsBuilderSetNameNode(builder, host.c_str());
@@ -65,9 +66,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     {
         int bytes_read = hdfsRead(fs, fin, start, size);
         if (bytes_read < 0)
-        {
-            throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
-        }
+            throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
         return bytes_read;
     }
 };
