@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -20,7 +20,7 @@ public:
 
 private:
     MergeTreeIndexPtr index;
-    MergeTreeReader::Stream stream;
+    MergeTreeReaderStream stream;
 };
 
 }
