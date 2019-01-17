@@ -21,7 +21,7 @@ DROP TABLE IF EXISTS test.union_bug;
 
 CREATE TABLE test.union_bug (
     Event String,
-    Datetime DateTime
+    Datetime DateTime('Europe/Moscow')
 ) Engine = Memory;
 
 INSERT INTO test.union_bug VALUES ('A', 1), ('B', 2);

@@ -36,7 +36,7 @@
 	url = https://github.com/ClickHouse-Extras/llvm
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
-	url = https://github.com/MariaDB/mariadb-connector-c.git
+	url = https://github.com/ClickHouse-Extras/mariadb-connector-c.git
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc.git
@@ -61,3 +61,6 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
+[submodule "contrib/cppkafka"]
+	path = contrib/cppkafka
+	url = https://github.com/mfontanini/cppkafka.git

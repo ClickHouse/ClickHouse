@@ -44,7 +44,7 @@ UInt64 Value::readUIntText(const char * buf, size_t length) const
 Int64 Value::readIntText(const char * buf, size_t length) const
 {
     bool negative = false;
-    Int64 x = 0;
+    UInt64 x = 0;
     const char * end = buf + length;
 
     while (buf != end)
@@ -74,10 +74,8 @@ Int64 Value::readIntText(const char * buf, size_t length) const
         }
         ++buf;
     }
-    if (negative)
-        x = -x;
 
-    return x;
+    return negative ? -x : x;
 }
 
 

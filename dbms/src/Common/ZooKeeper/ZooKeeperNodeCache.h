@@ -53,8 +53,8 @@ private:
     struct Context
     {
         std::mutex mutex;
-        zkutil::ZooKeeperPtr zookeeper;
         std::unordered_set<std::string> invalidated_paths;
+        bool all_paths_invalidated = false;
     };
 
     std::shared_ptr<Context> context;

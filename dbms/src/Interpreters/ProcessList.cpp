@@ -283,7 +283,7 @@ QueryStatus::~QueryStatus() = default;
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     query_stream_in = io.in;
     query_stream_out = io.out;
@@ -296,7 +296,7 @@ void QueryStatus::releaseQueryStreams()
     BlockOutputStreamPtr out;
 
     {
-        std::lock_guard<std::mutex> lock(query_streams_mutex);
+        std::lock_guard lock(query_streams_mutex);
 
         query_streams_status = QueryStreamsStatus::Released;
         in = std::move(query_stream_in);
@@ -308,14 +308,14 @@ void QueryStatus::releaseQueryStreams()
 
 bool QueryStatus::streamsAreReleased()
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     return query_streams_status == QueryStreamsStatus::Released;
 }
 
 bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
-    std::lock_guard<std::mutex> lock(query_streams_mutex);
+    std::lock_guard lock(query_streams_mutex);
 
     if (query_streams_status != QueryStreamsStatus::Initialized)
         return false;
@@ -358,7 +358,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 
 ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     QueryStatus * elem = tryGetProcessListElement(current_query_id, current_user);
 
@@ -431,7 +431,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 {
     Info per_query_infos;
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     per_query_infos.reserve(processes.size());
     for (const auto & process : processes)

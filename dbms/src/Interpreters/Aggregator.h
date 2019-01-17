@@ -171,14 +171,14 @@ struct AggregationMethodOneNumber
     /// To use one `Method` in different threads, use different `State`.
     struct State
     {
-        const FieldType * vec;
+        const char * vec;
 
         /** Called at the start of each block processing.
           * Sets the variables needed for the other methods called in inner loops.
           */
         void init(ColumnRawPtrs & key_columns)
         {
-            vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+            vec = key_columns[0]->getRawData().data;
         }
 
         /// Get the key from the key columns for insertion into the hash table.
@@ -190,7 +190,7 @@ struct AggregationMethodOneNumber
             StringRefs & /*keys*/,        /// Here references to key data in columns can be written. They can be used in the future.
             Arena & /*pool*/) const
         {
-            return unionCastToUInt64(vec[i]);
+            return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
         }
     };
 
@@ -218,7 +218,7 @@ struct AggregationMethodOneNumber
       */
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
     {
-        static_cast<ColumnVector<FieldType> *>(key_columns[0].get())->insertData(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
+        static_cast<ColumnVectorHelper *>(key_columns[0].get())->insertRawData<sizeof(FieldType)>(reinterpret_cast<const char *>(&value.first));
     }
 
     /// Get StringRef from value which can be inserted into column.
@@ -250,28 +250,28 @@ struct AggregationMethodString
 
     struct State
     {
-        const ColumnString::Offsets * offsets;
-        const ColumnString::Chars * chars;
+        const IColumn::Offset * offsets;
+        const UInt8 * chars;
 
         void init(ColumnRawPtrs & key_columns)
         {
             const IColumn & column = *key_columns[0];
             const ColumnString & column_string = static_cast<const ColumnString &>(column);
-            offsets = &column_string.getOffsets();
-            chars = &column_string.getChars();
+            offsets = column_string.getOffsets().data();
+            chars = column_string.getChars().data();
         }
 
         ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,
-            size_t i,
+            ssize_t i,
             const Sizes & /*key_sizes*/,
             StringRefs & /*keys*/,
             Arena & /*pool*/) const
         {
             return StringRef(
-                &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
-                (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+                chars + offsets[i - 1],
+                offsets[i] - offsets[i - 1] - 1);
         }
     };
 
@@ -280,7 +280,8 @@ struct AggregationMethodString
 
     static ALWAYS_INLINE void onNewKey(typename Data::value_type & value, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & pool)
     {
-        value.first.data = pool.insert(value.first.data, value.first.size);
+        if (value.first.size)
+            value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
     static ALWAYS_INLINE void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
@@ -443,7 +444,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     struct State : public BaseState
     {
-        ColumnRawPtrs key;
+        ColumnRawPtrs key_columns;
         const IColumn * positions = nullptr;
         size_t size_of_index_type = 0;
 
@@ -463,12 +464,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             throw Exception("Expected cache for AggregationMethodSingleLowCardinalityColumn::init", ErrorCodes::LOGICAL_ERROR);
         }
 
-        void init(ColumnRawPtrs & key_columns, const AggregationStateCachePtr & cache_ptr)
+        void init(ColumnRawPtrs & key_columns_low_cardinality, const AggregationStateCachePtr & cache_ptr)
         {
-            auto column = typeid_cast<const ColumnLowCardinality *>(key_columns[0]);
+            auto column = typeid_cast<const ColumnLowCardinality *>(key_columns_low_cardinality[0]);
             if (!column)
                 throw Exception("Invalid aggregation key type for AggregationMethodSingleLowCardinalityColumn method. "
-                                "Excepted LowCardinality, got " + key_columns[0]->getName(), ErrorCodes::LOGICAL_ERROR);
+                                "Excepted LowCardinality, got " + key_columns_low_cardinality[0]->getName(), ErrorCodes::LOGICAL_ERROR);
 
             if (!cache_ptr)
                 throw Exception("Cache wasn't created for AggregationMethodSingleLowCardinalityColumn", ErrorCodes::LOGICAL_ERROR);
@@ -483,7 +484,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
             auto * dict = column->getDictionary().getNestedNotNullableColumn().get();
             is_nullable = column->getDictionary().nestedColumnIsNullable();
-            key = {dict};
+            key_columns = {dict};
             bool is_shared_dict = column->isSharedDictionary();
 
             typename LowCardinalityDictionaryCache::DictionaryKey dictionary_key;
@@ -516,12 +517,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
 
             AggregateDataPtr default_data = nullptr;
-            aggregate_data_cache.assign(key[0]->size(), default_data);
+            aggregate_data_cache.assign(key_columns[0]->size(), default_data);
 
             size_of_index_type = column->getSizeOfIndexType();
             positions = column->getIndexesPtr().get();
 
-            BaseState::init(key);
+            BaseState::init(key_columns);
         }
 
         ALWAYS_INLINE size_t getIndexAt(size_t row) const
@@ -546,7 +547,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             Arena & pool) const
         {
             size_t row = getIndexAt(i);
-            return BaseState::getKey(key, 1, row, key_sizes, keys, pool);
+            return BaseState::getKey(key_columns, 1, row, key_sizes, keys, pool);
         }
 
         template <typename D>
@@ -574,9 +575,8 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             }
             else
             {
-                ColumnRawPtrs key_columns;
                 Sizes key_sizes;
-                auto key = getKey(key_columns, 0, i, key_sizes, keys, pool);
+                auto key = getKey({}, 0, i, key_sizes, keys, pool);
 
                 typename D::iterator it;
                 if (saved_hash)
@@ -617,11 +617,10 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
             if (!aggregate_data_cache[row])
             {
-                ColumnRawPtrs key_columns;
                 Sizes key_sizes;
                 StringRefs keys;
                 Arena pool;
-                auto key = getKey(key_columns, 0, i, key_sizes, keys, pool);
+                auto key = getKey({}, 0, i, key_sizes, keys, pool);
 
                 typename D::iterator it;
                 if (saved_hash)
@@ -652,10 +651,10 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static const bool no_consecutive_keys_optimization = true;
     static const bool low_cardinality_optimization = true;
 
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, const Sizes & /*key_sizes*/)
+    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns_low_cardinality, const Sizes & /*key_sizes*/)
     {
         auto ref = Base::getValueRef(value);
-        static_cast<ColumnLowCardinality *>(key_columns[0].get())->insertData(ref.data, ref.size);
+        static_cast<ColumnLowCardinality *>(key_columns_low_cardinality[0].get())->insertData(ref.data, ref.size);
     }
 };
 
@@ -1131,9 +1130,6 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: NAME = std::make_unique<decltype(NAME)::element_type>(); break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
 
         type = type_;
@@ -1151,10 +1147,9 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return NAME->data.size() + (without_key != nullptr);
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
+
+        __builtin_unreachable();
     }
 
     /// The size without taking into account the row in which data is written for the calculation of TOTALS.
@@ -1169,10 +1164,9 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return NAME->data.size();
             APPLY_FOR_AGGREGATED_VARIANTS(M)
             #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
+
+        __builtin_unreachable();
     }
 
     const char * getMethodName() const
@@ -1186,10 +1180,9 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return #NAME;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
+
+        __builtin_unreachable();
     }
 
     bool isTwoLevel() const
@@ -1203,10 +1196,9 @@ struct AggregatedDataVariants : private boost::noncopyable
             case Type::NAME: return IS_TWO_LEVEL;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
-
-            default:
-                throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
+
+        __builtin_unreachable();
     }
 
     #define APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M) \
@@ -1485,7 +1477,7 @@ public:
 
         bool empty() const
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             return files.empty();
         }
     };

@@ -17,7 +17,6 @@
 #include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
-#include <IO/CompressionSettings.h>
 
 
 namespace Poco
@@ -80,6 +79,7 @@ using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
+class ICompressionCodec;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -152,6 +152,7 @@ public:
     static Context createGlobal();
 
     Context(const Context &) = default;
+    Context & operator=(const Context &) = default;
     ~Context();
 
     String getPath() const;
@@ -168,7 +169,7 @@ public:
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    Poco::Util::AbstractConfiguration & getConfigRef() const;
+    const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.
@@ -389,25 +390,25 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog(bool create_if_not_exists = true);
-    QueryThreadLog * getQueryThreadLog(bool create_if_not_exists = true);
+    QueryLog * getQueryLog();
+    QueryThreadLog * getQueryThreadLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database, bool create_if_not_exists = true);
+    PartLog * getPartLog(const String & part_database);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
-    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size);
+    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxPartitionSizeToDrop(size_t max_size);
-    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size);
+    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
 
-    /// Lets you select the compression settings according to the conditions described in the configuration file.
-    CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
+    /// Lets you select the compression codec according to the conditions described in the configuration file.
+    std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -471,7 +472,7 @@ private:
     /// Session will be closed after specified timeout.
     void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 
-    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop);
+    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
 
 

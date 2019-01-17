@@ -7,6 +7,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>
@@ -273,7 +274,7 @@ void DatabaseOrdinary::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         if (tables.find(table_name) != tables.end())
             throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
@@ -298,7 +299,7 @@ void DatabaseOrdinary::createTable(
     {
         /// Add a table to the map of known tables.
         {
-            std::lock_guard<std::mutex> lock(mutex);
+            std::lock_guard lock(mutex);
             if (!tables.emplace(table_name, table).second)
                 throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
@@ -492,7 +493,7 @@ void DatabaseOrdinary::shutdown()
 
     Tables tables_snapshot;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
         tables_snapshot = tables;
     }
 
@@ -501,19 +502,19 @@ void DatabaseOrdinary::shutdown()
         kv.second->shutdown();
     }
 
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
     tables.clear();
 }
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
-    const String & name,
+    const String & table_name,
     const ColumnsDescription & columns,
     const ASTModifier & storage_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
-    String table_name_escaped = escapeForFileName(name);
+    String table_name_escaped = escapeForFileName(table_name);
     String table_metadata_tmp_path = metadata_path + "/" + table_name_escaped + ".sql.tmp";
     String table_metadata_path = metadata_path + "/" + table_name_escaped + ".sql";
     String statement;

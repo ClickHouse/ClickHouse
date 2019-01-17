@@ -52,34 +52,16 @@ void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
 size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
                                                               const DatabaseAndTableWithAlias & names)
 {
-    size_t num_qualifiers_to_strip = 0;
+    /// database.table.column
+    if (doesIdentifierBelongTo(identifier, names.database, names.table))
+        return 2;
 
-    auto get_identifier_name = [](const ASTPtr & ast) { return static_cast<const ASTIdentifier &>(*ast).name; };
+    /// table.column or alias.column.
+    if (doesIdentifierBelongTo(identifier, names.table) ||
+        doesIdentifierBelongTo(identifier, names.alias))
+        return 1;
 
-    /// It is compound identifier
-    if (!identifier.children.empty())
-    {
-        size_t num_components = identifier.children.size();
-
-        /// database.table.column
-        if (num_components >= 3
-            && !names.database.empty()
-            && get_identifier_name(identifier.children[0]) == names.database
-            && get_identifier_name(identifier.children[1]) == names.table)
-        {
-            num_qualifiers_to_strip = 2;
-        }
-
-        /// table.column or alias.column. If num_components > 2, it is like table.nested.column.
-        if (num_components >= 2
-            && ((!names.table.empty() && get_identifier_name(identifier.children[0]) == names.table)
-                || (!names.alias.empty() && get_identifier_name(identifier.children[0]) == names.alias)))
-        {
-            num_qualifiers_to_strip = 1;
-        }
-    }
-
-    return num_qualifiers_to_strip;
+    return 0;
 }
 
 
@@ -94,32 +76,46 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
         if (identifier.children.size() != 2)
             throw Exception("Logical error: number of components in table expression not equal to two", ErrorCodes::LOGICAL_ERROR);
 
-        const ASTIdentifier * db_identifier = typeid_cast<const ASTIdentifier *>(identifier.children[0].get());
-        const ASTIdentifier * table_identifier = typeid_cast<const ASTIdentifier *>(identifier.children[1].get());
-        if (!db_identifier || !table_identifier)
-            throw Exception("Logical error: identifiers expected", ErrorCodes::LOGICAL_ERROR);
-
-        database = db_identifier->name;
-        table = table_identifier->name;
+        getIdentifierName(identifier.children[0], database);
+        getIdentifierName(identifier.children[1], table);
     }
+}
+
+DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTPtr & node, const String & current_database)
+{
+    const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get());
+    if (!identifier)
+        throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
+
+    *this = DatabaseAndTableWithAlias(*identifier, current_database);
 }
 
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database)
 {
     if (table_expression.database_and_table_name)
-    {
-        const auto * identifier = typeid_cast<const ASTIdentifier *>(table_expression.database_and_table_name.get());
-        if (!identifier)
-            throw Exception("Logical error: identifier expected", ErrorCodes::LOGICAL_ERROR);
-
-        *this = DatabaseAndTableWithAlias(*identifier, current_database);
-    }
+        *this = DatabaseAndTableWithAlias(table_expression.database_and_table_name, current_database);
     else if (table_expression.table_function)
         alias = table_expression.table_function->tryGetAlias();
     else if (table_expression.subquery)
         alias = table_expression.subquery->tryGetAlias();
     else
         throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
+}
+
+bool DatabaseAndTableWithAlias::satisfies(const DatabaseAndTableWithAlias & db_table, bool table_may_be_an_alias)
+{
+    /// table.*, alias.* or database.table.*
+
+    if (database.empty())
+    {
+        if (!db_table.table.empty() && table == db_table.table)
+            return true;
+
+        if (!db_table.alias.empty())
+            return (alias == db_table.alias) || (table_may_be_an_alias && table == db_table.alias);
+    }
+
+    return database == db_table.database && table == db_table.table;
 }
 
 String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
@@ -137,17 +133,7 @@ void DatabaseAndTableWithAlias::makeQualifiedName(const ASTPtr & ast) const
         String prefix = getQualifiedNamePrefix();
         identifier->name.insert(identifier->name.begin(), prefix.begin(), prefix.end());
 
-        Names qualifiers;
-        if (!alias.empty())
-            qualifiers.push_back(alias);
-        else
-        {
-            qualifiers.push_back(database);
-            qualifiers.push_back(table);
-        }
-
-        for (const auto & qualifier : qualifiers)
-            identifier->children.emplace_back(std::make_shared<ASTIdentifier>(qualifier));
+        addIdentifierQualifier(*identifier, database, table, alias);
     }
 }
 
@@ -207,31 +193,19 @@ std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuer
         return {};
 
     ASTPtr database_and_table_name = table_expression->database_and_table_name;
-    if (!database_and_table_name)
+    if (!database_and_table_name || !isIdentifier(database_and_table_name))
         return {};
 
-    const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(database_and_table_name.get());
-    if (!identifier)
-        return {};
-
-    return *identifier;
+    return DatabaseAndTableWithAlias(database_and_table_name);
 }
 
-ASTPtr getTableFunctionOrSubquery(const ASTSelectQuery & select, size_t table_number)
+ASTPtr extractTableExpression(const ASTSelectQuery & select, size_t table_number)
 {
-    const ASTTableExpression * table_expression = getTableExpression(select, table_number);
-    if (table_expression)
+    if (const ASTTableExpression * table_expression = getTableExpression(select, table_number))
     {
-#if 1   /// TODO: It hides some logical error in InterpreterSelectQuery & distributed tables
         if (table_expression->database_and_table_name)
-        {
-            if (table_expression->database_and_table_name->children.empty())
-                return table_expression->database_and_table_name;
+            return table_expression->database_and_table_name;
 
-            if (table_expression->database_and_table_name->children.size() == 2)
-                return table_expression->database_and_table_name->children[1];
-        }
-#endif
         if (table_expression->table_function)
             return table_expression->table_function;
 

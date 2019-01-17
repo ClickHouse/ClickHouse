@@ -28,14 +28,14 @@ struct JoinKeyGetterOneNumber
 {
     using Key = FieldType;
 
-    const FieldType * vec;
+    const char * vec;
 
     /** Created before processing of each block.
       * Initialize some members, used in another methods, called in inner loops.
       */
     JoinKeyGetterOneNumber(const ColumnRawPtrs & key_columns)
     {
-        vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+        vec = key_columns[0]->getRawData().data;
     }
 
     Key getKey(
@@ -44,7 +44,7 @@ struct JoinKeyGetterOneNumber
         size_t i,                             /// row number to get key from.
         const Sizes & /*key_sizes*/) const    /// If keys are of fixed size - their sizes. Not used for methods with variable-length keys.
     {
-        return unionCastToUInt64(vec[i]);
+        return unalignedLoad<FieldType>(vec + i * sizeof(FieldType));
     }
 
     /// Place additional data into memory pool, if needed, when new key was inserted into hash table.
@@ -56,31 +56,32 @@ struct JoinKeyGetterString
 {
     using Key = StringRef;
 
-    const ColumnString::Offsets * offsets;
-    const ColumnString::Chars * chars;
+    const IColumn::Offset * offsets;
+    const UInt8 * chars;
 
     JoinKeyGetterString(const ColumnRawPtrs & key_columns)
     {
         const IColumn & column = *key_columns[0];
         const ColumnString & column_string = static_cast<const ColumnString &>(column);
-        offsets = &column_string.getOffsets();
-        chars = &column_string.getChars();
+        offsets = column_string.getOffsets().data();
+        chars = column_string.getChars().data();
     }
 
     Key getKey(
         const ColumnRawPtrs &,
         size_t,
-        size_t i,
+        ssize_t i,
         const Sizes &) const
     {
         return StringRef(
-            &(*chars)[i == 0 ? 0 : (*offsets)[i - 1]],
-            (i == 0 ? (*offsets)[i] : ((*offsets)[i] - (*offsets)[i - 1])) - 1);
+            chars + offsets[i - 1],
+            offsets[i] - offsets[i - 1] - 1);
     }
 
     static void onNewKey(Key & key, Arena & pool)
     {
-        key.data = pool.insert(key.data, key.size);
+        if (key.size)
+            key.data = pool.insert(key.data, key.size);
     }
 };
 

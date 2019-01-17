@@ -31,20 +31,16 @@ public:
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
     {
-        LOG_TRACE(log,
-            "HTTP Request for " << name << ". "
-                                << "Method: "
-                                << request.getMethod()
-                                << ", Address: "
-                                << request.clientAddress().toString()
-                                << ", User-Agent: "
-                                << (request.has("User-Agent") ? request.get("User-Agent") : "none")
-                                << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
-#if !NDEBUG
-                                << ", Content Type: " << request.getContentType()
-                                << ", Transfer Encoding: " << request.getTransferEncoding()
-#endif
-                 );
+        LOG_TRACE(log, "HTTP Request for " << name << ". "
+            << "Method: "
+            << request.getMethod()
+            << ", Address: "
+            << request.clientAddress().toString()
+            << ", User-Agent: "
+            << (request.has("User-Agent") ? request.get("User-Agent") : "none")
+            << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
+            << ", Content Type: " << request.getContentType()
+            << ", Transfer Encoding: " << request.getTransferEncoding());
 
         const auto & uri = request.getURI();
 

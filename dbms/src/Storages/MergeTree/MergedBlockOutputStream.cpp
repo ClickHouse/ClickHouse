@@ -26,13 +26,13 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     MergeTreeData & storage_,
     size_t min_compress_block_size_,
     size_t max_compress_block_size_,
-    CompressionSettings compression_settings_,
+    CompressionCodecPtr codec_,
     size_t aio_threshold_)
     : storage(storage_),
     min_compress_block_size(min_compress_block_size_),
     max_compress_block_size(max_compress_block_size_),
     aio_threshold(aio_threshold_),
-    compression_settings(compression_settings_)
+    codec(codec_)
 {
 }
 
@@ -41,6 +41,7 @@ void IMergedBlockOutputStream::addStreams(
     const String & path,
     const String & name,
     const IDataType & type,
+    const CompressionCodecPtr & effective_codec,
     size_t estimated_size,
     bool skip_offsets)
 {
@@ -59,8 +60,8 @@ void IMergedBlockOutputStream::addStreams(
             stream_name,
             path + stream_name, DATA_FILE_EXTENSION,
             path + stream_name, MARKS_FILE_EXTENSION,
+            effective_codec,
             max_compress_block_size,
-            compression_settings,
             estimated_size,
             aio_threshold);
     };
@@ -98,7 +99,7 @@ void IMergedBlockOutputStream::writeData(
     bool skip_offsets,
     IDataType::SerializeBinaryBulkStatePtr & serialization_state)
 {
-    auto & settings = storage.context.getSettingsRef();
+    auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
@@ -183,15 +184,15 @@ IMergedBlockOutputStream::ColumnStream::ColumnStream(
     const std::string & data_file_extension_,
     const std::string & marks_path,
     const std::string & marks_file_extension_,
+    const CompressionCodecPtr & compression_codec,
     size_t max_compress_block_size,
-    CompressionSettings compression_settings,
     size_t estimated_size,
     size_t aio_threshold) :
     escaped_column_name(escaped_column_name_),
     data_file_extension{data_file_extension_},
     marks_file_extension{marks_file_extension_},
     plain_file(createWriteBufferFromFileBase(data_path + data_file_extension, estimated_size, aio_threshold, max_compress_block_size)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_settings), compressed(compressed_buf),
+    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec), compressed(compressed_buf),
     marks_file(marks_path + marks_file_extension, 4096, O_TRUNC | O_CREAT | O_WRONLY), marks(marks_file)
 {
 }
@@ -230,28 +231,31 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
-    CompressionSettings compression_settings)
+    CompressionCodecPtr default_codec_)
     : IMergedBlockOutputStream(
-        storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_settings,
-        storage_.context.getSettings().min_bytes_to_use_direct_io),
+        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
+        storage_.global_context.getSettings().min_bytes_to_use_direct_io),
     columns_list(columns_list_), part_path(part_path_)
 {
     init();
     for (const auto & it : columns_list)
-        addStreams(part_path, it.name, *it.type, 0, false);
+    {
+        const auto columns = storage.getColumns();
+        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), 0, false);
+    }
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     MergeTreeData & storage_,
     String part_path_,
     const NamesAndTypesList & columns_list_,
-    CompressionSettings compression_settings,
+    CompressionCodecPtr default_codec_,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size_,
     size_t aio_threshold_)
     : IMergedBlockOutputStream(
-        storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_settings,
+        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
         aio_threshold_),
     columns_list(columns_list_), part_path(part_path_)
 {
@@ -270,7 +274,10 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     }
 
     for (const auto & it : columns_list)
-        addStreams(part_path, it.name, *it.type, total_size, false);
+    {
+        const auto columns = storage.getColumns();
+        addStreams(part_path, it.name, *it.type, columns.getCodecOrDefault(it.name, default_codec_), total_size, false);
+    }
 }
 
 std::string MergedBlockOutputStream::getPartPath() const
@@ -305,7 +312,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish columns serialization.
     if (!serialization_states.empty())
     {
-        auto & settings = storage.context.getSettingsRef();
+        auto & settings = storage.global_context.getSettingsRef();
         IDataType::SerializeBinaryBulkSettings serialize_settings;
         serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
         serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
@@ -378,7 +385,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->columns = *total_column_list;
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
-    new_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_part->getFullPath());
+    new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
 }
 
 void MergedBlockOutputStream::init()
@@ -507,12 +514,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_,
-    CompressionSettings compression_settings, bool skip_offsets_,
+    CompressionCodecPtr default_codec_, bool skip_offsets_,
     WrittenOffsetColumns & already_written_offset_columns)
     : IMergedBlockOutputStream(
-        storage_, storage_.context.getSettings().min_compress_block_size,
-        storage_.context.getSettings().max_compress_block_size, compression_settings,
-        storage_.context.getSettings().min_bytes_to_use_direct_io),
+        storage_, storage_.global_context.getSettings().min_compress_block_size,
+        storage_.global_context.getSettings().max_compress_block_size, default_codec_,
+        storage_.global_context.getSettings().min_bytes_to_use_direct_io),
     header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_),
     already_written_offset_columns(already_written_offset_columns)
 {
@@ -532,7 +539,8 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         {
             const auto & col = block.safeGetByPosition(i);
 
-            addStreams(part_path, col.name, *col.type, 0, skip_offsets);
+            const auto columns = storage.getColumns();
+            addStreams(part_path, col.name, *col.type, columns.getCodecOrDefault(col.name, codec), 0, skip_offsets);
             serialization_states.emplace_back(nullptr);
             settings.getter = createStreamGetter(col.name, tmp_offset_columns, false);
             col.type->serializeBinaryBulkStatePrefix(settings, serialization_states.back());
@@ -562,7 +570,7 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums()
 {
     /// Finish columns serialization.
-    auto & settings = storage.context.getSettingsRef();
+    auto & settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
     serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;

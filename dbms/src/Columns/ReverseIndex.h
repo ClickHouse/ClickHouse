@@ -6,6 +6,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
+#include <common/unaligned.h>
+
 
 namespace DB
 {
@@ -112,7 +114,7 @@ namespace
             else
             {
                 using ValueType = typename ColumnType::value_type;
-                ValueType value = *reinterpret_cast<const ValueType *>(state.index_column->getDataAt(index).data);
+                ValueType value = unalignedLoad<ValueType>(state.index_column->getDataAt(index).data);
                 return DefaultHash<ValueType>()(value);
             }
         }
@@ -289,7 +291,7 @@ private:
         if constexpr (is_numeric_column)
         {
             using ValueType = typename ColumnType::value_type;
-            ValueType value = *reinterpret_cast<const ValueType *>(ref.data);
+            ValueType value = unalignedLoad<ValueType>(ref.data);
             return DefaultHash<ValueType>()(value);
         }
         else
@@ -391,10 +393,10 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(const StringRef & data)
 
     if constexpr (use_saved_hash)
     {
-        auto & data = saved_hash->getData();
-        if (data.size() <= num_rows)
-            data.resize(num_rows + 1);
-        data[num_rows] = hash;
+        auto & column_data = saved_hash->getData();
+        if (column_data.size() <= num_rows)
+            column_data.resize(num_rows + 1);
+        column_data[num_rows] = hash;
     }
     else
         column->insertData(data.data, data.size);

@@ -1,6 +1,4 @@
-<a name="table_engines-file"></a>
-
-# File(Format)
+# File(Format) {#table_engines-file}
 
 Управляет данными в одном файле на диске в указанном формате.
 

@@ -17,19 +17,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name)
-{
-    if (database_name.empty())
-        return ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database = ASTIdentifier::createSpecial(database_name);
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
-    database_and_table->children = {database, table};
-    return database_and_table;
-}
-
 
 ASTPtr ASTSelectQuery::clone() const
 {
@@ -64,6 +51,8 @@ ASTPtr ASTSelectQuery::clone() const
 
 #undef CLONE
 
+    if (semantic)
+        res->semantic = semantic->clone();
     return res;
 }
 
@@ -283,23 +272,21 @@ bool ASTSelectQuery::final() const
 }
 
 
-ASTPtr ASTSelectQuery::array_join_expression_list() const
+ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
     return array_join->expression_list;
 }
 
 
-bool ASTSelectQuery::array_join_is_left() const
+ASTPtr ASTSelectQuery::array_join_expression_list() const
 {
-    const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
-    if (!array_join)
-        return {};
-
-    return array_join->kind == ASTArrayJoin::Kind::Left;
+    bool is_left;
+    return array_join_expression_list(is_left);
 }
 
 
@@ -308,6 +295,17 @@ const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
     return getFirstTableJoin(*this);
 }
 
+static String getTableExpressionAlias(const ASTTableExpression * table_expression)
+{
+    if (table_expression->subquery)
+        return table_expression->subquery->tryGetAlias();
+    else if (table_expression->table_function)
+        return table_expression->table_function->tryGetAlias();
+    else if (table_expression->database_and_table_name)
+        return table_expression->database_and_table_name->tryGetAlias();
+
+    return String();
+}
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
@@ -326,7 +324,11 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, table_name);
+    String table_alias = getTableExpressionAlias(table_expression);
+    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
+
+    if (!table_alias.empty())
+        table_expression->database_and_table_name->setAlias(table_alias);
 }
 
 
@@ -347,8 +349,13 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
         table_expression = table_expr.get();
     }
 
-    table_expression->table_function = table_function_ptr;
+    String table_alias = getTableExpressionAlias(table_expression);
+    /// Maybe need to modify the alias, so we should clone new table_function node
+    table_expression->table_function = table_function_ptr->clone();
     table_expression->database_and_table_name = nullptr;
+
+    if (table_alias.empty())
+        table_expression->table_function->setAlias(table_alias);
 }
 
 }

@@ -14,9 +14,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
-<a name="query_complexity_readonly"></a>
-
-## readonly
+## readonly {#query_complexity_readonly}
 
 With a value of 0, you can execute any queries.
 With a value of 1, you can only execute read requests (such as SELECT and SHOW). Requests for writing and changing settings (INSERT, SET) are prohibited.
@@ -26,9 +24,7 @@ After enabling readonly mode, you can't disable it in the current session.
 
 When using the GET method in the HTTP interface, 'readonly = 1' is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
 
-<a name="settings_max_memory_usage"></a>
-
-## max_memory_usage
+## max_memory_usage {#settings_max_memory_usage}
 
 The maximum amount of RAM to use for running a query on a single server.
 

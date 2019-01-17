@@ -4,7 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -24,6 +23,8 @@
 
 namespace DB
 {
+
+class AlterCommands;
 
 namespace ErrorCodes
 {
@@ -217,6 +218,8 @@ public:
 
         /// If commit() was not called, deletes temporary files, canceling the ALTER.
         ~AlterDataPartTransaction();
+
+        const String & getPartName() const { return data_part->name; }
 
         /// Review the changes before the commit.
         const NamesAndTypesList & getNewColumns() const { return new_columns; }
@@ -479,13 +482,11 @@ public:
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.
-    /// If new_primary_key_expr_list is not nullptr, will prepare the new primary.idx file.
     /// If the number of affected columns is suspiciously high and skip_sanity_checks is false, throws an exception.
     /// If no data transformations are necessary, returns nullptr.
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
-        const ASTPtr & new_primary_key_expr_list,
         bool skip_sanity_checks);
 
     /// Freezes all parts.
@@ -532,7 +533,7 @@ public:
 
     size_t getColumnCompressedSize(const std::string & name) const
     {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        std::lock_guard lock{data_parts_mutex};
 
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
@@ -541,14 +542,14 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, DataPart::ColumnSize>;
     ColumnSizeByName getColumnSizes() const
     {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        std::lock_guard lock{data_parts_mutex};
         return column_sizes;
     }
 
     /// Calculates column sizes in compressed form for the current state of data_parts.
     void recalculateColumnSizes()
     {
-        std::lock_guard<std::mutex> lock{data_parts_mutex};
+        std::lock_guard lock{data_parts_mutex};
         calculateColumnSizesImpl();
     }
 
@@ -565,7 +566,7 @@ public:
 
     MergeTreeDataFormatVersion format_version;
 
-    Context & context;
+    Context global_context;
 
     /// Merging params - what additional actions to perform during merge.
     const MergingParams merging_params;

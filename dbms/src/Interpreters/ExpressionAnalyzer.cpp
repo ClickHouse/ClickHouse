@@ -78,9 +78,6 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
 }
 
-/// From SyntaxAnalyzer.cpp
-extern void removeDuplicateColumns(NamesAndTypesList & columns);
-
 ExpressionAnalyzer::ExpressionAnalyzer(
     const ASTPtr & query_,
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
@@ -106,7 +103,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
         removeDuplicateColumns(source_columns);
     }
 
-    /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
+    /// Delete the unnecessary from `source_columns` list. Form `columns_added_by_join`.
     collectUsedColumns();
 
     /// external_tables, subqueries_for_sets for global subqueries.
@@ -143,15 +140,17 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, context);
 
-    if (select_query && select_query->array_join_expression_list())
-    {
-        getRootActions(select_query->array_join_expression_list(), true, temp_actions);
-        addMultipleArrayJoinAction(temp_actions);
-        array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
-    }
-
     if (select_query)
     {
+        bool is_array_join_left;
+        ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+        if (array_join_expression_list)
+        {
+            getRootActions(array_join_expression_list, true, temp_actions);
+            addMultipleArrayJoinAction(temp_actions, is_array_join_left);
+            array_join_columns = temp_actions->getSampleBlock().getNamesAndTypesList();
+        }
+
         const ASTTablesInSelectQueryElement * join = select_query->join();
         if (join)
         {
@@ -311,7 +310,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 
             if (!prepared_sets.count(arg->range)) /// Not already prepared.
             {
-                if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+                if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
                 {
                     if (settings.use_index_for_in_with_subqueries)
                         tryMakeSetForIndexFromSubquery(arg);
@@ -332,56 +331,6 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 }
             }
         }
-    }
-}
-
-bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
-{
-    if (typeid_cast<ASTIdentifier *>(ast.get()))
-    {
-        return false;
-    }
-    else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
-    {
-        if (node->name == "arrayJoin")
-        {
-            return true;
-        }
-        if (functionIsInOrGlobalInOperator(node->name))
-        {
-            return isThereArrayJoin(node->arguments->children.at(0));
-        }
-        if (node->name == "indexHint")
-        {
-            return false;
-        }
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
-        {
-            return false;
-        }
-        for (auto & child : node->arguments->children)
-        {
-            if (isThereArrayJoin(child))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-    else if (typeid_cast<ASTLiteral *>(ast.get()))
-    {
-        return false;
-    }
-    else
-    {
-        for (auto & child : ast->children)
-        {
-            if (isThereArrayJoin(child))
-            {
-                return true;
-            }
-        }
-        return false;
     }
 }
 
@@ -512,7 +461,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 }
 
 /// "Big" ARRAY JOIN.
-void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions) const
+void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actions, bool array_join_is_left) const
 {
     NameSet result_columns;
     for (const auto & result_source : syntax->array_join_result_to_source)
@@ -525,22 +474,24 @@ void ExpressionAnalyzer::addMultipleArrayJoinAction(ExpressionActionsPtr & actio
         result_columns.insert(result_source.first);
     }
 
-    actions->add(ExpressionAction::arrayJoin(result_columns, select_query->array_join_is_left(), context));
+    actions->add(ExpressionAction::arrayJoin(result_columns, array_join_is_left, context));
 }
 
 bool ExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & chain, bool only_types)
 {
     assertSelect();
 
-    if (!select_query->array_join_expression_list())
+    bool is_array_join_left;
+    ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+    if (!array_join_expression_list)
         return false;
 
     initChain(chain, source_columns);
     ExpressionActionsChain::Step & step = chain.steps.back();
 
-    getRootActions(select_query->array_join_expression_list(), only_types, step.actions);
+    getRootActions(array_join_expression_list, only_types, step.actions);
 
-    addMultipleArrayJoinAction(step.actions);
+    addMultipleArrayJoinAction(step.actions, is_array_join_left);
 
     return true;
 }
@@ -597,8 +548,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        const auto & identifier = static_cast<const ASTIdentifier &>(*table_to_join.database_and_table_name);
-        DatabaseAndTableWithAlias database_table(identifier);
+        DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
         StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
 
         if (table)
@@ -997,6 +947,15 @@ void ExpressionAnalyzer::getAggregateInfo(Names & key_names, AggregateDescriptio
     aggregates = aggregate_descriptions;
 }
 
+/// db.table.column -> table.column / table.column -> column
+static String cropDatabaseOrTableName(const String & name)
+{
+    size_t pos = name.find('.', 0);
+    if (pos != std::string::npos)
+        return name.substr(pos + 1, name.size() - pos - 1);
+    return name;
+}
+
 void ExpressionAnalyzer::collectUsedColumns()
 {
     /** Calculate which columns are required to execute the expression.
@@ -1004,82 +963,130 @@ void ExpressionAnalyzer::collectUsedColumns()
       * After execution, columns will only contain the list of columns needed to read from the table.
       */
 
-    NameSet required;
-    NameSet ignored;
+    RequiredSourceColumnsVisitor::Data columns_context;
+    RequiredSourceColumnsVisitor(columns_context).visit(query);
 
-    NameSet available_columns;
-    for (const auto & column : source_columns)
-        available_columns.insert(column.name);
+    NameSet required = columns_context.requiredColumns();
 
-    if (select_query && select_query->array_join_expression_list())
+#if 0
+    std::cerr << "Query: " << query << std::endl;
+    std::cerr << "CTX: " << columns_context << std::endl;
+    std::cerr << "source_columns: ";
+    for (const auto & name : source_columns)
+        std::cerr << "'" << name.name << "' ";
+    std::cerr << "required: ";
+    for (const auto & name : required)
+        std::cerr << "'" << name << "' ";
+    std::cerr << std::endl;
+#endif
+
+    if (columns_context.has_table_join)
     {
-        ASTs & expressions = select_query->array_join_expression_list()->children;
-        for (size_t i = 0; i < expressions.size(); ++i)
+        const AnalyzedJoin & analyzed_join = analyzedJoin();
+#if 0
+        std::cerr << "key_names_left: ";
+        for (const auto & name : analyzed_join.key_names_left)
+            std::cerr << "'" << name << "' ";
+        std::cerr << "key_names_right: ";
+        for (const auto & name : analyzed_join.key_names_right)
+            std::cerr << "'" << name << "' ";
+        std::cerr << "columns_from_joined_table: ";
+        for (const auto & column : analyzed_join.columns_from_joined_table)
+            std::cerr << "'" << column.name_and_type.name << '/' << column.original_name << "' ";
+        std::cerr << "available_joined_columns: ";
+        for (const auto & column : analyzed_join.available_joined_columns)
+            std::cerr << "'" << column.name_and_type.name << '/' << column.original_name << "' ";
+        std::cerr << std::endl;
+#endif
+        NameSet avaliable_columns;
+        for (const auto & name : source_columns)
+            avaliable_columns.insert(name.name);
+
+        NameSet right_keys;
+        for (const auto & right_key_name : analyzed_join.key_names_right)
+            right_keys.insert(right_key_name);
+
+        /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
+        * (Do not assume that they are required for reading from the "left" table).
+        */
+        columns_added_by_join.clear();
+        for (const auto & joined_column : analyzed_join.available_joined_columns)
         {
-            /// Ignore the top-level identifiers from the ARRAY JOIN section.
-            /// Then add them separately.
-            if (typeid_cast<ASTIdentifier *>(expressions[i].get()))
+            auto & name = joined_column.name_and_type.name;
+            if (required.count(name) && !avaliable_columns.count(name))
             {
-                ignored.insert(expressions[i]->getColumnName());
-            }
-            else
-            {
-                /// Nothing needs to be ignored for expressions in ARRAY JOIN.
-                NameSet empty;
-                RequiredSourceColumnsVisitor::Data visitor_data{available_columns, required, empty, empty, empty};
-                RequiredSourceColumnsVisitor(visitor_data).visit(expressions[i]);
-            }
+                columns_added_by_join.push_back(joined_column);
+                required.erase(name);
 
-            ignored.insert(expressions[i]->getAliasOrColumnName());
+                /// Some columns from right join key may be used in query. This columns will be appended to block during join.
+                if (right_keys.count(name))
+                    columns_added_by_join_from_right_keys.insert(name);
+            }
         }
+
+        /// @fix filter required columns according to misqualified names in JOIN ON
+        if (columns_context.has_table_join &&
+            columns_context.tables.size() >= 2 &&
+            columns_context.tables[1].join &&
+            columns_context.tables[1].join->on_expression)
+        {
+            NameSet fixed_required;
+
+            for (const auto & req_name : required)
+            {
+                bool collated = false;
+                String cropped_name = req_name;
+                static const constexpr size_t max_column_prefix = 2;
+
+                for (size_t i = 0; i < max_column_prefix && !collated; ++i)
+                {
+                    cropped_name = cropDatabaseOrTableName(cropped_name);
+
+                    if (avaliable_columns.count(cropped_name))
+                    {
+                        fixed_required.insert(cropped_name);
+                        collated = true;
+                        break;
+                    }
+
+                    for (const auto & joined_column : analyzed_join.available_joined_columns)
+                    {
+                        auto & name = joined_column.name_and_type.name;
+
+                        if (cropped_name == name)
+                        {
+                            columns_added_by_join.push_back(joined_column);
+                            if (right_keys.count(name))
+                                columns_added_by_join_from_right_keys.insert(name);
+                            collated = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!collated)
+                    fixed_required.insert(req_name);
+            }
+
+            required.swap(fixed_required);
+        }
+
+        /// @note required_columns_from_joined_table is output
+        joined_block_actions = analyzed_join.createJoinedBlockActions(
+            columns_added_by_join, select_query, context, required_columns_from_joined_table);
     }
 
-    /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
-      * (Do not assume that they are required for reading from the "left" table).
-      */
-    NameSet available_joined_columns;
-    for (const auto & joined_column : analyzedJoin().available_joined_columns)
-        available_joined_columns.insert(joined_column.name_and_type.name);
-
-    NameSet required_joined_columns;
-
-    for (const auto & left_key_ast : syntax->analyzed_join.key_asts_left)
+    if (columns_context.has_array_join)
     {
-        NameSet empty;
-        RequiredSourceColumnsVisitor::Data columns_data{available_columns, required, ignored, empty, required_joined_columns};
-        ASTPtr tmp = left_key_ast;
-        RequiredSourceColumnsVisitor(columns_data).visit(tmp);
+        /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
+        NameSet array_join_sources;
+        for (const auto & result_source : syntax->array_join_result_to_source)
+            array_join_sources.insert(result_source.second);
+
+        for (const auto & column_name_type : source_columns)
+            if (array_join_sources.count(column_name_type.name))
+                required.insert(column_name_type.name);
     }
-
-    RequiredSourceColumnsVisitor::Data columns_visitor_data{available_columns, required, ignored,
-                                                            available_joined_columns, required_joined_columns};
-    RequiredSourceColumnsVisitor(columns_visitor_data).visit(query);
-
-    columns_added_by_join = analyzedJoin().available_joined_columns;
-    for (auto it = columns_added_by_join.begin(); it != columns_added_by_join.end();)
-    {
-        if (required_joined_columns.count(it->name_and_type.name))
-            ++it;
-        else
-            columns_added_by_join.erase(it++);
-    }
-
-    joined_block_actions = analyzedJoin().createJoinedBlockActions(
-        columns_added_by_join, select_query, context, required_columns_from_joined_table);
-
-    /// Some columns from right join key may be used in query. This columns will be appended to block during join.
-    for (const auto & right_key_name : analyzedJoin().key_names_right)
-        if (required_joined_columns.count(right_key_name))
-            columns_added_by_join_from_right_keys.insert(right_key_name);
-
-    /// Insert the columns required for the ARRAY JOIN calculation into the required columns list.
-    NameSet array_join_sources;
-    for (const auto & result_source : syntax->array_join_result_to_source)
-        array_join_sources.insert(result_source.second);
-
-    for (const auto & column_name_type : source_columns)
-        if (array_join_sources.count(column_name_type.name))
-            required.insert(column_name_type.name);
 
     /// You need to read at least one column to find the number of rows.
     if (select_query && required.empty())
@@ -1114,15 +1121,18 @@ void ExpressionAnalyzer::collectUsedColumns()
     }
 
     if (!unknown_required_source_columns.empty())
+    {
+        std::stringstream ss;
+        ss << columns_context;
+        ss << "source_columns: ";
+        for (const auto & name : source_columns)
+            ss << "'" << name.name << "' ";
+
         throw Exception("Unknown identifier: " + *unknown_required_source_columns.begin()
-            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : ""),
-            ErrorCodes::UNKNOWN_IDENTIFIER);
+            + (select_query && !select_query->tables ? ". Note that there is no tables (FROM clause) in your query" : "")
+            + ", context: " + ss.str(), ErrorCodes::UNKNOWN_IDENTIFIER);
+    }
 }
 
-
-Names ExpressionAnalyzer::getRequiredSourceColumns() const
-{
-    return source_columns.getNames();
-}
 
 }

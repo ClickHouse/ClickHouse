@@ -147,14 +147,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
 
-    ASTPtr table_expression = getTableFunctionOrSubquery(query, 0);
+    ASTPtr table_expression = extractTableExpression(query, 0);
+
+    bool is_table_func = false;
+    bool is_subquery = false;
+    if (table_expression)
+    {
+        is_table_func = typeid_cast<const ASTFunction *>(table_expression.get());
+        is_subquery = typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get());
+    }
 
     if (input)
     {
         /// Read from prepared input.
         source_header = input->getHeader();
     }
-    else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
+    else if (is_subquery)
     {
         /// Read from subquery.
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
@@ -164,7 +172,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
     else if (!storage)
     {
-        if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
+        if (is_table_func)
         {
             /// Read from table function.
             storage = context.getQueryContext().executeTableFunction(table_expression);
@@ -184,8 +192,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (storage)
         table_lock = storage->lockStructure(false);
 
-    syntax_analyzer_result = SyntaxAnalyzer(context, storage)
-            .analyze(query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth);
+    syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
+        query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
         query_ptr, syntax_analyzer_result, context, NamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
 
@@ -208,7 +216,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
             /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
-            if (table_expression && typeid_cast<ASTSelectWithUnionQuery *>(table_expression.get()))
+            if (is_subquery)
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1,
                     only_analyze);
@@ -606,6 +614,13 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                         executeRollupOrCube(pipeline, Modificator::ROLLUP);
                     else if (query.group_by_with_cube)
                         executeRollupOrCube(pipeline, Modificator::CUBE);
+
+                    if ((query.group_by_with_rollup || query.group_by_with_cube) && expressions.has_having)
+                    {
+                        if (query.group_by_with_totals)
+                            throw Exception("WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
+                        executeHaving(pipeline, expressions.before_having);
+                    }
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -625,10 +640,20 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
                 }
 
-                if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::ROLLUP);
-                else if (query.group_by_with_cube && !aggregate_final)
-                    executeRollupOrCube(pipeline, Modificator::CUBE);
+                if ((query.group_by_with_rollup || query.group_by_with_cube) && !aggregate_final)
+                {
+                    if (query.group_by_with_rollup)
+                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                    else if (query.group_by_with_cube)
+                        executeRollupOrCube(pipeline, Modificator::CUBE);
+
+                    if (expressions.has_having)
+                    {
+                        if (query.group_by_with_totals)
+                            throw Exception("WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of HAVING", ErrorCodes::NOT_IMPLEMENTED);
+                        executeHaving(pipeline, expressions.before_having);
+                    }
+                }
             }
 
             if (expressions.has_order_by)
@@ -737,8 +762,8 @@ void InterpreterSelectQuery::executeFetchColumns(
             Block prewhere_actions_result;
             if (prewhere_info)
             {
-                auto required_columns = prewhere_info->prewhere_actions->getRequiredColumns();
-                required_prewhere_columns.insert(required_columns.begin(), required_columns.end());
+                auto prewhere_required_columns = prewhere_info->prewhere_actions->getRequiredColumns();
+                required_prewhere_columns.insert(prewhere_required_columns.begin(), prewhere_required_columns.end());
                 prewhere_actions_result = prewhere_info->prewhere_actions->getSampleBlock();
             }
 
@@ -785,9 +810,8 @@ void InterpreterSelectQuery::executeFetchColumns(
             }
             auto additional_source_columns_set = ext::map<NameSet>(additional_source_columns, [] (const auto & it) { return it.name; });
 
-            ASTPtr query = required_columns_expr_list;
-            auto syntax_result = SyntaxAnalyzer(context, storage).analyze(query, additional_source_columns);
-            alias_actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(required_columns_expr_list, additional_source_columns, {}, storage);
+            alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, context).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
@@ -823,8 +847,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 }
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
-                auto source_columns = storage->getColumns().getAllPhysical();
-                auto analyzed_result = SyntaxAnalyzer(context, {}).analyze(required_prewhere_columns_expr_list, source_columns);
+                auto analyzed_result = SyntaxAnalyzer(context).analyze(required_prewhere_columns_expr_list, storage->getColumns().getAllPhysical());
                 prewhere_info->alias_actions =
                     ExpressionAnalyzer(required_prewhere_columns_expr_list, analyzed_result, context)
                     .getActions(true, false);
@@ -906,7 +929,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         /// If we need less number of columns that subquery have - update the interpreter.
         if (required_columns.size() < source_header.columns())
         {
-            ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+            ASTPtr subquery = extractTableExpression(query, 0);
             if (!subquery)
                 throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -1381,7 +1404,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
       * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
       */
 
-    if (auto query_table = getTableFunctionOrSubquery(query, 0))
+    if (auto query_table = extractTableExpression(query, 0))
     {
         if (auto ast_union = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
         {
@@ -1483,3 +1506,4 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
+

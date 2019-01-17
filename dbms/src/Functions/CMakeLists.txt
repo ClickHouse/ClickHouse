@@ -1,8 +1,7 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
-add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
-add_headers_and_sources(clickhouse_functions ./Conditional)
+add_headers_and_sources(clickhouse_functions .)
 
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
@@ -12,7 +11,7 @@ add_library(clickhouse_functions ${LINK_MODE} ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        dbms 
+        dbms
     PRIVATE
         clickhouse_dictionaries
         ${CONSISTENT_HASHING_LIBRARY}
@@ -21,7 +20,8 @@ target_link_libraries(clickhouse_functions
         ${METROHASH_LIBRARIES}
         murmurhash
         ${BASE64_LIBRARY}
-        ${OPENSSL_CRYPTO_LIBRARY})
+        ${OPENSSL_CRYPTO_LIBRARY}
+        ${LZ4_LIBRARY})
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 
@@ -47,9 +47,11 @@ if (ENABLE_TESTS)
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
+    target_link_libraries(clickhouse_functions PRIVATE ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-if (USE_BASE64)
-    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
+if(USE_BASE64)
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()

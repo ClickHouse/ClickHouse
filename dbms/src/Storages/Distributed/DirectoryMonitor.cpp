@@ -10,7 +10,7 @@
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/Operators.h>
 
 #include <boost/algorithm/string/find_iterator.hpp>
@@ -92,11 +92,11 @@ namespace
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDistributed & storage, const std::string & name, const ConnectionPoolPtr & pool)
     : storage(storage), pool{pool}, path{storage.path + name + '/'}
     , current_batch_file_path{path + "current_batch.txt"}
-    , default_sleep_time{storage.context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
+    , default_sleep_time{storage.global_context.getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds()}
     , sleep_time{default_sleep_time}
     , log{&Logger::get(getLoggerName())}
 {
-    const Settings & settings = storage.context.getSettingsRef();
+    const Settings & settings = storage.global_context.getSettingsRef();
     should_batch_inserts = settings.distributed_directory_monitor_batch_inserts;
     min_batched_block_size_rows = settings.min_insert_block_size_rows;
     min_batched_block_size_bytes = settings.min_insert_block_size_bytes;
@@ -109,7 +109,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     {
         {
             quit = true;
-            std::lock_guard<std::mutex> lock{mutex};
+            std::lock_guard lock{mutex};
         }
         cond.notify_one();
         thread.join();
@@ -123,7 +123,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
     {
         {
             quit = true;
-            std::lock_guard<std::mutex> lock{mutex};
+            std::lock_guard lock{mutex};
         }
         cond.notify_one();
         thread.join();
@@ -137,7 +137,7 @@ void StorageDistributedDirectoryMonitor::run()
 {
     setThreadName("DistrDirMonitor");
 
-    std::unique_lock<std::mutex> lock{mutex};
+    std::unique_lock lock{mutex};
 
     const auto quit_requested = [this] { return quit.load(std::memory_order_relaxed); };
 
@@ -157,7 +157,7 @@ void StorageDistributedDirectoryMonitor::run()
                 std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(error_count))},
                 std::chrono::milliseconds{max_sleep_time});
             tryLogCurrentException(getLoggerName().data());
-        };
+        }
 
         if (do_sleep)
             cond.wait_for(lock, sleep_time, quit_requested);
@@ -174,7 +174,7 @@ void StorageDistributedDirectoryMonitor::run()
 
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.global_context.getSettingsRef());
     const auto pool_factory = [&storage, &timeouts] (const std::string & host, const UInt16 port,
                                                  const Protocol::Secure secure,
                                                  const std::string & user, const std::string & password,
@@ -519,9 +519,9 @@ bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
 void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
 {
     const auto last_path_separator_pos = file_path.rfind('/');
-    const auto & path = file_path.substr(0, last_path_separator_pos + 1);
+    const auto & base_path = file_path.substr(0, last_path_separator_pos + 1);
     const auto & file_name = file_path.substr(last_path_separator_pos + 1);
-    const auto & broken_path = path + "broken/";
+    const auto & broken_path = base_path + "broken/";
     const auto & broken_file_path = broken_path + file_name;
 
     Poco::File{broken_path}.createDirectory();

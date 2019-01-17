@@ -2,9 +2,8 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressedStream.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
@@ -14,6 +13,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/localBackup.h>
+#include <Compression/CompressionInfo.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -45,15 +45,15 @@ static ReadBufferFromFile openForReading(const String & path)
     return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
 }
 
-void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & storage, const String & part_path)
+void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const String & part_path)
 {
-    size_t minmax_idx_size = storage.minmax_idx_column_types.size();
+    size_t minmax_idx_size = data.minmax_idx_column_types.size();
     parallelogram.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
-        String file_name = part_path + "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
+        String file_name = part_path + "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
         ReadBufferFromFile file = openForReading(file_name);
-        const DataTypePtr & type = storage.minmax_idx_column_types[i];
+        const DataTypePtr & type = data.minmax_idx_column_types[i];
 
         Field min_val;
         type->deserializeBinary(min_val, file);
@@ -65,24 +65,24 @@ void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & storage, const S
     initialized = true;
 }
 
-void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const
+void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & data, const String & part_path, Checksums & out_checksums) const
 {
     if (!initialized)
         throw Exception("Attempt to store uninitialized MinMax index for part " + part_path + ". This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t i = 0; i < storage.minmax_idx_columns.size(); ++i)
+    for (size_t i = 0; i < data.minmax_idx_columns.size(); ++i)
     {
-        String file_name = "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
-        const DataTypePtr & type = storage.minmax_idx_column_types[i];
+        String file_name = "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
+        const DataTypePtr & type = data.minmax_idx_column_types[i];
 
         WriteBufferFromFile out(part_path + file_name);
         HashingWriteBuffer out_hashing(out);
         type->serializeBinary(parallelogram[i].left, out_hashing);
         type->serializeBinary(parallelogram[i].right, out_hashing);
         out_hashing.next();
-        checksums.files[file_name].file_size = out_hashing.count();
-        checksums.files[file_name].file_hash = out_hashing.getHash();
+        out_checksums.files[file_name].file_size = out_hashing.count();
+        out_checksums.files[file_name].file_hash = out_hashing.getHash();
     }
 }
 
@@ -138,7 +138,8 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(
+    const String & column_name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
 {
     ColumnSize size;
     if (checksums.empty())
@@ -146,7 +147,7 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(const String 
 
     type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
-        String file_name = IDataType::getFileNameForStream(name, substream_path);
+        String file_name = IDataType::getFileNameForStream(column_name, substream_path);
 
         if (processed_substreams && !processed_substreams->insert(file_name).second)
             return;
@@ -166,9 +167,9 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(const String 
     return size;
 }
 
-MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & name, const IDataType & type) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & type) const
 {
-    return getColumnSizeImpl(name, type, nullptr);
+    return getColumnSizeImpl(column_name, type, nullptr);
 }
 
 MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
@@ -189,11 +190,11 @@ MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
   */
 String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
 {
-    const auto & columns = storage.getColumns().getAllPhysical();
+    const auto & storage_columns = storage.getColumns().getAllPhysical();
     const std::string * minimum_size_column = nullptr;
     UInt64 minimum_size = std::numeric_limits<UInt64>::max();
 
-    for (const auto & column : columns)
+    for (const auto & column : storage_columns)
     {
         if (!hasColumnFiles(column.name))
             continue;
@@ -494,8 +495,6 @@ void MergeTreeDataPart::loadIndex()
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
-
-    bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
@@ -529,16 +528,25 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 void MergeTreeDataPart::loadChecksums(bool require)
 {
     String path = getFullPath() + "checksums.txt";
-    if (!Poco::File(path).exists())
+    Poco::File checksums_file(path);
+    if (checksums_file.exists())
+    {
+        ReadBufferFromFile file = openForReading(path);
+        if (checksums.read(file))
+        {
+            assertEOF(file);
+            bytes_on_disk = checksums.getTotalSizeOnDisk();
+        }
+        else
+            bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
+    }
+    else
     {
         if (require)
             throw Exception("No checksums.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
-        return;
+        bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
     }
-    ReadBufferFromFile file = openForReading(path);
-    if (checksums.read(file))
-        assertEOF(file);
 }
 
 void MergeTreeDataPart::loadRowsCount()
@@ -786,9 +794,9 @@ String MergeTreeDataPart::stateToString(MergeTreeDataPart::State state)
             return "Outdated";
         case State::Deleting:
             return "Deleting";
-        default:
-            throw Exception("Unknown part state " + toString(static_cast<int>(state)), ErrorCodes::LOGICAL_ERROR);
     }
+
+    __builtin_unreachable();
 }
 
 String MergeTreeDataPart::stateString() const
@@ -801,8 +809,8 @@ void MergeTreeDataPart::assertState(const std::initializer_list<MergeTreeDataPar
     if (!checkState(affordable_states))
     {
         String states_str;
-        for (auto state : affordable_states)
-            states_str += stateToString(state) + " ";
+        for (auto affordable_state : affordable_states)
+            states_str += stateToString(affordable_state) + " ";
 
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }

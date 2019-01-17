@@ -22,6 +22,7 @@ from mkdocs.commands import build as mkdocs_build
 
 from concatenate import concatenate
 import mdx_clickhouse
+import test
 
 @contextlib.contextmanager
 def temp_dir():
@@ -98,7 +99,7 @@ def build_for_lang(lang, args):
             site_dir=os.path.join(args.output_dir, lang),
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2018 Yandex LLC',
+            copyright='©2016–2019 Yandex LLC',
             use_directory_urls=True,
             repo_name='yandex/ClickHouse',
             repo_url='https://github.com/yandex/ClickHouse/',
@@ -177,11 +178,28 @@ def build_single_page_version(lang, args, cfg):
                     single_page_output_path
                 )
 
-                single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
-                single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
-                create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
-                logging.debug(' '.join(create_pdf_command))
-                subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                if not args.skip_pdf:
+                    single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
+                    single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                    create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                    logging.debug(' '.join(create_pdf_command))
+                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
+
+                with temp_dir() as test_dir:
+                    cfg.load_dict({
+                        'docs_dir': docs_temp_lang,
+                        'site_dir': test_dir,
+                        'extra': {
+                            'single_page': False
+                        },
+                        'nav': [
+                            {cfg.data.get('site_name'): 'single.md'}
+                        ]
+                    })
+                    mkdocs_build.build(cfg)
+                    test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
+                    if args.save_raw_single_page:
+                        shutil.copytree(test_dir, args.save_raw_single_page)
 
 
 def build_redirects(args):
@@ -212,6 +230,8 @@ if __name__ == '__main__':
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--skip-single-page', action='store_true')
+    arg_parser.add_argument('--skip-pdf', action='store_true')
+    arg_parser.add_argument('--save-raw-single-page', type=str)
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
