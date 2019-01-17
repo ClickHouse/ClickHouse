@@ -55,7 +55,7 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier 
     const NameSet & source_columns = data.source_columns;
     const std::vector<DatabaseAndTableWithAlias> & tables = data.tables;
 
-    if (identifier.general())
+    if (getColumnIdentifierName(identifier))
     {
         /// Select first table name with max number of qualifiers which can be stripped.
         size_t max_num_qualifiers_to_strip = 0;
@@ -89,38 +89,17 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier 
 
 std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const ASTPtr & ast, Data & data)
 {
-    const std::vector<DatabaseAndTableWithAlias> & tables = data.tables;
-
     if (ast->children.size() != 1)
         throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
 
-    ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(ast->children[0].get());
-    if (!ident)
-        throw Exception("Logical error: qualified asterisk must have identifier as its child", ErrorCodes::LOGICAL_ERROR);
+    auto & ident = ast->children[0];
 
-    size_t num_components = ident->children.size();
-    if (num_components > 2)
-        throw Exception("Qualified asterisk cannot have more than two qualifiers", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+    /// @note it could contain table alias as table name.
+    DatabaseAndTableWithAlias db_and_table(ident);
 
-    DatabaseAndTableWithAlias db_and_table(*ident);
-
-    for (const auto & table_names : tables)
-    {
-        /// database.table.*, table.* or alias.*
-        if (num_components == 2)
-        {
-            if (!table_names.database.empty() &&
-                db_and_table.database == table_names.database &&
-                db_and_table.table == table_names.table)
-                return {};
-        }
-        else if (num_components == 0)
-        {
-            if ((!table_names.table.empty() && db_and_table.table == table_names.table) ||
-                (!table_names.alias.empty() && db_and_table.table == table_names.alias))
-                return {};
-        }
-    }
+    for (const auto & known_table : data.tables)
+        if (db_and_table.satisfies(known_table, true))
+            return {};
 
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
