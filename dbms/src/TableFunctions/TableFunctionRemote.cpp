@@ -152,7 +152,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         if (names.empty())
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort(), false);
+        auto maybe_secure_port = context.getTCPPortSecure();
+        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure && maybe_secure_port) ? *maybe_secure_port : context.getTCPPort(), false, secure);
     }
 
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
@@ -177,8 +178,8 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 }
 
 
-TableFunctionRemote::TableFunctionRemote(const std::string & name_)
-    : name(name_)
+TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure)
+    : name{name_}, secure{secure}
 {
     is_cluster_function = name == "cluster";
 
@@ -193,6 +194,7 @@ TableFunctionRemote::TableFunctionRemote(const std::string & name_)
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
     factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
+    factory.registerFunction("remoteSecure", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote", /* secure = */ true); });
     factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
 }
 
