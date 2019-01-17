@@ -68,7 +68,7 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
         out << "sorting key: " << sorting_key << "\n";
 
     if (!skip_indexes.empty())
-        out << "skip indexes: " << skip_indexes << "\n";
+        out << "indices: " << skip_indexes << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -99,7 +99,7 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     if (checkString("sorting key: ", in))
         in >> sorting_key >> "\n";
 
-    if (checkString("skip indexes: ", in))
+    if (checkString("indices: ", in))
         in >> skip_indexes >> "\n";
 }
 
