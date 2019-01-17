@@ -294,7 +294,7 @@ void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeep
     size_t queue_size = 0;
 
     {
-        std::unique_lock<std::mutex> lock(state_mutex);
+        std::unique_lock lock(state_mutex);
 
         /// Remove the job from the queue in the RAM.
         /// You can not just refer to a pre-saved iterator, because someone else might be able to delete the task.
@@ -335,7 +335,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
     std::optional<time_t> max_processed_insert_time_changed;
 
     {
-        std::unique_lock<std::mutex> lock(state_mutex);
+        std::unique_lock lock(state_mutex);
 
         virtual_parts.remove(part_name);
 
@@ -370,7 +370,7 @@ bool ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, const Stri
 
 bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & part_info)
 {
-    std::unique_lock<std::mutex> lock(state_mutex);
+    std::unique_lock lock(state_mutex);
     return virtual_parts.remove(part_info);
 }
 
@@ -420,10 +420,10 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
         /// The average size of the node value in this case is less than 10 kilobytes.
         static constexpr auto MAX_MULTI_OPS = 100;
 
-        for (size_t i = 0, size = log_entries.size(); i < size; i += MAX_MULTI_OPS)
+        for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries; entry_idx += MAX_MULTI_OPS)
         {
-            auto begin = log_entries.begin() + i;
-            auto end = i + MAX_MULTI_OPS >= log_entries.size()
+            auto begin = log_entries.begin() + entry_idx;
+            auto end = entry_idx + MAX_MULTI_OPS >= log_entries.size()
                 ? log_entries.end()
                 : (begin + MAX_MULTI_OPS);
             auto last = end - 1;
@@ -463,7 +463,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)
                 {
-                    std::lock_guard lock(state_mutex);
+                    std::lock_guard state_lock(state_mutex);
                     if (entry.create_time && (!min_unprocessed_insert_time || entry.create_time < min_unprocessed_insert_time))
                     {
                         min_unprocessed_insert_time = entry.create_time;
@@ -485,17 +485,17 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, C
 
             try
             {
-                std::lock_guard lock(state_mutex);
+                std::lock_guard state_lock(state_mutex);
 
                 log_pointer = last_entry_index + 1;
 
-                for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
+                for (size_t copied_entry_idx = 0, num_copied_entries = copied_entries.size(); copied_entry_idx < num_copied_entries; ++copied_entry_idx)
                 {
-                    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[i]).path_created;
-                    copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+                    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[copied_entry_idx]).path_created;
+                    copied_entries[copied_entry_idx]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
                     std::optional<time_t> unused = false;
-                    insertUnlocked(copied_entries[i], unused, lock);
+                    insertUnlocked(copied_entries[copied_entry_idx], unused, state_lock);
                 }
 
                 last_queue_update = time(nullptr);
@@ -552,7 +552,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
     /// Compare with the local state, delete obsolete entries and determine which new entries to load.
     Strings entries_to_load;
     {
-        std::lock_guard lock(state_mutex);
+        std::lock_guard state_lock(state_mutex);
 
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end();)
         {
@@ -599,7 +599,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
         bool some_mutations_are_probably_done = false;
         {
-            std::lock_guard lock(state_mutex);
+            std::lock_guard state_lock(state_mutex);
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
@@ -648,7 +648,7 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
 
     /// Let's find the action to merge this part with others. Let's remember others.
     StringSet parts_for_merge;
-    Queue::iterator merge_entry;
+    Queue::iterator merge_entry = queue.end();
     for (Queue::iterator it = queue.begin(); it != queue.end(); ++it)
     {
         if ((*it)->type == LogEntry::MERGE_PARTS || (*it)->type == LogEntry::MUTATE_PART)
@@ -711,7 +711,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPt
     std::optional<time_t> max_processed_insert_time_changed;
 
     /// Remove operations with parts, contained in the range to be deleted, from the queue.
-    std::unique_lock<std::mutex> lock(state_mutex);
+    std::unique_lock lock(state_mutex);
     for (Queue::iterator it = queue.begin(); it != queue.end();)
     {
         auto type = (*it)->type;
@@ -785,7 +785,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 void ReplicatedMergeTreeQueue::checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry)
 {
     String conflicts_description;
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard lock(state_mutex);
 
     if (0 != getConflictsCountForRange(range, entry, &conflicts_description, lock))
         throw Exception(conflicts_description, ErrorCodes::UNFINISHED);
@@ -900,7 +900,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
           * But if all threads are free (maximal size of merge is allowed) then execute any merge,
           *  (because it may be ordered by OPTIMIZE or early with differrent settings).
           */
-        size_t max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
+        UInt64 max_source_parts_size = merger_mutator.getMaxSourcePartsSize();
         if (max_source_parts_size != data.settings.max_bytes_to_merge_at_max_space_in_pool
             && sum_parts_size_in_bytes > max_source_parts_size)
         {
@@ -1013,7 +1013,7 @@ ReplicatedMergeTreeQueue::SelectedEntry ReplicatedMergeTreeQueue::selectEntryToP
 {
     LogEntryPtr entry;
 
-    std::lock_guard<std::mutex> lock(state_mutex);
+    std::lock_guard lock(state_mutex);
 
     for (auto it = queue.begin(); it != queue.end(); ++it)
     {
@@ -1635,8 +1635,8 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback)
 {
-    std::lock_guard<std::mutex> lock(state_mutex);
-    std::lock_guard<std::mutex> lock_subscribers(subscribers_mutex);
+    std::lock_guard lock(state_mutex);
+    std::lock_guard lock_subscribers(subscribers_mutex);
 
     auto it = subscribers.emplace(subscribers.end(), std::move(callback));
 
@@ -1648,13 +1648,13 @@ ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCall
 
 ReplicatedMergeTreeQueue::SubscriberHandler::~SubscriberHandler()
 {
-    std::lock_guard<std::mutex> lock(queue.subscribers_mutex);
+    std::lock_guard lock(queue.subscribers_mutex);
     queue.subscribers.erase(it);
 }
 
 void ReplicatedMergeTreeQueue::notifySubscribers(size_t new_queue_size)
 {
-    std::lock_guard<std::mutex> lock_subscribers(subscribers_mutex);
+    std::lock_guard lock_subscribers(subscribers_mutex);
     for (auto & subscriber_callback : subscribers)
         subscriber_callback(new_queue_size);
 }

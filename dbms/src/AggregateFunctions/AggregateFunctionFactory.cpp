@@ -102,16 +102,14 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 {
     String name = getAliasToOrName(name_param);
     /// Find by exact match.
-    auto it = aggregate_functions.find(name);
-    if (it != aggregate_functions.end())
+    if (auto it = aggregate_functions.find(name); it != aggregate_functions.end())
         return it->second(name, argument_types, parameters);
 
     /// Find by case-insensitive name.
     /// Combinators cannot apply for case insensitive (SQL-style) aggregate function names. Only for native names.
     if (recursion_level == 0)
     {
-        auto it = case_insensitive_aggregate_functions.find(Poco::toLower(name));
-        if (it != case_insensitive_aggregate_functions.end())
+        if (auto it = case_insensitive_aggregate_functions.find(Poco::toLower(name)); it != case_insensitive_aggregate_functions.end())
             return it->second(name, argument_types, parameters);
     }
 

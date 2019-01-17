@@ -1,21 +1,15 @@
 # TinyLog
 
-The simplest table engine, which stores data on a disk.
-Each column is stored in a separate compressed file.
-When writing, data is appended to the end of files.
+最简单的表引擎，用于将数据存储在磁盘上。每列都存储在单独的压缩文件中。写入时，数据将附加到文件末尾。
 
-Concurrent data access is not restricted in any way:
+并发数据访问不受任何限制：
+ - 如果同时从表中读取并在不同的查询中写入，则读取操作将抛出异常
+ - 如果同时写入多个查询中的表，则数据将被破坏。
 
-- If you are simultaneously reading from a table and writing to it in a different query, the read operation will complete with an error.
-- If you are writing to a table in multiple queries simultaneously, the data will be broken.
+这种表引擎的典型用法是 write-once：首先只写入一次数据，然后根据需要多次读取。查询在单个流中执行。换句话说，此引擎适用于相对较小的表（建议最多1,000,000行）。如果您有许多小表，则使用此表引擎是适合的，因为它比Log引擎更简单（需要打开的文件更少）。当您拥有大量小表时，可能会导致性能低下，但在可能已经在其它 DBMS 时使用过，则您可能会发现切换使用 TinyLog 类型的表更容易。**不支持索引**。
 
-The typical way to use this table is write-once: first just write the data one time, then read it as many times as needed.
-Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (recommended up to 1,000,000 rows).
-It makes sense to use this table engine if you have many small tables, since it is simpler than the Log engine (fewer files need to be opened).
-The situation when you have a large number of small tables guarantees poor productivity, but may already be used when working with another DBMS, and you may find it easier to switch to using TinyLog types of tables.
-**Indexes are not supported.**
-
-In Yandex.Metrica, TinyLog tables are used for intermediary data that is processed in small batches.
+在 Yandex.Metrica 中，TinyLog 表用于小批量处理的中间数据。
 
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/tinylog/) <!--hide-->
+[Original article](https://clickhouse.yandex/docs/zh/operations/table_engines/tinylog/) <!--hide-->
+

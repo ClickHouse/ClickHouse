@@ -87,6 +87,12 @@ public:
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
     /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
+
+    /// For unaligned [LEFT] ARRAY JOIN
+    FunctionBuilderPtr function_length;
+    FunctionBuilderPtr function_greatest;
+    FunctionBuilderPtr function_arrayResize;
+
     /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
     /// Prepared function which is used in function execution.
@@ -97,11 +103,13 @@ public:
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
     bool array_join_is_left = false;
+    bool unaligned_array_join = false;
 
     /// For JOIN
     std::shared_ptr<const Join> join;
     Names join_key_names_left;
     NamesAndTypesList columns_added_by_join;
+    NameSet columns_added_by_join_from_right_keys;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -118,7 +126,7 @@ public:
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
-                                         const NamesAndTypesList & columns_added_by_join_);
+        const NamesAndTypesList & columns_added_by_join_, const NameSet & columns_added_by_join_from_right_keys_);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -136,7 +144,7 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block, const Settings & settings);
-    void execute(Block & block) const;
+    void execute(Block & block, bool dry_run) const;
     void executeOnTotals(Block & block) const;
 };
 
@@ -217,7 +225,7 @@ public:
     const NamesAndTypesList & getRequiredColumnsWithTypes() const { return input_columns; }
 
     /// Execute the expression on the block. The block must contain all the columns returned by getRequiredColumns.
-    void execute(Block & block) const;
+    void execute(Block & block, bool dry_run = false) const;
 
     /** Execute the expression on the block of total values.
       * Almost the same as `execute`. The difference is only when JOIN is executed.
@@ -238,10 +246,10 @@ public:
 
     struct ActionsHash
     {
-        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        UInt128 operator()(const ExpressionActions::Actions & elems) const
         {
             SipHash hash;
-            for (const ExpressionAction & act : actions)
+            for (const ExpressionAction & act : elems)
                 hash.update(ExpressionAction::ActionHash{}(act));
             UInt128 result;
             hash.get128(result.low, result.high);

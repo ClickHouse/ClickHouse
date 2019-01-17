@@ -1,6 +1,8 @@
 # Визуальные интерфейсы от сторонних разработчиков
 
-## Tabix
+## С открытым исходным кодом
+
+### Tabix
 
 Веб-интерфейс для ClickHouse в проекте [Tabix](https://github.com/tabixio/tabix).
 
@@ -14,7 +16,7 @@
 
 [Документация Tabix](https://tabix.io/doc/).
 
-## HouseOps
+### HouseOps
 
 [HouseOps](https://github.com/HouseOps/HouseOps) — UI/IDE для OSX, Linux и Windows.
 
@@ -39,7 +41,29 @@
 - Управление кластером;
 - Мониторинг реплицированных и Kafka таблиц.
 
-## DBeaver
+### LightHouse
+
+[LightHouse](https://github.com/VKCOM/lighthouse) — это легковесный веб-интерфейс для ClickHouse.
+
+Основные возможности:
+
+- Список таблиц с фильтрацией и метаданными;
+- Предварительный просмотр таблицы с фильтрацией и сортировкой;
+- Выполнение запросов только для чтения.
+
+### clickhouse-cli
+
+[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) - это альтернативный клиент командной строки для ClickHouse, написанный на Python 3.
+
+Основные возможности:
+- Автодополнение;
+- Подсветка синтаксиса для запросов и вывода данных;
+- Поддержка постраничного просмотра для результирующих данных;
+- Дополнительные PostgreSQL-подобные команды.
+
+## Коммерческие
+
+### DBeaver
 
 [DBeaver](https://dbeaver.io/) - универсальный desktop клиент баз данных с поддержкой ClickHouse.
 
@@ -49,4 +73,17 @@
 - Просмотр таблиц;
 - Автодополнение команд.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party_gui/) <!--hide-->
+### DataGrip
+
+[DataGrip](https://www.jetbrains.com/datagrip/) — это IDE для баз данных о JetBrains с выделенной поддержкой ClickHouse. Он также встроен в другие инструменты на основе IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm и другие.
+
+Основные возможности:
+
+- Очень быстрое дополнение кода.
+- Подсветка синтаксиса для SQL диалекта ClickHouse.
+- Поддержка функций, специфичных для ClickHouse, например вложенных столбцов, движков таблиц.
+- Редактор данных.
+- Рефакторинги.
+- Поиск и навигация.
+
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/interfaces/third-party/gui/) <!--hide-->

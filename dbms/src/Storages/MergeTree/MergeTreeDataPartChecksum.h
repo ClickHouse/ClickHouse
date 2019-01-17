@@ -4,7 +4,7 @@
 #include <IO/WriteBuffer.h>
 #include <city.h>
 #include <map>
-#include <memory>
+#include <optional>
 
 
 class SipHash;
@@ -84,6 +84,8 @@ struct MergeTreeDataPartChecksums
 
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
+
+    UInt64 getTotalSizeOnDisk() const;
 };
 
 
@@ -110,7 +112,7 @@ struct MinimalisticDataPartChecksums
     }
 
     /// Is set only for old formats
-    std::unique_ptr<MergeTreeDataPartChecksums> full_checksums;
+    std::optional<MergeTreeDataPartChecksums> full_checksums;
 
     static constexpr size_t MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS = 5;
 
@@ -118,15 +120,17 @@ struct MinimalisticDataPartChecksums
     void computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums);
 
     bool deserialize(ReadBuffer & in);
+    void deserializeWithoutHeader(ReadBuffer & in);
     static MinimalisticDataPartChecksums deserializeFrom(const String & s);
 
     void serialize(WriteBuffer & to) const;
+    void serializeWithoutHeader(WriteBuffer & to) const;
     String getSerializedString();
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
-    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files);
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files);
-    void checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files);
+    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
+    void checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
 };
 
 

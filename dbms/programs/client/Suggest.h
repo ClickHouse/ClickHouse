@@ -56,7 +56,7 @@ private:
     {
         std::string prefix_str(prefix);
         std::tie(pos, end) = std::equal_range(words.begin(), words.end(), prefix_str,
-            [prefix_length](const std::string & s, const std::string & prefix) { return strncmp(s.c_str(), prefix.c_str(), prefix_length) < 0; });
+            [prefix_length](const std::string & s, const std::string & prefix_searched) { return strncmp(s.c_str(), prefix_searched.c_str(), prefix_length) < 0; });
     }
 
     /// Iterates through matched range.

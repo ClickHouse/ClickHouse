@@ -1,10 +1,9 @@
+#include <Common/typeid_cast.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
-
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 
@@ -607,24 +606,12 @@ bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expec
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
         return false;
 
-    const char * function_name = nullptr;
 
-    if (ParserKeyword("SECOND").ignore(pos, expected))
-        function_name = "toIntervalSecond";
-    else if (ParserKeyword("MINUTE").ignore(pos, expected))
-        function_name = "toIntervalMinute";
-    else if (ParserKeyword("HOUR").ignore(pos, expected))
-        function_name = "toIntervalHour";
-    else if (ParserKeyword("DAY").ignore(pos, expected))
-        function_name = "toIntervalDay";
-    else if (ParserKeyword("WEEK").ignore(pos, expected))
-        function_name = "toIntervalWeek";
-    else if (ParserKeyword("MONTH").ignore(pos, expected))
-        function_name = "toIntervalMonth";
-    else if (ParserKeyword("YEAR").ignore(pos, expected))
-        function_name = "toIntervalYear";
-    else
+    ParserInterval interval_parser;
+    if (!interval_parser.ignore(pos, expected))
         return false;
+
+    const char * function_name = interval_parser.getToIntervalKindFunctionName();
 
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();

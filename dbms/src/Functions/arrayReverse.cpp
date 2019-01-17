@@ -165,17 +165,17 @@ bool FunctionArrayReverse::executeFixedString(const IColumn & src_data, const Co
     if (const ColumnFixedString * src_data_concrete = checkAndGetColumn<ColumnFixedString>(&src_data))
     {
         const size_t n = src_data_concrete->getN();
-        const ColumnFixedString::Chars & src_data = src_data_concrete->getChars();
+        const ColumnFixedString::Chars & src_data_chars = src_data_concrete->getChars();
         ColumnFixedString::Chars & res_chars = typeid_cast<ColumnFixedString &>(res_data).getChars();
         size_t size = src_offsets.size();
-        res_chars.resize(src_data.size());
+        res_chars.resize(src_data_chars.size());
 
         ColumnArray::Offset src_prev_offset = 0;
 
         for (size_t i = 0; i < size; ++i)
         {
-            const UInt8 * src = &src_data[src_prev_offset * n];
-            const UInt8 * src_end = &src_data[src_offsets[i] * n];
+            const UInt8 * src = &src_data_chars[src_prev_offset * n];
+            const UInt8 * src_end = &src_data_chars[src_offsets[i] * n];
 
             if (src == src_end)
                 continue;
@@ -205,12 +205,12 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
         const ColumnString::Offsets & src_string_offsets = src_data_concrete->getOffsets();
         ColumnString::Offsets & res_string_offsets = typeid_cast<ColumnString &>(res_data).getOffsets();
 
-        const ColumnString::Chars & src_data = src_data_concrete->getChars();
+        const ColumnString::Chars & src_data_chars = src_data_concrete->getChars();
         ColumnString::Chars & res_chars = typeid_cast<ColumnString &>(res_data).getChars();
 
         size_t size = src_array_offsets.size();
         res_string_offsets.resize(src_string_offsets.size());
-        res_chars.resize(src_data.size());
+        res_chars.resize(src_data_chars.size());
 
         ColumnArray::Offset src_array_prev_offset = 0;
         ColumnString::Offset res_string_prev_offset = 0;
@@ -225,10 +225,10 @@ bool FunctionArrayReverse::executeString(const IColumn & src_data, const ColumnA
                 {
                     size_t j_reversed = array_size - j - 1;
 
-                    auto src_pos = src_array_prev_offset + j_reversed == 0 ? 0 : src_string_offsets[src_array_prev_offset + j_reversed - 1];
+                    auto src_pos = src_string_offsets[src_array_prev_offset + j_reversed - 1];
                     size_t string_size = src_string_offsets[src_array_prev_offset + j_reversed] - src_pos;
 
-                    memcpySmallAllowReadWriteOverflow15(&res_chars[res_string_prev_offset], &src_data[src_pos], string_size);
+                    memcpySmallAllowReadWriteOverflow15(&res_chars[res_string_prev_offset], &src_data_chars[src_pos], string_size);
 
                     res_string_prev_offset += string_size;
                     res_string_offsets[src_array_prev_offset + j] = res_string_prev_offset;

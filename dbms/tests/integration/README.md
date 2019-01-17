@@ -33,19 +33,12 @@ set the following environment variables:
   
 ### Running with runner script
 
-The only requirement is fresh docker with access to the internet. You can check it with:
-```
-$ docker run ubuntu:14.04 ping github.com
-PING github.com (140.82.118.3) 56(84) bytes of data.
-64 bytes from 140.82.118.3: icmp_seq=1 ttl=53 time=40.1 ms
-64 bytes from 140.82.118.3: icmp_seq=2 ttl=53 time=40.4 ms
-64 bytes from 140.82.118.3: icmp_seq=3 ttl=53 time=40.3 ms
-64 bytes from 140.82.118.3: icmp_seq=4 ttl=53 time=40.1 ms
+The only requirement is fresh docker configured docker.
 
---- github.com ping statistics ---
-4 packets transmitted, 4 received, 0% packet loss, time 19823ms
-rtt min/avg/max/mdev = 40.157/40.284/40.463/0.278 ms
-```
+Notes:
+* If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
+* If you already had run these tests without `./runner` script you may have problems with pytest cache. It can be removed with `rm -r __pycache__ .pytest_cache/`.
+* Some tests maybe require a lot of resources (CPU, RAM, etc.). Better not try large tests like `test_cluster_copier` or `test_distributed_ddl*` on your notebook.
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```

@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
@@ -20,7 +21,7 @@
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/CompressionSettingsSelector.h>
+#include <Storages/CompressionCodecSelector.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
@@ -143,7 +144,7 @@ struct ContextShared
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable std::unique_ptr<CompressionSettingsSelector> compression_settings_selector;
+    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
@@ -157,10 +158,10 @@ struct ContextShared
     public:
         size_t operator()(const Context::SessionKey & key) const
         {
-            size_t seed = 0;
-            boost::hash_combine(seed, key.first);
-            boost::hash_combine(seed, key.second);
-            return seed;
+            SipHash hash;
+            hash.update(key.first);
+            hash.update(key.second);
+            return hash.get64();
         }
     };
 
@@ -549,7 +550,7 @@ void Context::setConfig(const ConfigurationPtr & config)
     shared->config = config;
 }
 
-Poco::Util::AbstractConfiguration & Context::getConfigRef() const
+const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 {
     auto lock = getLock();
     return shared->config ? *shared->config : Poco::Util::Application::instance().config();
@@ -907,7 +908,7 @@ DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const 
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
     ++it->second.counter;
     guards_lock.unlock();
-    table_lock = std::unique_lock<std::mutex>(*it->second.mutex);
+    table_lock = std::unique_lock(*it->second.mutex);
 }
 
 DDLGuard::~DDLGuard()
@@ -923,7 +924,7 @@ DDLGuard::~DDLGuard()
 
 std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
 {
-    std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
+    std::unique_lock lock(shared->ddl_guards_mutex);
     return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
 }
 
@@ -1053,14 +1054,14 @@ void Context::setCurrentQueryId(const String & query_id)
             {
                 UInt64 a;
                 UInt64 b;
-            };
+            } words;
         } random;
 
         {
             auto lock = getLock();
 
-            random.a = shared->rng();
-            random.b = shared->rng();
+            random.words.a = shared->rng();
+            random.words.b = shared->rng();
         }
 
         /// Use protected constructor.
@@ -1176,7 +1177,7 @@ ExternalModels & Context::getExternalModels()
 
 EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
 {
-    std::lock_guard<std::mutex> lock(shared->embedded_dictionaries_mutex);
+    std::lock_guard lock(shared->embedded_dictionaries_mutex);
 
     if (!shared->embedded_dictionaries)
     {
@@ -1194,7 +1195,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
 ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
-    std::lock_guard<std::mutex> lock(shared->external_dictionaries_mutex);
+    std::lock_guard lock(shared->external_dictionaries_mutex);
 
     if (!shared->external_dictionaries)
     {
@@ -1214,7 +1215,7 @@ ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_
 
 ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
 {
-    std::lock_guard<std::mutex> lock(shared->external_models_mutex);
+    std::lock_guard lock(shared->external_models_mutex);
 
     if (!shared->external_models)
     {
@@ -1371,7 +1372,7 @@ DDLWorker & Context::getDDLWorker() const
 
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
-    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
+    std::lock_guard lock(shared->zookeeper_mutex);
 
     if (!shared->zookeeper)
         shared->zookeeper = std::make_shared<zkutil::ZooKeeper>(getConfigRef(), "zookeeper");
@@ -1464,7 +1465,7 @@ void Context::reloadClusterConfig()
     {
         ConfigurationPtr cluster_config;
         {
-            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            std::lock_guard lock(shared->clusters_mutex);
             cluster_config = shared->clusters_config;
         }
 
@@ -1472,7 +1473,7 @@ void Context::reloadClusterConfig()
         auto new_clusters = std::make_unique<Clusters>(config, settings);
 
         {
-            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            std::lock_guard lock(shared->clusters_mutex);
             if (shared->clusters_config.get() == cluster_config.get())
             {
                 shared->clusters = std::move(new_clusters);
@@ -1487,7 +1488,7 @@ void Context::reloadClusterConfig()
 
 Clusters & Context::getClusters() const
 {
-    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
     {
         auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
@@ -1501,7 +1502,7 @@ Clusters & Context::getClusters() const
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, const String & config_name)
 {
-    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    std::lock_guard lock(shared->clusters_mutex);
 
     shared->clusters_config = config;
 
@@ -1514,7 +1515,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
 
 void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
 {
-    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+    std::lock_guard lock(shared->clusters_mutex);
 
     if (!shared->clusters)
         throw Exception("Clusters are not set", ErrorCodes::LOGICAL_ERROR);
@@ -1537,115 +1538,70 @@ Compiler & Context::getCompiler()
 void Context::initializeSystemLogs()
 {
     auto lock = getLock();
-    system_logs = std::make_shared<SystemLogs>();
+
+    if (!global_context)
+        throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
+
+    system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
 }
 
 
-QueryLog * Context::getQueryLog(bool create_if_not_exists)
+QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!system_logs)
+    if (!system_logs || !system_logs->query_log)
         return nullptr;
-
-    if (!system_logs->query_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->query_log = createDefaultSystemLog<QueryLog>(*global_context, "system", "query_log", getConfigRef(), "query_log");
-    }
 
     return system_logs->query_log.get();
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
+QueryThreadLog * Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
-    if (!system_logs)
+    if (!system_logs || !system_logs->query_thread_log)
         return nullptr;
-
-    if (!system_logs->query_thread_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for query thread log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->query_thread_log = createDefaultSystemLog<QueryThreadLog>(
-                *global_context, "system", "query_thread_log", getConfigRef(), "query_thread_log");
-    }
 
     return system_logs->query_thread_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
+PartLog * Context::getPartLog(const String & part_database)
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
-    if (!config.has("part_log"))
-        return nullptr;
-
     /// System logs are shutting down.
-    if (!system_logs)
+    if (!system_logs || !system_logs->part_log)
         return nullptr;
-
-    String database = config.getString("part_log.database", "system");
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (!part_database.empty() && part_database == database)
+    if (part_database == system_logs->part_log_database)
         return nullptr;
-
-    if (!system_logs->part_log)
-    {
-        if (!create_if_not_exists)
-            return nullptr;
-
-        if (shared->shutdown_called)
-            throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
-
-        if (!global_context)
-            throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
-
-        system_logs->part_log = createDefaultSystemLog<PartLog>(*global_context, "system", "part_log", getConfigRef(), "part_log");
-    }
 
     return system_logs->part_log.get();
 }
 
 
-CompressionSettings Context::chooseCompressionSettings(size_t part_size, double part_size_ratio) const
+CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
     auto lock = getLock();
 
-    if (!shared->compression_settings_selector)
+    if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
         auto & config = getConfigRef();
 
         if (config.has(config_name))
-            shared->compression_settings_selector = std::make_unique<CompressionSettingsSelector>(config, "compression");
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
         else
-            shared->compression_settings_selector = std::make_unique<CompressionSettingsSelector>();
+            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
     }
 
-    return shared->compression_settings_selector->choose(part_size, part_size_ratio);
+    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
 
 
@@ -1664,7 +1620,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 }
 
 
-void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop)
+void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
 {
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
@@ -1712,7 +1668,7 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 }
 
 
-void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size)
+void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
 {
     size_t max_table_size_to_drop = shared->max_table_size_to_drop;
 
@@ -1727,7 +1683,7 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 }
 
 
-void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size)
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
 {
     size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
 
@@ -1890,7 +1846,7 @@ SessionCleaner::~SessionCleaner()
     try
     {
         {
-            std::lock_guard<std::mutex> lock{mutex};
+            std::lock_guard lock{mutex};
             quit = true;
         }
 
@@ -1908,7 +1864,7 @@ void SessionCleaner::run()
 {
     setThreadName("HTTPSessionCleaner");
 
-    std::unique_lock<std::mutex> lock{mutex};
+    std::unique_lock lock{mutex};
 
     while (true)
     {

@@ -446,13 +446,11 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
                     for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
                     {
-                        ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(lambda_arg_asts[j].get());
-                        if (!identifier)
+                        auto opt_arg_name = getIdentifierName(lambda_arg_asts[j]);
+                        if (!opt_arg_name)
                             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-                        String arg_name = identifier->name;
-
-                        lambda_arguments.emplace_back(arg_name, lambda_type->getArgumentTypes()[j]);
+                        lambda_arguments.emplace_back(*opt_arg_name, lambda_type->getArgumentTypes()[j]);
                     }
 
                     actions_stack.pushLevel(lambda_arguments);
@@ -541,9 +539,6 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
     const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
     if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
     {
-        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = arg->getColumnName();
-
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
@@ -562,6 +557,9 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
                 }
             }
         }
+
+        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
+        String set_id = arg->getColumnName();
 
         SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
 

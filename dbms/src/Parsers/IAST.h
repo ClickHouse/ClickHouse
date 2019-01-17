@@ -46,6 +46,9 @@ public:
     StringPtr owned_string;
 
     virtual ~IAST() = default;
+    IAST() = default;
+    IAST(const IAST &) = default;
+    IAST & operator=(const IAST &) = default;
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
@@ -67,7 +70,7 @@ public:
     }
 
     /** Get the text that identifies this element. */
-    virtual String getID() const = 0;
+    virtual String getID(char delimiter = '_') const = 0;
 
     ASTPtr ptr() { return shared_from_this(); }
 

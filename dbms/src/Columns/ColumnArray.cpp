@@ -8,6 +8,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <common/unaligned.h>
+
 #include <DataStreams/ColumnGathererStream.h>
 
 #include <Common/Exception.h>
@@ -132,12 +134,12 @@ StringRef ColumnArray::getDataAt(size_t n) const
       *  since it contains only the data laid in succession, but not the offsets.
       */
 
-    size_t array_size = sizeAt(n);
-    if (array_size == 0)
-        return StringRef();
-
     size_t offset_of_first_elem = offsetAt(n);
     StringRef first = getData().getDataAtWithTerminatingZero(offset_of_first_elem);
+
+    size_t array_size = sizeAt(n);
+    if (array_size == 0)
+        return StringRef(first.data, 0);
 
     size_t offset_of_last_elem = getOffsets()[n] - 1;
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
@@ -164,7 +166,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
     if (pos != end)
         throw Exception("Incorrect length argument for method ColumnArray::insertData", ErrorCodes::BAD_ARGUMENTS);
 
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + elems);
+    getOffsets().push_back(getOffsets().back() + elems);
 }
 
 
@@ -186,13 +188,13 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 
 const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 {
-    size_t array_size = *reinterpret_cast<const size_t *>(pos);
+    size_t array_size = unalignedLoad<size_t>(pos);
     pos += sizeof(array_size);
 
     for (size_t i = 0; i < array_size; ++i)
         pos = getData().deserializeAndInsertFromArena(pos);
 
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + array_size);
+    getOffsets().push_back(getOffsets().back() + array_size);
     return pos;
 }
 
@@ -214,7 +216,7 @@ void ColumnArray::insert(const Field & x)
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+    getOffsets().push_back(getOffsets().back() + size);
 }
 
 
@@ -225,13 +227,16 @@ void ColumnArray::insertFrom(const IColumn & src_, size_t n)
     size_t offset = src.offsetAt(n);
 
     getData().insertRangeFrom(src.getData(), offset, size);
-    getOffsets().push_back((getOffsets().size() == 0 ? 0 : getOffsets().back()) + size);
+    getOffsets().push_back(getOffsets().back() + size);
 }
 
 
 void ColumnArray::insertDefault()
 {
-    getOffsets().push_back(getOffsets().size() == 0 ? 0 : getOffsets().back());
+    /// NOTE 1: We can use back() even if the array is empty (due to zero -1th element in PODArray).
+    /// NOTE 2: We cannot use reference in push_back, because reference get invalidated if array is reallocated.
+    auto last_offset = getOffsets().back();
+    getOffsets().push_back(last_offset);
 }
 
 
@@ -320,16 +325,10 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 
 ColumnPtr ColumnArray::convertToFullColumnIfConst() const
 {
-    ColumnPtr new_data;
-
-    if (ColumnPtr full_column = getData().convertToFullColumnIfConst())
-        new_data = full_column;
-    else
-        new_data = data;
-
-    return ColumnArray::create(new_data, offsets);
+    /// It is possible to have an array with constant data and non-constant offsets.
+    /// Example is the result of expression: replicate('hello', [1])
+    return ColumnArray::create(data->convertToFullColumnIfConst(), offsets);
 }
-
 
 void ColumnArray::getExtremes(Field & min, Field & max) const
 {

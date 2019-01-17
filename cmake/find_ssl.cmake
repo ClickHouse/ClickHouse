@@ -1,12 +1,12 @@
-#if (OS_LINUX)
-option (USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
-#endif ()
+if(NOT ARCH_32)
+    option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
+endif()
 
 set (OPENSSL_USE_STATIC_LIBS ${USE_STATIC_LIBRARIES})
 
 if (NOT USE_INTERNAL_SSL_LIBRARY)
     if (APPLE)
-        set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl")
+        set (OPENSSL_ROOT_DIR "/usr/local/opt/openssl" CACHE INTERNAL "")
         # https://rt.openssl.org/Ticket/Display.html?user=guest&pass=guest&id=2232
         if (USE_STATIC_LIBRARIES)
             message(WARNING "Disable USE_STATIC_LIBRARIES if you have linking problems with OpenSSL on MacOS")
