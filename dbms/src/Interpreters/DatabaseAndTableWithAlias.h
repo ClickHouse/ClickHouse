@@ -39,7 +39,7 @@ struct DatabaseAndTableWithAlias
     bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
 };
 
-void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip);
+void stripIdentifier(const DB::ASTPtr & ast, size_t num_qualifiers_to_strip);
 
 size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
                                                               const DatabaseAndTableWithAlias & names);
