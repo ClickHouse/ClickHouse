@@ -345,7 +345,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -369,7 +368,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         ParserIdentifierWithOptionalParameters storage_p;
         column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
 
         const auto defaults_it = columns.defaults.find(column.name);
         if (defaults_it != std::end(columns.defaults))
