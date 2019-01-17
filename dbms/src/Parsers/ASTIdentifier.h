@@ -77,5 +77,8 @@ std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
 std::optional<String> getTableIdentifierName(const ASTPtr & ast);
 
 void setIdentifierSpecial(ASTPtr & ast);
+void addIdentifierQualifier(ASTIdentifier & identifier, const String & database, const String & table, const String & alias);
+bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table_or_alias);
+bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
 
 }
