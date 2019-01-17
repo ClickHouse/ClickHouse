@@ -317,9 +317,15 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
     }
     else if (type == ADD_INDEX)
     {
+        ASTPtr new_indexes_decl_ast;
+        if (indexes_decl_ast)
+            new_indexes_decl_ast = indexes_decl_ast->clone();
+        else
+            new_indexes_decl_ast = std::make_shared<ASTExpressionList>();
+
         if (std::any_of(
-                indexes_decl_ast->children.cbegin(),
-                indexes_decl_ast->children.cend(),
+                new_indexes_decl_ast->children.cbegin(),
+                new_indexes_decl_ast->children.cend(),
                 [this](const ASTPtr & index_ast) {
                     return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
                 }))
@@ -331,7 +337,6 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
                                 ErrorCodes::ILLEGAL_COLUMN};
         }
 
-        auto new_indexes_decl_ast = indexes_decl_ast->clone();
         auto insert_it = new_indexes_decl_ast->children.end();
 
         if (!after_index_name.empty())
@@ -354,7 +359,11 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
     }
     else if (type == DROP_INDEX)
     {
-        auto new_indexes_decl_ast = indexes_decl_ast->clone();
+        ASTPtr new_indexes_decl_ast;
+        if (indexes_decl_ast)
+            new_indexes_decl_ast = indexes_decl_ast->clone();
+        else
+            new_indexes_decl_ast = std::make_shared<ASTExpressionList>();
 
         auto erase_it = std::find_if(
                 new_indexes_decl_ast->children.begin(),

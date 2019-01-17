@@ -1,0 +1,28 @@
+CREATE TABLE test.minmax_idx ( u64 UInt64,  i32 Int32) ENGINE = MergeTree() ORDER BY u64 INDEXES idx1 BY u64 * i32 TYPE minmax GRANULARITY 10, idx3 BY u64 - i32 TYPE minmax GRANULARITY 10, idx2 BY u64 + i32 TYPE minmax GRANULARITY 10 SETTINGS index_granularity = 8192
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+CREATE TABLE test.minmax_idx ( u64 UInt64,  i32 Int32) ENGINE = MergeTree() ORDER BY u64 INDEXES idx3 BY u64 - i32 TYPE minmax GRANULARITY 10, idx2 BY u64 + i32 TYPE minmax GRANULARITY 10 SETTINGS index_granularity = 8192
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+CREATE TABLE test.minmax_idx ( u64 UInt64,  i32 Int32) ENGINE = MergeTree() ORDER BY u64 SETTINGS index_granularity = 8192
+CREATE TABLE test.minmax_idx ( u64 UInt64,  i32 Int32) ENGINE = MergeTree() ORDER BY u64 INDEXES idx1 BY u64 * i32 TYPE minmax GRANULARITY 10 SETTINGS index_granularity = 8192
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+1	2
+CREATE TABLE test.minmax_idx2 ( u64 UInt64,  i32 Int32) ENGINE = MergeTree() ORDER BY u64 SETTINGS index_granularity = 8192
+1	2
+1	2

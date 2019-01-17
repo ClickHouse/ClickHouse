@@ -418,26 +418,39 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 {
     ASTPtr new_primary_key_ast = data.primary_key_ast;
     ASTPtr new_order_by_ast = data.order_by_ast;
+    ASTPtr new_indices_ast = data.skip_indexes_ast;
     IDatabase::ASTModifier storage_modifier;
     if (!metadata_diff.empty())
     {
-        ParserNotEmptyExpressionList parser(false);
-        auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
-
-        if (new_sorting_key_expr_list->children.size() == 1)
-            new_order_by_ast = new_sorting_key_expr_list->children[0];
-        else
+        if (metadata_diff.sorting_key_changed)
         {
-            auto tuple = makeASTFunction("tuple");
-            tuple->arguments->children = new_sorting_key_expr_list->children;
-            new_order_by_ast = tuple;
+            ParserNotEmptyExpressionList parser(false);
+            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+
+            if (new_sorting_key_expr_list->children.size() == 1)
+                new_order_by_ast = new_sorting_key_expr_list->children[0];
+            else
+            {
+                auto tuple = makeASTFunction("tuple");
+                tuple->arguments->children = new_sorting_key_expr_list->children;
+                new_order_by_ast = tuple;
+            }
+
+            if (!data.primary_key_ast)
+            {
+                /// Primary and sorting key become independent after this ALTER so we have to
+                /// save the old ORDER BY expression as the new primary key.
+                new_primary_key_ast = data.order_by_ast->clone();
+            }
         }
 
-        if (!data.primary_key_ast)
+        if (metadata_diff.skip_indices_changed)
         {
-            /// Primary and sorting key become independent after this ALTER so we have to
-            /// save the old ORDER BY expression as the new primary key.
-            new_primary_key_ast = data.order_by_ast->clone();
+            ParserIndexDeclarationList parser;
+            if (metadata_diff.new_skip_indices.empty())
+                new_indices_ast.reset();
+            else
+                new_indices_ast = parseQuery(parser, metadata_diff.new_skip_indices, 0);
         }
 
         storage_modifier = [&](IAST & ast)
@@ -453,6 +466,11 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
                 storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
+
+            if (new_indices_ast)
+                storage_ast.set(storage_ast.indexes, new_indices_ast);
+            else
+                storage_ast.indexes = nullptr;
         };
     }
 
@@ -461,7 +479,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndexes(data.skip_indexes_ast);
+    data.setSkipIndexes(new_indices_ast);
 }
 
 
@@ -3070,6 +3088,10 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         ASTPtr new_primary_key_ast = data.primary_key_ast;
         ASTPtr new_indexes_ast = data.skip_indexes_ast;
         params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
+        if (new_indexes_ast && new_indexes_ast->children.empty())
+        {
+            new_indexes_ast.reset();
+        }
 
         String new_columns_str = new_columns.toString();
         if (new_columns_str != data.getColumns().toString())
@@ -3079,7 +3101,12 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
         if (new_order_by_ast.get() != data.order_by_ast.get())
             new_metadata.sorting_key = serializeAST(*MergeTreeData::extractKeyExpressionList(new_order_by_ast));
         if (new_indexes_ast.get() != data.skip_indexes_ast.get())
-            new_metadata.skip_indexes = serializeAST(*new_indexes_ast.get());
+        {
+            if (new_indexes_ast)
+                new_metadata.skip_indexes = serializeAST(*new_indexes_ast.get());
+            else
+                new_metadata.skip_indexes = {};
+        }
 
         String new_metadata_str = new_metadata.toString();
         if (new_metadata_str != ReplicatedMergeTreeTableMetadata(data).toString())
