@@ -216,12 +216,12 @@ void StorageMergeTree::alter(
     auto new_columns = data.getColumns();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    ASTPtr new_indexes_ast = data.skip_indexes_ast;
-    params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
+    ASTPtr new_indices_ast = data.skip_indices_ast;
+    params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indices_ast);
 
-    if (new_indexes_ast && new_indexes_ast->children.empty())
+    if (new_indices_ast && new_indices_ast->children.empty())
     {
-        new_indexes_ast.reset();
+        new_indices_ast.reset();
     }
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
@@ -229,7 +229,7 @@ void StorageMergeTree::alter(
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indexes_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indices_ast, false))
             transactions.push_back(std::move(transaction));
     }
 
@@ -245,12 +245,12 @@ void StorageMergeTree::alter(
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
 
-        if (new_indexes_ast.get() != data.skip_indexes_ast.get())
+        if (new_indices_ast.get() != data.skip_indices_ast.get())
         {
-            if (new_indexes_ast == nullptr)
-                storage_ast.indexes = nullptr;
+            if (new_indices_ast == nullptr)
+                storage_ast.indices = nullptr;
             else
-                storage_ast.set(storage_ast.indexes, new_indexes_ast);
+                storage_ast.set(storage_ast.indices, new_indices_ast);
         }
     };
 
@@ -258,7 +258,7 @@ void StorageMergeTree::alter(
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndexes(new_indexes_ast);
+    data.setSkipIndices(new_indices_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();

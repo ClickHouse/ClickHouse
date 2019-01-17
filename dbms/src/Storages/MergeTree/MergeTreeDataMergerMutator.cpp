@@ -334,7 +334,7 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & all_columns,
     const ExpressionActionsPtr & sorting_key_expr,
-    const MergeTreeIndexes & indexes,
+    const MergeTreeIndices & indexes,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -556,7 +556,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        all_columns, data.sorting_key_expr, data.indexes,
+        all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
@@ -636,7 +636,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
         BlockInputStreamPtr stream = std::move(input);
-        for (const auto & index : data.indexes) {
+        for (const auto & index : data.skip_indices) {
             stream = std::make_shared<MaterializingBlockInputStream>(
                     std::make_shared<ExpressionBlockInputStream>(stream, index->expr));
         }
@@ -911,7 +911,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// All columns are modified, proceed to write a new part from scratch.
 
-        for (const auto & index : data.indexes)
+        for (const auto & index : data.skip_indices)
             in = std::make_shared<MaterializingBlockInputStream>(
                     std::make_shared<ExpressionBlockInputStream>(in, index->expr));
 
@@ -946,7 +946,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
         /// Checks if columns used in skipping indexes modified/
         for (const auto & col : in_header.getNames()) {
-            for (const auto index : data.indexes) {
+            for (const auto index : data.skip_indices) {
                 const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
                 if (it != cend(index_cols)) {

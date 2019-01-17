@@ -137,7 +137,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     size_t index_granularity,
     bool require_checksums,
     const DataTypes & primary_key_data_types,
-    const MergeTreeIndexes & indexes,
+    const MergeTreeIndices & indices,
     std::function<bool()> is_cancelled)
 {
     Logger * log = &Logger::get("checkDataPart");
@@ -243,7 +243,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     }
 
     /// Read and check skip indexes
-    for (const auto index : indexes)
+    for (const auto index : indices)
     {
         LOG_DEBUG(log, "Checking index " << index->name << " in " << path);
         Stream stream(path, index->getFileName(), ".idx");

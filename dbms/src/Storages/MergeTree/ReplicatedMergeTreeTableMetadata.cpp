@@ -45,7 +45,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
-    skip_indexes = formattedAST(data.skip_indexes_ast);
+    skip_indices = formattedAST(data.skip_indices_ast);
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -67,8 +67,8 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
     if (!sorting_key.empty())
         out << "sorting key: " << sorting_key << "\n";
 
-    if (!skip_indexes.empty())
-        out << "indices: " << skip_indexes << "\n";
+    if (!skip_indices.empty())
+        out << "indices: " << skip_indices << "\n";
 }
 
 String ReplicatedMergeTreeTableMetadata::toString() const
@@ -100,7 +100,7 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
         in >> sorting_key >> "\n";
 
     if (checkString("indices: ", in))
-        in >> skip_indexes >> "\n";
+        in >> skip_indices >> "\n";
 }
 
 ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const String & s)
@@ -183,18 +183,18 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                 ErrorCodes::METADATA_MISMATCH);
     }
 
-    if (skip_indexes != from_zk.skip_indexes)
+    if (skip_indices != from_zk.skip_indices)
     {
         if (allow_alter)
         {
             diff.skip_indices_changed = true;
-            diff.new_skip_indices = from_zk.skip_indexes;
+            diff.new_skip_indices = from_zk.skip_indices;
         }
         else
             throw Exception(
                     "Existing table metadata in ZooKeeper differs in skip indexes."
-                    " Stored in ZooKeeper: " + from_zk.skip_indexes +
-                    ", local: " + skip_indexes,
+                    " Stored in ZooKeeper: " + from_zk.skip_indices +
+                    ", local: " + skip_indices,
                     ErrorCodes::METADATA_MISMATCH);
     }
 

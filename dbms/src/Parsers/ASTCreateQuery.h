@@ -19,7 +19,7 @@ public:
     IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
-    ASTExpressionList * indexes = nullptr;
+    ASTExpressionList * indices = nullptr;
     ASTSetQuery * settings = nullptr;
 
     String getID(char) const override { return "Storage definition"; }
@@ -39,8 +39,8 @@ public:
             res->set(res->order_by, order_by->clone());
         if (sample_by)
             res->set(res->sample_by, sample_by->clone());
-        if (indexes)
-            res->set(res->indexes, indexes->clone());
+        if (indices)
+            res->set(res->indices, indices->clone());
 
         if (settings)
             res->set(res->settings, settings->clone());
@@ -75,10 +75,10 @@ public:
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
             sample_by->formatImpl(s, state, frame);
         }
-        if (indexes)
+        if (indices)
         {
             s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "INDICES " << (s.hilite ? hilite_none : "");
-            indexes->formatImpl(s, state, frame);
+            indices->formatImpl(s, state, frame);
         }
         if (settings)
         {

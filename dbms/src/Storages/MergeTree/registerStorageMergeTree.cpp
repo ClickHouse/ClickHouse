@@ -1,7 +1,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
 
 #include <Common/typeid_cast.h>
@@ -334,13 +334,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Sorting key in the ORDER BY clause;
         *  - Primary key (if it is different from the sorting key) in the PRIMARY KEY clause;
         *  - Sampling expression in the SAMPLE BY clause;
-        *  - Secondary indexes
+        *  - Secondary indices it the INDICES clause;
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 
     bool is_extended_storage_def =
         args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by
-        || args.storage_def->sample_by || (args.storage_def->indexes && !args.storage_def->indexes->children.empty()) || args.storage_def->settings;
+        || args.storage_def->sample_by || (args.storage_def->indices && !args.storage_def->indices->children.empty()) || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -555,7 +555,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
-    ASTPtr indexes_ast;
+    ASTPtr indices_ast;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
     if (is_extended_storage_def)
@@ -576,8 +576,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
-        if (args.storage_def->indexes) {
-            indexes_ast = args.storage_def->indexes->ptr();
+        if (args.storage_def->indices) {
+            indices_ast = args.storage_def->indices->ptr();
         }
 
         storage_settings.loadFromQuery(*args.storage_def);
@@ -614,18 +614,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
             args.columns,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, indexes_ast, merging_params, storage_settings,
+            sample_by_ast, indices_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
             args.data_path, args.database_name, args.table_name, args.columns, args.attach,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, indexes_ast, merging_params, storage_settings,
+            sample_by_ast, indices_ast, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }
 
 
-static void registerMergeTreeSkipIndexes() {
+static void registerMergeTreeSkipIndices() {
     auto & factory = MergeTreeIndexFactory::instance();
     factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
 }
@@ -649,7 +649,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
     factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
 
-    registerMergeTreeSkipIndexes();
+    registerMergeTreeSkipIndices();
 }
 
 }

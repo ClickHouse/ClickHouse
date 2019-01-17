@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSelectBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadSelectBlockInputStream.h>
-#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
@@ -534,7 +534,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
         /// It can be done in multiple threads (one thread for each part).
         /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
-        for (auto index : data.indexes) {
+        for (auto index : data.skip_indices) {
             auto condition = index->createIndexCondition(query_info, context);
             if (!condition->alwaysUnknownOrTrue()) {
                 ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);

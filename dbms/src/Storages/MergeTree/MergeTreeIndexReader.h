@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreeReader.h>
-#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB {

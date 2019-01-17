@@ -17,7 +17,7 @@ MergeTreeData::DataPart::Checksums checkDataPart(
     size_t index_granularity,
     bool require_checksums,
     const DataTypes & primary_key_data_types,    /// Check the primary key. If it is not necessary, pass an empty array.
-    const MergeTreeIndexes & indexes = {}, /// Check skip indexes
+    const MergeTreeIndices & indices = {}, /// Check skip indexes
     std::function<bool()> is_cancelled = []{ return false; });
 
 }

@@ -95,7 +95,7 @@ MergeTreeData::MergeTreeData(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
-    const ASTPtr & indexes_ast_,
+    const ASTPtr & indices_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -116,7 +116,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
     setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
-    setSkipIndexes(indexes_ast_);
+    setSkipIndices(indices_ast_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -349,21 +349,21 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 }
 
 
-void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
+void MergeTreeData::setSkipIndices(const ASTPtr &indices_asts, bool only_check)
 {
-    if (!indexes_asts)
+    if (!indices_asts)
     {
         if (!only_check)
         {
-            skip_indexes_ast = nullptr;
-            indexes.clear();
+            skip_indices_ast = nullptr;
+            skip_indices.clear();
         }
         return;
     }
 
-    MergeTreeIndexes new_indexes;
+    MergeTreeIndices new_indexes;
     std::set<String> names;
-    auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indexes_asts);
+    auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indices_asts);
 
     for (const auto &index_ast : index_list->children)
     {
@@ -384,8 +384,8 @@ void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
 
     if (!only_check)
     {
-        skip_indexes_ast = indexes_asts;
-        indexes = std::move(new_indexes);
+        skip_indices_ast = indices_asts;
+        skip_indices = std::move(new_indexes);
     }
 }
 
@@ -1047,7 +1047,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     auto new_columns = getColumns();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    ASTPtr new_indexes_ast = skip_indexes_ast;
+    ASTPtr new_indexes_ast = skip_indices_ast;
     commands.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
 
     /// Set of columns that shouldn't be altered.
@@ -1066,7 +1066,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
             columns_alter_forbidden.insert(col);
     }
 
-    for (auto index : indexes)
+    for (auto index : skip_indices)
     {
         /// TODO: some special error telling about "drop index"
         for (const String & col : index->expr->getRequiredColumns())
@@ -1128,7 +1128,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
-    setSkipIndexes(new_indexes_ast, /* only_check = */ true);
+    setSkipIndices(new_indexes_ast, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1136,7 +1136,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     bool unused_bool;
 
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            skip_indexes_ast, new_indexes_ast, unused_expression, unused_map, unused_bool);
+            skip_indices_ast, new_indexes_ast, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1309,7 +1309,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
-            skip_indexes_ast, new_indices_ast,
+            skip_indices_ast, new_indices_ast,
             expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();
@@ -2137,7 +2137,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartAndFixMetadata(const St
     /// Check the data while we are at it.
     if (part->checksums.empty())
     {
-        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types, indexes);
+        part->checksums = checkDataPart(full_part_path, index_granularity, false, primary_key_data_types, skip_indices);
 
         {
             WriteBufferFromFile out(full_part_path + "checksums.txt.tmp", 4096);
