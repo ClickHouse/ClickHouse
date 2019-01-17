@@ -56,8 +56,6 @@ public:
     ASTs children;
     StringRange range;
 
-    /// This pointer does not allow it to be deleted while the range refers to it.
-    StringPtr owned_string;
     SemanticPtr semantic;
 
     virtual ~IAST() = default;
