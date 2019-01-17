@@ -1,11 +1,11 @@
 # Third-party libraries may have substandard code.
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-stringop-overflow")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-implicit-fallthrough -Wno-class-memaccess -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-stringop-overflow -Wno-implicit-function-declaration -Wno-return-type -Wno-array-bounds -Wno-bool-compare -Wno-int-conversion -Wno-switch")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-implicit-fallthrough -Wno-class-memaccess -Wno-sign-compare -std=c++1z")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format -Wno-parentheses-equality")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format -Wno-parentheses-equality -Wno-tautological-constant-compare -Wno-tautological-constant-out-of-range-compare -Wno-implicit-function-declaration -Wno-return-type -Wno-pointer-bool-conversion -Wno-enum-conversion -Wno-int-conversion -Wno-switch")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -Wno-inconsistent-missing-override -std=c++1z")
 endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)
@@ -110,6 +110,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
+    set (POCO_SKIP_OPENSSL_FIND 1)
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -123,6 +124,10 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
     target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
     target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
+
+if (USE_RDKAFKA)
+    add_subdirectory (cppkafka-cmake)
+endif()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
@@ -138,6 +143,7 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_POCO_LIBRARY)
+    set (POCO_VERBOSE_MESSAGES 0 CACHE INTERNAL "")
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
@@ -170,6 +176,7 @@ endif ()
 if (USE_INTERNAL_LLVM_LIBRARY)
     file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
     add_library(LLVM0 ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp) # silly cmake bug fix
+    add_library(LLVMOFF ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
@@ -189,6 +196,25 @@ if (USE_INTERNAL_LLVM_LIBRARY)
     set (BENCHMARK_ENABLE_ASSEMBLY_TESTS 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE INTERNAL "")
     add_subdirectory (llvm/llvm)
+endif ()
+
+if (USE_INTERNAL_LIBGSASL_LIBRARY)
+  add_subdirectory(libgsasl)
+endif()
+
+if (USE_INTERNAL_LIBXML2_LIBRARY)
+    add_subdirectory(libxml2-cmake)
+endif ()
+
+if (USE_INTERNAL_HDFS3_LIBRARY)
+    include(${ClickHouse_SOURCE_DIR}/cmake/find_protobuf.cmake)
+    if (USE_INTERNAL_PROTOBUF_LIBRARY)
+        set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
+        set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
+        set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
+        add_subdirectory(protobuf/cmake)
+    endif ()
+    add_subdirectory(libhdfs3-cmake)
 endif ()
 
 if (USE_BASE64)

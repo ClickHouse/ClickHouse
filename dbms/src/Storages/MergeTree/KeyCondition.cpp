@@ -313,7 +313,7 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
-/** Computes value of constant expression and it data type.
+/** Computes value of constant expression and its data type.
   * Returns false, if expression isn't constant.
   */
 static bool getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
@@ -918,9 +918,9 @@ bool KeyCondition::mayBeTrueInRange(
         std::cerr << "+inf)\n";*/
 
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
-        [&] (const std::vector<Range> & key_ranges)
+        [&] (const std::vector<Range> & key_ranges_parallelogram)
     {
-        auto res = mayBeTrueInParallelogram(key_ranges, data_types);
+        auto res = mayBeTrueInParallelogram(key_ranges_parallelogram, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -1125,9 +1125,9 @@ String KeyCondition::RPNElement::toString() const
             return "false";
         case ALWAYS_TRUE:
             return "true";
-        default:
-            throw Exception("Unknown function in RPNElement", ErrorCodes::LOGICAL_ERROR);
     }
+
+    __builtin_unreachable();
 }
 
 

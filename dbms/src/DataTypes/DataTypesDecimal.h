@@ -50,7 +50,7 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
             return 20;
         default:
             break;
-    };
+    }
     return 0;
 }
 

@@ -43,6 +43,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -60,6 +61,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Common/Config/configReadClient.h>
+#include <Storages/ColumnsDescription.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -69,12 +71,11 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
 /// Similar codes \e[s, \e[u don't work in VT100 and Mosh.
-#define SAVE_CURSOR_POSITION "\e7"
-#define RESTORE_CURSOR_POSITION "\e8"
+#define SAVE_CURSOR_POSITION "\033""7"
+#define RESTORE_CURSOR_POSITION "\033""8"
 
 #define CLEAR_TO_END_OF_LINE "\033[K"
 
@@ -553,10 +554,10 @@ private:
 
     void loop()
     {
-        String query;
-        String prev_query;
+        String input;
+        String prev_input;
 
-        while (char * line_ = readline(query.empty() ? prompt().c_str() : ":-] "))
+        while (char * line_ = readline(input.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
@@ -576,17 +577,17 @@ private:
             if (ends_with_backslash)
                 line = line.substr(0, ws - 1);
 
-            query += line;
+            input += line;
 
             if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
             {
-                if (query != prev_query)
+                if (input != prev_input)
                 {
                     /// Replace line breaks with spaces to prevent the following problem.
                     /// Every line of multi-line query is saved to history file as a separate line.
                     /// If the user restarts the client then after pressing the "up" button
                     /// every line of the query will be displayed separately.
-                    std::string logged_query = query;
+                    std::string logged_query = input;
                     std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
                     add_history(logged_query.c_str());
 
@@ -595,18 +596,18 @@ private:
                         throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
 
-                    prev_query = query;
+                    prev_input = input;
                 }
 
                 if (has_vertical_output_suffix)
-                    query = query.substr(0, query.length() - 2);
+                    input = input.substr(0, input.length() - 2);
 
                 try
                 {
                     /// Determine the terminal size.
                     ioctl(0, TIOCGWINSZ, &terminal_size);
 
-                    if (!process(query))
+                    if (!process(input))
                         break;
                 }
                 catch (const Exception & e)
@@ -616,8 +617,14 @@ private:
                     {
                         std::cerr << std::endl
                             << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                            << std::endl;
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl
+                                      << e.getStackTrace().toString() << std::endl;
+
+                        std::cerr << std::endl;
+
                     }
 
                     /// Client-side exception during query execution can result in the loss of
@@ -626,11 +633,11 @@ private:
                     connect();
                 }
 
-                query = "";
+                input = "";
             }
             else
             {
-                query += '\n';
+                input += '\n';
             }
         }
     }
@@ -659,10 +666,14 @@ private:
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
+            {   /// disable logs if expects errors
+                TestHint test_hint(test_mode, text);
+                if (test_hint.clientError() || test_hint.serverError())
+                    process("SET send_logs_level = 'none'");
+            }
+
             /// Several queries separated by ';'.
             /// INSERT data is ended by the end of line, not ';'.
-
-            String query;
 
             const char * begin = text.data();
             const char * end = begin + text.size();
@@ -695,19 +706,19 @@ private:
                     insert->end = pos;
                 }
 
-                query = text.substr(begin - text.data(), pos - begin);
+                String str = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
                 while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
-                TestHint test_hint(test_mode, query);
+                TestHint test_hint(test_mode, str);
                 expected_client_error = test_hint.clientError();
                 expected_server_error = test_hint.serverError();
 
                 try
                 {
-                    if (!processSingleQuery(query, ast) && !ignore_error)
+                    if (!processSingleQuery(str, ast) && !ignore_error)
                         return false;
                 }
                 catch (...)
@@ -715,7 +726,7 @@ private:
                     last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     actual_client_error = last_exception->code();
                     if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
+                        std::cerr << "Error on processing query: " << str << std::endl << last_exception->message();
                     got_exception = true;
                 }
 
@@ -875,11 +886,12 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
+            sendData(sample, columns_description);
             receiveEndOfQuery();
         }
     }
@@ -889,8 +901,6 @@ private:
     {
         ParserQuery parser(end, true);
         ASTPtr res;
-
-        const auto ignore_error = config().getBool("ignore-error", false);
 
         if (is_interactive || ignore_error)
         {
@@ -917,7 +927,7 @@ private:
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -928,19 +938,19 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, columns_description);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, columns_description);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description)
     {
         String current_format = insert_format;
 
@@ -951,6 +961,10 @@ private:
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
+
+        const auto & column_defaults = columns_description.defaults;
+        if (!column_defaults.empty())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
@@ -1089,7 +1103,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description)
     {
         while (true)
         {
@@ -1109,6 +1123,10 @@ private:
                 case Protocol::Server::Log:
                     onLogData(packet.block);
                     break;
+
+                case Protocol::Server::TableColumns:
+                    columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                    return receiveSampleBlock(out, columns_description);
 
                 default:
                     throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
@@ -1594,10 +1612,10 @@ public:
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed = po::command_line_parser(
+            po::parsed_options parsed_tables = po::command_line_parser(
                 external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
             po::variables_map external_options;
-            po::store(parsed, external_options);
+            po::store(parsed_tables, external_options);
 
             try
             {

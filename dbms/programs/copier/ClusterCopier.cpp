@@ -243,7 +243,7 @@ struct ClusterPartition
     UInt64 rows_copied = 0;
     UInt64 blocks_copied = 0;
 
-    size_t total_tries = 0;
+    UInt64 total_tries = 0;
 };
 
 
@@ -340,7 +340,7 @@ struct TaskCluster
     String default_local_database;
 
     /// Limits number of simultaneous workers
-    size_t max_workers = 0;
+    UInt64 max_workers = 0;
 
     /// Base settings for pull and push
     Settings settings_common;
@@ -481,7 +481,7 @@ String DB::TaskShard::getHostNameExample() const
 }
 
 
-static bool isExtedndedDefinitionStorage(const ASTPtr & storage_ast)
+static bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
     const ASTStorage & storage = typeid_cast<const ASTStorage &>(*storage_ast);
     return storage.partition_by || storage.order_by || storage.sample_by;
@@ -503,7 +503,7 @@ static ASTPtr extractPartitionKey(const ASTPtr & storage_ast)
     ASTPtr arguments_ast = engine.arguments->clone();
     ASTs & arguments = typeid_cast<ASTExpressionList &>(*arguments_ast).children;
 
-    if (isExtedndedDefinitionStorage(storage_ast))
+    if (isExtendedDefinitionStorage(storage_ast))
     {
         if (storage.partition_by)
             return storage.partition_by->clone();
@@ -773,11 +773,11 @@ public:
     }
 
     template <typename T>
-    decltype(auto) retry(T && func, size_t max_tries = 100)
+    decltype(auto) retry(T && func, UInt64 max_tries = 100)
     {
         std::exception_ptr exception;
 
-        for (size_t try_number = 1; try_number <= max_tries; ++try_number)
+        for (UInt64 try_number = 1; try_number <= max_tries; ++try_number)
         {
             try
             {
@@ -880,7 +880,7 @@ public:
     }
 
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
-    void discoverTablePartitions(TaskTable & task_table, size_t num_threads = 0)
+    void discoverTablePartitions(TaskTable & task_table, UInt64 num_threads = 0)
     {
         /// Fetch partitions list from a shard
         {
@@ -985,7 +985,7 @@ public:
 
             /// Retry table processing
             bool table_is_done = false;
-            for (size_t num_table_tries = 0; num_table_tries < max_table_tries; ++num_table_tries)
+            for (UInt64 num_table_tries = 0; num_table_tries < max_table_tries; ++num_table_tries)
             {
                 if (tryProcessTable(task_table))
                 {
@@ -1044,7 +1044,7 @@ protected:
         String workers_path = getWorkersPath();
         String current_worker_path = getCurrentWorkerNodePath();
 
-        size_t num_bad_version_errors = 0;
+        UInt64 num_bad_version_errors = 0;
 
         while (true)
         {
@@ -1055,7 +1055,7 @@ protected:
             auto version = stat.version;
             zookeeper->get(workers_path, &stat);
 
-            if (static_cast<size_t>(stat.numChildren) >= task_cluster->max_workers)
+            if (static_cast<UInt64>(stat.numChildren) >= task_cluster->max_workers)
             {
                 LOG_DEBUG(log, "Too many workers (" << stat.numChildren << ", maximum " << task_cluster->max_workers << ")"
                     << ". Postpone processing " << description);
@@ -1163,7 +1163,7 @@ protected:
         }
 
         // If all task is finished and zxid is not changed then partition could not become dirty again
-        for (size_t shard_num = 0; shard_num < status_paths.size(); ++shard_num)
+        for (UInt64 shard_num = 0; shard_num < status_paths.size(); ++shard_num)
         {
             if (zxid1[shard_num] != zxid2[shard_num])
             {
@@ -1280,7 +1280,7 @@ protected:
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
         /// Limit number of max executing replicas to 1
-        size_t num_shards = executeQueryOnCluster(cluster_push, query, nullptr, &settings_push, PoolMode::GET_ONE, 1);
+        UInt64 num_shards = executeQueryOnCluster(cluster_push, query, nullptr, &settings_push, PoolMode::GET_ONE, 1);
 
         if (num_shards < cluster_push->getShardCount())
         {
@@ -1299,8 +1299,8 @@ protected:
     }
 
 
-    static constexpr size_t max_table_tries = 1000;
-    static constexpr size_t max_shard_partition_tries = 600;
+    static constexpr UInt64 max_table_tries = 1000;
+    static constexpr UInt64 max_shard_partition_tries = 600;
 
     bool tryProcessTable(TaskTable & task_table)
     {
@@ -1317,7 +1317,7 @@ protected:
 
             Stopwatch watch;
             TasksShard expected_shards;
-            size_t num_failed_shards = 0;
+            UInt64 num_failed_shards = 0;
 
             ++cluster_partition.total_tries;
 
@@ -1368,7 +1368,7 @@ protected:
                 bool is_unprioritized_task = !previous_shard_is_instantly_finished && shard->priority.is_remote;
                 PartitionTaskStatus task_status = PartitionTaskStatus::Error;
                 bool was_error = false;
-                for (size_t try_num = 0; try_num < max_shard_partition_tries; ++try_num)
+                for (UInt64 try_num = 0; try_num < max_shard_partition_tries; ++try_num)
                 {
                     task_status = tryProcessPartitionTask(partition, is_unprioritized_task);
 
@@ -1434,8 +1434,8 @@ protected:
             }
         }
 
-        size_t required_partitions = task_table.cluster_partitions.size();
-        size_t finished_partitions = task_table.finished_cluster_partitions.size();
+        UInt64 required_partitions = task_table.cluster_partitions.size();
+        UInt64 finished_partitions = task_table.finished_cluster_partitions.size();
         bool table_is_done = finished_partitions >= required_partitions;
 
         if (!table_is_done)
@@ -1645,7 +1645,7 @@ protected:
             String query = queryToString(create_query_push_ast);
 
             LOG_DEBUG(log, "Create destination tables. Query: " << query);
-            size_t shards = executeQueryOnCluster(task_table.cluster_push, query, create_query_push_ast, &task_cluster->settings_push,
+            UInt64 shards = executeQueryOnCluster(task_table.cluster_push, query, create_query_push_ast, &task_cluster->settings_push,
                                     PoolMode::GET_MANY);
             LOG_DEBUG(log, "Destination tables " << getDatabaseDotTable(task_table.table_push) << " have been created on " << shards
                                                  << " shards of " << task_table.cluster_push->getShardCount());
@@ -1699,7 +1699,7 @@ protected:
                 std::future<Coordination::ExistsResponse> future_is_dirty_checker;
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-                constexpr size_t check_period_milliseconds = 500;
+                constexpr UInt64 check_period_milliseconds = 500;
 
                 /// Will asynchronously check that ZooKeeper connection and is_dirty flag appearing while copy data
                 auto cancel_check = [&] ()
@@ -1917,16 +1917,16 @@ protected:
     /** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
       * Returns number of shards for which at least one replica executed query successfully
       */
-    size_t executeQueryOnCluster(
+    UInt64 executeQueryOnCluster(
         const ClusterPtr & cluster,
         const String & query,
         const ASTPtr & query_ast_ = nullptr,
         const Settings * settings = nullptr,
         PoolMode pool_mode = PoolMode::GET_ALL,
-        size_t max_successful_executions_per_shard = 0) const
+        UInt64 max_successful_executions_per_shard = 0) const
     {
         auto num_shards = cluster->getShardsInfo().size();
-        std::vector<size_t> per_shard_num_successful_replicas(num_shards, 0);
+        std::vector<UInt64> per_shard_num_successful_replicas(num_shards, 0);
 
         ASTPtr query_ast;
         if (query_ast_ == nullptr)
@@ -1939,10 +1939,10 @@ protected:
 
 
         /// We need to execute query on one replica at least
-        auto do_for_shard = [&] (size_t shard_index)
+        auto do_for_shard = [&] (UInt64 shard_index)
         {
             const Cluster::ShardInfo & shard = cluster->getShardsInfo().at(shard_index);
-            size_t & num_successful_executions = per_shard_num_successful_replicas.at(shard_index);
+            UInt64 & num_successful_executions = per_shard_num_successful_replicas.at(shard_index);
             num_successful_executions = 0;
 
             auto increment_and_check_exit = [&] ()
@@ -1951,12 +1951,12 @@ protected:
                 return max_successful_executions_per_shard && num_successful_executions >= max_successful_executions_per_shard;
             };
 
-            size_t num_replicas = cluster->getShardsAddresses().at(shard_index).size();
-            size_t num_local_replicas = shard.getLocalNodeCount();
-            size_t num_remote_replicas = num_replicas - num_local_replicas;
+            UInt64 num_replicas = cluster->getShardsAddresses().at(shard_index).size();
+            UInt64 num_local_replicas = shard.getLocalNodeCount();
+            UInt64 num_remote_replicas = num_replicas - num_local_replicas;
 
             /// In that case we don't have local replicas, but do it just in case
-            for (size_t i = 0; i < num_local_replicas; ++i)
+            for (UInt64 i = 0; i < num_local_replicas; ++i)
             {
                 auto interpreter = InterpreterFactory::get(query_ast, context);
                 interpreter->execute();
@@ -1997,16 +1997,16 @@ protected:
         };
 
         {
-            ThreadPool thread_pool(std::min(num_shards, getNumberOfPhysicalCPUCores()));
+            ThreadPool thread_pool(std::min<UInt64>(num_shards, getNumberOfPhysicalCPUCores()));
 
-            for (size_t shard_index = 0; shard_index < num_shards; ++shard_index)
+            for (UInt64 shard_index = 0; shard_index < num_shards; ++shard_index)
                 thread_pool.schedule([=] { do_for_shard(shard_index); });
 
             thread_pool.wait();
         }
 
-        size_t successful_shards = 0;
-        for (size_t num_replicas : per_shard_num_successful_replicas)
+        UInt64 successful_shards = 0;
+        for (UInt64 num_replicas : per_shard_num_successful_replicas)
             successful_shards += (num_replicas > 0);
 
         return successful_shards;

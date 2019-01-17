@@ -59,7 +59,7 @@ void DataTypeArray::serializeBinary(const IColumn & column, size_t row_num, Writ
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+    size_t offset = offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
     size_t size = next_offset - offset;
 
@@ -94,7 +94,7 @@ void DataTypeArray::deserializeBinary(IColumn & column, ReadBuffer & istr) const
         throw;
     }
 
-    offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+    offsets.push_back(offsets.back() + size);
 }
 
 
@@ -113,7 +113,7 @@ namespace
             ? offset + limit
             : size;
 
-        ColumnArray::Offset prev_offset = offset == 0 ? 0 : offset_values[offset - 1];
+        ColumnArray::Offset prev_offset = offset_values[offset - 1];
         for (size_t i = offset; i < end; ++i)
         {
             ColumnArray::Offset current_offset = offset_values[i];
@@ -255,7 +255,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     IColumn & nested_column = column_array.getData();
 
     /// Number of values corresponding with `offset_values` must be read.
-    size_t last_offset = (offset_values.empty() ? 0 : offset_values.back());
+    size_t last_offset = offset_values.back();
     if (last_offset < nested_column.size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
@@ -280,7 +280,7 @@ static void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffe
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+    size_t offset = offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();
@@ -341,7 +341,7 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
         throw;
     }
 
-    offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+    offsets.push_back(offsets.back() + size);
 }
 
 
@@ -369,7 +369,7 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+    size_t offset = offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();
@@ -396,7 +396,7 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = row_num == 0 ? 0 : offsets[row_num - 1];
+    size_t offset = offsets[row_num - 1];
     size_t next_offset = offsets[row_num];
 
     const IColumn & nested_column = column_array.getData();

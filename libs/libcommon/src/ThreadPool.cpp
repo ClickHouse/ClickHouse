@@ -6,8 +6,17 @@ ThreadPool::ThreadPool(size_t m_size)
     : m_size(m_size)
 {
     threads.reserve(m_size);
-    for (size_t i = 0; i < m_size; ++i)
-        threads.emplace_back([this] { worker(); });
+
+    try
+    {
+        for (size_t i = 0; i < m_size; ++i)
+            threads.emplace_back([this] { worker(); });
+    }
+    catch (...)
+    {
+        finalize();
+        throw;
+    }
 }
 
 void ThreadPool::schedule(Job job)
@@ -41,6 +50,11 @@ void ThreadPool::wait()
 
 ThreadPool::~ThreadPool()
 {
+    finalize();
+}
+
+void ThreadPool::finalize()
+{
     {
         std::unique_lock<std::mutex> lock(mutex);
         shutdown = true;
@@ -50,6 +64,8 @@ ThreadPool::~ThreadPool()
 
     for (auto & thread : threads)
         thread.join();
+
+    threads.clear();
 }
 
 size_t ThreadPool::active() const
@@ -110,5 +126,36 @@ void ThreadPool::worker()
 
         has_free_thread.notify_all();
     }
+}
+
+
+void ExceptionHandler::setException(std::exception_ptr && exception)
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (!first_exception)
+        first_exception = std::move(exception);
+}
+
+void ExceptionHandler::throwIfException()
+{
+    std::unique_lock<std::mutex> lock(mutex);
+    if (first_exception)
+        std::rethrow_exception(first_exception);
+}
+
+
+ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler)
+{
+    return [job{std::move(job)}, &handler] ()
+    {
+        try
+        {
+            job();
+        }
+        catch (...)
+        {
+            handler.setException(std::current_exception());
+        }
+    };
 }
 

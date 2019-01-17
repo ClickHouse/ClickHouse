@@ -14,6 +14,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -194,7 +195,11 @@ BlockInputStreams StorageFile::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
+    BlockInputStreamPtr block_input = std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size);
+    const ColumnsDescription & columns = getColumns();
+    if (columns.defaults.empty())
+        return {block_input};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
 }
 
 
@@ -299,16 +304,16 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(engine_args[1].get()))
+            if (auto opt_name = getIdentifierName(engine_args[1]))
             {
-                if (identifier->name == "stdin")
+                if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
-                else if (identifier->name == "stdout")
+                else if (*opt_name == "stdout")
                     source_fd = STDOUT_FILENO;
-                else if (identifier->name == "stderr")
+                else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                    throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
             else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))

@@ -12,13 +12,12 @@
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
 #include <IO/Progress.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -30,6 +29,9 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Core/ExternalTable.h>
+#include <Storages/ColumnDefault.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Compression/CompressionFactory.h>
 
 #include "TCPHandler.h"
 
@@ -359,9 +361,16 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       */
     state.io.out->writePrefix();
 
+    /// Send ColumnsDescription for insertion table
+    if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    {
+        const auto & db_and_table = query_context.getInsertionTable();
+        if (auto * columns = ColumnsDescription::loadFromContext(query_context, db_and_table.first, db_and_table.second))
+            sendTableColumns(*columns);
+    }
+
     /// Send block to the client - table structure.
-    Block block = state.io.out->getHeader();
-    sendData(block);
+    sendData(state.io.out->getHeader());
 
     readData(global_settings);
     state.io.out->writeSuffix();
@@ -377,6 +386,7 @@ void TCPHandler::processOrdinaryQuery()
         /// Send header-block, to allow client to prepare output format for data to send.
         {
             Block header = state.io.in->getHeader();
+
             if (header)
                 sendData(header);
         }
@@ -718,7 +728,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
                 storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}, ColumnCodecs{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
@@ -743,9 +753,15 @@ void TCPHandler::initBlockInput()
         else
             state.maybe_compressed_in = in;
 
+        Block header;
+        if (state.io.out)
+            header = state.io.out->getHeader();
+
         state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
-            client_revision);
+            header,
+            client_revision,
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -756,9 +772,14 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
+            std::string method = query_context.getSettingsRef().network_compression_method;
+            std::optional<int> level;
+            if (method == "ZSTD")
+                level = query_context.getSettingsRef().network_zstd_compression_level;
+
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionSettings(query_context.getSettingsRef()));
+                    *out, CompressionCodecFactory::instance().get(method, level));
             else
                 state.maybe_compressed_out = out;
         }
@@ -766,7 +787,8 @@ void TCPHandler::initBlockOutput(const Block & block)
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -778,7 +800,8 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_revision,
-            block.cloneEmpty());
+            block.cloneEmpty(),
+            !connection_context.getSettingsRef().low_cardinality_allow_in_native_format);
     }
 }
 
@@ -843,6 +866,16 @@ void TCPHandler::sendLogData(const Block & block)
     out->next();
 }
 
+void TCPHandler::sendTableColumns(const ColumnsDescription & columns)
+{
+    writeVarUInt(Protocol::Server::TableColumns, *out);
+
+    /// Send external table name (empty name is the main table)
+    writeStringBinary("", *out);
+    writeStringBinary(columns.toString(), *out);
+
+    out->next();
+}
 
 void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {

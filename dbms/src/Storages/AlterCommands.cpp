@@ -14,6 +14,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/typeid_cast.h>
+#include <Compression/CompressionFactory.h>
 
 
 namespace DB
@@ -22,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -29,6 +31,7 @@ namespace ErrorCodes
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+    const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -48,8 +51,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.codec)
+            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+
         if (command_ast->column)
-            command.after_column = typeid_cast<const ASTIdentifier &>(*command_ast->column).name;
+            command.after_column = *getIdentifierName(command_ast->column);
+
+        command.if_not_exists = command_ast->if_not_exists;
 
         return command;
     }
@@ -60,7 +68,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         AlterCommand command;
         command.type = AlterCommand::DROP_COLUMN;
-        command.column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
+        command.column_name = *getIdentifierName(command_ast->column);
+        command.if_exists = command_ast->if_exists;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
@@ -82,29 +91,33 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.codec)
+            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
             command.comment = ast_comment.value.get<String>();
         }
+        command.if_exists = command_ast->if_exists;
 
-        return command;
-    }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
-    {
-        AlterCommand command;
-        command.type = AlterCommand::MODIFY_PRIMARY_KEY;
-        command.primary_key = command_ast->primary_key;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::COMMENT_COLUMN)
     {
         AlterCommand command;
         command.type = COMMENT_COLUMN;
-        const auto & ast_identifier = typeid_cast<ASTIdentifier &>(*command_ast->column);
-        command.column_name = ast_identifier.name;
+        command.column_name = *getIdentifierName(command_ast->column);
         const auto & ast_comment = typeid_cast<ASTLiteral &>(*command_ast->comment);
         command.comment = ast_comment.value.get<String>();
+        command.if_exists = command_ast->if_exists;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_ORDER_BY;
+        command.order_by = command_ast->order_by;
         return command;
     }
     else
@@ -119,7 +132,7 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
     return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
-void AlterCommand::apply(ColumnsDescription & columns_description) const
+void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     if (type == ADD_COLUMN)
     {
@@ -163,6 +176,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
         if (default_expression)
             columns_description.defaults.emplace(column_name, ColumnDefault{default_kind, default_expression});
 
+        if (codec)
+            columns_description.codecs.emplace(column_name, codec);
+
         /// Slow, because each time a list is copied
         columns_description.ordinary = Nested::flatten(columns_description.ordinary);
     }
@@ -195,6 +211,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
     }
     else if (type == MODIFY_COLUMN)
     {
+        if (codec)
+            columns_description.codecs[column_name] = codec;
+
         if (!is_mutable())
         {
             auto & comments = columns_description.comments;
@@ -263,14 +282,19 @@ void AlterCommand::apply(ColumnsDescription & columns_description) const
             /// both old and new columns have default expression, update it
             columns_description.defaults[column_name].expression = default_expression;
     }
-    else if (type == MODIFY_PRIMARY_KEY)
+    else if (type == MODIFY_ORDER_BY)
     {
-        /// This have no relation to changing the list of columns.
-        /// TODO Check that all columns exist, that only columns with constant defaults are added.
+        if (!primary_key_ast)
+        {
+            /// Primary and sorting key become independent after this ALTER so we have to
+            /// save the old ORDER BY expression as the new primary key.
+            primary_key_ast = order_by_ast->clone();
+        }
+
+        order_by_ast = order_by;
     }
     else if (type == COMMENT_COLUMN)
     {
-
         columns_description.comments[column_name] = comment;
     }
     else
@@ -287,14 +311,19 @@ bool AlterCommand::is_mutable() const
     return true;
 }
 
-void AlterCommands::apply(ColumnsDescription & columns_description) const
+void AlterCommands::apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     auto new_columns_description = columns_description;
+    auto new_order_by_ast = order_by_ast;
+    auto new_primary_key_ast = primary_key_ast;
 
     for (const AlterCommand & command : *this)
-        command.apply(new_columns_description);
+        if (!command.ignore)
+            command.apply(new_columns_description, new_order_by_ast, new_primary_key_ast);
 
     columns_description = std::move(new_columns_description);
+    order_by_ast = std::move(new_order_by_ast);
+    primary_key_ast = std::move(new_primary_key_ast);
 }
 
 void AlterCommands::validate(const IStorage & table, const Context & context)
@@ -318,45 +347,61 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             if (command.type == AlterCommand::ADD_COLUMN)
             {
                 if (std::end(all_columns) != column_it)
-                    throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
+                {
+                    if (command.if_not_exists)
+                        command.ignore = true;
+                    else
+                        throw Exception{"Cannot add column " + column_name + ": column with this name already exists", ErrorCodes::ILLEGAL_COLUMN};
+                }
             }
             else if (command.type == AlterCommand::MODIFY_COLUMN)
             {
 
                 if (std::end(all_columns) == column_it)
-                    throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
+                {
+                    if (command.if_exists)
+                        command.ignore = true;
+                    else
+                        throw Exception{"Wrong column name. Cannot find column " + column_name + " to modify", ErrorCodes::ILLEGAL_COLUMN};
+                }
 
-                all_columns.erase(column_it);
-                defaults.erase(column_name);
+                if (!command.ignore)
+                {
+                    all_columns.erase(column_it);
+                    defaults.erase(column_name);
+                }
             }
 
-            /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
-            all_columns.emplace_back(column_name, command.data_type ? command.data_type : std::make_shared<DataTypeUInt8>());
-
-            if (command.default_expression)
+            if (!command.ignore)
             {
-                if (command.data_type)
+                /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
+                all_columns.emplace_back(column_name, command.data_type ? command.data_type : std::make_shared<DataTypeUInt8>());
+
+                if (command.default_expression)
                 {
-                    const auto & final_column_name = column_name;
-                    const auto tmp_column_name = final_column_name + "_tmp";
-                    const auto column_type_raw_ptr = command.data_type.get();
+                    if (command.data_type)
+                    {
+                        const auto &final_column_name = column_name;
+                        const auto tmp_column_name = final_column_name + "_tmp";
+                        const auto column_type_raw_ptr = command.data_type.get();
 
-                    default_expr_list->children.emplace_back(setAlias(
-                        makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
-                            std::make_shared<ASTLiteral>(column_type_raw_ptr->getName())),
-                        final_column_name));
+                        default_expr_list->children.emplace_back(setAlias(
+                            makeASTFunction("CAST", std::make_shared<ASTIdentifier>(tmp_column_name),
+                                std::make_shared<ASTLiteral>(column_type_raw_ptr->getName())),
+                            final_column_name));
 
-                    default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
+                        default_expr_list->children.emplace_back(setAlias(command.default_expression->clone(), tmp_column_name));
 
-                    defaulted_columns.emplace_back(NameAndTypePair{column_name, command.data_type}, &command);
-                }
-                else
-                {
-                    /// no type explicitly specified, will deduce later
-                    default_expr_list->children.emplace_back(
-                        setAlias(command.default_expression->clone(), column_name));
+                        defaulted_columns.emplace_back(NameAndTypePair{column_name, command.data_type}, &command);
+                    }
+                    else
+                    {
+                        /// no type explicitly specified, will deduce later
+                        default_expr_list->children.emplace_back(
+                            setAlias(command.default_expression->clone(), column_name));
 
-                    defaulted_columns.emplace_back(NameAndTypePair{column_name, nullptr}, &command);
+                        defaulted_columns.emplace_back(NameAndTypePair{column_name, nullptr}, &command);
+                    }
                 }
             }
         }
@@ -366,7 +411,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             {
                 const auto & default_expression = default_column.second.expression;
                 ASTPtr query = default_expression;
-                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                 const auto required_columns = actions->getRequiredColumns();
 
@@ -397,8 +442,13 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             }
 
             if (!found)
-                throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
-                    ErrorCodes::ILLEGAL_COLUMN);
+            {
+                if (command.if_exists)
+                    command.ignore = true;
+                else
+                    throw Exception("Wrong column name. Cannot find column " + command.column_name + " to drop",
+                        ErrorCodes::ILLEGAL_COLUMN);
+            }
         }
         else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
@@ -406,7 +456,10 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
                                                 std::bind(namesEqual, std::cref(command.column_name), std::placeholders::_1));
             if (column_it == std::end(all_columns))
             {
-                throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
+                if (command.if_exists)
+                    command.ignore = true;
+                else
+                    throw Exception{"Wrong column name. Cannot find column " + command.column_name + " to comment", ErrorCodes::ILLEGAL_COLUMN};
             }
         }
     }
@@ -433,7 +486,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
     }
 
     ASTPtr query = default_expr_list;
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
     const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
     const auto block = actions->getSampleBlock();
 
@@ -480,6 +533,21 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             command_ptr->data_type = block.getByName(column_name).type;
         }
     }
+}
+
+void AlterCommands::apply(ColumnsDescription & columns_description) const
+{
+    auto out_columns_description = columns_description;
+    ASTPtr out_order_by;
+    ASTPtr out_primary_key;
+    apply(out_columns_description, out_order_by, out_primary_key);
+
+    if (out_order_by)
+        throw Exception("Storage doesn't support modifying ORDER BY expression", ErrorCodes::NOT_IMPLEMENTED);
+    if (out_primary_key)
+        throw Exception("Storage doesn't support modifying PRIMARY KEY expression", ErrorCodes::NOT_IMPLEMENTED);
+
+    columns_description = std::move(out_columns_description);
 }
 
 bool AlterCommands::is_mutable() const

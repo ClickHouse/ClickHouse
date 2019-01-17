@@ -29,6 +29,7 @@ nav:
     - 'Client Libraries': 'interfaces/third-party/client_libraries.md'
     - 'Integrations': 'interfaces/third-party/integrations.md'
     - 'Visual Interfaces': 'interfaces/third-party/gui.md'
+    - 'Proxies': 'interfaces/third-party/proxy.md'
 
 - 'Data Types':
   - 'Introduction': 'data_types/index.md'
@@ -38,6 +39,7 @@ nav:
   - 'Boolean': 'data_types/boolean.md'
   - 'String': 'data_types/string.md'
   - 'FixedString(N)': 'data_types/fixedstring.md'
+  - 'UUID': 'data_types/uuid.md'
   - 'Date': 'data_types/date.md'
   - 'DateTime': 'data_types/datetime.md'
   - 'Enum': 'data_types/enum.md'
@@ -80,6 +82,7 @@ nav:
     - 'Hash': 'query_language/functions/hash_functions.md'
     - 'Generating Pseudo-Random Numbers': 'query_language/functions/random_functions.md'
     - 'Encoding': 'query_language/functions/encoding_functions.md'
+    - 'Working with UUID': 'query_language/functions/uuid_functions.md'
     - 'Working with URLs': 'query_language/functions/url_functions.md'
     - 'Working with IP Addresses': 'query_language/functions/ip_address_functions.md'
     - 'Working with JSON.': 'query_language/functions/json_functions.md'
@@ -129,6 +132,7 @@ nav:
       - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
       - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
       - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
+      - 'VersionedCollapsingMergeTree': 'operations/table_engines/versionedcollapsingmergetree.md'
       - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
     - 'For Small Data':
       - 'TinyLog': 'operations/table_engines/tinylog.md'
@@ -151,6 +155,7 @@ nav:
       - 'Kafka': 'operations/table_engines/kafka.md'
       - 'MySQL': 'operations/table_engines/mysql.md'
   - 'Access Rights': 'operations/access_rights.md'
+  - 'Data Backup': 'operations/backup.md'
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'

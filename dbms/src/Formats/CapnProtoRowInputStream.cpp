@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 static String getSchemaPath(const String & schema_dir, const String & schema_file)
@@ -39,7 +40,7 @@ CapnProtoRowInputStream::NestedField split(const Block & header, size_t i)
     if (name.size() > 0 && name[0] == '.')
         name.erase(0, 1);
 
-    boost::split(field.tokens, name, boost::is_any_of("."));
+    boost::split(field.tokens, name, boost::is_any_of("._"));
     return field;
 }
 
@@ -109,44 +110,62 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr(), ErrorCodes::THERE_IS_NO_COLUMN);
 }
 
-void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
-{
-    String last;
-    size_t level = 0;
-    capnp::StructSchema::Field parent;
 
-    for (const auto & field : sortedFields)
+void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_fields, capnp::StructSchema reader)
+{
+    /// Columns in a table can map to fields in Cap'n'Proto or to structs.
+
+    /// Store common parents and their tokens in order to backtrack.
+    std::vector<capnp::StructSchema::Field> parents;
+    std::vector<std::string> parent_tokens;
+
+    capnp::StructSchema cur_reader = reader;
+
+    for (const auto & field : sorted_fields)
     {
-        // Move to a different field in the same structure, keep parent
-        if (level > 0 && field.tokens[level - 1] != last)
+        if (field.tokens.empty())
+            throw Exception("Logical error in CapnProtoRowInputStream", ErrorCodes::LOGICAL_ERROR);
+
+        // Backtrack to common parent
+        while (field.tokens.size() < parent_tokens.size() + 1
+            || !std::equal(parent_tokens.begin(), parent_tokens.end(), field.tokens.begin()))
         {
-            auto child = getFieldOrThrow(parent.getContainingStruct(), field.tokens[level - 1]);
-            reader = child.getType().asStruct();
             actions.push_back({Action::POP});
-            actions.push_back({Action::PUSH, child});
+            parents.pop_back();
+            parent_tokens.pop_back();
+
+            if (parents.empty())
+            {
+                cur_reader = reader;
+                break;
+            }
+            else
+                cur_reader = parents.back().getType().asStruct();
         }
-        // Descend to a nested structure
-        for (; level < field.tokens.size() - 1; ++level)
+
+        // Go forward
+        while (parent_tokens.size() + 1 < field.tokens.size())
         {
-            auto node = getFieldOrThrow(reader, field.tokens[level]);
+            const auto & token = field.tokens[parents.size()];
+            auto node = getFieldOrThrow(cur_reader, token);
             if (node.getType().isStruct())
             {
                 // Descend to field structure
-                last = field.tokens[level];
-                parent = node;
-                reader = parent.getType().asStruct();
-                actions.push_back({Action::PUSH, parent});
+                parents.emplace_back(node);
+                parent_tokens.emplace_back(token);
+                cur_reader = node.getType().asStruct();
+                actions.push_back({Action::PUSH, node});
             }
             else if (node.getType().isList())
             {
                 break; // Collect list
             }
             else
-                throw Exception("Field " + field.tokens[level] + "is neither Struct nor List", ErrorCodes::BAD_TYPE_OF_FIELD);
+                throw Exception("Field " + token + " is neither Struct nor List", ErrorCodes::BAD_TYPE_OF_FIELD);
         }
 
         // Read field from the structure
-        auto node = getFieldOrThrow(reader, field.tokens[level]);
+        auto node = getFieldOrThrow(cur_reader, field.tokens[parents.size()]);
         if (node.getType().isList() && actions.size() > 0 && actions.back().field == node)
         {
             // The field list here flattens Nested elements into multiple arrays
@@ -168,7 +187,6 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
 CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object)
     : istr(istr_), header(header_), parser(std::make_shared<SchemaParser>())
 {
-
     // Parse the schema and fetch the root object
 
 #pragma GCC diagnostic push
@@ -188,19 +206,13 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     for (size_t i = 0; i < num_columns; ++i)
         list.push_back(split(header, i));
 
-    // Reorder list to make sure we don't have to backtrack
-    std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b)
-    {
-        if (a.tokens.size() == b.tokens.size())
-            return a.tokens < b.tokens;
-           return a.tokens.size() < b.tokens.size();
-    });
-
+    // Order list first by value of strings then by length of string vector.
+    std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b) { return a.tokens < b.tokens; });
     createActions(list, root);
 }
 
 
-bool CapnProtoRowInputStream::read(MutableColumns & columns)
+bool CapnProtoRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 {
     if (istr.eof())
         return false;

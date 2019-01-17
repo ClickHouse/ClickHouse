@@ -7,7 +7,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <Storages/IStorage.h>
 
@@ -48,7 +47,7 @@ ExpressionActionsPtr AnalyzedJoin::createJoinedBlockActions(
         source_column_names.emplace_back(column.name_and_type);
 
     ASTPtr query = expression_list;
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_column_names, required_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_column_names, required_columns);
     ExpressionAnalyzer analyzer(query, syntax_result, context, {}, required_columns);
     auto joined_block_actions = analyzer.getActions(false);
 
@@ -118,8 +117,7 @@ NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpressio
     }
     else if (table_expression.database_and_table_name)
     {
-        const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
-        DatabaseAndTableWithAlias database_table(identifier);
+        DatabaseAndTableWithAlias database_table(table_expression.database_and_table_name);
         const auto & table = context.getTable(database_table.database, database_table.table);
         names_and_type_list = table->getSampleBlockNonMaterialized().getNamesAndTypesList();
     }

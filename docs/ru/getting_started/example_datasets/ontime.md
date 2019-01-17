@@ -1,4 +1,3 @@
-<a name="example_datasets-ontime"></a>
 
 # OnTime
 
@@ -167,7 +166,7 @@ SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND 
 Q4. Количество задержек по перевозчикам за 2007 год
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10  AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
 Q5. Процент задержек по перевозчикам за 2007 год

@@ -21,6 +21,12 @@ namespace DB
 class BackgroundProcessingPool;
 class BackgroundProcessingPoolTaskInfo;
 
+enum class BackgroundProcessingPoolTaskResult
+{
+    SUCCESS,
+    ERROR,
+    NOTHING_TO_DO,
+};
 /** Using a fixed number of threads, perform an arbitrary number of tasks in an infinite loop.
   * In this case, one task can run simultaneously from different threads.
   * Designed for tasks that perform continuous background work (for example, merge).
@@ -31,9 +37,11 @@ class BackgroundProcessingPool
 {
 public:
     /// Returns true, if some useful work was done. In that case, thread will not sleep before next run of this task.
-    using Task = std::function<bool()>;
+    using TaskResult = BackgroundProcessingPoolTaskResult;
+    using Task = std::function<TaskResult()>;
     using TaskInfo = BackgroundProcessingPoolTaskInfo;
     using TaskHandle = std::shared_ptr<TaskInfo>;
+
 
 
     BackgroundProcessingPool(int size_);
@@ -55,8 +63,6 @@ protected:
     using Threads = std::vector<std::thread>;
 
     const size_t size;
-    static constexpr double sleep_seconds = 10;
-    static constexpr double sleep_seconds_random_part = 1.0;
 
     Tasks tasks;         /// Ordered in priority.
     std::mutex tasks_mutex;
@@ -95,6 +101,9 @@ protected:
     std::atomic<bool> removed {false};
 
     std::multimap<Poco::Timestamp, std::shared_ptr<BackgroundProcessingPoolTaskInfo>>::iterator iterator;
+
+    /// For exponential backoff.
+    size_t count_no_work_done = 0;
 };
 
 }

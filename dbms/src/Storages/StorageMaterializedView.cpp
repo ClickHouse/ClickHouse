@@ -30,7 +30,7 @@ namespace ErrorCodes
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
 
     if (!db_and_table && !subquery)
         return;
@@ -69,7 +69,7 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (query.prewhere_expression || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
     if (!subquery)
         return;
 
@@ -229,7 +229,7 @@ void StorageMaterializedView::drop()
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &)
+void StorageMaterializedView::truncate(const ASTPtr &, const Context &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_database_name, target_table_name);

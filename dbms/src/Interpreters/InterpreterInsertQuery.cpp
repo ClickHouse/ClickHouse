@@ -99,7 +99,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
-
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
     if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
@@ -157,6 +156,12 @@ void InterpreterInsertQuery::checkAccess(const ASTInsertQuery & query)
     }
 
     throw Exception("Cannot insert into table in readonly mode", ErrorCodes::READONLY);
+}
+
+std::pair<String, String> InterpreterInsertQuery::getDatabaseTable() const
+{
+    ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
+    return {query.database, query.table};
 }
 
 }

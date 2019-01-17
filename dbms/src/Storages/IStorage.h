@@ -6,7 +6,6 @@
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
 #include <shared_mutex>
@@ -215,7 +214,7 @@ public:
     /** Clear the table data and leave it empty.
       * Must be called under lockForAlter.
       */
-    virtual void truncate(const ASTPtr & /*query*/)
+    virtual void truncate(const ASTPtr & /*query*/, const Context & /* context */)
     {
         throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -234,20 +233,7 @@ public:
       * This method must fully execute the ALTER query, taking care of the locks itself.
       * To update the table metadata on disk, this method should call InterpreterAlterQuery::updateMetadata.
       */
-    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context)
-    {
-        for (const auto & param : params)
-        {
-            if (param.is_mutable())
-                throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-        }
-
-        auto lock = lockStructureForAlter();
-        auto new_columns = getColumns();
-        params.apply(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
-        setColumns(std::move(new_columns));
-    }
+    virtual void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context);
 
     /** ALTER tables with regard to its partitions.
       * Should handle locks for each command on its own.
@@ -322,29 +308,32 @@ public:
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
 
-    /// Returns sampling expression for storage or nullptr if there is no.
-    virtual ASTPtr getSamplingExpression() const { return nullptr; }
+    /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
+    virtual ASTPtr getPartitionKeyAST() const { return nullptr; }
 
-    /// Returns primary expression for storage or nullptr if there is no.
-    virtual ASTPtr getPrimaryExpression() const { return nullptr; }
+    /// Returns ASTExpressionList of sorting key expression for storage or nullptr if there is none.
+    virtual ASTPtr getSortingKeyAST() const { return nullptr; }
 
-    /// Returns partition expression for storage or nullptr if there is no.
-    virtual ASTPtr getPartitionExpression() const { return nullptr; }
+    /// Returns ASTExpressionList of primary key expression for storage or nullptr if there is none.
+    virtual ASTPtr getPrimaryKeyAST() const { return nullptr; }
 
-    /// Returns secondary expression for storage or nullptr if there is no.
-    virtual ASTPtr getOrderExpression() const { return nullptr; }
+    /// Returns sampling expression AST for storage or nullptr if there is none.
+    virtual ASTPtr getSamplingKeyAST() const { return nullptr; }
 
-    /// Returns sampling key names for storage or empty vector if there is no.
-    virtual Names getSamplingExpressionNames() const { return {}; }
+    /// Returns additional columns that need to be read to calculate partition key.
+    virtual Names getColumnsRequiredForPartitionKey() const { return {}; }
 
-    /// Returns primary key names for storage or empty vector if there is no.
-    virtual Names getPrimaryExpressionNames() const { return {}; }
+    /// Returns additional columns that need to be read to calculate sorting key.
+    virtual Names getColumnsRequiredForSortingKey() const { return {}; }
 
-    /// Returns partition key names for storage or empty vector if there is no.
-    virtual Names getPartitionExpressionNames() const { return {}; }
+    /// Returns additional columns that need to be read to calculate primary key.
+    virtual Names getColumnsRequiredForPrimaryKey() const { return {}; }
 
-    /// Returns order key names for storage or empty vector if there is no.
-    virtual Names getOrderExpressionNames() const { return {}; }
+    /// Returns additional columns that need to be read to calculate sampling key.
+    virtual Names getColumnsRequiredForSampling() const { return {}; }
+
+    /// Returns additional columns that need to be read for FINAL to work.
+    virtual Names getColumnsRequiredForFinal() const { return {}; }
 
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;

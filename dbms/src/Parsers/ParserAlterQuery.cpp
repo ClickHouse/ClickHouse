@@ -1,3 +1,4 @@
+#include <Common/typeid_cast.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -23,8 +24,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_column("DROP COLUMN");
     ParserKeyword s_clear_column("CLEAR COLUMN");
     ParserKeyword s_modify_column("MODIFY COLUMN");
-    ParserKeyword s_modify_primary_key("MODIFY PRIMARY KEY");
     ParserKeyword s_comment_column("COMMENT COLUMN");
+    ParserKeyword s_modify_order_by("MODIFY ORDER BY");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
     ParserKeyword s_detach_partition("DETACH PARTITION");
@@ -36,6 +37,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_partition("PARTITION");
 
     ParserKeyword s_after("AFTER");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserKeyword s_if_exists("IF EXISTS");
     ParserKeyword s_from("FROM");
     ParserKeyword s_in_partition("IN PARTITION");
     ParserKeyword s_with("WITH");
@@ -57,6 +60,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     if (s_add_column.ignore(pos, expected))
     {
+        if (s_if_not_exists.ignore(pos, expected))
+            command->if_not_exists = true;
+
         if (!parser_col_decl.parse(pos, command->col_decl, expected))
             return false;
 
@@ -77,6 +83,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_drop_column.ignore(pos, expected))
     {
+        if (s_if_exists.ignore(pos, expected))
+            command->if_exists = true;
+
         if (!parser_name.parse(pos, command->column, expected))
             return false;
 
@@ -85,6 +94,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_clear_column.ignore(pos, expected))
     {
+        if (s_if_exists.ignore(pos, expected))
+            command->if_exists = true;
+
         if (!parser_name.parse(pos, command->column, expected))
             return false;
 
@@ -190,25 +202,20 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_modify_column.ignore(pos, expected))
     {
+        if (s_if_exists.ignore(pos, expected))
+            command->if_exists = true;
+
         if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
             return false;
 
         command->type = ASTAlterCommand::MODIFY_COLUMN;
     }
-    else if (s_modify_primary_key.ignore(pos, expected))
+    else if (s_modify_order_by.ignore(pos, expected))
     {
-        if (pos->type != TokenType::OpeningRoundBracket)
-            return false;
-        ++pos;
-
-        if (!ParserNotEmptyExpressionList(false).parse(pos, command->primary_key, expected))
+        if (!parser_exp_elem.parse(pos, command->order_by, expected))
             return false;
 
-        if (pos->type != TokenType::ClosingRoundBracket)
-            return false;
-        ++pos;
-
-        command->type = ASTAlterCommand::MODIFY_PRIMARY_KEY;
+        command->type = ASTAlterCommand::MODIFY_ORDER_BY;
     }
     else if (s_delete_where.ignore(pos, expected))
     {
@@ -232,6 +239,9 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_comment_column.ignore(pos, expected))
     {
+        if (s_if_exists.ignore(pos, expected))
+            command->if_exists = true;
+
         if (!parser_name.parse(pos, command->column, expected))
             return false;
 
@@ -247,14 +257,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->col_decl);
     if (command->column)
         command->children.push_back(command->column);
-    if (command->primary_key)
-        command->children.push_back(command->primary_key);
     if (command->partition)
         command->children.push_back(command->partition);
+    if (command->order_by)
+        command->children.push_back(command->order_by);
     if (command->predicate)
         command->children.push_back(command->predicate);
     if (command->update_assignments)
         command->children.push_back(command->update_assignments);
+    if (command->comment)
+        command->children.push_back(command->comment);
 
     return true;
 }
@@ -301,7 +313,7 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!p_expression.parse(pos, assignment->expression, expected))
         return false;
 
-    assignment->column_name = typeid_cast<const ASTIdentifier &>(*column).name;
+    getIdentifierName(column, assignment->column_name);
     if (assignment->expression)
         assignment->children.push_back(assignment->expression);
 
