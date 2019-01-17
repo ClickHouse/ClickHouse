@@ -1,3 +1,4 @@
+#include <Common/typeid_cast.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -344,7 +345,7 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!p_expression.parse(pos, assignment->expression, expected))
         return false;
 
-    assignment->column_name = typeid_cast<const ASTIdentifier &>(*column).name;
+    getIdentifierName(column, assignment->column_name);
     if (assignment->expression)
         assignment->children.push_back(assignment->expression);
 
