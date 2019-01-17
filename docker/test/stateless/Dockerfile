@@ -18,7 +18,8 @@ RUN apt-get update -y \
             sudo \
             openssl \
             netcat-openbsd \
-            telnet
+            telnet \
+            moreutils
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -39,4 +40,4 @@ CMD dpkg -i package_folder/clickhouse-common-static_*.deb; \
     echo "UBSAN_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
     echo "LLVM_SYMBOLIZER_PATH=/usr/lib/llvm-6.0/bin/llvm-symbolizer" >> /etc/environment; \
     service zookeeper start; sleep 5; \
-    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper $SKIP_TESTS_OPTION 2>&1 | tee test_output/test_result.txt
+    service clickhouse-server start && sleep 5 && clickhouse-test --shard --zookeeper $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
