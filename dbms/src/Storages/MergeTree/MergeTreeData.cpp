@@ -353,6 +353,11 @@ void MergeTreeData::setSkipIndexes(const ASTPtr & indexes_asts, bool only_check)
 {
     if (!indexes_asts)
     {
+        if (!only_check)
+        {
+            skip_indexes_ast = nullptr;
+            indexes.clear();
+        }
         return;
     }
 
@@ -1131,7 +1136,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     bool unused_bool;
 
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            skip_indexes_ast, new_indexes_ast,unused_expression, unused_map, unused_bool);
+            skip_indexes_ast, new_indexes_ast, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
@@ -1153,18 +1158,19 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
     /// Remove old indices
     std::set<String> new_indices;
-    for (const auto & index_decl : new_indices_ast->children)
-        new_indices.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
-
-    for (const auto & index_decl : old_indices_ast->children)
-    {
-        const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
-        if (!new_indices.count(index.name))
+    if (new_indices_ast)
+        for (const auto & index_decl : new_indices_ast->children)
+            new_indices.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
+    if (old_indices_ast)
+        for (const auto & index_decl : old_indices_ast->children)
         {
-            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+            const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
+            if (!new_indices.count(index.name))
+            {
+                out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+                out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
+            }
         }
-    }
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
