@@ -356,36 +356,49 @@ void MergeTreeData::setSkipIndices(const ASTPtr &indices_asts, bool only_check)
         if (!only_check)
         {
             skip_indices_ast = nullptr;
+            skip_indices_expr = nullptr;
             skip_indices.clear();
         }
         return;
     }
 
-    MergeTreeIndices new_indexes;
+    MergeTreeIndices new_indices;
     std::set<String> names;
     auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indices_asts);
+    ASTPtr indices_expr_list = std::make_shared<ASTExpressionList>();
 
-    for (const auto &index_ast : index_list->children)
+    for (const auto & index_ast : index_list->children)
     {
-        new_indexes.push_back(
+        const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
+
+        new_indices.push_back(
                 std::move(MergeTreeIndexFactory::instance().get(
                         *this,
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast),
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
                         global_context)));
 
-        if (names.find(new_indexes.back()->name) != names.end())
-        {
+        if (names.find(new_indices.back()->name) != names.end())
             throw Exception(
-                    "Index with name `" + new_indexes.back()->name + "` already exsists",
+                    "Index with name `" + new_indices.back()->name + "` already exsists",
                     ErrorCodes::LOGICAL_ERROR);
-        }
-        names.insert(new_indexes.back()->name);
+
+        ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
+        for (auto expr : expr_list->children)
+            indices_expr_list->children.push_back(expr->clone());
+
+        names.insert(new_indices.back()->name);
     }
+
+    auto syntax = SyntaxAnalyzer(global_context, {}).analyze(
+            indices_expr_list, getColumns().getAllPhysical());
+    auto new_skip_indices_expr = ExpressionAnalyzer(indices_expr_list, syntax, global_context)
+            .getActions(false);
 
     if (!only_check)
     {
         skip_indices_ast = indices_asts;
-        skip_indices = std::move(new_indexes);
+        skip_indices_expr = new_skip_indices_expr;
+        skip_indices = std::move(new_indices);
     }
 }
 
