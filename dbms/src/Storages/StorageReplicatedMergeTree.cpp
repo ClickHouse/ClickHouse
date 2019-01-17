@@ -446,7 +446,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
         if (metadata_diff.skip_indices_changed)
         {
-            ParserIndexDeclaration parser;
+            ParserIndexDeclarationList parser;
             if (metadata_diff.new_skip_indices.empty())
                 new_indices_ast.reset();
             else
