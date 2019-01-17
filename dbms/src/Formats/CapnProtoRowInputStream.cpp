@@ -14,6 +14,7 @@
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -112,49 +113,46 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
 
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_fields, capnp::StructSchema reader)
 {
-    // Store parents and their tokens in order to backtrack
+    /// Columns in a table can map to fields in Cap'n'Proto or to structs.
+
+    /// Store common parents and their tokens in order to backtrack.
     std::vector<capnp::StructSchema::Field> parents;
-    std::vector<std::string> tokens;
+    std::vector<std::string> parent_tokens;
 
     capnp::StructSchema cur_reader = reader;
-    size_t level = 0;
+
     for (const auto & field : sorted_fields)
     {
         if (field.tokens.empty())
             throw Exception("Logical error in CapnProtoRowInputStream", ErrorCodes::LOGICAL_ERROR);
 
         // Backtrack to common parent
-        while (level > (field.tokens.size() - 1)
-            || tokens.size() != field.tokens.size()
-            || !std::equal(tokens.begin() + level - 1, tokens.end(), field.tokens.begin() + level - 1))
+        while (field.tokens.size() < parent_tokens.size() + 1
+            || !std::equal(parent_tokens.begin(), parent_tokens.end(), field.tokens.begin()))
         {
-            --level;
             actions.push_back({Action::POP});
-            tokens.pop_back();
             parents.pop_back();
+            parent_tokens.pop_back();
 
-            if (level > 0)
-            {
-                cur_reader = parents[level-1].getType().asStruct();
-            }
-            else
+            if (parents.empty())
             {
                 cur_reader = reader;
                 break;
             }
+            else
+                cur_reader = parents.back().getType().asStruct();
         }
 
         // Go forward
-        for (; level < field.tokens.size() - 1; ++level)
+        while (parent_tokens.size() + 1 < field.tokens.size())
         {
-
-            auto node = getFieldOrThrow(cur_reader, field.tokens[level]);
+            const auto & token = field.tokens[parents.size()];
+            auto node = getFieldOrThrow(cur_reader, token);
             if (node.getType().isStruct())
             {
                 // Descend to field structure
-                parents.push_back(node);
-                tokens.push_back(field.tokens[level]);
-
+                parents.emplace_back(node);
+                parent_tokens.emplace_back(token);
                 cur_reader = node.getType().asStruct();
                 actions.push_back({Action::PUSH, node});
             }
@@ -163,11 +161,11 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_field
                 break; // Collect list
             }
             else
-                throw Exception("Field " + field.tokens[level] + "is neither Struct nor List", ErrorCodes::BAD_TYPE_OF_FIELD);
+                throw Exception("Field " + token + " is neither Struct nor List", ErrorCodes::BAD_TYPE_OF_FIELD);
         }
 
         // Read field from the structure
-        auto node = getFieldOrThrow(cur_reader, field.tokens[level]);
+        auto node = getFieldOrThrow(cur_reader, field.tokens[parents.size()]);
         if (node.getType().isList() && actions.size() > 0 && actions.back().field == node)
         {
             // The field list here flattens Nested elements into multiple arrays
@@ -189,7 +187,6 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sorted_field
 CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block & header_, const String & schema_dir, const String & schema_file, const String & root_object)
     : istr(istr_), header(header_), parser(std::make_shared<SchemaParser>())
 {
-
     // Parse the schema and fetch the root object
 
 #pragma GCC diagnostic push
