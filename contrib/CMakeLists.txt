@@ -125,6 +125,10 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
     target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
+if (USE_RDKAFKA)
+    add_subdirectory (cppkafka-cmake)
+endif()
+
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
     add_subdirectory (unixodbc-cmake)
 endif ()
@@ -139,6 +143,7 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_POCO_LIBRARY)
+    set (POCO_VERBOSE_MESSAGES 0 CACHE INTERNAL "")
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     set (save_CMAKE_C_FLAGS ${CMAKE_C_FLAGS})
     set (_save ${ENABLE_TESTS})
