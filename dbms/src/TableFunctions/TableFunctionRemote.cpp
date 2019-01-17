@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -153,7 +154,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
         auto maybe_secure_port = context.getTCPPortSecure();
-        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure && maybe_secure_port) ? *maybe_secure_port : context.getTCPPort(), false, secure);
+        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context.getTCPPort()), false, secure);
     }
 
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
