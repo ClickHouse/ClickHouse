@@ -168,18 +168,11 @@ void QueryNormalizer::visit(ASTExpressionList & node, const ASTPtr &, Data & dat
         }
         else if (const auto * qualified_asterisk = typeid_cast<const ASTQualifiedAsterisk *>(child.get()))
         {
-            const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
-            size_t num_components = identifier->children.size();
+            DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
             for (const auto & [table_name, table_columns] : tables_with_columns)
             {
-                if ((num_components == 2                    /// database.table.*
-                        && !table_name.database.empty()     /// This is normal (not a temporary) table.
-                        && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
-                        && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
-                    || (num_components == 0                                                         /// t.*
-                        && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
-                            || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
+                if (ident_db_and_name.satisfies(table_name, true))
                 {
                     for (const auto & column_name : table_columns)
                         node.children.emplace_back(std::make_shared<ASTIdentifier>(column_name));
