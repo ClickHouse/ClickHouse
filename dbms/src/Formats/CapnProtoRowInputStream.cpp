@@ -14,7 +14,6 @@
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
 
-
 namespace DB
 {
 
@@ -39,7 +38,7 @@ CapnProtoRowInputStream::NestedField split(const Block & header, size_t i)
     if (name.size() > 0 && name[0] == '.')
         name.erase(0, 1);
 
-    boost::split(field.tokens, name, boost::is_any_of("."));
+    boost::split(field.tokens, name, boost::is_any_of("._"));
     return field;
 }
 
@@ -111,31 +110,46 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
 
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
-    String last;
-    size_t level = 0;
-    capnp::StructSchema::Field parent;
+    // Store parents and their tokens in order to backtrack
+    std::vector<capnp::StructSchema::Field> parents;
+    std::vector<std::string> tokens;
 
+    capnp::StructSchema cur_reader = reader;
+    size_t level = 0;
     for (const auto & field : sortedFields)
     {
-        // Move to a different field in the same structure, keep parent
-        if (level > 0 && field.tokens[level - 1] != last)
+        // Backtrack to common parent
+        while(level > (field.tokens.size() - 1) || !checkEqualFrom(tokens, field.tokens, level - 1))
         {
-            auto child = getFieldOrThrow(parent.getContainingStruct(), field.tokens[level - 1]);
-            reader = child.getType().asStruct();
+            level--;
             actions.push_back({Action::POP});
-            actions.push_back({Action::PUSH, child});
+            tokens.pop_back();
+            parents.pop_back();
+            
+            if (level > 0)
+            {
+                cur_reader = parents[level-1].getType().asStruct();
+            }
+            else
+            {
+                cur_reader = reader;
+                break;
+            }
         }
-        // Descend to a nested structure
+        
+        // Go forward
         for (; level < field.tokens.size() - 1; ++level)
         {
-            auto node = getFieldOrThrow(reader, field.tokens[level]);
+
+            auto node = getFieldOrThrow(cur_reader, field.tokens[level]);
             if (node.getType().isStruct())
             {
                 // Descend to field structure
-                last = field.tokens[level];
-                parent = node;
-                reader = parent.getType().asStruct();
-                actions.push_back({Action::PUSH, parent});
+                parents.push_back(node);
+                tokens.push_back(field.tokens[level]);
+
+                cur_reader = node.getType().asStruct();
+                actions.push_back({Action::PUSH, node});
             }
             else if (node.getType().isList())
             {
@@ -146,7 +160,7 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
         }
 
         // Read field from the structure
-        auto node = getFieldOrThrow(reader, field.tokens[level]);
+        auto node = getFieldOrThrow(cur_reader, field.tokens[level]);
         if (node.getType().isList() && actions.size() > 0 && actions.back().field == node)
         {
             // The field list here flattens Nested elements into multiple arrays
@@ -188,14 +202,8 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
     for (size_t i = 0; i < num_columns; ++i)
         list.push_back(split(header, i));
 
-    // Reorder list to make sure we don't have to backtrack
-    std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b)
-    {
-        if (a.tokens.size() == b.tokens.size())
-            return a.tokens < b.tokens;
-           return a.tokens.size() < b.tokens.size();
-    });
-
+    // Order list first by value of strings then by length of sting vector.
+    std::sort(list.begin(), list.end(), [](const NestedField & a, const NestedField & b) { return a.tokens < b.tokens; });
     createActions(list, root);
 }
 
