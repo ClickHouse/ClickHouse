@@ -12,11 +12,8 @@ static std::array<char, 16> getSipHash(const String & str)
 {
     SipHash hash;
     hash.update(str.data(), str.size());
-    char hash_data[16];
-    hash.get128(hash_data);
-
     std::array<char, 16> result;
-    memcpy(result.data(), hash_data, 16);
+    hash.get128(result.data());
     return result;
 }
 
