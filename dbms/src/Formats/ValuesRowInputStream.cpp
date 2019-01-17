@@ -1,14 +1,15 @@
+#include <Formats/ValuesRowInputStream.h>
+
+#include <Core/Block.h>
+#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Parsers/TokenIterator.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Formats/ValuesRowInputStream.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Parsers/TokenIterator.h>
 #include <Common/FieldVisitors.h>
-#include <Core/Block.h>
 #include <Common/typeid_cast.h>
 
 
@@ -58,7 +59,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns, RowReadExtension &)
     {
         skipWhitespaceIfAny(istr);
 
-        char * prev_istr_position = istr.position();
+        const char * prev_istr_position = istr.position();
         size_t prev_istr_bytes = istr.count() - istr.offset();
 
         bool rollback_on_exception = false;

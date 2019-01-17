@@ -24,7 +24,7 @@ namespace ErrorCodes
   *
   * The successors must implement the nextImpl() method.
   */
-class WriteBuffer : public BufferBase
+class WriteBuffer : public BufferBase<>
 {
 public:
     WriteBuffer(Position ptr, size_t size) : BufferBase(ptr, size, 0) {}

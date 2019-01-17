@@ -42,7 +42,7 @@ protected:
     /// If 'compressed_in' buffer has whole compressed block - then use it. Otherwise copy parts of data to 'own_compressed_buffer'.
     PODArray<char> own_compressed_buffer;
     /// Points to memory, holding compressed block.
-    char * compressed_buffer = nullptr;
+    const char * compressed_buffer = nullptr;
 
     ssize_t variant;
 
@@ -92,7 +92,7 @@ protected:
         {
             own_compressed_buffer.resize(size_compressed + (variant == LZ4_REFERENCE ? 0 : LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER));
             compressed_buffer = &own_compressed_buffer[0];
-            compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
+            compressed_in->readStrict(own_compressed_buffer.data() + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
         }
 
         return size_compressed + sizeof(checksum);
@@ -146,7 +146,7 @@ private:
         memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
         working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 
-        decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
+        decompress(memory.data(), size_decompressed, size_compressed_without_checksum);
 
         return true;
     }

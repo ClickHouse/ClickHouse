@@ -28,7 +28,7 @@ namespace ErrorCodes
   *
   * successors must implement the nextImpl() method.
   */
-class ReadBuffer : public BufferBase
+class ReadBuffer : public BufferBase<const char *>
 {
 public:
     /** Creates a buffer and sets a piece of available data to read to zero size,

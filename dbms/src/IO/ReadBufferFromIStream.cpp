@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 bool ReadBufferFromIStream::nextImpl()
 {
-    istr.read(internal_buffer.begin(), internal_buffer.size());
+    istr.read(memory.data(), memory.size());
     size_t gcount = istr.gcount();
 
     if (!gcount)

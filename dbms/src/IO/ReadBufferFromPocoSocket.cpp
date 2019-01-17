@@ -32,7 +32,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
     /// Add more details to exceptions.
     try
     {
-        bytes_read = socket.impl()->receiveBytes(internal_buffer.begin(), internal_buffer.size());
+        bytes_read = socket.impl()->receiveBytes(memory.data(), memory.size());
     }
     catch (const Poco::Net::NetException & e)
     {

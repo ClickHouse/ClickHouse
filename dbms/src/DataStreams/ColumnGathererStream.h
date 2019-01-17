@@ -117,8 +117,8 @@ void ColumnGathererStream::gather(Column & column_res)
     }
 
     row_sources_buf.nextIfAtEnd();
-    RowSourcePart * row_source_pos = reinterpret_cast<RowSourcePart *>(row_sources_buf.position());
-    RowSourcePart * row_sources_end = reinterpret_cast<RowSourcePart *>(row_sources_buf.buffer().end());
+    const RowSourcePart * row_source_pos = reinterpret_cast<const RowSourcePart *>(row_sources_buf.position());
+    const RowSourcePart * row_sources_end = reinterpret_cast<const RowSourcePart *>(row_sources_buf.buffer().end());
 
     size_t cur_block_preferred_size = std::min(static_cast<size_t>(row_sources_end - row_source_pos), block_preferred_size);
     column_res.reserve(cur_block_preferred_size);
@@ -147,7 +147,7 @@ void ColumnGathererStream::gather(Column & column_res)
             ++row_source_pos;
         }
 
-        row_sources_buf.position() = reinterpret_cast<char *>(row_source_pos);
+        row_sources_buf.position() = reinterpret_cast<const char *>(row_source_pos);
 
         if (!source_skip)
         {

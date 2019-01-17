@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 
-UInt32 ICompressionCodec::compress(char * source, UInt32 source_size, char * dest) const
+UInt32 ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest) const
 {
     dest[0] = getMethodByte();
     UInt8 header_size = getHeaderSize();
@@ -41,7 +41,7 @@ UInt32 ICompressionCodec::compress(char * source, UInt32 source_size, char * des
 }
 
 
-UInt32 ICompressionCodec::decompress(char * source, UInt32 source_size, char * dest) const
+UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, char * dest) const
 {
     UInt8 method = source[0];
     if (method != getMethodByte())

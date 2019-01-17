@@ -94,7 +94,7 @@ StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 
     if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
     {
-        char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
         if (next_pos != buf.buffer().end() && *next_pos != '\\')
         {

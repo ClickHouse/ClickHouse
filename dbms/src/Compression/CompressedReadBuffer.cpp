@@ -17,7 +17,7 @@ bool CompressedReadBuffer::nextImpl()
     memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
-    decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
+    decompress(memory.data(), size_decompressed, size_compressed_without_checksum);
 
     return true;
 }
@@ -53,7 +53,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             pos = working_buffer.begin();
 
-            decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
+            decompress(memory.data(), size_decompressed, size_compressed_without_checksum);
 
             bytes_read += read(to + bytes_read, n - bytes_read);
             break;

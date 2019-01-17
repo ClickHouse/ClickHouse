@@ -87,7 +87,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         own_compressed_buffer.resize(size_compressed_without_checksum + codec->getAdditionalSizeAtTheEndOfBuffer());
         compressed_buffer = own_compressed_buffer.data();
-        compressed_in->readStrict(compressed_buffer + header_size, size_compressed_without_checksum - header_size);
+        compressed_in->readStrict(own_compressed_buffer.data() + header_size, size_compressed_without_checksum - header_size);
     }
 
     if (!disable_checksum)
@@ -137,4 +137,3 @@ CompressedReadBufferBase::~CompressedReadBufferBase() = default;    /// Proper d
 
 
 }
-

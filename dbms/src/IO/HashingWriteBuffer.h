@@ -30,14 +30,14 @@ public:
             return state;
     }
 
-    void append(DB::BufferBase::Position data)
+    void append(DB::ReadBuffer::Position data)
     {
         state = CityHash_v1_0_2::CityHash128WithSeed(data, block_size, state);
     }
 
     /// computation of the hash depends on the partitioning of blocks
     /// so you need to compute a hash of n complete pieces and one incomplete
-    void calculateHash(DB::BufferBase::Position data, size_t len);
+    void calculateHash(typename Buffer::Position data, size_t len);
 
 protected:
     size_t block_pos;

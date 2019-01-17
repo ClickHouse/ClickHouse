@@ -67,8 +67,7 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
     {
         if (current_pending)
         {
-            // XXX: very fishy place with const casting.
-            BufferBase::set(reinterpret_cast<char *>(const_cast<unsigned char *>(current.get_payload().get_data())), current.get_payload().get_size(), 0);
+            set(reinterpret_cast<const char *>(current.get_payload().get_data()), current.get_payload().get_size());
             current_pending = false;
             return true;
         }
@@ -106,8 +105,7 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
         // If an exception is thrown before that would occur, the client will rejoin without committing offsets
         current = std::move(message);
 
-        // XXX: very fishy place with const casting.
-        BufferBase::set(reinterpret_cast<char *>(const_cast<unsigned char *>(current.get_payload().get_data())), current.get_payload().get_size(), 0);
+        set(reinterpret_cast<const char *>(current.get_payload().get_data()), current.get_payload().get_size());
         return true;
     }
 

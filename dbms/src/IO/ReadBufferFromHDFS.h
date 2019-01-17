@@ -75,7 +75,7 @@ namespace DB
 
             bool nextImpl() override
             {
-                int bytes_read = hdfsRead(fs, fin, internal_buffer.begin(), internal_buffer.size());
+                int bytes_read = hdfsRead(fs, fin, memory.data(), memory.size());
                 if (bytes_read < 0)
                 {
                     throw Exception("Fail to read HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);

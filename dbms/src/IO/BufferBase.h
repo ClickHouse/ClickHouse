@@ -25,11 +25,14 @@ namespace DB
   * Read/WriteBuffer can own or not own an own piece of memory.
   * In the second case, you can effectively read from an already existing piece of memory / std::string without copying it.
   */
+template <typename PositionType = char *>
 class BufferBase
 {
+    template <typename> friend class BufferBase;
+
 public:
     /** Cursor in the buffer. The position of write or read. */
-    using Position = char *;
+    using Position = PositionType;
 
     /** A reference to the range of memory. */
     struct Buffer
@@ -45,6 +48,13 @@ public:
         {
             std::swap(begin_pos, other.begin_pos);
             std::swap(end_pos, other.end_pos);
+        }
+
+        template <typename AnyBuffer>
+        inline void copy(const AnyBuffer & other)
+        {
+            begin_pos = other.begin();
+            end_pos = other.end();
         }
 
     private:
@@ -85,6 +95,14 @@ public:
         internal_buffer.swap(other.internal_buffer);
         working_buffer.swap(other.working_buffer);
         std::swap(pos, other.pos);
+    }
+
+    template <typename AnyBufferBase>
+    inline void copy(const AnyBufferBase & other)
+    {
+        internal_buffer.copy(other.internal_buffer);
+        working_buffer.copy(other.working_buffer);
+        pos = other.pos;
     }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */

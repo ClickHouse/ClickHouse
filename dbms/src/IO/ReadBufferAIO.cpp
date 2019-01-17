@@ -38,11 +38,10 @@ namespace ErrorCodes
 }
 
 
-/// Note: an additional page is allocated that will contain the data that
-/// does not fit into the main buffer.
+/// NOTE: an additional page is allocated that will contain the data that does not fit into the main buffer.
 ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_, int flags_, char * existing_memory_)
     : ReadBufferFromFileBase(buffer_size_ + DEFAULT_AIO_FILE_BLOCK_SIZE, existing_memory_, DEFAULT_AIO_FILE_BLOCK_SIZE),
-      fill_buffer(BufferWithOwnMemory<ReadBuffer>(internalBuffer().size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
+      fill_buffer(BufferWithOwnMemory<WriteBuffer>(internalBuffer().size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
       filename(filename_)
 {
     ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -290,8 +289,9 @@ void ReadBufferAIO::finalize()
     if (total_bytes_read == max_bytes_read)
         is_eof = true;
 
-    /// Swap the main and duplicate buffers.
-    swap(fill_buffer);
+    /// Copy from duplicate buffer.
+    /// FIXME: implement better solution to avoid this hack.
+    copy(fill_buffer);
 }
 
 }

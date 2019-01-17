@@ -178,7 +178,7 @@ void readStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -371,7 +371,7 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -413,7 +413,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -523,7 +523,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         /// The quoted case. We are looking for the next quotation mark.
         while (!buf.eof())
         {
-            char * next_pos = reinterpret_cast<char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
+            const char * next_pos = reinterpret_cast<const char *>(memchr(buf.position(), maybe_quote, buf.buffer().end() - buf.position()));
 
             if (nullptr == next_pos)
                 next_pos = buf.buffer().end();
@@ -554,7 +554,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         /// Unquoted case. Look for delimiter or \r or \n.
         while (!buf.eof())
         {
-            char * next_pos = buf.position();
+            const char * next_pos = buf.position();
 
             [&]()
             {
@@ -628,7 +628,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
 
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
@@ -954,7 +954,7 @@ void skipToNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
@@ -973,7 +973,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
+        const char * next_pos = find_first_symbols<'\n', '\\'>(buf.position(), buf.buffer().end());
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())

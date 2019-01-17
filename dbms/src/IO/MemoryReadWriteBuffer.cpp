@@ -16,10 +16,13 @@ class ReadBufferFromMemoryWriteBuffer : public ReadBuffer, boost::noncopyable, p
 {
 public:
     explicit ReadBufferFromMemoryWriteBuffer(MemoryWriteBuffer && origin)
-    : ReadBuffer(nullptr, 0),
-        chunk_list(std::move(origin.chunk_list)),
-        end_pos(origin.position())
+        : ReadBuffer(nullptr, 0), end_pos(origin.position())
     {
+        for (const auto & chunk : origin.chunk_list)
+        {
+            chunk_list.emplace_after(chunk_list.end(), chunk.begin(), chunk.end());
+        }
+        origin.chunk_list.clear();
         chunk_head = chunk_list.begin();
         setChunk();
     }
@@ -36,7 +39,7 @@ public:
     ~ReadBufferFromMemoryWriteBuffer() override
     {
         for (const auto & range : chunk_list)
-            free(range.begin(), range.size());
+            free(const_cast<char *>(range.begin()), range.size());
     }
 
 private:

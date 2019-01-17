@@ -20,8 +20,9 @@ protected:
 
     /// If 'compressed_in' buffer has whole compressed block - then use it. Otherwise copy parts of data to 'own_compressed_buffer'.
     PODArray<char> own_compressed_buffer;
+
     /// Points to memory, holding compressed block.
-    char * compressed_buffer = nullptr;
+    const char * compressed_buffer = nullptr;
 
     /// Don't checksum on decompressing.
     bool disable_checksum = false;

@@ -80,7 +80,8 @@ MMapReadBufferFromFileDescriptor::~MMapReadBufferFromFileDescriptor()
 
 void MMapReadBufferFromFileDescriptor::finish()
 {
-    if (0 != munmap(internalBuffer().begin(), length))
+    // It's a convention that we must unmap something that we mapped before - const_cast shouldn't be a problem.
+    if (0 != munmap(const_cast<char *>(internalBuffer().begin()), length))
         throwFromErrno("MMapReadBufferFromFileDescriptor: Cannot munmap " + formatReadableSizeWithBinarySuffix(length) + ".",
             ErrorCodes::CANNOT_MUNMAP);
 

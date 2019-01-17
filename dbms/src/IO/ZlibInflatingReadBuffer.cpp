@@ -50,16 +50,16 @@ bool ZlibInflatingReadBuffer::nextImpl()
     if (!zstr.avail_in)
     {
         in.nextIfAtEnd();
-        zstr.next_in = reinterpret_cast<unsigned char *>(in.position());
+        zstr.next_in = reinterpret_cast<unsigned char *>(const_cast<char *>(in.position()));
         zstr.avail_in = in.buffer().end() - in.position();
     }
-    zstr.next_out = reinterpret_cast<unsigned char *>(internal_buffer.begin());
-    zstr.avail_out = internal_buffer.size();
+    zstr.next_out = reinterpret_cast<unsigned char *>(memory.data());
+    zstr.avail_out = memory.size();
 
     int rc = inflate(&zstr, Z_NO_FLUSH);
 
     in.position() = in.buffer().end() - zstr.avail_in;
-    working_buffer.resize(internal_buffer.size() - zstr.avail_out);
+    working_buffer.resize(memory.size() - zstr.avail_out);
 
     if (rc == Z_STREAM_END)
     {

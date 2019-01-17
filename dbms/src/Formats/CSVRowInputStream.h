@@ -44,8 +44,8 @@ private:
     size_t bytes_read_at_start_of_buffer_on_current_row = 0;
     size_t bytes_read_at_start_of_buffer_on_prev_row = 0;
 
-    char * pos_of_current_row = nullptr;
-    char * pos_of_prev_row = nullptr;
+    const char * pos_of_current_row = nullptr;
+    const char * pos_of_prev_row = nullptr;
 
     void updateDiagnosticInfo();
 

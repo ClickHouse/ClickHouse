@@ -4,6 +4,7 @@
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
+#include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/AIO.h>
 #include <Core/Defines.h>
@@ -61,7 +62,7 @@ private:
 
 private:
     /// Buffer for asynchronous data read operations.
-    BufferWithOwnMemory<ReadBuffer> fill_buffer;
+    BufferWithOwnMemory<WriteBuffer> fill_buffer;
 
     /// Description of the asynchronous read request.
     iocb request{};
@@ -92,7 +93,7 @@ private:
     int fd = -1;
 
     /// The buffer to which the received data is written.
-    Position buffer_begin = nullptr;
+    void * buffer_begin = nullptr;
 
     /// The asynchronous read operation is not yet completed.
     bool is_pending_read = false;
