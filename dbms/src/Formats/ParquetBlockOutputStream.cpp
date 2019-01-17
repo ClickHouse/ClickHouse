@@ -14,6 +14,7 @@
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypesDecimal.h>
+#    include <DataStreams/SquashingBlockOutputStream.h>
 #    include <Formats/FormatFactory.h>
 #    include <IO/WriteHelpers.h>
 #    include <arrow/api.h>
@@ -33,7 +34,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-ParquetBlockOutputStream::ParquetBlockOutputStream(WriteBuffer & ostr_, const Block & header_) : ostr(ostr_), header(header_)
+ParquetBlockOutputStream::ParquetBlockOutputStream(WriteBuffer & ostr, const Block & header, const FormatSettings & format_settings) : ostr{ostr}, header{header}, format_settings{format_settings}
 {
 }
 
@@ -384,8 +385,7 @@ void ParquetBlockOutputStream::write(const Block & block)
     }
 
     // TODO: calculate row_group_size depending on a number of rows and table size
-    // auto status = file_writer->WriteTable(*arrow_table, arrow_table->num_rows()); // todo: maybe num_rows via setting?
-    auto status = file_writer->WriteTable(*arrow_table, 1024 * 1024 * 512); // todo: maybe num_rows via setting?
+    auto status = file_writer->WriteTable(*arrow_table, format_settings.parquet.row_group_size);
 
     if (!status.ok())
         throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
@@ -405,9 +405,12 @@ void ParquetBlockOutputStream::writeSuffix()
 void registerOutputFormatParquet(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & /* settings */)
+        "Parquet", [](WriteBuffer & buf, const Block & sample, const Context & /*context*/, const FormatSettings & format_settings)
         {
-            return std::make_shared<ParquetBlockOutputStream>(buf, sample /*, format_settings */);
+            BlockOutputStreamPtr impl = std::make_shared<ParquetBlockOutputStream>(buf, sample, format_settings);
+            auto res = std::make_shared<SquashingBlockOutputStream>(impl, impl->getHeader(), format_settings.parquet.row_group_size, 0);
+            res->disableFlush();
+            return res;
         });
 }
 

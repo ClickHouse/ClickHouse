@@ -3,13 +3,13 @@
 #include <string>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Core/Block.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
 
 class WriteBuffer;
-struct FormatSettings;
 
 /** A data format designed to simplify the implementation of the ODBC driver.
   * ODBC driver is designed to be build for different platforms without dependencies from the main code,

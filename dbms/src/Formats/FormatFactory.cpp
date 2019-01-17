@@ -69,6 +69,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
+    format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
 
     /** Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
