@@ -88,7 +88,7 @@ public:
 };
 
 
-using MergeTreeIndexes = std::vector<MutableMergeTreeIndexPtr>;
+using MergeTreeIndices = std::vector<MutableMergeTreeIndexPtr>;
 
 
 class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>

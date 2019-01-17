@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
 

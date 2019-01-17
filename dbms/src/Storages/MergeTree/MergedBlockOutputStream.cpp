@@ -327,12 +327,12 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     }
 
     /// Finish skip index serialization
-    for (size_t i = 0; i < storage.indexes.size(); ++i)
+    for (size_t i = 0; i < storage.skip_indices.size(); ++i)
     {
-        auto & stream = *skip_indexes_streams[i];
-        if (skip_indexes_granules[i] && !skip_indexes_granules[i]->empty()) {
-            skip_indexes_granules[i]->serializeBinary(stream.compressed);
-            skip_indexes_granules[i].reset();
+        auto & stream = *skip_indices_streams[i];
+        if (skip_indices_granules[i] && !skip_indices_granules[i]->empty()) {
+            skip_indices_granules[i]->serializeBinary(stream.compressed);
+            skip_indices_granules[i].reset();
         }
     }
 
@@ -354,14 +354,14 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         index_stream = nullptr;
     }
 
-    for (auto & stream : skip_indexes_streams)
+    for (auto & stream : skip_indices_streams)
     {
         stream->finalize();
         stream->addToChecksums(checksums);
     }
 
-    skip_indexes_streams.clear();
-    skip_indexes_granules.clear();
+    skip_indices_streams.clear();
+    skip_indices_granules.clear();
     skip_index_filling.clear();
 
     for (ColumnStreams::iterator it = column_streams.begin(); it != column_streams.end(); ++it)
@@ -421,9 +421,9 @@ void MergedBlockOutputStream::init()
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
-    for (const auto index : storage.indexes) {
+    for (const auto index : storage.skip_indices) {
         String stream_name = index->getFileName();
-        skip_indexes_streams.emplace_back(
+        skip_indices_streams.emplace_back(
                 std::move(std::make_unique<ColumnStream>(
                         stream_name,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
@@ -431,7 +431,7 @@ void MergedBlockOutputStream::init()
                         codec, max_compress_block_size,
                         0, aio_threshold)));
 
-        skip_indexes_granules.emplace_back(nullptr);
+        skip_indices_granules.emplace_back(nullptr);
         skip_index_filling.push_back(0);
     }
 }
@@ -447,7 +447,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     auto primary_key_column_names = storage.primary_key_columns;
     Names skip_indexes_column_names;
-    for (const auto index : storage.indexes) {
+    for (const auto index : storage.skip_indices) {
         std::copy(index->columns.cbegin(), index->columns.cend(), std::back_inserter(skip_indexes_column_names));
     }
 
@@ -542,10 +542,10 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     {
         /// Filling and writing skip indexes like in IMergedBlockOutputStream::writeData
-        for (size_t i = 0; i < storage.indexes.size(); ++i)
+        for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
-            const auto index = storage.indexes[i];
-            auto & stream = *skip_indexes_streams[i];
+            const auto index = storage.skip_indices[i];
+            auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
             while (prev_pos < rows) {
@@ -557,8 +557,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 else
                 {
                     limit = storage.index_granularity;
-                    if (!skip_indexes_granules[i]) {
-                        skip_indexes_granules[i] = index->createIndexGranule();
+                    if (!skip_indices_granules[i]) {
+                        skip_indices_granules[i] = index->createIndexGranule();
                         skip_index_filling[i] = 0;
 
                         if (stream.compressed.offset() >= min_compress_block_size)
@@ -570,15 +570,15 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 }
 
                 size_t pos = prev_pos;
-                skip_indexes_granules[i]->update(block, &pos, limit);
+                skip_indices_granules[i]->update(block, &pos, limit);
 
                 if (pos == prev_pos + limit) {
                     ++skip_index_filling[i];
 
                     /// write index if it is filled
                     if (skip_index_filling[i] == index->granularity) {
-                        skip_indexes_granules[i]->serializeBinary(stream.compressed);
-                        skip_indexes_granules[i].reset();
+                        skip_indices_granules[i]->serializeBinary(stream.compressed);
+                        skip_indices_granules[i].reset();
                         skip_index_filling[i] = 0;
                     }
                 }

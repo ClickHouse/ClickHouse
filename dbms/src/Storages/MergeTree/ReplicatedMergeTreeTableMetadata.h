@@ -25,7 +25,7 @@ struct ReplicatedMergeTreeTableMetadata
     MergeTreeDataFormatVersion data_format_version;
     String partition_key;
     String sorting_key;
-    String skip_indexes;
+    String skip_indices;
 
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data);

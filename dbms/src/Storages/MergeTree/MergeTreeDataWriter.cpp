@@ -214,7 +214,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_codec);
 
-    for (auto index : data.indexes)
+    for (auto index : data.skip_indices)
         index->expr->execute(block);
 
     out.writePrefix();

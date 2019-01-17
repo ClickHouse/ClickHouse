@@ -167,7 +167,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
-    ASTPtr indexes;
+    ASTPtr indices;
     ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
@@ -213,7 +213,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (s_indexes.ignore(pos, expected)) {
-            if (indexes_p.parse(pos, indexes, expected))
+            if (indexes_p.parse(pos, indices, expected))
                 continue;
             else
                 return false;
@@ -234,7 +234,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
-    storage->set(storage->indexes, indexes);
+    storage->set(storage->indices, indices);
 
     storage->set(storage->settings, settings);
 

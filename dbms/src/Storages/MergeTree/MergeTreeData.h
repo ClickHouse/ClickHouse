@@ -4,7 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ITableDeclaration.h>
-#include <Storages/MergeTree/MergeTreeIndexes.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <IO/ReadBufferFromString.h>
@@ -308,7 +308,7 @@ public:
                   const ASTPtr & order_by_ast_,
                   const ASTPtr & primary_key_ast_,
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-                  const ASTPtr & indexes_ast_,
+                  const ASTPtr & indices_ast_,
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
                   bool require_part_metadata_,
@@ -582,9 +582,9 @@ public:
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
     Int64 minmax_idx_time_column_pos = -1; /// In other cases, minmax index often includes a dateTime column.
 
-    /// Secondary (data skipping) indexes for MergeTree
-    MergeTreeIndexes indexes;
-    ASTPtr skip_indexes_ast;
+    /// Secondary (data skipping) indices for MergeTree
+    MergeTreeIndices skip_indices;
+    ASTPtr skip_indices_ast;
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;
@@ -728,7 +728,7 @@ private:
 
     void setPrimaryKeyAndColumns(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check = false);
 
-    void setSkipIndexes(const ASTPtr & indexes_asts, bool only_check = false);
+    void setSkipIndices(const ASTPtr &indices_asts, bool only_check = false);
 
     void initPartitionKey();
 
