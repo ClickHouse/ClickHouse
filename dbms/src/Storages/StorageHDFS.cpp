@@ -131,7 +131,7 @@ private:
 BlockInputStreams StorageHDFS::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    const Context & context_,
     QueryProcessingStage::Enum  /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
@@ -140,7 +140,7 @@ BlockInputStreams StorageHDFS::read(
         uri,
         format_name,
         getSampleBlock(),
-        context,
+        context_,
         max_block_size)};
 }
 
