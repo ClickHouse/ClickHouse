@@ -77,7 +77,7 @@ public:
         }
         if (indexes)
         {
-            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "INDEXES " << (s.hilite ? hilite_none : "");
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "INDICES " << (s.hilite ? hilite_none : "");
             indexes->formatImpl(s, state, frame);
         }
         if (settings)
