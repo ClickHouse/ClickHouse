@@ -636,9 +636,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
         BlockInputStreamPtr stream = std::move(input);
-        for (const auto & index : data.skip_indices) {
+        if (data.skip_indices_expr) {
             stream = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(stream, index->expr));
+                    std::make_shared<ExpressionBlockInputStream>(stream, data.skip_indices_expr));
         }
 
         if (data.hasPrimaryKey()) {
@@ -911,9 +911,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// All columns are modified, proceed to write a new part from scratch.
 
-        for (const auto & index : data.skip_indices)
+        if (data.skip_indices_expr)
             in = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(in, index->expr));
+                    std::make_shared<ExpressionBlockInputStream>(in, data.skip_indices_expr));
 
         if (data.hasPrimaryKey())
             in = std::make_shared<MaterializingBlockInputStream>(
