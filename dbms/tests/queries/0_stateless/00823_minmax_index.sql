@@ -11,7 +11,7 @@ CREATE TABLE test.minmax_idx
     dt Date
 ) ENGINE = MergeTree()
 ORDER BY u64
-INDEXES idx_all BY (i32, i32 + f64, d, s, e, dt) TYPE minmax GRANULARITY 2,
+INDICES idx_all BY (i32, i32 + f64, d, s, e, dt) TYPE minmax GRANULARITY 2,
         idx_2 BY (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
 SETTINGS index_granularity = 2;
 
