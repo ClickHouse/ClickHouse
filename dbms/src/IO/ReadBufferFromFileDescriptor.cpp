@@ -53,7 +53,8 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         ssize_t res = 0;
         {
             CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
-            res = ::read(fd, memory.data(), memory.size());
+            /// XXX: it's a hack with const_cast!
+            res = ::read(fd, const_cast<char *>(internal_buffer.begin()), internal_buffer.size());
         }
         if (!res)
             break;
