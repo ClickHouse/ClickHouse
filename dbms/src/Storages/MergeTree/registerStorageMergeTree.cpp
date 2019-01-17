@@ -42,13 +42,13 @@ static Names extractColumnNames(const ASTPtr & node)
         Names res;
         res.reserve(elements.size());
         for (const auto & elem : elements)
-            res.push_back(typeid_cast<const ASTIdentifier &>(*elem).name);
+            res.push_back(*getIdentifierName(elem));
 
         return res;
     }
     else
     {
-        return { typeid_cast<const ASTIdentifier &>(*node).name };
+        return { *getIdentifierName(node) };
     }
 }
 
@@ -481,9 +481,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
-        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
-            merging_params.sign_column = ast->name;
-        else
+        if (!getIdentifierName(engine_args.back(), merging_params.sign_column))
             throw Exception(
                 "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);
@@ -495,9 +493,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If the last element is not index_granularity or replica_name (a literal), then this is the name of the version column.
         if (!engine_args.empty() && !typeid_cast<const ASTLiteral *>(engine_args.back().get()))
         {
-            if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
-                merging_params.version_column = ast->name;
-            else
+            if (!getIdentifierName(engine_args.back(), merging_params.version_column))
                 throw Exception(
                     "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
@@ -535,18 +531,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
     else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
     {
-        if (auto ast = typeid_cast<ASTIdentifier *>(engine_args.back().get()))
-            merging_params.version_column = ast->name;
-        else
+        if (!getIdentifierName(engine_args.back(), merging_params.version_column))
             throw Exception(
                     "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
 
         engine_args.pop_back();
 
-        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
-            merging_params.sign_column = ast->name;
-        else
+        if (!getIdentifierName(engine_args.back(), merging_params.sign_column))
             throw Exception(
                     "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                     ErrorCodes::BAD_ARGUMENTS);
@@ -592,9 +584,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         /// Now only three parameters remain - date (or partitioning expression), primary_key, index_granularity.
 
-        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args[0].get()))
-            date_column_name = ast->name;
-        else
+        if (!getIdentifierName(engine_args[0], date_column_name))
             throw Exception(
                 "Date column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
                 ErrorCodes::BAD_ARGUMENTS);

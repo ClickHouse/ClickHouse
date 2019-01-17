@@ -22,6 +22,7 @@
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
