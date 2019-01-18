@@ -93,7 +93,8 @@ override_dh_auto_build:
 override_dh_auto_test:
 #	#TODO, use ENABLE_TESTS=1
 #	#./debian/tests_wrapper.sh
-	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -R GLIBC_required_version
+#	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -R GLIBC_required_version
+	cd $(BUILDDIR) && ctest $(THREADS_COUNT) -V -E with_server
 
 override_dh_clean:
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
