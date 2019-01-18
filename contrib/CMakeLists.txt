@@ -110,12 +110,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
     if (NOT MAKE_STATIC_LIBRARIES)
         set (BUILD_SHARED 1)
     endif ()
-
-    # By default, ${CMAKE_INSTALL_PREFIX}/etc/ssl is selected - that is not what we need.
-    # We need to use system wide ssl directory.
-    set (OPENSSLDIR "/etc/ssl")
-
-    set (LIBRESSL_SKIP_INSTALL 1 CACHE INTERNAL "")
+    set (LIBRESSL_SKIP_INSTALL 1)
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
