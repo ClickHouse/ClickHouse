@@ -83,7 +83,10 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
 
     if (OS_LINUX)
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif()
+        if (GLIBC_COMPATIBILITY)
+            link_libraries(glibc-compatibility)
+        endif ()
+    endif ()
 endif ()
 
 if (GLIBC_COMPATIBILITY)
