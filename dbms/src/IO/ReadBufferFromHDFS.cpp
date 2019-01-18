@@ -23,7 +23,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         : hdfs_uri(hdfs_name_)
         , builder(hdfsNewBuilder())
     {
-        hdfs_uri = hdfs_name_;
         Poco::URI uri(hdfs_name_);
         auto & host = uri.getHost();
         auto port = uri.getPort();
