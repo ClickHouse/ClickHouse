@@ -19,9 +19,9 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
     struct HDFSBuilderDeleter
     {
-        void operator()(hdfsBuilder * builder)
+        void operator()(hdfsBuilder * builder_ptr)
         {
-            hdfsFreeBuilder(builder);
+            hdfsFreeBuilder(builder_ptr);
         }
     };
 
