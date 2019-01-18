@@ -31,4 +31,6 @@ add_library (glibc-compatibility ${GLIBC_COMPATIBILITY_SOURCES})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
 
+set_target_properties(glibc-compatibility PROPERTIES LINK_LIBRARIES "")
+
 add_subdirectory (tests)
