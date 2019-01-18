@@ -28,7 +28,7 @@ struct KafkaSettings
     M(SettingString, kafka_schema, "", "Schema identifier (used by schema-based formats) for Kafka engine") \
     M(SettingUInt64, kafka_num_consumers, 1, "The number of consumers per table for Kafka engine.") \
     M(SettingUInt64, kafka_max_block_size, 0, "The maximum block size per table for Kafka engine.") \
-    M(SettingUInt64, kafka_skip_broken_messages, 0, "Skip at least this number of consecutive broken messages from Kafka topic")
+    M(SettingUInt64, kafka_skip_broken_messages, 0, "Skip at least this number of broken messages from Kafka topic per block")
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
