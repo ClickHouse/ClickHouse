@@ -139,6 +139,12 @@ public:
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
         context.setSetting("input_format_skip_unknown_fields", 1u);
+
+        // We don't use ratio since the number of Kafka messages may vary from stream to stream.
+        // Thus, ratio is meaningless.
+        context.setSetting("input_format_allow_errors_ratio", 1.);
+        context.setSetting("input_format_allow_errors_num", storage.skip_broken);
+
         if (schema.size() > 0)
             context.setSetting("format_schema", schema);
     }
@@ -248,7 +254,7 @@ StorageKafka::StorageKafka(
     const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, char row_delimiter_, const String & schema_name_,
-    size_t num_consumers_, size_t max_block_size_)
+    size_t num_consumers_, size_t max_block_size_, size_t skip_broken_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), global_context(context_),
     topics(global_context.getMacros()->expand(topics_)),
@@ -258,7 +264,8 @@ StorageKafka::StorageKafka(
     row_delimiter(row_delimiter_),
     schema_name(global_context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), max_block_size(max_block_size_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
-    semaphore(0, num_consumers_), mutex(), consumers()
+    semaphore(0, num_consumers_), mutex(), consumers(),
+    skip_broken(skip_broken_)
 {
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
     task->deactivate();
@@ -538,6 +545,8 @@ void registerStorageKafka(StorageFactory & factory)
           * - Row delimiter
           * - Schema (optional, if the format supports it)
           * - Number of consumers
+          * - Max block size for background consumption
+          * - Skip (at least) unreadable messages number
           */
 
         // Check arguments and settings
@@ -571,6 +580,7 @@ void registerStorageKafka(StorageFactory & factory)
         CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema)
         CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers)
         CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size)
+        CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages)
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
         // Get and check broker list
@@ -728,6 +738,7 @@ void registerStorageKafka(StorageFactory & factory)
             }
             else
             {
+                // TODO: no check if the integer is really positive
                 throw Exception("Maximum block size must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
             }
         }
@@ -736,9 +747,27 @@ void registerStorageKafka(StorageFactory & factory)
             max_block_size = static_cast<size_t>(kafka_settings.kafka_max_block_size.value);
         }
 
+        size_t skip_broken = 0;
+        if (args_count >= 9)
+        {
+            auto ast = typeid_cast<const ASTLiteral *>(engine_args[8].get());
+            if (ast && ast->value.getType() == Field::Types::UInt64)
+            {
+                skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));
+            }
+            else
+            {
+                throw Exception("Number of broken messages to skip must be a non-negative integer", ErrorCodes::BAD_ARGUMENTS);
+            }
+        }
+        else if (kafka_settings.kafka_skip_broken_messages.changed)
+        {
+            skip_broken = static_cast<size_t>(kafka_settings.kafka_skip_broken_messages.value);
+        }
+
         return StorageKafka::create(
             args.table_name, args.database_name, args.context, args.columns,
-            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size);
+            brokers, group, topics, format, row_delimiter, schema, num_consumers, max_block_size, skip_broken);
     });
 }
 
