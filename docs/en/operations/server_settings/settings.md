@@ -163,7 +163,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 ```
 
 
-## graphite_rollup
+## graphite_rollup {#server_settings-graphite_rollup}
 
 Settings for thinning data for Graphite.
 
@@ -416,7 +416,7 @@ The value 0 means that you can delete all tables without any restrictions.
 ```
 
 
-## merge_tree
+## merge_tree {#server_settings-merge_tree}
 
 Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md).
 

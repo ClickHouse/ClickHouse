@@ -40,4 +40,6 @@ install(TARGETS glibc-compatibility EXPORT CapnProtoTargets ARCHIVE DESTINATION 
 install(TARGETS glibc-compatibility EXPORT protobuf-targets ARCHIVE DESTINATION "/tmp")
 install(TARGETS glibc-compatibility EXPORT double-conversionTargets ARCHIVE DESTINATION "/tmp")
 
-add_subdirectory (tests)
+if(ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()
