@@ -310,7 +310,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 
             if (!prepared_sets.count(arg->range)) /// Not already prepared.
             {
-                if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
+                if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
                 {
                     if (settings.use_index_for_in_with_subqueries)
                         tryMakeSetForIndexFromSubquery(arg);

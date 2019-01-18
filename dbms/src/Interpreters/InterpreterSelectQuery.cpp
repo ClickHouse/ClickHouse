@@ -147,14 +147,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
 
-    ASTPtr table_expression = getTableFunctionOrSubquery(query, 0);
+    ASTPtr table_expression = extractTableExpression(query, 0);
+
+    bool is_table_func = false;
+    bool is_subquery = false;
+    if (table_expression)
+    {
+        is_table_func = typeid_cast<const ASTFunction *>(table_expression.get());
+        is_subquery = typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get());
+    }
 
     if (input)
     {
         /// Read from prepared input.
         source_header = input->getHeader();
     }
-    else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
+    else if (is_subquery)
     {
         /// Read from subquery.
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
@@ -164,7 +172,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     }
     else if (!storage)
     {
-        if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
+        if (is_table_func)
         {
             /// Read from table function.
             storage = context.getQueryContext().executeTableFunction(table_expression);
@@ -208,7 +216,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (query_analyzer->isRewriteSubqueriesPredicate())
         {
             /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
-            if (table_expression && typeid_cast<ASTSelectWithUnionQuery *>(table_expression.get()))
+            if (is_subquery)
                 interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                     table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1,
                     only_analyze);
@@ -921,7 +929,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         /// If we need less number of columns that subquery have - update the interpreter.
         if (required_columns.size() < source_header.columns())
         {
-            ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+            ASTPtr subquery = extractTableExpression(query, 0);
             if (!subquery)
                 throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -1396,7 +1404,7 @@ bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
       * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
       */
 
-    if (auto query_table = getTableFunctionOrSubquery(query, 0))
+    if (auto query_table = extractTableExpression(query, 0))
     {
         if (auto ast_union = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
         {
