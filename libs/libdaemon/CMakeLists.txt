@@ -5,6 +5,7 @@ add_library (daemon ${LINK_MODE}
     src/OwnPatternFormatter.cpp
     src/OwnFormattingChannel.cpp
     src/OwnSplitChannel.cpp
+    src/Backtrace.cpp
 
     include/daemon/BaseDaemon.h
     include/daemon/GraphiteWriter.h
@@ -12,7 +13,7 @@ add_library (daemon ${LINK_MODE}
     include/daemon/OwnPatternFormatter.h
     include/daemon/OwnFormattingChannel.h
     include/daemon/OwnSplitChannel.h
-)
+    include/daemon/Backtrace.h)
 
 if (USE_UNWIND)
     target_compile_definitions (daemon PRIVATE USE_UNWIND=1)
