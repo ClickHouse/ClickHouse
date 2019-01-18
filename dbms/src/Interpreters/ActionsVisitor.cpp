@@ -131,7 +131,7 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
     set->createFromAST(set_element_types, elements_ast, context);
-    prepared_sets[right_arg->range] = std::move(set);
+    prepared_sets[right_arg->getTreeHash()] = std::move(set);
 }
 
 static String getUniqueName(const Block & block, const String & prefix)
@@ -380,12 +380,12 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 /// Select the name in the next cycle.
                 argument_names.emplace_back();
             }
-            else if (prepared_sets.count(child->range) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
+            else if (functionIsInOrGlobalInOperator(node->name) && arg == 1 && prepared_sets.count(child->getTreeHash()))
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
-                const SetPtr & set = prepared_sets[child->range];
+                const SetPtr & set = prepared_sets[child->getTreeHash()];
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
@@ -530,9 +530,10 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
       */
     const IAST & args = *node->arguments;
     const ASTPtr & arg = args.children.at(1);
+    IAST::Hash tree_hash = arg->getTreeHash();
 
     /// Already converted.
-    if (prepared_sets.count(arg->range))
+    if (prepared_sets.count(tree_hash))
         return;
 
     /// If the subquery or table name for SELECT.
@@ -552,7 +553,7 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
 
                 if (storage_set)
                 {
-                    prepared_sets[arg->range] = storage_set->getSet();
+                    prepared_sets[tree_hash] = storage_set->getSet();
                     return;
                 }
             }
@@ -566,7 +567,7 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            prepared_sets[arg->range] = subquery_for_set.set;
+            prepared_sets[tree_hash] = subquery_for_set.set;
             return;
         }
 
@@ -612,7 +613,7 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         }
 
         subquery_for_set.set = set;
-        prepared_sets[arg->range] = set;
+        prepared_sets[tree_hash] = set;
     }
     else
     {

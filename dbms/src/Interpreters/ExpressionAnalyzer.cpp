@@ -279,7 +279,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
             return;
     }
 
-    prepared_sets[subquery_or_table_name->range] = std::move(set);
+    prepared_sets[subquery_or_table_name->getTreeHash()] = std::move(set);
 }
 
 
@@ -308,7 +308,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         {
             const ASTPtr & arg = args.children.at(1);
 
-            if (!prepared_sets.count(arg->range)) /// Not already prepared.
+            if (!prepared_sets.count(arg->getTreeHash())) /// Not already prepared.
             {
                 if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
                 {

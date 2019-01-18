@@ -19,7 +19,6 @@ public:
         : name(name_)
         , special(false)
     {
-        range = StringRange(name.data(), name.data() + name.size());
     }
 
     /** Get the text that identifies this element. */

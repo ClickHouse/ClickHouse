@@ -7,7 +7,6 @@
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
-#include <Parsers/StringRange.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 
 
@@ -54,7 +53,6 @@ class IAST : public std::enable_shared_from_this<IAST>
 {
 public:
     ASTs children;
-    StringRange range;
 
     SemanticPtr semantic;
 
@@ -209,11 +207,7 @@ public:
 
     virtual void formatImpl(const FormatSettings & /*settings*/, FormatState & /*state*/, FormatStateStacked /*frame*/) const
     {
-        throw Exception("Unknown element in AST: " + getID()
-            + ((range.first && (range.second > range.first))
-                ? " '" + std::string(range.first, range.second - range.first) + "'"
-                : ""),
-            ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
+        throw Exception("Unknown element in AST: " + getID(), ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
     }
 
     void cloneChildren();
