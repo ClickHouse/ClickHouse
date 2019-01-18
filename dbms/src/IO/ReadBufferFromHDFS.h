@@ -24,8 +24,6 @@ public:
     bool nextImpl() override;
 
     ~ReadBufferFromHDFS() override;
-
-    const std::string & getHDFSUri() const;
 };
 }
 #endif

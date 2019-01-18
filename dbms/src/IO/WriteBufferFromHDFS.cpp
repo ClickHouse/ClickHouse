@@ -24,7 +24,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
     WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
     {
-        builder = hdfsNewBuilder();
         hdfs_uri = hdfs_name_;
         Poco::URI uri(hdfs_name_);
         auto & host = uri.getHost();
@@ -34,6 +33,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         {
             throw Exception("Illegal HDFS URI: " + hdfs_uri, ErrorCodes::BAD_ARGUMENTS);
         }
+
+        builder = hdfsNewBuilder();
         // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
         /// TODO Allow to tune from query Settings.
         hdfsBuilderConfSetStr(builder, "input.read.timeout", "60000"); // 1 min
@@ -46,6 +47,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
         if (fs == nullptr)
         {
+            hdfsFreeBuilder(builder);
             throw Exception("Unable to connect to HDFS: " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
         }
 
@@ -54,13 +56,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 
     ~WriteBufferFromHDFSImpl()
     {
-        close();
-        hdfsFreeBuilder(builder);
-    }
-
-    void close()
-    {
         hdfsCloseFile(fs, fout);
+        hdfsDisconnect(fs);
     }
 
 
@@ -104,11 +101,6 @@ void WriteBufferFromHDFS::nextImpl()
 void WriteBufferFromHDFS::sync()
 {
     impl->sync();
-}
-
-const std::string & WriteBufferFromHDFS::getHDFSUri() const
-{
-    return impl->hdfs_uri;
 }
 
 WriteBufferFromHDFS::~WriteBufferFromHDFS()
