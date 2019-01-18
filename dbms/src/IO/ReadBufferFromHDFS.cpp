@@ -23,7 +23,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         : hdfs_uri(hdfs_name_)
         , builder(hdfsNewBuilder())
     {
-        builder = hdfsNewBuilder();
         hdfs_uri = hdfs_name_;
         Poco::URI uri(hdfs_name_);
         auto & host = uri.getHost();
@@ -35,6 +34,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         }
         // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
         /// TODO Allow to tune from query Settings.
+        builder = hdfsNewBuilder();
         hdfsBuilderConfSetStr(builder, "input.read.timeout", "60000"); // 1 min
         hdfsBuilderConfSetStr(builder, "input.write.timeout", "60000"); // 1 min
         hdfsBuilderConfSetStr(builder, "input.connect.timeout", "60000"); // 1 min
@@ -45,6 +45,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
         if (fs == nullptr)
         {
+            hdfsFreeBuilder(builder);
             throw Exception("Unable to connect to HDFS: " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
         }
 
@@ -53,13 +54,8 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 
     ~ReadBufferFromHDFSImpl()
     {
-        close();
-        hdfsFreeBuilder(builder);
-    }
-
-    void close()
-    {
         hdfsCloseFile(fs, fin);
+        hdfsDisconnect(fs);
     }
 
     int read(char * start, size_t size)
