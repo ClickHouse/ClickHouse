@@ -164,7 +164,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## graphite_rollup
+## graphite_rollup {#server_settings-graphite_rollup}
 
 Настройка прореживания данных для Graphite.
 
@@ -416,7 +416,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## merge_tree
+## merge_tree {#server_settings-merge_tree}
 
 Тонкая настройка таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
