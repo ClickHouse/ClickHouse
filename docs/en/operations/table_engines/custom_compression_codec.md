@@ -1,4 +1,3 @@
-
 # Column Compression Codecs
 
 Besides default data compression, defined in [server settings](../server_settings/settings.md#compression), per-column specification is also available.
@@ -7,7 +6,7 @@ Supported compression algorithms:
 
 - `NONE` - no compression for data applied
 - `LZ4`
-- `LZ4HC(level)` - (level) - LZ4_HC compression algorithm with defined level.
+- `LZ4HC(level)` - (level) - LZ4\_HC compression algorithm with defined level.
 Possible `level` range: \[3, 12\]. Default value: 9. Greater values stands for better compression and higher CPU usage. Recommended value range: [4,9].
 - `ZSTD(level)` - ZSTD compression algorithm with defined `level`. Possible `level` value range: \[1, 22\]. Default value: 1.
 Greater values stands for better compression and higher CPU usage.
