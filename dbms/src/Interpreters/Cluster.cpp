@@ -67,12 +67,13 @@ Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, cons
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port)
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_)
     : user(user_), password(password_)
 {
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
+    secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
     initially_resolved_address = DNSResolver::instance().resolveAddress(parsed_host_port.first, parsed_host_port.second);
     is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
@@ -319,7 +320,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote)
+                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote, bool secure)
 {
     UInt32 current_shard_num = 1;
 
@@ -327,7 +328,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port);
+            current.emplace_back(replica, username, password, clickhouse_port, secure);
 
         addresses_with_failover.emplace_back(current);
 
