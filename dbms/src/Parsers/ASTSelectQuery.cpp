@@ -17,19 +17,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-ASTPtr createDatabaseAndTableNode(const String & database_name, const String & table_name)
-{
-    if (database_name.empty())
-        return ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database = ASTIdentifier::createSpecial(database_name);
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
-    database_and_table->children = {database, table};
-    return database_and_table;
-}
-
 
 ASTPtr ASTSelectQuery::clone() const
 {
@@ -64,8 +51,6 @@ ASTPtr ASTSelectQuery::clone() const
 
 #undef CLONE
 
-    if (semantic)
-        res->semantic = semantic->clone();
     return res;
 }
 
@@ -338,7 +323,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = createDatabaseAndTableNode(database_name, table_name);
+    table_expression->database_and_table_name = createTableIdentifier(database_name, table_name);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);
