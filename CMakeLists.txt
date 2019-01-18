@@ -255,7 +255,7 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
-add_subdirectory (contrib)
+add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
