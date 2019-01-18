@@ -25,8 +25,6 @@ public:
 
     ~WriteBufferFromHDFS() override;
 
-    const std::string & getHDFSUri() const;
-
     void sync();
 };
 }

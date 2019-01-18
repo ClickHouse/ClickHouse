@@ -90,11 +90,6 @@ bool ReadBufferFromHDFS::nextImpl()
     return true;
 }
 
-const std::string & ReadBufferFromHDFS::getHDFSUri() const
-{
-    return impl->hdfs_uri;
-}
-
 ReadBufferFromHDFS::~ReadBufferFromHDFS()
 {
 }
