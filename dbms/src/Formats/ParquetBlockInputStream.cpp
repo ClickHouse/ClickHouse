@@ -29,11 +29,11 @@
 #    include <common/DateLUTImpl.h>
 #    include <ext/range.h>
 #    include <arrow/api.h>
-#    include <arrow/buffer.h>
-#    include <arrow/io/api.h>
+//#    include <arrow/buffer.h>
+//#    include <arrow/io/api.h>
 #    include <parquet/arrow/reader.h>
-#    include <parquet/arrow/writer.h>
-#    include <parquet/exception.h>
+//#    include <parquet/arrow/writer.h>
+//#    include <parquet/exception.h>
 #    include <parquet/file_reader.h>
 
 #    include <Core/iostream_debug_helpers.h> // REMOVE ME
@@ -109,7 +109,7 @@ void fillColumnWithStringData(std::shared_ptr<arrow::Column> & arrow_column, Mut
 
         for (size_t offset_i = 0; offset_i != chunk_length; ++offset_i)
         {
-            if (!chunk.IsNull(offset_i))
+            if (!chunk.IsNull(offset_i) && buffer)
             {
                 const UInt8 * raw_data = buffer->data() + chunk.value_offset(offset_i);
                 column_chars_t.insert_assume_reserved(raw_data, raw_data + chunk.value_length(offset_i));
@@ -310,24 +310,38 @@ Block ParquetBlockInputStream::readImpl()
 {
     Block res;
 
-    if (istr.eof())
+    if (!istr.eof())
+    {
+        /*
+           First we load whole stream into string (its very bad and limiting .parquet file size to half? of RAM) 
+           Then producing blocks for every row_group (dont load big .parquet files with one row_group - it can eat x10+ RAM from .parquet file size)
+        */
+
+        if (row_group_current < row_group_total)
+            throw Exception{"Got new data, but data from previous chunks not readed " + std::to_string(row_group_current) + "/" + std::to_string(row_group_total), ErrorCodes::CANNOT_READ_ALL_DATA};
+
+        file_data.clear();
+        {
+            WriteBufferFromString file_buffer(file_data);
+            copyData(istr, file_buffer);
+        }
+
+        buffer = std::make_unique<arrow::Buffer>(file_data);
+        // TODO: maybe use parquet::RandomAccessSource?
+        auto reader = parquet::ParquetFileReader::Open(std::make_shared<::arrow::io::BufferReader>(*buffer));
+        file_reader = std::make_unique<parquet::arrow::FileReader>(::arrow::default_memory_pool(), std::move(reader));
+        row_group_total = file_reader->num_row_groups();
+        row_group_current = 0;
+    }
+    //DUMP(row_group_current, row_group_total);
+    if (row_group_current >= row_group_total)
         return res;
 
-    std::string file_data;
-
-    {
-        WriteBufferFromString file_buffer(file_data);
-        copyData(istr, file_buffer);
-    }
-
-    arrow::Buffer buffer(file_data);
-    // TODO: maybe use parquet::RandomAccessSource?
-    auto reader = parquet::ParquetFileReader::Open(std::make_shared<::arrow::io::BufferReader>(buffer));
-    parquet::arrow::FileReader filereader(::arrow::default_memory_pool(), std::move(reader));
-    std::shared_ptr<arrow::Table> table;
-
     // TODO: also catch a ParquetException thrown by filereader?
-    arrow::Status read_status = filereader.ReadTable(&table);
+    //arrow::Status read_status = filereader.ReadTable(&table);
+    std::shared_ptr<arrow::Table> table;
+    arrow::Status read_status = file_reader->ReadRowGroup(row_group_current, &table);
+
     if (!read_status.ok())
         throw Exception{"Error while reading parquet data: " + read_status.ToString(), ErrorCodes::CANNOT_READ_ALL_DATA};
 
@@ -338,6 +352,7 @@ Block ParquetBlockInputStream::readImpl()
         // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
         throw Exception{"Number of columns is less than the table has", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH};
 
+    ++row_group_current;
 
     NameToColumnPtr name_to_column_ptr;
     for (size_t i = 0, num_columns = static_cast<size_t>(table->num_columns()); i < num_columns; ++i)
@@ -401,7 +416,6 @@ Block ParquetBlockInputStream::readImpl()
 
         /// Data
         MutableColumnPtr read_column = internal_nested_type->createColumn();
-
         switch (arrow_type)
         {
             case arrow::Type::STRING:
