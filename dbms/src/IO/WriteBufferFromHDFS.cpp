@@ -23,8 +23,8 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     hdfsFile fout;
 
     WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
+        : hdfs_uri(hdfs_name_)
     {
-        hdfs_uri = hdfs_name_;
         Poco::URI uri(hdfs_name_);
         auto & host = uri.getHost();
         auto port = uri.getPort();
