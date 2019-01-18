@@ -28,7 +28,7 @@ PARTITION BY tuple()
 ORDER BY dt
 ```
 
-Codecs can be combined in a pipeline. Default table codec is not included into pipeline. Example below shows an optimization approach for storing timeseries metrics.
+Codecs can be combined in a pipeline. Default table codec is not included into pipeline (if it should be applied to a column, you have to specify it explicitly in pipeline). Example below shows an optimization approach for storing timeseries metrics.
 Usually, values for particular metric, stored in `path` does not differ significantly from point to point. Using delta-encoding allows to reduce disk space usage significantly.
 ```
 CREATE TABLE timeseries_example
