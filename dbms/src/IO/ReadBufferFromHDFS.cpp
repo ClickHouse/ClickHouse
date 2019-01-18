@@ -14,8 +14,16 @@ namespace ErrorCodes
 
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 {
+    struct HDFSBuilderDeleter
+    {
+        void operator()(hdfsBuilder * builder)
+        {
+            hdfsFreeBuilder(builder);
+        }
+    };
+
     std::string hdfs_uri;
-    hdfsBuilder * builder;
+    std::unique_ptr<hdfsBuilder, HDFSBuilderDeleter> builder;
     hdfsFS fs;
     hdfsFile fin;
 
@@ -33,19 +41,18 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         }
         // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
         /// TODO Allow to tune from query Settings.
-        builder = hdfsNewBuilder();
-        hdfsBuilderConfSetStr(builder, "input.read.timeout", "60000"); // 1 min
-        hdfsBuilderConfSetStr(builder, "input.write.timeout", "60000"); // 1 min
-        hdfsBuilderConfSetStr(builder, "input.connect.timeout", "60000"); // 1 min
+        hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
+        hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
+        hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
 
-        hdfsBuilderSetNameNode(builder, host.c_str());
-        hdfsBuilderSetNameNodePort(builder, port);
-        fs = hdfsBuilderConnect(builder);
+        hdfsBuilderSetNameNode(builder.get(), host.c_str());
+        hdfsBuilderSetNameNodePort(builder.get(), port);
+        fs = hdfsBuilderConnect(builder.get());
 
         if (fs == nullptr)
         {
-            hdfsFreeBuilder(builder);
-            throw Exception("Unable to connect to HDFS: " + std::string(hdfsGetLastError()), ErrorCodes::NETWORK_ERROR);
+            throw Exception("Unable to connect to HDFS: " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
         }
 
         fin = hdfsOpenFile(fs, path.c_str(), O_RDONLY, 0, 0, 0);
