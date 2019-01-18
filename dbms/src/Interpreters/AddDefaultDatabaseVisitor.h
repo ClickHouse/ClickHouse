@@ -99,8 +99,7 @@ private:
     /// @note It expects that only table (not column) identifiers are visited.
     void visit(const ASTIdentifier & identifier, ASTPtr & ast) const
     {
-        DatabaseAndTableWithAlias db_and_name(identifier);
-        if (db_and_name.database.empty())
+        if (identifier.name_parts.empty())
             ast = createTableIdentifier(database_name, identifier.name);
     }
 
