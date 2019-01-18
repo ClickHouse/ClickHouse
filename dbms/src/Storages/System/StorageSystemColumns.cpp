@@ -41,6 +41,7 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "is_in_sorting_key", std::make_shared<DataTypeUInt8>() },
         { "is_in_primary_key", std::make_shared<DataTypeUInt8>() },
         { "is_in_sampling_key", std::make_shared<DataTypeUInt8>() },
+        { "compression_codec", std::make_shared<DataTypeString>() },
     }));
 }
 
@@ -86,6 +87,7 @@ protected:
             NamesAndTypesList columns;
             ColumnDefaults column_defaults;
             ColumnComments column_comments;
+            ColumnCodecs column_codecs;
             Names cols_required_for_partition_key;
             Names cols_required_for_sorting_key;
             Names cols_required_for_primary_key;
@@ -114,6 +116,7 @@ protected:
                 }
 
                 columns = storage->getColumns().getAll();
+                column_codecs = storage->getColumns().codecs;
                 column_defaults = storage->getColumns().defaults;
                 column_comments = storage->getColumns().comments;
 
@@ -217,6 +220,20 @@ protected:
                         res_columns[res_index++]->insert(find_in_vector(cols_required_for_primary_key));
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(find_in_vector(cols_required_for_sampling));
+                }
+
+                {
+                    const auto it = column_codecs.find(column.name);
+                    if (it == std::end(column_codecs))
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+                    }
+                    else
+                    {
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insert("CODEC(" + it->second->getCodecDesc() + ")");
+                    }
                 }
 
                 ++rows_count;
