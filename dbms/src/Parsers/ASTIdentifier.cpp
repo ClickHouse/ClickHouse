@@ -18,14 +18,14 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
 
     /// A simple or compound identifier?
 
-    if (children.size() > 1)
+    if (name_parts.size() > 1)
     {
-        for (size_t i = 0, size = children.size(); i < size; ++i)
+        for (size_t i = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
                 settings.ostr << '.';
 
-            format_element(static_cast<const ASTIdentifier &>(*children[i].get()).name);
+            format_element(name_parts[i]);
         }
     }
     else
@@ -37,6 +37,15 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
 void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     writeString(name, ostr);
+}
+
+ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
+{
+    if (database_name.empty())
+        return ASTIdentifier::createSpecial(table_name);
+
+    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name, {database_name, table_name});
+    return database_and_table;
 }
 
 bool isIdentifier(const IAST * const ast)
@@ -67,7 +76,7 @@ bool getIdentifierName(const ASTPtr & ast, String & name)
 
 std::optional<String> getColumnIdentifierName(const ASTIdentifier & node)
 {
-    if (!node.special())
+    if (!node.special)
         return node.name;
     return {};
 }
@@ -76,14 +85,14 @@ std::optional<String> getColumnIdentifierName(const ASTPtr & ast)
 {
     if (ast)
         if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
-            if (!id->special())
+            if (!id->special)
                 return id->name;
     return {};
 }
 
 std::optional<String> getTableIdentifierName(const ASTIdentifier & node)
 {
-    if (node.special())
+    if (node.special)
         return node.name;
     return {};
 }
@@ -92,7 +101,7 @@ std::optional<String> getTableIdentifierName(const ASTPtr & ast)
 {
     if (ast)
         if (auto id = typeid_cast<const ASTIdentifier *>(ast.get()))
-            if (id->special())
+            if (id->special)
                 return id->name;
     return {};
 }
@@ -102,6 +111,37 @@ void setIdentifierSpecial(ASTPtr & ast)
     if (ast)
         if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(ast.get()))
             id->setSpecial();
+}
+
+void addIdentifierQualifier(ASTIdentifier & identifier, const String & database, const String & table, const String & alias)
+{
+    if (!alias.empty())
+    {
+        identifier.name_parts.emplace_back(alias);
+    }
+    else
+    {
+        if (!database.empty())
+            identifier.name_parts.emplace_back(database);
+        identifier.name_parts.emplace_back(table);
+    }
+}
+
+bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
+{
+    size_t num_components = identifier.name_parts.size();
+    if (num_components >= 3)
+        return identifier.name_parts[0] == database &&
+               identifier.name_parts[1] == table;
+    return false;
+}
+
+bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table)
+{
+    size_t num_components = identifier.name_parts.size();
+    if (num_components >= 2)
+        return identifier.name_parts[0] == table;
+    return false;
 }
 
 }
