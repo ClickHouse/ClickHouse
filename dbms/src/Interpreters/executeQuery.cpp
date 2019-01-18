@@ -499,7 +499,7 @@ void executeQuery(
             }
 
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
-                ? typeid_cast<const ASTIdentifier &>(*ast_query_with_output->format).name
+                ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
