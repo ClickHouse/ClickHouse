@@ -56,6 +56,12 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
         }
 
         fin = hdfsOpenFile(fs, path.c_str(), O_RDONLY, 0, 0, 0);
+
+        if (fin == nullptr)
+        {
+            throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
+        }
     }
 
     ~ReadBufferFromHDFSImpl()

@@ -60,6 +60,12 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         }
 
         fout = hdfsOpenFile(fs, path.c_str(), O_WRONLY, 0, 0, 0);
+        if (fout == nullptr)
+        {
+            throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
+                ErrorCodes::NETWORK_ERROR);
+        }
+
     }
 
     ~WriteBufferFromHDFSImpl()
