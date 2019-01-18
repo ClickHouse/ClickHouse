@@ -10,7 +10,7 @@
 
 namespace DB
 {
-/** Accepts path to file and opens it, or pre-opened file descriptor.
+/** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
 class WriteBufferFromHDFS : public BufferWithOwnMemory<WriteBuffer>
