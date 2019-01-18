@@ -22,7 +22,6 @@ public:
         , name_parts(name_parts_)
         , special(false)
     {
-        range = StringRange(name.data(), name.data() + name.size());
     }
 
     /** Get the text that identifies this element. */

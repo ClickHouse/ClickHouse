@@ -635,18 +635,18 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
-        size_t key_column_num;        /// Number of a key column (inside key_column_names array)
+        size_t key_column_num = -1;   /// Number of a key column (inside key_column_names array)
         MonotonicFunctionsChain chain;
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
-        if (prepared_sets.count(args[1]->range)
-            && tryPrepareSetIndex(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
-        {
-            key_arg_pos = 0;
-            is_set_const = true;
-        }
-        else if (getConstant(args[1], block_with_constants, const_value, const_type)
+        if (prepared_sets.count(args[1]->getTreeHash())
+             && tryPrepareSetIndex(args[0], context, out, prepared_sets[args[1]->getTreeHash()], key_column_num))
+         {
+             key_arg_pos = 0;
+             is_set_const = true;
+         }
+         else if (getConstant(args[1], block_with_constants, const_value, const_type)
             && isKeyPossiblyWrappedByMonotonicFunctions(args[0], context, key_column_num, key_expr_type, chain))
         {
             key_arg_pos = 0;
@@ -670,6 +670,9 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         }
         else
             return false;
+
+        if (key_column_num == static_cast<size_t>(-1))
+            throw Exception("`key_column_num` wasn't initialized. It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         std::string func_name = func->name;
 
@@ -1015,7 +1018,7 @@ bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelo
         {
             auto in_func = typeid_cast<const ASTFunction *>(element.in_function.get());
             const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
-            PreparedSets::const_iterator it = prepared_sets.find(args[1]->range);
+            PreparedSets::const_iterator it = prepared_sets.find(args[1]->getTreeHash());
             if (in_func && it != prepared_sets.end())
             {
                 rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
