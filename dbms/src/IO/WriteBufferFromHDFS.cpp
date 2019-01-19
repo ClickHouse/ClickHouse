@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include <Poco/URI.h>
+#include <IO/HDFSCommon.h>
 #include <hdfs/hdfs.h>
 
 namespace DB
@@ -9,86 +10,55 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int NETWORK_ERROR;
+extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
 }
 
 
 struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 {
-    struct HDFSBuilderDeleter
-    {
-        void operator()(hdfsBuilder * builder_ptr)
-        {
-            hdfsFreeBuilder(builder_ptr);
-        }
-    };
-
-    std::string hdfs_uri;
-    std::unique_ptr<hdfsBuilder, HDFSBuilderDeleter> builder;
-    hdfsFS fs;
+    Poco::URI hdfs_uri;
     hdfsFile fout;
+    HDFSBuilderPtr builder;
+    HDFSFSPtr fs;
 
     WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
         : hdfs_uri(hdfs_name_)
-        , builder(hdfsNewBuilder())
+        , builder(createHDFSBuilder(hdfs_uri))
+        , fs(createHDFSFS(builder.get()))
     {
-        Poco::URI uri(hdfs_name_);
-        auto & host = uri.getHost();
-        auto port = uri.getPort();
-        auto & path = uri.getPath();
-        if (host.empty() || port == 0 || path.empty())
-        {
-            throw Exception("Illegal HDFS URI: " + hdfs_uri, ErrorCodes::BAD_ARGUMENTS);
-        }
+        auto & path = hdfs_uri.getPath();
+        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);
 
-        // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
-        /// TODO Allow to tune from query Settings.
-        hdfsBuilderConfSetStr(builder.get(), "input.read.timeout", "60000"); // 1 min
-        hdfsBuilderConfSetStr(builder.get(), "input.write.timeout", "60000"); // 1 min
-        hdfsBuilderConfSetStr(builder.get(), "input.connect.timeout", "60000"); // 1 min
-
-        hdfsBuilderSetNameNode(builder.get(), host.c_str());
-        hdfsBuilderSetNameNodePort(builder.get(), port);
-        fs = hdfsBuilderConnect(builder.get());
-
-        if (fs == nullptr)
-        {
-            throw Exception("Unable to connect to HDFS: " + std::string(hdfsGetLastError()),
-                ErrorCodes::NETWORK_ERROR);
-        }
-
-        fout = hdfsOpenFile(fs, path.c_str(), O_WRONLY, 0, 0, 0);
         if (fout == nullptr)
         {
             throw Exception("Unable to open HDFS file: " + path + " error: " + std::string(hdfsGetLastError()),
-                ErrorCodes::NETWORK_ERROR);
+                ErrorCodes::CANNOT_OPEN_FILE);
         }
 
     }
 
     ~WriteBufferFromHDFSImpl()
     {
-        hdfsCloseFile(fs, fout);
-        hdfsDisconnect(fs);
+        hdfsCloseFile(fs.get(), fout);
     }
 
 
     int write(const char * start, size_t size)
     {
-        int bytes_written = hdfsWrite(fs, fout, start, size);
+        int bytes_written = hdfsWrite(fs.get(), fout, start, size);
         if (bytes_written < 0)
-            throw Exception("Fail to write HDFS file: " + hdfs_uri + " " + std::string(hdfsGetLastError()),
+            throw Exception("Fail to write HDFS file: " + hdfs_uri.toString() + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::NETWORK_ERROR);
         return bytes_written;
     }
 
     void sync()
     {
-        int result = hdfsSync(fs, fout);
+        int result = hdfsSync(fs.get(), fout);
         if (result < 0)
-            throwFromErrno("Cannot HDFS sync" + hdfs_uri + " " + std::string(hdfsGetLastError()),
+            throwFromErrno("Cannot HDFS sync" + hdfs_uri.toString() + " " + std::string(hdfsGetLastError()),
                 ErrorCodes::CANNOT_FSYNC);
     }
 };

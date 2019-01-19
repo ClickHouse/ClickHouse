@@ -56,3 +56,21 @@ def test_write_table(started_cluster):
     result = "10\ttomas\t55.55\n11\tjack\t32.54\n"
     assert hdfs_api.read_data("/other_storage") == result
     assert node1.query("select * from OtherHDFSStorage order by id") == result
+
+def test_bad_hdfs_uri(started_cluster):
+    try:
+        node1.query("create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')")
+    except Exception as ex:
+        print ex
+        assert 'Illegal HDFS URI' in str(ex)
+    try:
+        node1.query("create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')")
+    except Exception as ex:
+        print ex
+        assert 'Unable to create builder to connect to HDFS' in str(ex)
+
+    try:
+        node1.query("create table BadStorage3 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/<>', 'TSV')")
+    except Exception as ex:
+        print ex
+        assert 'Unable to open HDFS file' in str(ex)
