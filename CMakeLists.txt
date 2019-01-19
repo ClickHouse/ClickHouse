@@ -157,13 +157,27 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 include (cmake/use_libcxx.cmake)
 
 
+# Set standard, system and compiler libraries explicitly.
+# This is intended for more control of what we are linking.
+
 set (DEFAULT_LIBS "")
 if (OS_LINUX AND NOT UNBUNDLED)
+    # Note: this probably has no effict, but I'm not an expert in CMake.
     set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
     set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
 
+    # Disable default linked libraries.
     set (DEFAULT_LIBS "-nodefaultlibs")
 
+    # Add C++ libraries.
+    #
+    # This consist of:
+    # - C++ standard library (like implementation of std::string);
+    # - C++ ABI implementation (functions for exceptions like __cxa_throw, RTTI, etc);
+    # - functions for internal implementation of exception handling (stack unwinding based on DWARF info; TODO replace with bundled libunwind);
+    # - compiler builtins (example: functions for implementation of __int128 operations);
+    #
+    # There are two variants of C++ library: libc++ (from LLVM compiler infrastructure) and libstdc++ (from GCC).
     if (USE_LIBCXX)
         set (BUILTINS_LIB_PATH "")
             if (COMPILER_CLANG)
@@ -175,12 +189,18 @@ if (OS_LINUX AND NOT UNBUNDLED)
         set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc -Wl,-Bdynamic")
     endif ()
 
+    # Linking with GLIBC prevents portability of binaries to older systems.
+    # We overcome this behaviour by statically linking with our own implementation of all new symbols (that don't exist in older Libc or have infamous "symbol versioning").
+    # The order of linking is important: 'glibc-compatibility' must be before libc but after all other libraries.
     if (GLIBC_COMPATIBILITY)
         message (STATUS "Some symbols from glibc will be replaced for compatibility")
-        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic libs/libglibc-compatibility/libglibc-compatibility.a -Wl,-Bdynamic")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} libs/libglibc-compatibility/libglibc-compatibility.a")
     endif ()
 
+    # Add Libc. GLIBC is actually a collection of interdependent libraries.
     set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
+
+    # Note: we'd rather use Musl libc library, but it's little bit more difficult to use.
 
     message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 endif ()
