@@ -64,3 +64,6 @@
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
 	url = https://github.com/mfontanini/cppkafka.git
+[submodule "contrib/aerospike"]
+	path = contrib/aerospike
+	url = https://github.com/aerospike/aerospike-client-c.git
