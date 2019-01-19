@@ -5,6 +5,8 @@
 #include <iostream>
 #include <Core/Types.h>
 #include <Common/Exception.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
 #include <Parsers/Lexer.h>
 
 
@@ -91,14 +93,11 @@ private:
 
     void parse(const String & hint)
     {
-        std::stringstream ss;
-        ss << hint;
+        ReadBufferFromString ss(hint);
         while (!ss.eof())
         {
             String item;
             ss >> item;
-            if (item.empty())
-                break;
 
             if (item == "serverError")
                 ss >> server_error;
