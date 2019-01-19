@@ -53,4 +53,3 @@ set(
 add_library(aerospike PRIVATE ${SRCS})
 
 target_include_directories(cppkafka SYSTEM PUBLIC ${AEROSPIKE_DIR}/src/include)
-
