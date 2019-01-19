@@ -223,6 +223,5 @@ if (USE_BASE64)
 endif()
 
 if (USE_AEROSPIKE)
-    message("LOL")
     add_subdirectory (aerospike-cmake)
 endif()
