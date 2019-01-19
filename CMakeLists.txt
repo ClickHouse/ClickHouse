@@ -83,10 +83,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
 
     if (OS_LINUX AND NOT UNBUNDLED)
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-        if (GLIBC_COMPATIBILITY)
-            message (STATUS "Some symbols from glibc will be replaced for compatibility")
-            link_libraries(glibc-compatibility)
-        endif ()
     endif ()
 endif ()
 
@@ -159,6 +155,36 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 
 include (cmake/use_libcxx.cmake)
+
+
+set (DEFAULT_LIBS "")
+if (OS_LINUX AND NOT UNBUNDLED)
+    set (CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
+    set (CMAKE_CXX_IMPLICIT_LINK_LIBRARIES "")
+
+    set (DEFAULT_LIBS "-nodefaultlibs")
+
+    if (USE_LIBCXX)
+        set (BUILTINS_LIB_PATH "")
+            if (COMPILER_CLANG)
+            execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-file-name=libclang_rt.builtins-${CMAKE_SYSTEM_PROCESSOR}.a OUTPUT_VARIABLE BUILTINS_LIB_PATH OUTPUT_STRIP_TRAILING_WHITESPACE)
+        endif ()
+
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lc++ -lc++abi -lgcc_eh ${BUILTINS_LIB_PATH} -Wl,-Bdynamic")
+    else ()
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic -lstdc++ -lgcc_eh -lgcc_s -Wl,-Bdynamic")
+    endif ()
+
+    if (GLIBC_COMPATIBILITY)
+        message (STATUS "Some symbols from glibc will be replaced for compatibility")
+        set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-Bstatic libs/libglibc-compatibility/libglibc-compatibility.a -Wl,-Bdynamic")
+    endif ()
+
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lrt -ldl -lpthread -lm -lc")
+
+    message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+endif ()
+
 
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -261,3 +287,23 @@ add_subdirectory (utils)
 add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
+
+
+if (DEFAULT_LIBS)
+    # Add default libs to all targets as the last dependency.
+    # I have found no better way to specify default libs in CMake that will appear single time in specific order at the end of linker arguments.
+
+    function(add_default_libs target_name)
+        if (TARGET ${target_name})
+            # message(STATUS "Has target ${target_name}")
+            set_property(TARGET ${target_name} APPEND PROPERTY LINK_LIBRARIES "${DEFAULT_LIBS}")
+            set_property(TARGET ${target_name} APPEND PROPERTY INTERFACE_LINK_LIBRARIES "${DEFAULT_LIBS}")
+        endif ()
+    endfunction ()
+
+    add_default_libs(ltdl)
+    add_default_libs(zlibstatic)
+    add_default_libs(jemalloc)
+    add_default_libs(Foundation)
+    add_default_libs(common)
+endif ()
