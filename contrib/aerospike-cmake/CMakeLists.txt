@@ -52,4 +52,4 @@ set(SRCS
 
 add_library(aerospike ${LINK_MODE}  ${SRCS})
 
-target_include_directories(cppkafka SYSTEM PUBLIC ${AEROSPIKE_DIR}/src/include)
+target_include_directories(aerospike SYSTEM PUBLIC ${AEROSPIKE_DIR}/src/include)
