@@ -231,10 +231,27 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+
+class ParserColumnAndIndexDeclaraion : public IParserBase
+{
+protected:
+    const char * getName() const override { return "column or index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 class ParserIndexDeclarationList : public IParserBase
 {
 protected:
     const char * getName() const override { return "index declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserColumnsOrIndicesDeclaration : public IParserBase
+{
+    protected:
+    const char * getName() const override { return "columns or indices declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

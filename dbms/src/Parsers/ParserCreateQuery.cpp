@@ -139,10 +139,72 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
+
+bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_index("INDEX");
+
+    ParserIndexDeclaration index_p;
+    ParserColumnDeclaration column_p;
+
+    ASTPtr column = nullptr;
+    ASTPtr index = nullptr;
+
+    if (s_index.ignore(pos, expected))
+    {
+        if (!index_p.parse(pos, index, expected))
+            return false;
+    }
+    else
+    {
+        if (!column_p.parse(pos, column, expected))
+            return false;
+    }
+
+    if (column)
+        node = column;
+    else
+        node = index;
+    return true;
+}
+
 bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserIndexDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
             .parse(pos, node, expected);
+}
+
+
+bool ParserColumnsOrIndicesDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ASTPtr list;
+    if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+            .parse(pos, list, expected))
+        return false;
+
+    ASTPtr columns = std::make_shared<ASTExpressionList>();
+    ASTPtr indices = std::make_shared<ASTExpressionList>();
+
+    for (const auto & elem : list->children)
+    {
+        if (dynamic_cast<const ASTColumnDeclaration *>(elem.get()))
+            columns->children.push_back(elem);
+        else if (dynamic_cast<const ASTIndexDeclaration *>(elem.get()))
+            indices->children.push_back(elem);
+        else
+            return false;
+    }
+
+    auto res = std::make_shared<ASTColumns>();
+
+    if (!columns->children.empty())
+        res->set(res->columns, columns);
+    if (!indices->children.empty())
+        res->set(res->indices, indices);
+
+    node = res;
+
+    return true;
 }
 
 
