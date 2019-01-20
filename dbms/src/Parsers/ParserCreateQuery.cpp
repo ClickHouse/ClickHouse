@@ -101,7 +101,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     ParserIdentifier name_p;
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
-    ParserExpression expression_p;
+    ParserExpressionList expression_p(false);
     ParserUnsignedInteger granularity_p;
 
     ASTPtr name;
