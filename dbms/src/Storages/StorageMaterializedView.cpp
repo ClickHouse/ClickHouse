@@ -141,7 +141,7 @@ StorageMaterializedView::StorageMaterializedView(
         manual_create_query->table = target_table_name;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
-        new_columns_list->set(new_columns_list->columns, query.columns->ptr());
+        new_columns_list->set(new_columns_list->columns, query.columns_list->columns->ptr());
 
         manual_create_query->set(manual_create_query->columns_list, new_columns_list);
         manual_create_query->set(manual_create_query->storage, query.storage->ptr());

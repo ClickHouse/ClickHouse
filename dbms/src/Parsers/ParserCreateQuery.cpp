@@ -96,6 +96,8 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     ParserKeyword s_type("TYPE");
     ParserKeyword s_granularity("GRANULARITY");
+    ParserToken s_lparen(TokenType::OpeningRoundBracket);
+    ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
     ParserIdentifier name_p;
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
@@ -110,7 +112,13 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!name_p.parse(pos, name, expected))
         return false;
 
+    if (!s_lparen.ignore(pos, expected))
+        return false;
+
     if (!expression_p.parse(pos, expr, expected))
+        return false;
+
+    if (!s_rparen.ignore(pos, expected))
         return false;
 
     if (!s_type.ignore(pos, expected))
