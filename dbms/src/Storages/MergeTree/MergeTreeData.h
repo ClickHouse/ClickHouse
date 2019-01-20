@@ -588,7 +588,6 @@ public:
     /// Secondary (data skipping) indices for MergeTree
     MergeTreeIndices skip_indices;
     ASTPtr skip_indices_ast;
-    IndicesDescription skip_indices_description;
     ExpressionActionsPtr skip_indices_expr;
 
     /// Names of columns for primary key + secondary sorting columns.

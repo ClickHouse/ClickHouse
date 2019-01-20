@@ -355,7 +355,7 @@ void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only
     {
         if (!only_check)
         {
-            skip_indices_description = indices;
+            setIndicesDescription(indices);
             skip_indices_expr = nullptr;
             skip_indices.clear();
         }
@@ -395,7 +395,7 @@ void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only
 
     if (!only_check)
     {
-        skip_indices_description = indices;
+        setIndicesDescription(indices);
         skip_indices_expr = new_skip_indices_expr;
         skip_indices = std::move(new_indices);
     }
