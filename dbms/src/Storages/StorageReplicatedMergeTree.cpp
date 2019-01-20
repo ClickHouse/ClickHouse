@@ -468,10 +468,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
             storage_ast.set(storage_ast.order_by, new_order_by_ast);
 
-            if (new_indices_ast)
-                storage_ast.set(storage_ast.indices, new_indices_ast);
-            else
-                storage_ast.indices = nullptr;
+            // TODO:  set indices
         };
     }
 
