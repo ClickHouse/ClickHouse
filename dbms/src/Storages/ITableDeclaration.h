@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 
 
 namespace DB
@@ -14,6 +15,9 @@ class ITableDeclaration
 public:
     virtual const ColumnsDescription & getColumns() const { return columns; }
     virtual void setColumns(ColumnsDescription columns_);
+
+    virtual const IndicesDescription & getIndicesDescription() const { return indices; }
+    virtual void setIndicesDescription(IndicesDescription indices_);
 
     /// NOTE: These methods should include virtual columns, but should NOT include ALIAS columns
     /// (they are treated separately).
@@ -52,6 +56,7 @@ public:
 
 private:
     ColumnsDescription columns;
+    IndicesDescription indices;
 };
 
 }
