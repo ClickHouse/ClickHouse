@@ -89,13 +89,13 @@ namespace ErrorCodes
 MergeTreeData::MergeTreeData(
     const String & database_, const String & table_,
     const String & full_path_, const ColumnsDescription & columns_,
+    const IndicesDescription & indices_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
-    const ASTPtr & indices_ast_,
     const MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool require_part_metadata_,
@@ -116,7 +116,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
     setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
-    setSkipIndices(indices_ast_);
+    setSkipIndices(indices_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -349,13 +349,13 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 }
 
 
-void MergeTreeData::setSkipIndices(const ASTPtr &indices_asts, bool only_check)
+void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only_check)
 {
-    if (!indices_asts)
+    if (indices.indices.empty())
     {
         if (!only_check)
         {
-            skip_indices_ast = nullptr;
+            skip_indices_description = indices;
             skip_indices_expr = nullptr;
             skip_indices.clear();
         }
@@ -364,10 +364,9 @@ void MergeTreeData::setSkipIndices(const ASTPtr &indices_asts, bool only_check)
 
     MergeTreeIndices new_indices;
     std::set<String> names;
-    auto index_list = std::dynamic_pointer_cast<ASTExpressionList>(indices_asts);
     ASTPtr indices_expr_list = std::make_shared<ASTExpressionList>();
 
-    for (const auto & index_ast : index_list->children)
+    for (const auto & index_ast : indices.indices)
     {
         const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
@@ -396,7 +395,7 @@ void MergeTreeData::setSkipIndices(const ASTPtr &indices_asts, bool only_check)
 
     if (!only_check)
     {
-        skip_indices_ast = indices_asts;
+        skip_indices_description = indices;
         skip_indices_expr = new_skip_indices_expr;
         skip_indices = std::move(new_indices);
     }
@@ -1141,7 +1140,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
-    setSkipIndices(new_indexes_ast, /* only_check = */ true);
+    //setSkipIndices(new_indexes_ast, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;

@@ -167,6 +167,7 @@ protected:
         const String & database_name_,
         const String & table_name_,
         const ColumnsDescription & columns_,
+        const IndicesDescription & indices_,
         bool attach,
         Context & context_,
         const String & date_column_name,
@@ -174,7 +175,6 @@ protected:
         const ASTPtr & order_by_ast_,
         const ASTPtr & primary_key_ast_,
         const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-        const ASTPtr & indexes_ast_,
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);

@@ -540,7 +540,7 @@ private:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
-    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
+    void replacePartitionFrom(const  StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
 
 protected:
@@ -552,13 +552,13 @@ protected:
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
+        const IndicesDescription & indices_,
         Context & context_,
         const String & date_column_name,
         const ASTPtr & partition_by_ast_,
         const ASTPtr & order_by_ast_,
         const ASTPtr & primary_key_ast_,
         const ASTPtr & sample_by_ast_,
-        const ASTPtr & indexes_ast_,
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);

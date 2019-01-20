@@ -554,7 +554,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     ASTPtr order_by_ast;
     ASTPtr primary_key_ast;
     ASTPtr sample_by_ast;
-    ASTPtr indices_ast;
+    IndicesDescription indices_description;
     MergeTreeSettings storage_settings = args.context.getMergeTreeSettings();
 
     if (is_extended_storage_def)
@@ -576,7 +576,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
         if (args.query.columns_list && args.query.columns_list->indices) {
-            indices_ast = args.query.columns_list->indices->ptr();
+            for (const auto & index : args.query.columns_list->indices->children)
+                indices_description.indices.push_back(
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->ptr()));
         }
 
         storage_settings.loadFromQuery(*args.storage_def);
@@ -611,16 +613,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
-            args.columns,
+            args.columns, indices_description,
             args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, indices_ast, merging_params, storage_settings,
-            args.has_force_restore_data_flag);
+            sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.data_path, args.database_name, args.table_name, args.columns, args.attach,
-            args.context, date_column_name, partition_by_ast, order_by_ast, primary_key_ast,
-            sample_by_ast, indices_ast, merging_params, storage_settings,
-            args.has_force_restore_data_flag);
+            args.data_path, args.database_name, args.table_name, args.columns, indices_description,
+            args.attach, args.context, date_column_name, partition_by_ast, order_by_ast,
+            primary_key_ast, sample_by_ast, merging_params, storage_settings, args.has_force_restore_data_flag);
 }
 
 

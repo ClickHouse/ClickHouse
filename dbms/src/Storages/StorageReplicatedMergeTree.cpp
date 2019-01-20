@@ -201,13 +201,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     bool attach,
     const String & path_, const String & database_name_, const String & name_,
     const ColumnsDescription & columns_,
+    const IndicesDescription & indices_,
     Context & context_,
     const String & date_column_name,
     const ASTPtr & partition_by_ast_,
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_,
-    const ASTPtr & indexes_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
@@ -217,10 +217,9 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     zookeeper_path(global_context.getMacros()->expand(zookeeper_path_, database_name, table_name)),
     replica_name(global_context.getMacros()->expand(replica_name_, database_name, table_name)),
     data(database_name, table_name,
-        full_path, columns_,
+        full_path, columns_, indices_,
         context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-        sample_by_ast_, indexes_ast_, merging_params_,
-        settings_, true, attach,
+        sample_by_ast_, merging_params_, settings_, true, attach,
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()), queue(*this),
     fetcher(data),
@@ -477,7 +476,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndices(new_indices_ast);
+    //data.setSkipIndices(new_indices_ast);
 }
 
 
