@@ -51,6 +51,7 @@ StorageMergeTree::StorageMergeTree(
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
+    const IndicesDescription & indices_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -58,17 +59,15 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-    const ASTPtr & indexes_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
     : path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     global_context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
-         full_path, columns_,
+         full_path, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-         sample_by_ast_, indexes_ast_, merging_params_,
-         settings_, false, attach),
+         sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -255,7 +254,7 @@ void StorageMergeTree::alter(
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndices(new_indices_ast);
+    //data.setSkipIndices(new_indices_ast);
 
     for (auto & transaction : transactions)
         transaction->commit();
