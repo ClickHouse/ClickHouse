@@ -531,7 +531,10 @@ void DatabaseOrdinary::alterTable(
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns);
-    ast_create_query.replace(ast_create_query.columns, new_columns);
+    auto new_columns_list = std::make_shared<ASTColumns>();
+    new_columns_list->set(new_columns_list->columns, new_columns);
+
+    ast_create_query.replace(ast_create_query.columns_list, new_columns_list);
 
     if (storage_modifier)
         storage_modifier(*ast_create_query.storage);
