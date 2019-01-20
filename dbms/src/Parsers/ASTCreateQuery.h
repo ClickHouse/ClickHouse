@@ -90,6 +90,44 @@ public:
 };
 
 
+class ASTColumns : public IAST
+{
+public:
+    ASTExpressionList * columns = nullptr;
+    ASTExpressionList * indices = nullptr;
+
+    String getID(char) const override { return "Columns definition"; }
+
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTColumns>();
+
+        if (columns)
+            res->set(res->columns, columns->clone());
+        if (indices)
+            res->set(res->indices, indices->clone());
+
+        return res;
+    }
+
+    void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override
+    {
+        ASTExpressionList list;
+
+        if (columns)
+            for (const auto & column : columns->children)
+                list.children.push_back(column);
+
+        if (indices)
+            for (const auto & index : indices->children)
+                list.children.push_back(index);
+
+        if (!list.children.empty())
+            list.formatImpl(s, state, frame;
+    }
+};
+
+
 /// CREATE TABLE or ATTACH TABLE query
 class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
@@ -100,6 +138,7 @@ public:
     bool is_materialized_view{false};
     bool is_populate{false};
     ASTExpressionList * columns = nullptr;
+    ASTColumns * columns_list = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
     ASTStorage * storage = nullptr;
@@ -115,6 +154,8 @@ public:
         auto res = std::make_shared<ASTCreateQuery>(*this);
         res->children.clear();
 
+        if (columns_list)
+            res->set(res->columns_list, columns_list->clone());
         if (columns)
             res->set(res->columns, columns->clone());
         if (storage)
@@ -182,6 +223,15 @@ protected:
             settings.ostr
                 << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "")
                 << (!as_database.empty() ? backQuoteIfNeed(as_database) + "." : "") << backQuoteIfNeed(as_table);
+        }
+
+        if (columns_list)
+        {
+            settings.ostr << (settings.one_line ? " (" : "\n(");
+            FormatStateStacked frame_nested = frame;
+            ++frame_nested.indent;
+            columns_list->formatImpl(settings, state, frame_nested);
+            settings.ostr << (settings.one_line ? ")" : "\n)");
         }
 
         if (columns)
