@@ -123,7 +123,7 @@ public:
                 list.children.push_back(index);
 
         if (!list.children.empty())
-            list.formatImpl(s, state, frame;
+            list.formatImpl(s, state, frame);
     }
 };
 
