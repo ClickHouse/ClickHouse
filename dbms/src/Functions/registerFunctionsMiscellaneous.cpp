@@ -41,6 +41,7 @@ void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
 void registerFunctionJoinGet(FunctionFactory &);
+void registerFunctionFilesystem(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -82,6 +83,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionLowCardinalityKeys(factory);
     registerFunctionsIn(factory);
     registerFunctionJoinGet(factory);
+    registerFunctionFilesystem(factory);
 }
 
 }
