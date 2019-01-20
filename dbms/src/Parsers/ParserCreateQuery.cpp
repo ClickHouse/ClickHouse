@@ -94,7 +94,6 @@ bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_by("BY");
     ParserKeyword s_type("TYPE");
     ParserKeyword s_granularity("GRANULARITY");
 
@@ -109,9 +108,6 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr granularity;
 
     if (!name_p.parse(pos, name, expected))
-        return false;
-
-    if (!s_by.ignore(pos, expected))
         return false;
 
     if (!expression_p.parse(pos, expr, expected))
