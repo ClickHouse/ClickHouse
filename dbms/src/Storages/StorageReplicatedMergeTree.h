@@ -372,8 +372,14 @@ private:
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
+    /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
+    void updatePartHeaderInZooKeeperAndCommit(
+        const zkutil::ZooKeeperPtr & zookeeper,
+        MergeTreeData::AlterDataPartTransaction & transaction);
+
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
+    /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
