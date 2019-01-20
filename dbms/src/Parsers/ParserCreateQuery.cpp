@@ -96,12 +96,10 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 {
     ParserKeyword s_type("TYPE");
     ParserKeyword s_granularity("GRANULARITY");
-    ParserToken s_lparen(TokenType::OpeningRoundBracket);
-    ParserToken s_rparen(TokenType::ClosingRoundBracket);
 
     ParserIdentifier name_p;
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
-    ParserExpressionList expression_p(false);
+    ParserExpression expression_p;
     ParserUnsignedInteger granularity_p;
 
     ASTPtr name;
@@ -112,13 +110,7 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!name_p.parse(pos, name, expected))
         return false;
 
-    if (!s_lparen.ignore(pos, expected))
-        return false;
-
     if (!expression_p.parse(pos, expr, expected))
-        return false;
-
-    if (!s_rparen.ignore(pos, expected))
         return false;
 
     if (!s_type.ignore(pos, expected))
@@ -151,24 +143,20 @@ bool ParserColumnAndIndexDeclaraion::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ParserIndexDeclaration index_p;
     ParserColumnDeclaration column_p;
 
-    ASTPtr column = nullptr;
-    ASTPtr index = nullptr;
+    ASTPtr new_node = nullptr;
 
     if (s_index.ignore(pos, expected))
     {
-        if (!index_p.parse(pos, index, expected))
+        if (!index_p.parse(pos, new_node, expected))
             return false;
     }
     else
     {
-        if (!column_p.parse(pos, column, expected))
+        if (!column_p.parse(pos, new_node, expected))
             return false;
     }
 
-    if (column)
-        node = column;
-    else
-        node = index;
+    node = new_node;
     return true;
 }
 
@@ -220,20 +208,17 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
-    ParserKeyword s_indexes("INDICES");
     ParserKeyword s_settings("SETTINGS");
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
-    ParserIndexDeclarationList indexes_p;
 
     ASTPtr engine;
     ASTPtr partition_by;
     ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
-    ASTPtr indices;
     ASTPtr settings;
 
     if (!s_engine.ignore(pos, expected))
@@ -278,13 +263,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        if (s_indexes.ignore(pos, expected)) {
-            if (indexes_p.parse(pos, indices, expected))
-                continue;
-            else
-                return false;
-        }
-
         if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
@@ -300,7 +278,6 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
-    storage->set(storage->indices, indices);
 
     storage->set(storage->settings, settings);
 

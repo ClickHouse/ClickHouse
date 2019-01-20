@@ -334,13 +334,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         *  - Sorting key in the ORDER BY clause;
         *  - Primary key (if it is different from the sorting key) in the PRIMARY KEY clause;
         *  - Sampling expression in the SAMPLE BY clause;
-        *  - Secondary indices it the INDICES clause;
         *  - Additional MergeTreeSettings in the SETTINGS clause;
         */
 
     bool is_extended_storage_def =
         args.storage_def->partition_by || args.storage_def->primary_key || args.storage_def->order_by
-        || args.storage_def->sample_by || (args.storage_def->indices && !args.storage_def->indices->children.empty()) || args.storage_def->settings;
+        || args.storage_def->sample_by || (args.query.columns_list->indices && !args.query.columns_list->indices->children.empty()) || args.storage_def->settings;
 
     String name_part = args.engine_name.substr(0, args.engine_name.size() - strlen("MergeTree"));
 
@@ -576,8 +575,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
-        if (args.storage_def->indices) {
-            indices_ast = args.storage_def->indices->ptr();
+        if (args.query.columns_list && args.query.columns_list->indices) {
+            indices_ast = args.query.columns_list->indices->ptr();
         }
 
         storage_settings.loadFromQuery(*args.storage_def);

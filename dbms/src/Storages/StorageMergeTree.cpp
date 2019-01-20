@@ -247,10 +247,7 @@ void StorageMergeTree::alter(
 
         if (new_indices_ast.get() != data.skip_indices_ast.get())
         {
-            if (new_indices_ast == nullptr)
-                storage_ast.indices = nullptr;
-            else
-                storage_ast.set(storage_ast.indices, new_indices_ast);
+            // TODO: alter indices
         }
     };
 

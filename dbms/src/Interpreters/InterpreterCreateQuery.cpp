@@ -106,7 +106,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
         if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key
-            || storage.order_by || storage.sample_by || (storage.indices && !storage.indices->children.empty()) || storage.settings)
+            || storage.order_by || storage.sample_by || storage.settings ||
+            (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -472,13 +473,16 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(res);
-    auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, new_columns);
-
-    if (create.columns_list)
-        create.replace(create.columns_list, new_columns_list);
-    else
+    if (!create.columns_list)
+    {
+        auto new_columns_list = std::make_shared<ASTColumns>();
         create.set(create.columns_list, new_columns_list);
+    }
+
+    if (create.columns_list->columns)
+        create.columns_list->replace(create.columns_list->columns, new_columns);
+    else
+        create.columns_list->set(create.columns_list->columns, new_columns);
 
     /// Check for duplicates
     std::set<String> all_columns;
