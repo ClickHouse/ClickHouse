@@ -99,7 +99,7 @@ StoragePtr StorageFactory::get(
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses. "
+                    "Engine " + name + " doesn't support PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY clauses and skipping indices. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 
