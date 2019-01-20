@@ -318,7 +318,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserStorage storage_p;
     ParserIdentifier name_p;
-    ParserColumnDeclarationList columns_p;
+    ParserColumnsOrIndicesDeclarationList columns_or_indices_p;
     ParserSelectWithUnionQuery select_p;
 
     ASTPtr database;
@@ -391,7 +391,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -493,7 +493,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -535,7 +535,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     getIdentifierName(to_database, query->to_database);
     getIdentifierName(to_table, query->to_table);
 
-    query->set(query->columns, columns);
+    query->set(query->columns_list, columns);
     query->set(query->storage, storage);
 
     getIdentifierName(as_database, query->as_database);
