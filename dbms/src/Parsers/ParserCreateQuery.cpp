@@ -171,7 +171,7 @@ bool ParserIndexDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 }
 
 
-bool ParserColumnsOrIndicesDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr list;
     if (!ParserList(std::make_unique<ParserColumnAndIndexDeclaraion>(), std::make_unique<ParserToken>(TokenType::Comma), false)
