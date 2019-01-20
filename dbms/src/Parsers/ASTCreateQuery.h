@@ -137,7 +137,6 @@ public:
     bool is_view{false};
     bool is_materialized_view{false};
     bool is_populate{false};
-    ASTExpressionList * columns = nullptr;
     ASTColumns * columns_list = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
@@ -156,8 +155,6 @@ public:
 
         if (columns_list)
             res->set(res->columns_list, columns_list->clone());
-        if (columns)
-            res->set(res->columns, columns->clone());
         if (storage)
             res->set(res->storage, storage->clone());
         if (select)
@@ -231,15 +228,6 @@ protected:
             FormatStateStacked frame_nested = frame;
             ++frame_nested.indent;
             columns_list->formatImpl(settings, state, frame_nested);
-            settings.ostr << (settings.one_line ? ")" : "\n)");
-        }
-
-        if (columns)
-        {
-            settings.ostr << (settings.one_line ? " (" : "\n(");
-            FormatStateStacked frame_nested = frame;
-            ++frame_nested.indent;
-            columns->formatImpl(settings, state, frame_nested);
             settings.ostr << (settings.one_line ? ")" : "\n)");
         }
 
