@@ -80,8 +80,8 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description
-            , ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
+            ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
     /// Checks that not only metadata touched by that command
     bool is_mutable() const;
 };
