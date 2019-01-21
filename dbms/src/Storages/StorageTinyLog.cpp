@@ -237,7 +237,6 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
 IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const String & name,
                                                                            WrittenStreams & written_streams)
 {
-
     return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
