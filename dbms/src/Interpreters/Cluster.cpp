@@ -104,18 +104,17 @@ String Cluster::Address::readableString() const
     return res;
 }
 
-void Cluster::Address::fromString(const String & host_port_string, String & host_name, UInt16 & port)
+std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_string)
 {
     auto pos = host_port_string.find_last_of(':');
     if (pos == std::string::npos)
         throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
 
-    host_name = unescapeForFileName(host_port_string.substr(0, pos));
-    port = parse<UInt16>(host_port_string.substr(pos + 1));
+    return {unescapeForFileName(host_port_string.substr(0, pos)), parse<UInt16>(host_port_string.substr(pos + 1))};
 }
 
 
-String Cluster::Address::toStringFull() const
+String Cluster::Address::toFullString() const
 {
     return
         escapeForFileName(user) +
@@ -126,7 +125,7 @@ String Cluster::Address::toStringFull() const
         + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
-void Cluster::Address::fromFullString(const String & full_string, Cluster::Address & address)
+Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 {
     const char * address_begin = full_string.data();
     const char * address_end = address_begin + full_string.size();
@@ -152,19 +151,14 @@ void Cluster::Address::fromFullString(const String & full_string, Cluster::Addre
     const char * has_db = strchr(full_string.data(), '#');
     const char * port_end = has_db ? has_db : address_end;
 
+    Address address;
     address.secure = secure;
     address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
     address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
     address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
     address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
     address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
-}
-
-bool Cluster::Address::operator==(const Cluster::Address & other) const
-{
-    return other.host_name == host_name && other.port == port
-           && other.secure == secure && other.user == user
-           && other.password == password && other.default_database == default_database;
+    return address;
 }
 
 
@@ -303,7 +297,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                     {
                         if (internal_replication)
                         {
-                            auto dir_name = replica_addresses.back().toStringFull();
+                            auto dir_name = replica_addresses.back().toFullString();
                             if (first)
                                 dir_name_for_internal_replication = dir_name;
                             else
