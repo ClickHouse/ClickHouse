@@ -17,6 +17,9 @@ namespace DB
 
 String IndicesDescription::toString() const
 {
+    if (indices.empty())
+        return {};
+
     ASTExpressionList list;
     for (const auto & index : indices)
         list.children.push_back(index);
@@ -26,6 +29,9 @@ String IndicesDescription::toString() const
 
 IndicesDescription IndicesDescription::parse(const String & str)
 {
+    if (str.empty())
+        return {};
+
     IndicesDescription res;
     ParserIndexDeclarationList parser;
     ASTPtr list = parseQuery(parser, str, 0);

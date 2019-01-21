@@ -1057,10 +1057,10 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     ASTPtr new_order_by_ast = order_by_ast;
     ASTPtr new_primary_key_ast = primary_key_ast;
-    ASTPtr new_indexes_ast = skip_indices_ast;
-    commands.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indexes_ast);
+    commands.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
     /// Set of columns that shouldn't be altered.
     NameSet columns_alter_forbidden;
@@ -1140,7 +1140,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     }
 
     setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
-    //setSkipIndices(new_indexes_ast, /* only_check = */ true);
+    setSkipIndices(new_indices, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
@@ -1148,11 +1148,11 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
     bool unused_bool;
 
     createConvertExpression(nullptr, getColumns().getAllPhysical(), new_columns.getAllPhysical(),
-            skip_indices_ast, new_indexes_ast, unused_expression, unused_map, unused_bool);
+            getIndicesDescription().indices, new_indices.indices, unused_expression, unused_map, unused_bool);
 }
 
 void MergeTreeData::createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-    const ASTPtr & old_indices_ast, const ASTPtr & new_indices_ast, ExpressionActionsPtr & out_expression,
+    const IndicesAsts & old_indices, const IndicesAsts & new_indices, ExpressionActionsPtr & out_expression,
     NameToNameMap & out_rename_map, bool & out_force_update_metadata) const
 {
     out_expression = nullptr;
@@ -1169,20 +1169,18 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
 
     /// Remove old indices
-    std::set<String> new_indices;
-    if (new_indices_ast)
-        for (const auto & index_decl : new_indices_ast->children)
-            new_indices.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
-    if (old_indices_ast)
-        for (const auto & index_decl : old_indices_ast->children)
+    std::set<String> new_indices_set;
+    for (const auto & index_decl : new_indices)
+        new_indices_set.emplace(dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get()).name);
+    for (const auto & index_decl : old_indices)
+    {
+        const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
+        if (!new_indices_set.count(index.name))
         {
-            const auto & index = dynamic_cast<const ASTIndexDeclaration &>(*index_decl.get());
-            if (!new_indices.count(index.name))
-            {
-                out_rename_map["skp_idx_" + index.name + ".idx"] = "";
-                out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
-            }
+            out_rename_map["skp_idx_" + index.name + ".idx"] = "";
+            out_rename_map["skp_idx_" + index.name + ".mrk"] = "";
         }
+    }
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -1314,14 +1312,14 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const DataPartPtr & part,
     const NamesAndTypesList & new_columns,
-    const ASTPtr & new_indices_ast,
+    const IndicesAsts & new_indices,
     bool skip_sanity_checks)
 {
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
     createConvertExpression(part, part->columns, new_columns,
-            skip_indices_ast, new_indices_ast,
+            getIndicesDescription().indices, new_indices,
             expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();

@@ -43,6 +43,9 @@ public:
     const ColumnsDescription & getColumns() const override { return data.getColumns(); }
     void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
+    virtual const IndicesDescription & getIndicesDescription() const override { return data.getIndicesDescription(); }
+    virtual void setIndicesDescription(IndicesDescription indices_) override { data.setIndicesDescription(std::move(indices_)); }
+
     NameAndTypePair getColumn(const String & column_name) const override { return data.getColumn(column_name); }
     bool hasColumn(const String & column_name) const override { return data.hasColumn(column_name); }
 

@@ -403,6 +403,19 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     return columns_list;
 }
 
+ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
+{
+    if (indices.indices.empty())
+        return nullptr;
+
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & index : indices.indices)
+        res->children.push_back(index);
+
+    return res;
+}
+
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context)
 {
     ColumnsDescription res;
