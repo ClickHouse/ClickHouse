@@ -8,6 +8,10 @@
 namespace DB
 {
 
+struct IdentifierSemantic;
+struct DatabaseAndTableWithAlias;
+
+
 /// Identifier (column, table or alias)
 class ASTIdentifier : public ASTWithAlias
 {
@@ -16,14 +20,9 @@ public:
     /// and individual components will be available inside the name_parts.
     String name;
     std::vector<String> name_parts;
+    std::shared_ptr<IdentifierSemantic> semantic; /// pimpl
 
-    ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {})
-        : name(name_)
-        , name_parts(name_parts_)
-        , special(false)
-    {
-        range = StringRange(name.data(), name.data() + name.size());
-    }
+    ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {});
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name); }
@@ -42,22 +41,8 @@ protected:
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
 
-    bool special; /// TODO: it would be ptr to semantic here
+    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {});
 
-    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {})
-    {
-        auto ret = std::make_shared<ASTIdentifier>(name, std::move(name_parts));
-        ret->special = true;
-        return ret;
-    }
-
-    void setSpecial() { special = true; }
-
-    friend void setIdentifierSpecial(ASTPtr &);
-    friend std::optional<String> getColumnIdentifierName(const ASTIdentifier & node);
-    friend std::optional<String> getColumnIdentifierName(const ASTPtr & ast);
-    friend std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
-    friend std::optional<String> getTableIdentifierName(const ASTPtr & ast);
     friend ASTPtr createTableIdentifier(const String & database_name, const String & table_name);
 };
 
@@ -82,8 +67,10 @@ std::optional<String> getTableIdentifierName(const ASTIdentifier & node);
 std::optional<String> getTableIdentifierName(const ASTPtr & ast);
 
 void setIdentifierSpecial(ASTPtr & ast);
-void addIdentifierQualifier(ASTIdentifier & identifier, const String & database, const String & table, const String & alias);
-bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table_or_alias);
-bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table);
+
+size_t canReferColumnIdentifierToTable(const ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
+bool tryReferColumnIdentifierToTable(ASTIdentifier & identifier, const DatabaseAndTableWithAlias & db_and_table);
+void makeIdentifierShortName(ASTIdentifier & identifier);
+void makeIdentifierQualifiedName(ASTIdentifier & identifier);
 
 }

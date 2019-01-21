@@ -50,38 +50,20 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTPtr & ast, Data &
     return {};
 }
 
-std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(const ASTIdentifier & identifier, ASTPtr & ast, Data & data)
+std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr & ast, Data & data)
 {
-    const NameSet & source_columns = data.source_columns;
-    const std::vector<DatabaseAndTableWithAlias> & tables = data.tables;
-
     if (getColumnIdentifierName(identifier))
     {
-        /// Select first table name with max number of qualifiers which can be stripped.
-        size_t max_num_qualifiers_to_strip = 0;
-        size_t best_table_pos = 0;
+        bool best_table_pos = 0;
+        for (size_t i = 0; i < data.tables.size(); ++i)
+            if (tryReferColumnIdentifierToTable(identifier, data.tables[i]))
+                best_table_pos = i;
 
-        for (size_t table_pos = 0; table_pos < tables.size(); ++table_pos)
-        {
-            const auto & table = tables[table_pos];
-            auto num_qualifiers_to_strip = getNumComponentsToStripInOrderToTranslateQualifiedName(identifier, table);
-
-            if (num_qualifiers_to_strip > max_num_qualifiers_to_strip)
-            {
-                max_num_qualifiers_to_strip = num_qualifiers_to_strip;
-                best_table_pos = table_pos;
-            }
-        }
-
-        if (max_num_qualifiers_to_strip)
-            stripIdentifier(ast, max_num_qualifiers_to_strip);
+        makeIdentifierShortName(identifier);
 
         /// In case if column from the joined table are in source columns, change it's name to qualified.
-        if (best_table_pos && source_columns.count(ast->getColumnName()))
-        {
-            const DatabaseAndTableWithAlias & table = tables[best_table_pos];
-            table.makeQualifiedName(ast);
-        }
+        if (best_table_pos && data.source_columns.count(ast->getColumnName()))
+            makeIdentifierQualifiedName(identifier);
     }
 
     return {};

@@ -131,7 +131,7 @@ void PredicateExpressionsOptimizer::getDependenciesAndQualifiedOfExpression(cons
                                                                             IdentifiersWithQualifiedNameSet & dependencies_and_qualified,
                                                                             std::vector<DatabaseAndTableWithAlias> & tables_with_aliases)
 {
-    if (const auto identifier = typeid_cast<ASTIdentifier *>(expression.get()))
+    if (auto identifier = typeid_cast<ASTIdentifier *>(expression.get()))
     {
         String table_alias;
         if (!identifier->name_parts.empty())
@@ -141,23 +141,22 @@ void PredicateExpressionsOptimizer::getDependenciesAndQualifiedOfExpression(cons
         }
         else
         {
-            size_t best_table_pos = 0;
-            size_t max_num_qualifiers_to_strip = 0;
+            const DatabaseAndTableWithAlias * best_table = nullptr;
+            size_t best_match = 0;
 
             /// translate qualifiers for dependent columns
-            for (size_t table_pos = 0; table_pos < tables_with_aliases.size(); ++table_pos)
+            for (const DatabaseAndTableWithAlias & table : tables_with_aliases)
             {
-                const auto & table = tables_with_aliases[table_pos];
-                auto num_qualifiers_to_strip = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, table);
-
-                if (num_qualifiers_to_strip > max_num_qualifiers_to_strip)
-                {
-                    max_num_qualifiers_to_strip = num_qualifiers_to_strip;
-                    best_table_pos = table_pos;
-                }
+                if (size_t match = canReferColumnIdentifierToTable(*identifier, table))
+                    if (match > best_match)
+                    {
+                        best_match = match;
+                        best_table = &table;
+                    }
             }
 
-            table_alias = tables_with_aliases[best_table_pos].getQualifiedNamePrefix();
+            if (best_table)
+                table_alias = best_table->getQualifiedNamePrefix();
         }
 
         String qualified_name = table_alias + expression->getAliasOrColumnName();

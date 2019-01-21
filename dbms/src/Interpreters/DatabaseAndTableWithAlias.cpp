@@ -11,46 +11,6 @@
 namespace DB
 {
 
-/// Checks that ast is ASTIdentifier and remove num_qualifiers_to_strip components from left.
-/// Example: 'database.table.name' -> (num_qualifiers_to_strip = 2) -> 'name'.
-void stripIdentifier(const DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
-{
-    ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(ast.get());
-
-    if (!identifier)
-        throw DB::Exception("ASTIdentifier expected for stripIdentifier", DB::ErrorCodes::LOGICAL_ERROR);
-
-    if (num_qualifiers_to_strip)
-    {
-        identifier->name_parts.erase(identifier->name_parts.begin(), identifier->name_parts.begin() + num_qualifiers_to_strip);
-        DB::String new_name;
-        for (const auto & part : identifier->name_parts)
-        {
-            if (!new_name.empty())
-                new_name += '.';
-            new_name += part;
-        }
-        identifier->name.swap(new_name);
-    }
-}
-
-/// Get the number of components of identifier which are correspond to 'alias.', 'table.' or 'databas.table.' from names.
-size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
-                                                              const DatabaseAndTableWithAlias & names)
-{
-    /// database.table.column
-    if (doesIdentifierBelongTo(identifier, names.database, names.table))
-        return 2;
-
-    /// table.column or alias.column.
-    if (doesIdentifierBelongTo(identifier, names.table) ||
-        doesIdentifierBelongTo(identifier, names.alias))
-        return 1;
-
-    return 0;
-}
-
-
 DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database)
 {
     database = current_database;
@@ -110,17 +70,6 @@ String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
         return "";
 
     return (!alias.empty() ? alias : (database + '.' + table)) + '.';
-}
-
-void DatabaseAndTableWithAlias::makeQualifiedName(const ASTPtr & ast) const
-{
-    if (auto identifier = typeid_cast<ASTIdentifier *>(ast.get()))
-    {
-        String prefix = getQualifiedNamePrefix();
-        identifier->name.insert(identifier->name.begin(), prefix.begin(), prefix.end());
-
-        addIdentifierQualifier(*identifier, database, table, alias);
-    }
 }
 
 std::vector<const ASTTableExpression *> getSelectTablesExpression(const ASTSelectQuery & select_query)
