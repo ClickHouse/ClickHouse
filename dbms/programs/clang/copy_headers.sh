@@ -19,7 +19,7 @@ set -e
 #
 # sudo ./copy_headers.sh . /usr/share/clickhouse/headers/
 
-SOURCE_PATH=${1:-.}
+SOURCE_PATH=${1:-../../..}
 DST=${2:-$SOURCE_PATH/../headers}
 BUILD_PATH=${BUILD_PATH=${3:-$SOURCE_PATH/build}}
 

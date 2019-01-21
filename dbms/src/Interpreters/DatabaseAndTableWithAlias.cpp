@@ -13,7 +13,7 @@ namespace DB
 
 /// Checks that ast is ASTIdentifier and remove num_qualifiers_to_strip components from left.
 /// Example: 'database.table.name' -> (num_qualifiers_to_strip = 2) -> 'name'.
-void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
+void stripIdentifier(const DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
 {
     ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(ast.get());
 
@@ -22,29 +22,15 @@ void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
 
     if (num_qualifiers_to_strip)
     {
-        size_t num_components = identifier->children.size();
-
-        /// plain column
-        if (num_components - num_qualifiers_to_strip == 1)
+        identifier->name_parts.erase(identifier->name_parts.begin(), identifier->name_parts.begin() + num_qualifiers_to_strip);
+        DB::String new_name;
+        for (const auto & part : identifier->name_parts)
         {
-            DB::String node_alias = identifier->tryGetAlias();
-            ast = identifier->children.back();
-            if (!node_alias.empty())
-                ast->setAlias(node_alias);
+            if (!new_name.empty())
+                new_name += '.';
+            new_name += part;
         }
-        else
-            /// nested column
-        {
-            identifier->children.erase(identifier->children.begin(), identifier->children.begin() + num_qualifiers_to_strip);
-            DB::String new_name;
-            for (const auto & child : identifier->children)
-            {
-                if (!new_name.empty())
-                    new_name += '.';
-                new_name += static_cast<const ASTIdentifier &>(*child.get()).name;
-            }
-            identifier->name = new_name;
-        }
+        identifier->name.swap(new_name);
     }
 }
 
@@ -71,13 +57,13 @@ DatabaseAndTableWithAlias::DatabaseAndTableWithAlias(const ASTIdentifier & ident
     table = identifier.name;
     alias = identifier.tryGetAlias();
 
-    if (!identifier.children.empty())
+    if (!identifier.name_parts.empty())
     {
-        if (identifier.children.size() != 2)
-            throw Exception("Logical error: number of components in table expression not equal to two", ErrorCodes::LOGICAL_ERROR);
+        if (identifier.name_parts.size() != 2)
+            throw Exception("Logical error: 2 components expected in table expression '" + identifier.name + "'", ErrorCodes::LOGICAL_ERROR);
 
-        getIdentifierName(identifier.children[0], database);
-        getIdentifierName(identifier.children[1], table);
+        database = identifier.name_parts[0];
+        table = identifier.name_parts[1];
     }
 }
 
