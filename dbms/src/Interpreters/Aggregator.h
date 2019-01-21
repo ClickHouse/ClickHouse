@@ -158,7 +158,7 @@ struct AggregationMethodOneNumber
     AggregationMethodOneNumber(const Other & other) : data(other.data) {}
 
     /// To use one `Method` in different threads, use different `State`.
-    using State = ColumnsHashing::HashMethodOneNumber<Data, FieldType>;
+    using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type, Mapped, FieldType>;
 
     /// Use optimization for low cardinality.
     static const bool low_cardinality_optimization = false;
@@ -188,7 +188,7 @@ struct AggregationMethodString
     template <typename Other>
     AggregationMethodString(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodString<Data>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
 
@@ -216,7 +216,7 @@ struct AggregationMethodFixedString
     template <typename Other>
     AggregationMethodFixedString(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodFixedString<Data>;
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
 
@@ -246,7 +246,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     template <typename Other>
     explicit AggregationMethodSingleLowCardinalityColumn(const Other & other) : Base(other) {}
 
-    using State = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseState, true>;
+    using State = ColumnsHashing::HashMethodSingleLowCardinalityColumn<BaseState, Mapped, true>;
 
     static const bool low_cardinality_optimization = true;
 
@@ -277,7 +277,7 @@ struct AggregationMethodKeysFixed
     template <typename Other>
     AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodKeysFixed<Data, has_nullable_keys, has_low_cardinality>;
+    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, has_low_cardinality>;
 
     static const bool low_cardinality_optimization = false;
 
@@ -355,7 +355,7 @@ struct AggregationMethodSerialized
     template <typename Other>
     AggregationMethodSerialized(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodSerialized<Data>;
+    using State = ColumnsHashing::HashMethodSerialized<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
 

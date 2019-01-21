@@ -609,20 +609,34 @@ void NO_INLINE Aggregator::executeImplCase(
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
 
     /// For all rows.
-    AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {
-        bool inserted = false; /// Inserted a new key, or was this key already?
-
-        AggregateDataPtr * aggregate_data = nullptr;
+        AggregateDataPtr aggregate_data = nullptr;
 
         if constexpr (!no_more_keys)  /// Insert.
-            aggregate_data = state.emplaceKey(method.data, i, inserted, *aggregates_pool);
+        {
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+
+            /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
+            if (emplace_result.isInserted())
+            {
+                /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
+                emplace_result.setMapped(nullptr);
+
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(aggregate_data);
+
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+        }
         else
         {
             /// Add only if the key already exists.
-            bool found = false;
-            aggregate_data = state.findKey(method.data, i, found, *aggregates_pool);
+            auto find_result = state.findKey(method.data, i, *aggregates_pool);
+            if (find_result.isFound())
+                aggregate_data = find_result.getMapped();
         }
 
         /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
@@ -631,20 +645,7 @@ void NO_INLINE Aggregator::executeImplCase(
         if (!aggregate_data && !overflow_row)
             continue;
 
-        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-        if (inserted)
-        {
-            /// exception-safety - if you can not allocate memory or create states, then destructors will not be called.
-            *aggregate_data = nullptr;
-
-            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-            createAggregateStates(place);
-            *aggregate_data = place;
-
-            state.cacheData(i, place);
-        }
-
-        value = aggregate_data ? *aggregate_data : overflow_row;
+        AggregateDataPtr value = aggregate_data ? aggregate_data : overflow_row;
 
         /// Add values to the aggregate functions.
         for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
@@ -1951,17 +1952,28 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
     {
-        typename Table::iterator it;
-        AggregateDataPtr * aggregate_data = nullptr;
-
-        bool inserted = false; /// Inserted a new key, or was this key already?
+        AggregateDataPtr aggregate_data = nullptr;
 
         if (!no_more_keys)
-            aggregate_data = state.emplaceKey(data, i, inserted, *aggregates_pool);
+        {
+            auto emplace_result = state.emplaceKey(data, i, *aggregates_pool);
+            if (emplace_result.isInserted())
+            {
+                emplace_result.setMapped(nullptr);
+
+                aggregate_data = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+                createAggregateStates(aggregate_data);
+
+                emplace_result.setMapped(aggregate_data);
+            }
+            else
+                aggregate_data = emplace_result.getMapped();
+        }
         else
         {
-            bool found;
-            aggregate_data = state.findKey(data, i, found, *aggregates_pool);
+            auto find_result = state.findKey(data, i, *aggregates_pool);
+            if (find_result.isFound())
+                aggregate_data = find_result.getMapped();
         }
 
         /// aggregate_date == nullptr means that the new key did not fit in the hash table because of no_more_keys.
@@ -1970,19 +1982,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         if (!aggregate_data && !overflow_row)
             continue;
 
-        /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
-        if (inserted)
-        {
-            *aggregate_data = nullptr;
-
-            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
-            createAggregateStates(place);
-            *aggregate_data = place;
-
-            state.cacheData(i, place);
-        }
-
-        AggregateDataPtr value = aggregate_data ? *aggregate_data : overflow_row;
+        AggregateDataPtr value = aggregate_data ? aggregate_data : overflow_row;
 
         /// Merge state of aggregate functions.
         for (size_t j = 0; j < params.aggregates_size; ++j)
