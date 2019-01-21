@@ -51,6 +51,7 @@ StorageMergeTree::StorageMergeTree(
     const String & database_name_,
     const String & table_name_,
     const ColumnsDescription & columns_,
+    const IndicesDescription & indices_,
     bool attach,
     Context & context_,
     const String & date_column_name,
@@ -58,17 +59,15 @@ StorageMergeTree::StorageMergeTree(
     const ASTPtr & order_by_ast_,
     const ASTPtr & primary_key_ast_,
     const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-    const ASTPtr & indexes_ast_,
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
     : path(path_), database_name(database_name_), table_name(table_name_), full_path(path + escapeForFileName(table_name) + '/'),
     global_context(context_), background_pool(context_.getBackgroundPool()),
     data(database_name, table_name,
-         full_path, columns_,
+         full_path, columns_, indices_,
          context_, date_column_name, partition_by_ast_, order_by_ast_, primary_key_ast_,
-         sample_by_ast_, indexes_ast_, merging_params_,
-         settings_, false, attach),
+         sample_by_ast_, merging_params_, settings_, false, attach),
     reader(data), writer(data), merger_mutator(data, global_context.getBackgroundPool()),
     log(&Logger::get(database_name_ + "." + table_name + " (StorageMergeTree)"))
 {
@@ -200,8 +199,9 @@ void StorageMergeTree::alter(
     {
         auto table_soft_lock = lockStructureForAlter();
         auto new_columns = getColumns();
+        auto new_indices = getIndicesDescription();
         params.apply(new_columns);
-        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, {});
+        context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
         setColumns(std::move(new_columns));
         return;
     }
@@ -214,22 +214,17 @@ void StorageMergeTree::alter(
     data.checkAlter(params);
 
     auto new_columns = data.getColumns();
+    auto new_indices = data.getIndicesDescription();
     ASTPtr new_order_by_ast = data.order_by_ast;
     ASTPtr new_primary_key_ast = data.primary_key_ast;
-    ASTPtr new_indices_ast = data.skip_indices_ast;
-    params.apply(new_columns, new_order_by_ast, new_primary_key_ast, new_indices_ast);
-
-    if (new_indices_ast && new_indices_ast->children.empty())
-    {
-        new_indices_ast.reset();
-    }
+    params.apply(new_columns, new_indices, new_order_by_ast, new_primary_key_ast);
 
     auto parts = data.getDataParts({MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     auto columns_for_parts = new_columns.getAllPhysical();
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
     for (const MergeTreeData::DataPartPtr & part : parts)
     {
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indices_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indices.indices, false))
             transactions.push_back(std::move(transaction));
     }
 
@@ -244,21 +239,13 @@ void StorageMergeTree::alter(
 
         if (new_primary_key_ast.get() != data.primary_key_ast.get())
             storage_ast.set(storage_ast.primary_key, new_primary_key_ast);
-
-        if (new_indices_ast.get() != data.skip_indices_ast.get())
-        {
-            if (new_indices_ast == nullptr)
-                storage_ast.indices = nullptr;
-            else
-                storage_ast.set(storage_ast.indices, new_indices_ast);
-        }
     };
 
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, storage_modifier);
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
     data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndices(new_indices_ast);
+    data.setSkipIndices(new_indices);
 
     for (auto & transaction : transactions)
         transaction->commit();
@@ -714,10 +701,10 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     alter_command.column_name = get<String>(column_name);
 
     auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     ASTPtr ignored_order_by_ast;
     ASTPtr ignored_primary_key_ast;
-    ASTPtr ignored_indexes_ast;
-    alter_command.apply(new_columns, ignored_order_by_ast, ignored_primary_key_ast, ignored_indexes_ast);
+    alter_command.apply(new_columns, new_indices, ignored_order_by_ast, ignored_primary_key_ast);
 
     auto columns_for_parts = new_columns.getAllPhysical();
     for (const auto & part : parts)
@@ -725,7 +712,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
         if (part->info.partition_id != partition_id)
             throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        if (auto transaction = data.alterDataPart(part, columns_for_parts, ignored_indexes_ast, false))
+        if (auto transaction = data.alterDataPart(part, columns_for_parts, new_indices.indices, false))
             transactions.push_back(std::move(transaction));
 
         LOG_DEBUG(log, "Removing column " << get<String>(column_name) << " from part " << part->name);

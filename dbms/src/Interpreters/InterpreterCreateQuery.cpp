@@ -106,7 +106,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         const ASTFunction & engine = *storage.engine;
         /// Currently, there are no database engines, that support any arguments.
         if (engine.arguments || engine.parameters || storage.partition_by || storage.primary_key
-            || storage.order_by || storage.sample_by || (storage.indices && !storage.indices->children.empty()) || storage.settings)
+            || storage.order_by || storage.sample_by || storage.settings ||
+            (create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
         {
             std::stringstream ostr;
             formatAST(storage, ostr, false, false);
@@ -402,6 +403,16 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
     return columns_list;
 }
 
+ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
+{
+    auto res = std::make_shared<ASTExpressionList>();
+
+    for (const auto & index : indices.indices)
+        res->children.push_back(index);
+
+    return res;
+}
+
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpressionList & columns, const Context & context)
 {
     ColumnsDescription res;
@@ -454,9 +465,9 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 {
     ColumnsDescription res;
 
-    if (create.columns)
+    if (create.columns_list && create.columns_list->columns)
     {
-        res = getColumnsDescription(*create.columns, context);
+        res = getColumnsDescription(*create.columns_list->columns, context);
     }
     else if (!create.as_table.empty())
     {
@@ -472,10 +483,16 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(res);
-    if (create.columns)
-        create.replace(create.columns, new_columns);
+    if (!create.columns_list)
+    {
+        auto new_columns_list = std::make_shared<ASTColumns>();
+        create.set(create.columns_list, new_columns_list);
+    }
+
+    if (create.columns_list->columns)
+        create.columns_list->replace(create.columns_list->columns, new_columns);
     else
-        create.set(create.columns, new_columns);
+        create.columns_list->set(create.columns_list->columns, new_columns);
 
     /// Check for duplicates
     std::set<String> all_columns;
@@ -555,7 +572,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     String table_name_escaped = escapeForFileName(table_name);
 
     // If this is a stub ATTACH query, read the query definition from the database
-    if (create.attach && !create.storage && !create.columns)
+    if (create.attach && !create.storage && !create.columns_list)
     {
         // Table SQL definition is available even if the table is detached
         auto query = context.getCreateTableQuery(database_name, table_name);
@@ -574,7 +591,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     Block as_select_sample;
-    if (create.select && (!create.attach || !create.columns))
+    if (create.select && (!create.attach || !create.columns_list))
         as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(), context);
 
     String as_database_name = create.as_database.empty() ? current_database : create.as_database;

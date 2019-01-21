@@ -41,8 +41,12 @@ public:
 
     void formatImpl(const FormatSettings & s, FormatState &state, FormatStateStacked frame) const override
     {
-        s.ostr << name;
-        s.ostr << (s.hilite ? hilite_keyword : "") << " BY " << (s.hilite ? hilite_none : "");
+        frame.need_parens = false;
+        std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
+
+        s.ostr << s.nl_or_ws << indent_str;
+        s.ostr << backQuoteIfNeed(name);
+        s.ostr << " ";
         expr->formatImpl(s, state, frame);
         s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
         type->formatImpl(s, state, frame);

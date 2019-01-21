@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/IndicesDescription.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -304,13 +305,13 @@ public:
     MergeTreeData(const String & database_, const String & table_,
                   const String & full_path_,
                   const ColumnsDescription & columns_,
+                  const IndicesDescription & indices_,
                   Context & context_,
                   const String & date_column_name,
                   const ASTPtr & partition_by_ast_,
                   const ASTPtr & order_by_ast_,
                   const ASTPtr & primary_key_ast_,
                   const ASTPtr & sample_by_ast_, /// nullptr, if sampling is not supported.
-                  const ASTPtr & indices_ast_,
                   const MergingParams & merging_params_,
                   const MergeTreeSettings & settings_,
                   bool require_part_metadata_,
@@ -489,7 +490,7 @@ public:
     AlterDataPartTransactionPtr alterDataPart(
         const DataPartPtr & part,
         const NamesAndTypesList & new_columns,
-        const ASTPtr & new_indices_ast,
+        const IndicesAsts & new_indices,
         bool skip_sanity_checks);
 
     /// Freezes all parts.
@@ -586,7 +587,6 @@ public:
 
     /// Secondary (data skipping) indices for MergeTree
     MergeTreeIndices skip_indices;
-    ASTPtr skip_indices_ast;
     ExpressionActionsPtr skip_indices_expr;
 
     /// Names of columns for primary key + secondary sorting columns.
@@ -731,7 +731,7 @@ private:
 
     void setPrimaryKeyAndColumns(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check = false);
 
-    void setSkipIndices(const ASTPtr &indices_asts, bool only_check = false);
+    void setSkipIndices(const IndicesDescription & indices, bool only_check = false);
 
     void initPartitionKey();
 
@@ -743,7 +743,7 @@ private:
     /// Files to be deleted are mapped to an empty string in out_rename_map.
     /// If part == nullptr, just checks that all type conversions are possible.
     void createConvertExpression(const DataPartPtr & part, const NamesAndTypesList & old_columns, const NamesAndTypesList & new_columns,
-                                 const ASTPtr & old_indices_ast, const ASTPtr & new_indices_ast,
+                                 const IndicesAsts & old_indices, const IndicesAsts & new_indices,
                                  ExpressionActionsPtr & out_expression, NameToNameMap & out_rename_map, bool & out_force_update_metadata) const;
 
     /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
