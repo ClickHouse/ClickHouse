@@ -42,6 +42,7 @@ set_target_properties(glibc-compatibility PROPERTIES LINK_LIBRARIES "")
 install(TARGETS glibc-compatibility EXPORT CapnProtoTargets ARCHIVE DESTINATION "/tmp")
 install(TARGETS glibc-compatibility EXPORT protobuf-targets ARCHIVE DESTINATION "/tmp")
 install(TARGETS glibc-compatibility EXPORT double-conversionTargets ARCHIVE DESTINATION "/tmp")
+install(TARGETS glibc-compatibility EXPORT SnappyTargets ARCHIVE DESTINATION "/tmp")
 
 if(ENABLE_TESTS)
     add_subdirectory(tests)
