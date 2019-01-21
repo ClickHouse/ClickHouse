@@ -1,3 +1,5 @@
+#include "TableFunctionRemote.h"
+
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,10 +10,8 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
-
-#include <TableFunctions/TableFunctionRemote.h>
+#include <Common/parseRemoteDescription.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/parseRemoteDescription.h>
 
 
 namespace DB

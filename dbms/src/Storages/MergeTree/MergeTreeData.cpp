@@ -126,7 +126,7 @@ MergeTreeData::MergeTreeData(
             && !attach && !settings.compatibility_allow_sampling_expression_not_in_primary_key) /// This is for backward compatibility.
             throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
 
-        auto syntax = SyntaxAnalyzer(global_context, {}).analyze(sample_by_ast, getColumns().getAllPhysical());
+        auto syntax = SyntaxAnalyzer(global_context).analyze(sample_by_ast, getColumns().getAllPhysical());
         columns_required_for_sampling = ExpressionAnalyzer(sample_by_ast, syntax, global_context)
             .getRequiredSourceColumns();
     }
@@ -282,7 +282,7 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
         if (!added_key_column_expr_list->children.empty())
         {
-            auto syntax = SyntaxAnalyzer(global_context, {}).analyze(added_key_column_expr_list, all_columns);
+            auto syntax = SyntaxAnalyzer(global_context).analyze(added_key_column_expr_list, all_columns);
             Names used_columns = ExpressionAnalyzer(added_key_column_expr_list, syntax, global_context)
                 .getRequiredSourceColumns();
 
@@ -305,7 +305,7 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         }
     }
 
-    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context, {}).analyze(new_sorting_key_expr_list, all_columns);
+    auto new_sorting_key_syntax = SyntaxAnalyzer(global_context).analyze(new_sorting_key_expr_list, all_columns);
     auto new_sorting_key_expr = ExpressionAnalyzer(new_sorting_key_expr_list, new_sorting_key_syntax, global_context)
         .getActions(false);
     auto new_sorting_key_sample =
@@ -314,7 +314,7 @@ void MergeTreeData::setPrimaryKeyAndColumns(
 
     checkKeyExpression(*new_sorting_key_expr, new_sorting_key_sample, "Sorting");
 
-    auto new_primary_key_syntax = SyntaxAnalyzer(global_context, {}).analyze(new_primary_key_expr_list, all_columns);
+    auto new_primary_key_syntax = SyntaxAnalyzer(global_context).analyze(new_primary_key_expr_list, all_columns);
     auto new_primary_key_expr = ExpressionAnalyzer(new_primary_key_expr_list, new_primary_key_syntax, global_context)
         .getActions(false);
 
@@ -376,7 +376,7 @@ void MergeTreeData::initPartitionKey()
         return;
 
     {
-        auto syntax_result = SyntaxAnalyzer(global_context, {}).analyze(partition_key_expr_list, getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(partition_key_expr_list, getColumns().getAllPhysical());
         partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, global_context).getActions(false);
     }
 
@@ -2269,7 +2269,7 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
 
         for (auto state : affordable_states)
         {
-            buf = std::move(res);
+            std::swap(buf, res);
             res.clear();
 
             auto range = getDataPartsStateRange(state);

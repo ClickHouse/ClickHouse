@@ -178,11 +178,11 @@ nav:
 
 - '开发者指南':
   - 'hidden': 'development/index.md'
-  - 'Overview of ClickHouse architecture': 'development/architecture.md'
-  - 'How to build ClickHouse on Linux': 'development/build.md'
-  - 'How to build ClickHouse on Mac OS X': 'development/build_osx.md'
-  - 'How to write  C++ code': 'development/style.md'
-  - 'How to run ClickHouse tests': 'development/tests.md'
+  - 'ClickHouse架构概述': 'development/architecture.md'
+  - '如何在Linux中编译ClickHouse': 'development/build.md'
+  - '如何在Mac OS X中编译ClickHouse': 'development/build_osx.md'
+  - '如何编写C++代码': 'development/style.md'
+  - '如何运行ClickHouse测试': 'development/tests.md'
 
 - '新功能特性':
   - '路线图': 'roadmap.md'
