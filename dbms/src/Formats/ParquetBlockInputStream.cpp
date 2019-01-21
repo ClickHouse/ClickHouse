@@ -63,10 +63,10 @@ Block ParquetBlockInputStream::getHeader() const
 }
 
 /// Inserts numeric data right into internal column data to reduce an overhead
-template <typename NumericType>
+template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
 void fillColumnWithNumericData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
 {
-    auto & column_data = static_cast<ColumnVector<NumericType> &>(*internal_column).getData();
+    auto & column_data = static_cast<VectorType &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
 
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
@@ -218,23 +218,6 @@ void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, 
     }
 }
 
-void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
-{
-    auto & column = static_cast<ColumnDecimal<Decimal128> &>(*internal_column);
-    auto & column_data = column.getData();
-    column_data.reserve(arrow_column->length());
-
-    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
-    {
-        auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->data()->chunk(chunk_i)));
-
-        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
-        {
-            column_data.emplace_back(*reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
-        }
-    }
-}
-
 
 /// Creates a null bytemap from arrow's null bitmap
 void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
@@ -294,8 +277,6 @@ const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_ty
     {arrow::Type::BINARY, std::make_shared<DataTypeString>()},
     //{arrow::Type::FIXED_SIZE_BINARY, std::make_shared<DataTypeString>()},
     //{arrow::Type::UUID, std::make_shared<DataTypeString>()},
-
-    //{arrow::Type::DECIMAL, std::make_shared<DataTypeDecimal<Decimal128>>(1, 1)},
 
 
     // TODO: add other types that are convertable to internal ones:
@@ -436,7 +417,7 @@ Block ParquetBlockInputStream::readImpl()
                 fillColumnWithTimestampData(arrow_column, read_column);
                 break;
             case arrow::Type::DECIMAL:
-                fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
+                fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column);
                 break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
         case ARROW_NUMERIC_TYPE: \

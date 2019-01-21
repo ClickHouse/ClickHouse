@@ -54,7 +54,7 @@ void fillArrowArrayWithNumericColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
-    ArrowBuilderType numeric_builder;
+    ArrowBuilderType builder;
     arrow::Status status;
 
     const UInt8 * arrow_null_bytemap_raw_ptr = nullptr;
@@ -69,10 +69,10 @@ void fillArrowArrayWithNumericColumnData(
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
 
-    status = numeric_builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    status = builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
     checkStatus(status, write_column->getName());
 
-    status = numeric_builder.Finish(&arrow_array);
+    status = builder.Finish(&arrow_array);
     checkStatus(status, write_column->getName());
 }
 
@@ -81,25 +81,25 @@ void fillArrowArrayWithStringColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     const auto & internal_column = static_cast<const ColumnType &>(*write_column);
-    arrow::StringBuilder string_builder;
+    arrow::StringBuilder builder;
     arrow::Status status;
 
     for (size_t string_i = 0, size = internal_column.size(); string_i < size; ++string_i)
     {
         if (null_bytemap && (*null_bytemap)[string_i])
         {
-            status = string_builder.AppendNull();
+            status = builder.AppendNull();
         }
         else
         {
             StringRef string_ref = internal_column.getDataAt(string_i);
-            status = string_builder.Append(string_ref.data, string_ref.size);
+            status = builder.Append(string_ref.data, string_ref.size);
         }
 
         checkStatus(status, write_column->getName());
     }
 
-    status = string_builder.Finish(&arrow_array);
+    status = builder.Finish(&arrow_array);
     checkStatus(status, write_column->getName());
 }
 
@@ -108,20 +108,20 @@ void fillArrowArrayWithDateColumnData(
 {
     const PaddedPODArray<UInt16> & internal_data = static_cast<const ColumnVector<UInt16> &>(*write_column).getData();
     //arrow::Date32Builder date_builder;
-    arrow::UInt16Builder date_builder;
+    arrow::UInt16Builder builder;
     arrow::Status status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
     {
         if (null_bytemap && (*null_bytemap)[value_i])
-            status = date_builder.AppendNull();
+            status = builder.AppendNull();
         else
             /// Implicitly converts UInt16 to Int32
-            status = date_builder.Append(internal_data[value_i]);
+            status = builder.Append(internal_data[value_i]);
         checkStatus(status, write_column->getName());
     }
 
-    status = date_builder.Finish(&arrow_array);
+    status = builder.Finish(&arrow_array);
     checkStatus(status, write_column->getName());
 }
 
@@ -129,23 +129,23 @@ void fillArrowArrayWithDateTimeColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
     auto & internal_data = static_cast<const ColumnVector<UInt32> &>(*write_column).getData();
-    //arrow::Date64Builder date_builder;
-    arrow::UInt32Builder date_builder;
+    //arrow::Date64Builder builder;
+    arrow::UInt32Builder builder;
     arrow::Status status;
 
     for (size_t value_i = 0, size = internal_data.size(); value_i < size; ++value_i)
     {
         if (null_bytemap && (*null_bytemap)[value_i])
-            status = date_builder.AppendNull();
+            status = builder.AppendNull();
         else
             /// Implicitly converts UInt16 to Int32
             //status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
-            status = date_builder.Append(internal_data[value_i]);
+            status = builder.Append(internal_data[value_i]);
 
         checkStatus(status, write_column->getName());
     }
 
-    status = date_builder.Finish(&arrow_array);
+    status = builder.Finish(&arrow_array);
     checkStatus(status, write_column->getName());
 }
 
@@ -173,6 +173,31 @@ void fillArrowArrayWithDecimalColumnData(
 
     status = builder.Finish(&arrow_array);
     checkStatus(status, write_column->getName());
+
+/* TODO column copy
+    const auto & internal_data = static_cast<const typename DataType::ColumnType &>(*write_column).getData();
+    //ArrowBuilderType numeric_builder;
+    arrow::DecimalBuilder builder(arrow::decimal(decimal_type->getPrecision(), decimal_type->getScale()));
+    arrow::Status status;
+
+    const uint8_t * arrow_null_bytemap_raw_ptr = nullptr;
+    PaddedPODArray<UInt8> arrow_null_bytemap;
+    if (null_bytemap)
+    {
+        /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
+        arrow_null_bytemap.reserve(null_bytemap->size());
+        for (size_t i = 0, size = null_bytemap->size(); i < size; ++i)
+            arrow_null_bytemap.emplace_back(1 ^ (*null_bytemap)[i]);
+
+        arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
+    }
+
+    status = builder.AppendValues(reinterpret_cast<const uint8_t*>(internal_data.data()), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    checkStatus(status, write_column->getName());
+
+    status = builder.Finish(&arrow_array);
+    checkStatus(status, write_column->getName());
+*/
 }
 
 #    define FOR_INTERNAL_NUMERIC_TYPES(M) \
