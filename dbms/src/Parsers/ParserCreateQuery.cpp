@@ -308,7 +308,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr database;
     ASTPtr table;
-    ASTPtr columns;
+    ASTPtr columns_list;
     ASTPtr to_database;
     ASTPtr to_table;
     ASTPtr storage;
@@ -376,7 +376,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// List of columns.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_or_indices_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -478,7 +478,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
-            if (!columns_or_indices_p.parse(pos, columns, expected))
+            if (!columns_or_indices_p.parse(pos, columns_list, expected))
                 return false;
 
             if (!s_rparen.ignore(pos, expected))
@@ -520,7 +520,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     getIdentifierName(to_database, query->to_database);
     getIdentifierName(to_table, query->to_table);
 
-    query->set(query->columns_list, columns);
+    query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
 
     getIdentifierName(as_database, query->as_database);
