@@ -48,8 +48,7 @@ namespace
 
         for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
         {
-            Cluster::Address address;
-            Cluster::Address::fromFullString(boost::copy_range<std::string>(*it), address);
+            Cluster::Address address = Cluster::Address::fromFullString(boost::copy_range<std::string>(*it));
             pools.emplace_back(factory(address));
         }
 
