@@ -42,6 +42,7 @@ public:
         const Context & context,
         const String & name,
         const ColumnsDescription & columns,
+        const IndicesDescription & indices,
         const ASTModifier & engine_modifier) override;
 
     time_t getTableMetadataModificationTime(

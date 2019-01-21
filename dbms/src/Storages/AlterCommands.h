@@ -3,6 +3,7 @@
 #include <optional>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/IndicesDescription.h>
 #include <optional>
 
 
@@ -79,8 +80,8 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast,
-            ASTPtr & primary_key_ast, ASTPtr & indexes_decl_ast) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
+            ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const;
     /// Checks that not only metadata touched by that command
     bool is_mutable() const;
 };
@@ -91,8 +92,8 @@ class Context;
 class AlterCommands : public std::vector<AlterCommand>
 {
 public:
-    void apply(ColumnsDescription & columns_description, ASTPtr & order_by_ast,
-            ASTPtr & primary_key_ast, ASTPtr & index_decl_ast) const;
+    void apply(ColumnsDescription & columns_description, IndicesDescription & indices_description, ASTPtr & order_by_ast,
+            ASTPtr & primary_key_ast) const;
 
     /// For storages that don't support MODIFY_ORDER_BY.
     void apply(ColumnsDescription & columns_description) const;

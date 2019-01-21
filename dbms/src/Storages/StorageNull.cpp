@@ -35,8 +35,9 @@ void StorageNull::alter(const AlterCommands & params, const String & current_dat
     auto lock = lockStructureForAlter();
 
     ColumnsDescription new_columns = getColumns();
+    IndicesDescription new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, {});
+    context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, {});
     setColumns(std::move(new_columns));
 }
 

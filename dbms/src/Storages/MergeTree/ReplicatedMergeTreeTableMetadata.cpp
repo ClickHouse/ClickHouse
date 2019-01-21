@@ -45,7 +45,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedAST(MergeTreeData::extractKeyExpressionList(data.partition_by_ast));
 
-    skip_indices = formattedAST(data.skip_indices_ast);
+    skip_indices = data.getIndicesDescription().toString();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const

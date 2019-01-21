@@ -231,6 +231,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+
+class ParserColumnAndIndexDeclaraion : public IParserBase
+{
+protected:
+    const char * getName() const override { return "column or index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 class ParserIndexDeclarationList : public IParserBase
 {
 protected:
@@ -239,9 +248,16 @@ protected:
 };
 
 
+class ParserColumnsOrIndicesDeclarationList : public IParserBase
+{
+    protected:
+    const char * getName() const override { return "columns or indices declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
 /**
-  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr]
-  * [INDEXES name BY expr TYPE type(args) GRANULARITY value, ...] [SETTINGS name = value, ...]
+  * ENGINE = name [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
   */
 class ParserStorage : public IParserBase
 {
@@ -256,6 +272,8 @@ protected:
   * (
   *     name1 type1,
   *     name2 type2,
+  *     ...
+  *     INDEX name1 expr TYPE type1(args) GRANULARITY value,
   *     ...
   * ) ENGINE = engine
   *
