@@ -21,9 +21,9 @@ INSERT INTO test.minmax_idx VALUES (1, 2);
 
 SYSTEM SYNC REPLICA test.minmax_idx_r;
 
-ALTER TABLE test.minmax_idx ADD INDEX idx1 BY u64 * i32 TYPE minmax GRANULARITY 10;
-ALTER TABLE test.minmax_idx_r ADD INDEX idx2 BY u64 + i32 TYPE minmax GRANULARITY 10;
-ALTER TABLE test.minmax_idx ADD INDEX idx3 BY u64 - i32 TYPE minmax GRANULARITY 10 AFTER idx1;
+ALTER TABLE test.minmax_idx ADD INDEX idx1 u64 * i32 TYPE minmax GRANULARITY 10;
+ALTER TABLE test.minmax_idx_r ADD INDEX idx2 u64 + i32 TYPE minmax GRANULARITY 10;
+ALTER TABLE test.minmax_idx ADD INDEX idx3 u64 - i32 TYPE minmax GRANULARITY 10 AFTER idx1;
 
 SHOW CREATE TABLE test.minmax_idx;
 SHOW CREATE TABLE test.minmax_idx_r;
@@ -57,7 +57,7 @@ ALTER TABLE test.minmax_idx_r DROP INDEX idx3;
 SHOW CREATE TABLE test.minmax_idx;
 SHOW CREATE TABLE test.minmax_idx_r;
 
-ALTER TABLE test.minmax_idx ADD INDEX idx1 BY u64 * i32 TYPE minmax GRANULARITY 10;
+ALTER TABLE test.minmax_idx ADD INDEX idx1 u64 * i32 TYPE minmax GRANULARITY 10;
 
 SHOW CREATE TABLE test.minmax_idx;
 SHOW CREATE TABLE test.minmax_idx_r;
@@ -69,20 +69,20 @@ SELECT * FROM test.minmax_idx_r WHERE u64 * i32 > 1 ORDER BY (u64, i32);
 CREATE TABLE test.minmax_idx2
 (
     u64 UInt64,
-    i32 Int32
+    i32 Int32,
+    INDEX idx1 u64 + i32 TYPE minmax GRANULARITY 10,
+    INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 10
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/indices_alter2', 'r1')
-ORDER BY u64
-INDICES idx1 BY u64 + i32 TYPE minmax GRANULARITY 10,
-        idx2 BY u64 * i32 TYPE minmax GRANULARITY 10;
+ORDER BY u64;
 
 CREATE TABLE test.minmax_idx2_r
 (
     u64 UInt64,
-    i32 Int32
+    i32 Int32,
+    INDEX idx1 u64 + i32 TYPE minmax GRANULARITY 10,
+    INDEX idx2 u64 * i32 TYPE minmax GRANULARITY 10
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/indices_alter2', 'r2')
-ORDER BY u64
-INDICES idx1 BY u64 + i32 TYPE minmax GRANULARITY 10,
-        idx2 BY u64 * i32 TYPE minmax GRANULARITY 10;
+ORDER BY u64;
 
 
 SHOW CREATE TABLE test.minmax_idx2;
