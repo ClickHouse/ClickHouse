@@ -405,9 +405,6 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
 ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
 {
-    if (indices.indices.empty())
-        return nullptr;
-
     auto res = std::make_shared<ASTExpressionList>();
 
     for (const auto & index : indices.indices)
