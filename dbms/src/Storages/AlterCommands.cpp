@@ -162,8 +162,8 @@ static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePai
     return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
 }
 
-void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description
-        , ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
+void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescription & indices_description,
+        ASTPtr & order_by_ast, ASTPtr & primary_key_ast) const
 {
     if (type == ADD_COLUMN)
     {
