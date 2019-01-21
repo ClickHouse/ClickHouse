@@ -54,16 +54,20 @@ using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 class SyntaxAnalyzer
 {
 public:
-    SyntaxAnalyzer(const Context & context, StoragePtr storage) : context(context), storage(std::move(storage)) {}
+    SyntaxAnalyzer(const Context & context_, size_t subquery_depth_ = 0)
+        : context(context_)
+        , subquery_depth(subquery_depth_)
+    {}
 
     SyntaxAnalyzerResultPtr analyze(
         ASTPtr & query,
         const NamesAndTypesList & source_columns_,
         const Names & required_result_columns = {},
-        size_t subquery_depth = 0) const;
+        StoragePtr storage = {}) const;
 
+private:
     const Context & context;
-    StoragePtr storage;
+    size_t subquery_depth;
 };
 
 }

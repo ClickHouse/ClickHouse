@@ -86,7 +86,6 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// We will keep logs after and including this threshold.
     UInt64 min_saved_log_pointer = std::numeric_limits<UInt64>::max();
 
-
     UInt64 min_log_pointer_lost_candidate = std::numeric_limits<UInt64>::max();
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
@@ -118,7 +117,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/host", &host_stat);
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
 
-        UInt32 log_pointer = 0;
+        UInt64 log_pointer = 0;
 
         if (!pointer.empty())
             log_pointer = parse<UInt64>(pointer);
@@ -190,7 +189,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     for (const String & replica : recovering_replicas)
     {
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
-        UInt32 log_pointer = 0;
+        UInt64 log_pointer = 0;
         if (!pointer.empty())
             log_pointer = parse<UInt64>(pointer);
         min_saved_log_pointer = std::min(min_saved_log_pointer, log_pointer);
@@ -200,7 +199,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         min_saved_log_pointer = std::min(min_saved_log_pointer, min_log_pointer_lost_candidate);
 
     /// We will not touch the last `min_replicated_logs_to_keep` records.
-    entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
+    entries.erase(entries.end() - std::min<UInt64>(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
     /// We will not touch records that are no less than `min_saved_log_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_saved_log_pointer)), entries.end());
 
