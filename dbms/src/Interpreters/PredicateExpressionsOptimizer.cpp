@@ -133,8 +133,12 @@ void PredicateExpressionsOptimizer::getDependenciesAndQualifiedOfExpression(cons
 {
     if (const auto identifier = typeid_cast<ASTIdentifier *>(expression.get()))
     {
-        if (!identifier->children.empty())
-            dependencies_and_qualified.emplace_back(std::pair(identifier, expression->getAliasOrColumnName()));
+        String table_alias;
+        if (!identifier->name_parts.empty())
+        {
+            if (!tables_with_aliases.empty())
+                table_alias = tables_with_aliases[0].getQualifiedNamePrefix();
+        }
         else
         {
             size_t best_table_pos = 0;
@@ -153,9 +157,11 @@ void PredicateExpressionsOptimizer::getDependenciesAndQualifiedOfExpression(cons
                 }
             }
 
-            String qualified_name = tables_with_aliases[best_table_pos].getQualifiedNamePrefix() + expression->getAliasOrColumnName();
-            dependencies_and_qualified.emplace_back(std::pair(identifier, qualified_name));
+            table_alias = tables_with_aliases[best_table_pos].getQualifiedNamePrefix();
         }
+
+        String qualified_name = table_alias + expression->getAliasOrColumnName();
+        dependencies_and_qualified.emplace_back(std::pair(identifier, qualified_name));
     }
     else
     {
@@ -356,31 +362,17 @@ ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_que
         if (qualified_asterisk->children.size() != 1)
             throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
 
-        ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(qualified_asterisk->children[0].get());
-        if (!ident)
-            throw Exception("Logical error: qualified asterisk must have identifier as its child", ErrorCodes::LOGICAL_ERROR);
+        DatabaseAndTableWithAlias ident_db_and_name(qualified_asterisk->children[0]);
 
-        size_t num_components = ident->children.size();
-        if (num_components > 2)
-            throw Exception("Qualified asterisk cannot have more than two qualifiers", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
-
-        for (auto it = tables_expression.begin(); it != tables_expression.end(); ++it)
+        for (auto it = tables_expression.begin(); it != tables_expression.end();)
         {
             const ASTTableExpression * table_expression = *it;
             DatabaseAndTableWithAlias database_and_table_with_alias(*table_expression, context.getCurrentDatabase());
-            /// database.table.*
-            if (num_components == 2 && !database_and_table_with_alias.database.empty()
-                && static_cast<const ASTIdentifier &>(*ident->children[0]).name == database_and_table_with_alias.database
-                && static_cast<const ASTIdentifier &>(*ident->children[1]).name == database_and_table_with_alias.table)
-                continue;
-            /// table.* or alias.*
-            else if (num_components == 0
-                     && ((!database_and_table_with_alias.table.empty() && ident->name == database_and_table_with_alias.table)
-                         || (!database_and_table_with_alias.alias.empty() && ident->name == database_and_table_with_alias.alias)))
-                continue;
+
+            if (ident_db_and_name.satisfies(database_and_table_with_alias, true))
+                ++it;
             else
-                /// It's not a required table
-                tables_expression.erase(it);
+                it = tables_expression.erase(it); /// It's not a required table
         }
     }
 
