@@ -356,7 +356,7 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Rows are not escaped in Pretty* format. Example is shown for the [PrettyCompact](#prettycompact) format:
+Rows are not escaped in Pretty* formats. Example is shown for the [PrettyCompact](#prettycompact) format:
 
 ``` sql
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test
