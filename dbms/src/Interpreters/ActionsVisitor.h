@@ -37,9 +37,10 @@ struct SubqueryForSet
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 
-/// The case of an explicit enumeration of values.
-void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-                     const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
+ /// The case of an explicit enumeration of values.
+SetPtr makeExplicitSet(
+    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 
 /** For ActionsVisitor
@@ -105,7 +106,7 @@ private:
     std::ostream * ostr;
     ScopeStack actions_stack;
 
-    void makeSet(const ASTFunction * node, const Block & sample_block);
+    SetPtr makeSet(const ASTFunction * node, const Block & sample_block);
 };
 
 }
