@@ -255,7 +255,7 @@ CREATE TABLE table_name
 ...
 ```
 
-Indices from the example can be used by ClickHouse to reduce amount of data read from disk in following queries.
+Indices from the example can be used by ClickHouse to reduce amount of data to read from disk in following queries.
 ```sql
 SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
@@ -266,7 +266,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 * `minmax` Stores extremes of specified expression (if expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like primary key.
 
 ```sql
-INDEX b (u64 * length(s)) TYPE minmax GRANULARITY 4
+INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
 ```
 
 
