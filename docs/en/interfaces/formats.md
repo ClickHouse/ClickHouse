@@ -344,37 +344,34 @@ Each result block is output as a separate table. This is necessary so that block
 
 [NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
+Example (shown for the [PrettyCompact](#prettycompact) format):
+
 ``` sql
-SELECT * FROM t_null FORMAT Pretty;
+SELECT * FROM t_null FORMAT 
 ```
 
-```
-┏━━━┳━━━━━━┓
-┃ x ┃ y    ┃
-┡━━━╇━━━━━━┩
+``` text
+┌─x─┬─y────┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
 ```
 
-Rows are not escaped in `Pretty` format:
+Rows are not escaped in Pretty* format. Example is shown for the [PrettyCompact](#prettycompact) format:
 
 ``` sql
-:) SELECT 'String with \'quotes\' and \t character' AS Escaping_test
-FORMAT Pretty;
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
-```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Escaping_test                            ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ String with 'quotes' and      character  │
+``` 
+┌─Escaping_test────────────────────────────┐
+│ String with 'quotes' and 	 character     │
 └──────────────────────────────────────────┘
 ```
 
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message "Showed first 10 000" is printed.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the PrettyCompact format):
+The Pretty format supports outputting total values (when using WITH TOTALS) and extremes (when 'extremes' is set to 1). In these cases, total values and extreme values are output after the main data, in separate tables. Example (shown for the [PrettyCompact](#prettycompact) format):
 
 ``` sql
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
@@ -477,10 +474,13 @@ Row 1:
 x: 1
 y: ᴺᵁᴸᴸ
 ```
-Rows are not escaped in `Vertical` format: 
+Rows are not escaped in Vertical format: 
+
+``` sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
 
 ```
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
 Row 1:
 ──────
 test: string with 'quotes' and 	 with some special 
