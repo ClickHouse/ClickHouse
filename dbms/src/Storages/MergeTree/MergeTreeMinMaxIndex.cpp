@@ -9,6 +9,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_QUERY;
+}
+
+
 MergeTreeMinMaxGranule::MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index)
     : MergeTreeIndexGranule(), index(index), parallelogram()
 {
