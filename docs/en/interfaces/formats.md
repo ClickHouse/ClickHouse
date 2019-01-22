@@ -347,11 +347,11 @@ Each result block is output as a separate table. This is necessary so that block
 Example (shown for the [PrettyCompact](#prettycompact) format):
 
 ``` sql
-SELECT * FROM t_null 
+SELECT * FROM t_null
 ```
 
 ```
-┌─x─┬─y────┐
+┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
 ```
@@ -363,9 +363,9 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
 ``` 
-┌─Escaping_test────────────────────────────┐
-│ String with 'quotes' and 	 character     │
-└──────────────────────────────────────────┘
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and 	 character │
+└──────────────────────────────────────┘
 ```
 
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message "Showed first 10 000" is printed.
@@ -402,7 +402,7 @@ Extremes:
 
 ## PrettyCompact {#prettycompact}
 
-Differs from `Pretty` in that the grid is drawn between rows and the result is more compact.
+Differs from [Pretty](#pretty) in that the grid is drawn between rows and the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 
 ## PrettyCompactMonoBlock {#prettycompactmonoblock}
@@ -483,7 +483,7 @@ SELECT 'string with \'quotes\' and \t with some special \n characters' AS test F
 ```
 Row 1:
 ──────
-test: string with 'quotes' and 	 with some special 
+test: string with 'quotes' and 	 with some special
  characters
 ```
 
