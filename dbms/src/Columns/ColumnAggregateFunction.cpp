@@ -8,6 +8,7 @@
 #include <Common/Arena.h>
 #include <Columns/ColumnsCommon.h>
 
+#include <AggregateFinctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
@@ -80,6 +81,35 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     return res;
 }
 
+//MutableColumnPtr ColumnAggregateFunction::predictValues(std::vector<Float64> predict_feature) const
+MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments) const
+{
+    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+    {
+        auto res = createView();
+        res->set(function_state->getNestedFunction());
+        res->data.assign(data.begin(), data.end());
+        return res;
+    }
+
+    MutableColumnPtr res = func->getReturnType()->createColumn();
+    res->reserve(data.size());
+
+//    const AggregateFunctionMLMethod * ML_function = typeid_cast<const AggregateFunctionMLMethod *>(func.get());
+    auto ML_function = typeid_cast<const AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression> *>(func.get());
+    if (ML_function)
+    {
+        size_t row_num = 0;
+        for (auto val : data) {
+            ML_function->predictResultInto(val, *res, block, row_num, arguments);
+            ++row_num;
+        }
+    } else {
+
+    }
+
+    return res;
+}
 
 void ColumnAggregateFunction::ensureOwnership()
 {
