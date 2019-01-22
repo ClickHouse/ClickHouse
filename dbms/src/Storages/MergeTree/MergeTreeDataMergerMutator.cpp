@@ -902,7 +902,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     Poco::File(new_part_tmp_path).createDirectories();
 
-    BlockInputStreamPtr in = mutations_interpreter.execute();
+    auto in = mutations_interpreter.execute();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
     Block in_header = in->getHeader();

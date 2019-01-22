@@ -975,6 +975,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
     MarkRanges res;
 
+    /// Some granules can cover two or more ranges,
+    /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
     for (const auto & range : ranges)
@@ -983,9 +985,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 range.begin / index->granularity,
                 (range.end + index->granularity - 1) / index->granularity);
 
-        if (last_index_mark != index_range.begin || !granule) {
+        if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
-        }
 
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {

@@ -540,7 +540,7 @@ private:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
-    void replacePartitionFrom(const  StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
 
 protected:
