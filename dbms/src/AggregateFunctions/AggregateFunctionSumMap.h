@@ -50,9 +50,9 @@ struct AggregateFunctionSumMapData
   *  ([1,2,3,4,5,6,7,8,9,10],[10,10,45,20,35,20,15,30,20,20])
   */
 
-template <typename T>
-class AggregateFunctionSumMap final : public IAggregateFunctionDataHelper<
-    AggregateFunctionSumMapData<NearestFieldType<T>>, AggregateFunctionSumMap<T>>
+template <typename T, typename Derived>
+class AggregateFunctionSumMapBase : public IAggregateFunctionDataHelper<
+    AggregateFunctionSumMapData<NearestFieldType<T>>, Derived>
 {
 private:
     using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
@@ -61,7 +61,7 @@ private:
     DataTypes values_types;
 
 public:
-    AggregateFunctionSumMap(const DataTypePtr & keys_type, const DataTypes & values_types)
+    AggregateFunctionSumMapBase(const DataTypePtr & keys_type, const DataTypes & values_types)
         : keys_type(keys_type), values_types(values_types) {}
 
     String getName() const override { return "sumMap"; }
@@ -108,6 +108,11 @@ public:
 
                 array_column.getData().get(values_vec_offset + i, value);
                 const auto & key = keys_vec.getData()[keys_vec_offset + i];
+
+                if (!keepKey(key))
+                {
+                    continue;
+                }
 
                 IteratorType it;
                 if constexpr (IsDecimalNumber<T>)
@@ -253,6 +258,47 @@ public:
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+    virtual bool keepKey(const T & key) const = 0;
+};
+
+template <typename T>
+class AggregateFunctionSumMap final : public AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T>>
+{
+public:
+    AggregateFunctionSumMap(const DataTypePtr & keys_type, DataTypes & values_types)
+        : AggregateFunctionSumMapBase<T, AggregateFunctionSumMap<T>>{keys_type, values_types}
+    {}
+
+    String getName() const override { return "sumMap"; }
+
+    bool keepKey(const T &) const override { return true; }
+};
+
+template <typename T>
+class AggregateFunctionSumMapFiltered final : public AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T>>
+{
+private:
+    std::vector<T> keys_to_keep;
+
+public:
+    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep)
+        : AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T>>{keys_type, values_types}
+    {
+        this->keys_to_keep.reserve(keys_to_keep.size());
+        for (const Field & f : keys_to_keep)
+        {
+            this->keys_to_keep.emplace_back(f.safeGet<NearestFieldType<T>>());
+        }
+        std::sort(begin(this->keys_to_keep), end(this->keys_to_keep));
+    }
+
+    String getName() const override { return "sumMapFiltered"; }
+
+    bool keepKey(const T & key) const override
+    {
+        return std::binary_search(begin(keys_to_keep), end(keys_to_keep), key);
+    }
 };
 
 }
