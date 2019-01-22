@@ -181,7 +181,7 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     conf.set("enable.auto.commit", "false");
 
     // for debug logs inside rdkafka
-    conf.set("debug", "consumer,cgrp,topic,fetch");
+    // conf.set("debug", "consumer,cgrp,topic,fetch");
 
     // Update consumer configuration from the configuration
     const auto & config = global_context.getConfigRef();
