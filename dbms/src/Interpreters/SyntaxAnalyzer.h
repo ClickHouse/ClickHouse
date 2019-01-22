@@ -16,7 +16,6 @@ struct SyntaxAnalyzerResult
 
     NamesAndTypesList source_columns;
 
-    /// Note: used only in tests.
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
 
