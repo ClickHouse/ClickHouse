@@ -357,11 +357,11 @@ SELECT * FROM t_null
 Rows are not escaped in `Pretty` format:
 
 ``` sql
-:) SELECT 'String with \'quotes\' and \t character' AS Test_escaping
-FORMAT Pretty
+:) SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+FORMAT Pretty;
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Test_escaping                             ┃
+┃ Escaping_test                             ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
 │ String with 'quotes' and 	 character      │
 └───────────────────────────────────────────┘
