@@ -586,7 +586,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executePreLimit(pipeline);
             }
 
-            // If there is no global subqueries, we can run subqueries only when recieve them on server.
+            // If there is no global subqueries, we can run subqueries only when receive them on server.
             if (!query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
                 executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
         }

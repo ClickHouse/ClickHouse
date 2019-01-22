@@ -85,7 +85,7 @@ Block FinishSortingBlockInputStream::readImpl()
         {
             Block block = children.back()->read();
 
-            /// End of input stream, but we can`t return immediatly, we need to merge already read blocks.
+            /// End of input stream, but we can`t return immediately, we need to merge already read blocks.
             /// Check it later, when get end of stream from impl.
             if (!block)
             {
@@ -102,7 +102,7 @@ Block FinishSortingBlockInputStream::readImpl()
             if (size == 0)
                 continue;
 
-            /// We need to sort each block separatly before merging.
+            /// We need to sort each block separately before merging.
             sortBlock(block, description_to_sort);
 
             removeConstantsFromBlock(block);

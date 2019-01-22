@@ -155,7 +155,7 @@ public:
             return;
 
         // An error was thrown during the stream or it did not finish successfully
-        // The read offsets weren't comitted, so consumer must rejoin the group from the original starting point
+        // The read offsets weren't committed, so consumer must rejoin the group from the original starting point
         if (!finalized)
         {
             LOG_TRACE(storage.log, "KafkaBlockInputStream did not finish successfully, unsubscribing from assignments and rejoining");

@@ -137,7 +137,7 @@ try
     static KillingErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
 
-    /// Don't initilaize DateLUT
+    /// Don't initialize DateLUT
 
     registerFunctions();
     registerAggregateFunctions();
