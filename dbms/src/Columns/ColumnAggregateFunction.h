@@ -10,6 +10,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
+#include <Functions/FunctionHelpers.h>
 
 namespace DB
 {
@@ -114,6 +115,8 @@ public:
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }
+
+    MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments) const;
 
     size_t size() const override
     {
