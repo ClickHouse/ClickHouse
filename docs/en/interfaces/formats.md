@@ -345,11 +345,13 @@ Each result block is output as a separate table. This is necessary so that block
 [NULL](../query_language/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
 ``` sql
-SELECT * FROM t_null
+SELECT * FROM t_null FORMAT Pretty;
 ```
 
 ```
-┌─x─┬────y─┐
+┏━━━┳━━━━━━┓
+┃ x ┃ y    ┃
+┡━━━╇━━━━━━┩
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
 ```
@@ -359,12 +361,14 @@ Rows are not escaped in `Pretty` format:
 ``` sql
 :) SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 FORMAT Pretty;
+```
 
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Escaping_test                             ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ String with 'quotes' and 	 character      │
-└───────────────────────────────────────────┘
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Escaping_test                            ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ String with 'quotes' and      character  │
+└──────────────────────────────────────────┘
 ```
 
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message "Showed first 10 000" is printed.
