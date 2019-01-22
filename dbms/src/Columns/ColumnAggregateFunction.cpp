@@ -8,7 +8,7 @@
 #include <Common/Arena.h>
 #include <Columns/ColumnsCommon.h>
 
-#include <AggregateFinctions/AggregateFunctionMLMethod.h>
+#include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
 namespace DB
 {
