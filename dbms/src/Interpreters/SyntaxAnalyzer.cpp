@@ -35,8 +35,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ALIAS_REQUIRED;
-    extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int EMPTY_NESTED_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
@@ -434,33 +432,13 @@ void optimizeUsing(const ASTSelectQuery * select_query)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set)
 {
-    ASTPtr array_join_expression_list = select_query->array_join_expression_list();
-    if (array_join_expression_list)
+    if (ASTPtr array_join_expression_list = select_query->array_join_expression_list())
     {
-        ASTs & array_join_asts = array_join_expression_list->children;
-        for (const auto & ast : array_join_asts)
-        {
-            const String nested_table_name = ast->getColumnName();
-            const String nested_table_alias = ast->getAliasOrColumnName();
-
-            if (nested_table_alias == nested_table_name && !isIdentifier(ast))
-                throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name,
-                                ErrorCodes::ALIAS_REQUIRED);
-
-            if (result.array_join_alias_to_name.count(nested_table_alias) || result.aliases.count(nested_table_alias))
-                throw Exception("Duplicate alias in ARRAY JOIN: " + nested_table_alias,
-                                ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
-
-            result.array_join_alias_to_name[nested_table_alias] = nested_table_name;
-            result.array_join_name_to_alias[nested_table_name] = nested_table_alias;
-        }
-
-        {
-            ArrayJoinedColumnsVisitor::Data visitor_data{result.array_join_name_to_alias,
-                                                         result.array_join_alias_to_name,
-                                                         result.array_join_result_to_source};
-            ArrayJoinedColumnsVisitor(visitor_data).visit(query);
-        }
+        ArrayJoinedColumnsVisitor::Data visitor_data{result.aliases,
+                                                    result.array_join_name_to_alias,
+                                                    result.array_join_alias_to_name,
+                                                    result.array_join_result_to_source};
+        ArrayJoinedColumnsVisitor(visitor_data).visit(query);
 
         /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
         /// to get the correct number of rows.
