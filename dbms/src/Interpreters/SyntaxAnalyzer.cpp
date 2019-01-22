@@ -766,7 +766,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth);
 
-    /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
+    /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
 
     if (select_query)

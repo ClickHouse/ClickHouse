@@ -163,7 +163,7 @@ public:
       * Function could be injective with some arguments fixed to some constant values.
       * Examples:
       *  plus(const, x);
-      *  multiply(const, x) where x is an integer and constant is not divisable by two;
+      *  multiply(const, x) where x is an integer and constant is not divisible by two;
       *  concat(x, 'const');
       *  concat(x, 'const', y) where const contain at least one non-numeric character;
       *  concat with FixedString

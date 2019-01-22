@@ -115,7 +115,7 @@ std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join,
 
 std::vector<ASTPtr *> TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr & , Data &)
 {
-    /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children,
+    /// If the WHERE clause or HAVING consists of a single qualified column, the reference must be translated not only in children,
     /// but also in where_expression and having_expression.
     std::vector<ASTPtr *> out;
     if (select.prewhere_expression)
