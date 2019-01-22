@@ -83,7 +83,8 @@ private:
             data.array_join_alias_to_name[nested_table_alias] = nested_table_name;
             data.array_join_name_to_alias[nested_table_name] = nested_table_alias;
 
-            out.emplace_back(&ast);
+            for (ASTPtr & child2 : ast->children)
+                out.emplace_back(&child2);
         }
 
         return out;
