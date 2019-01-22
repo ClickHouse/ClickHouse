@@ -347,10 +347,10 @@ Each result block is output as a separate table. This is necessary so that block
 Example (shown for the [PrettyCompact](#prettycompact) format):
 
 ``` sql
-SELECT * FROM t_null FORMAT 
+SELECT * FROM t_null 
 ```
 
-``` text
+```
 ┌─x─┬─y────┐
 │ 1 │ ᴺᵁᴸᴸ │
 └───┴──────┘
