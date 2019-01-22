@@ -8,6 +8,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
@@ -44,7 +45,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-        prepared_sets(query_info.sets),
         log{log}
 {
     calculateColumnSizes(data, column_names);
@@ -333,8 +333,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const IAST * const ast) const
 
         if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
             (primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
-            (primary_key_columns.count(first_arg_name)
-                && (typeid_cast<const ASTSubquery *>(args[1].get()) || prepared_sets.count(args[1]->getTreeHash()))))
+            (primary_key_columns.count(first_arg_name) && functionIsInOrGlobalInOperator(func->name)))
             return true;
     }
 
