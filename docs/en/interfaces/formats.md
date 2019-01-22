@@ -14,7 +14,6 @@ The table below lists supported formats and how they can be used in `INSERT` and
 | [CSVWithNames](#csvwithnames) | ✔ | ✔ |
 | [Values](#values) | ✔ | ✔ |
 | [Vertical](#vertical) | ✗ | ✔ |
-| [VerticalRaw](#verticalraw) | ✗ | ✔ |
 | [JSON](#json) | ✗ | ✔ |
 | [JSONCompact](#jsoncompact) | ✗ | ✔ |
 | [JSONEachRow](#jsoneachrow) | ✔ | ✔ |
@@ -355,6 +354,19 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
+Rows are not escaped in `Pretty` format:
+
+``` sql
+:) SELECT 'String with \'quotes\' and \t character' AS Test_escaping
+FORMAT Pretty
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Test_escaping                             ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ String with 'quotes' and 	 character      │
+└───────────────────────────────────────────┘
+```
+
 To avoid dumping too much data to the terminal, only the first 10,000 rows are printed. If the number of rows is greater than or equal to 10,000, the message "Showed first 10 000" is printed.
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
@@ -461,37 +473,17 @@ Row 1:
 x: 1
 y: ᴺᵁᴸᴸ
 ```
-
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-## VerticalRaw {#verticalraw}
-
-Differs from `Vertical` format in that the rows are not escaped.
-This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-Examples:
-
-```
-:) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
-Row 1:
-──────
-statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
-
-:) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-Row 1:
-──────
-test: string with 'quotes' and   with some special
- characters
-```
-
-Compare with the Vertical format:
+Rows are not escaped in `Vertical` format: 
 
 ```
 :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
 Row 1:
 ──────
-test: string with \'quotes\' and \t with some special \n characters
+test: string with 'quotes' and 	 with some special 
+ characters
 ```
+
+This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
 ## XML {#xml}
 
