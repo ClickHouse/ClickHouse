@@ -793,20 +793,20 @@ void BaseDaemon::closeFDs()
         proc_path.list(fds);
         for (const auto & fd_str : fds)
         {
-            long fd = DB::parse<long>(fd_str);
+            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
         }
     }
     else
     {
-        long max_fd = -1;
+        int max_fd = -1;
 #ifdef _SC_OPEN_MAX
         max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
-        for (long fd = 3; fd < max_fd; ++fd)
+        for (int fd = 3; fd < max_fd; ++fd)
             if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
     }
