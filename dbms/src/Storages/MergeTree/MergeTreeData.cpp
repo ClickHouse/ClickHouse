@@ -371,10 +371,10 @@ void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only
         const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
         new_indices.push_back(
-                std::move(MergeTreeIndexFactory::instance().get(
+                MergeTreeIndexFactory::instance().get(
                         *this,
                         std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                        global_context)));
+                        global_context));
 
         if (names.find(new_indices.back()->name) != names.end())
             throw Exception(

@@ -330,7 +330,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     for (size_t i = 0; i < storage.skip_indices.size(); ++i)
     {
         auto & stream = *skip_indices_streams[i];
-        if (skip_indices_granules[i] && !skip_indices_granules[i]->empty()) {
+        if (skip_indices_granules[i] && !skip_indices_granules[i]->empty())
+        {
             skip_indices_granules[i]->serializeBinary(stream.compressed);
             skip_indices_granules[i].reset();
         }
@@ -421,15 +422,16 @@ void MergedBlockOutputStream::init()
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
-    for (const auto index : storage.skip_indices) {
+    for (const auto index : storage.skip_indices)
+    {
         String stream_name = index->getFileName();
         skip_indices_streams.emplace_back(
-                std::move(std::make_unique<ColumnStream>(
+                std::make_unique<ColumnStream>(
                         stream_name,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, MARKS_FILE_EXTENSION,
                         codec, max_compress_block_size,
-                        0, aio_threshold)));
+                        0, aio_threshold));
 
         skip_indices_granules.emplace_back(nullptr);
         skip_index_filling.push_back(0);

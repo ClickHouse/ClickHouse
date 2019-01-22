@@ -408,7 +408,7 @@ ASTPtr InterpreterCreateQuery::formatIndices(const IndicesDescription & indices)
     auto res = std::make_shared<ASTExpressionList>();
 
     for (const auto & index : indices.indices)
-        res->children.push_back(index);
+        res->children.push_back(index->clone());
 
     return res;
 }

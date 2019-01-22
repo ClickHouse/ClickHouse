@@ -575,11 +575,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             sample_by_ast = args.storage_def->sample_by->ptr();
 
-        if (args.query.columns_list && args.query.columns_list->indices) {
+        if (args.query.columns_list && args.query.columns_list->indices)
             for (const auto & index : args.query.columns_list->indices->children)
                 indices_description.indices.push_back(
                         std::dynamic_pointer_cast<ASTIndexDeclaration>(index->ptr()));
-        }
 
         storage_settings.loadFromQuery(*args.storage_def);
     }
