@@ -135,9 +135,9 @@ private:
 
     struct Stream
     {
-        Stream(const std::string & data_path, size_t max_compress_block_size) :
+        Stream(const std::string & data_path, CompressionCodecPtr codec, size_t max_compress_block_size) :
             plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
-            compressed(plain, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size)
+            compressed(plain, std::move(codec), max_compress_block_size)
         {
         }
 
@@ -244,8 +244,10 @@ IDataType::OutputStreamGetter TinyLogBlockOutputStream::createStreamGetter(const
         if (!written_streams.insert(stream_name).second)
             return nullptr;
 
+        const auto & columns = storage.getColumns();
         if (!streams.count(stream_name))
             streams[stream_name] = std::make_unique<Stream>(storage.files[stream_name].data_file.path(),
+                                                            columns.getCodecOrDefault(name),
                                                             storage.max_compress_block_size);
 
         return &streams[stream_name]->compressed;

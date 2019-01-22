@@ -70,7 +70,7 @@ struct HostID
     static HostID fromString(const String & host_port_str)
     {
         HostID res;
-        Cluster::Address::fromString(host_port_str, res.host_name, res.port);
+        std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
         return res;
     }
 
@@ -1076,9 +1076,7 @@ public:
                         status.tryDeserializeText(status_data);
                 }
 
-                String host;
-                UInt16 port;
-                Cluster::Address::fromString(host_id, host, port);
+                auto [host, port] = Cluster::Address::fromString(host_id);
 
                 if (status.code != 0 && first_exception == nullptr)
                     first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
