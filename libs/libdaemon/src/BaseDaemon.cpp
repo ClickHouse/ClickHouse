@@ -788,10 +788,12 @@ void BaseDaemon::closeFDs()
 #endif
     if (proc_path.isDirectory()) /// Hooray, proc exists
     {
-        Poco::DirectoryIterator itr(proc_path), end;
-        for (; itr != end; ++itr)
+        std::vector<std::string> fds;
+        /// in /proc/self/fd directory filenames are numeric file descriptors
+        proc_path.list(fds);
+        for (const auto & fd_str : fds)
         {
-            long fd = DB::parse<long>(itr.name());
+            long fd = DB::parse<long>(fd_str);
             if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
         }
