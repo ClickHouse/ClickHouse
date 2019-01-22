@@ -109,7 +109,7 @@ struct AggreagteFunctionGroupUniqArrayGenericData
 };
 
 /** Template parameter with true value should be used for columns that store their elements in memory continuously.
- *  For such columns groupUniqArray() can be implemented more efficently (especially for small numeric arrays).
+ *  For such columns groupUniqArray() can be implemented more efficiently (especially for small numeric arrays).
  */
 template <bool is_plain_column = false>
 class AggreagteFunctionGroupUniqArrayGeneric

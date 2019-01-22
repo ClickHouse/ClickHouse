@@ -322,7 +322,7 @@ void registerDataTypeString(DataTypeFactory & factory)
 
     factory.registerSimpleDataType("String", creator);
 
-    /// These synonims are added for compatibility.
+    /// These synonyms are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);
