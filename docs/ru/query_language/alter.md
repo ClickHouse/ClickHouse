@@ -83,7 +83,7 @@ MODIFY ORDER BY new_expression
 
 Добавить или удалить индекс можно с помощью операций 
 ```
-ALTER ADD INDEX name expression TYPE type GRANULARITY value AFTER name
+ALTER ADD INDEX name expression TYPE type GRANULARITY value [AFTER name]
 ALTER DROP INDEX name
 ```
 Поддерживается только таблицами семейства `*MergeTree`.
