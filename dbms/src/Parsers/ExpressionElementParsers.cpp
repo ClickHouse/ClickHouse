@@ -169,19 +169,19 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         return false;
 
     String name;
+    std::vector<String> parts;
     const ASTExpressionList & list = static_cast<const ASTExpressionList &>(*id_list.get());
     for (const auto & child : list.children)
     {
         if (!name.empty())
             name += '.';
-        name += *getIdentifierName(child);
+        parts.emplace_back(*getIdentifierName(child));
+        name += parts.back();
     }
 
-    node = std::make_shared<ASTIdentifier>(name);
-
-    /// In `children`, remember the identifiers-components, if there are more than one.
-    if (list.children.size() > 1)
-        node->children.insert(node->children.end(), list.children.begin(), list.children.end());
+    if (parts.size() == 1)
+        parts.clear();
+    node = std::make_shared<ASTIdentifier>(name, std::move(parts));
 
     return true;
 }

@@ -93,11 +93,12 @@ private:
     {
         std::stringstream ss;
         ss << hint;
+        String item;
+
         while (!ss.eof())
         {
-            String item;
             ss >> item;
-            if (item.empty())
+            if (ss.eof())
                 break;
 
             if (item == "serverError")

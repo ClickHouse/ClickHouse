@@ -714,7 +714,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         if (disk_reservation && sum_input_rows_upper_bound)
         {
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
-            /// But now we are using inaccurate row-based estimation in Horizontal case for backward compability
+            /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
             Float64 progress = (merge_alg == MergeAlgorithm::Horizontal)
                 ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
                 : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));

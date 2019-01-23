@@ -32,7 +32,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     min_compress_block_size(min_compress_block_size_),
     max_compress_block_size(max_compress_block_size_),
     aio_threshold(aio_threshold_),
-    codec(codec_)
+    codec(std::move(codec_))
 {
 }
 

@@ -30,20 +30,6 @@ class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using ASTs = std::vector<ASTPtr>;
 
-class ISemantic;
-using SemanticPtr = std::shared_ptr<ISemantic>;
-
-/// Interfase to set additional information to IAST. Derived classes should be named according to their AST nodes' types:
-/// ASTIdentifier => SemanticIdentifer, ASTSome => SemanticSome, ...
-class ISemantic
-{
-public:
-    virtual ~ISemantic() = default;
-    ISemantic() = default;
-    ISemantic(const ISemantic &) = default;
-    virtual SemanticPtr clone() const = 0;
-};
-
 class WriteBuffer;
 
 
@@ -53,8 +39,6 @@ class IAST : public std::enable_shared_from_this<IAST>
 {
 public:
     ASTs children;
-
-    SemanticPtr semantic;
 
     virtual ~IAST() = default;
     IAST() = default;

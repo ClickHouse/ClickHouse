@@ -12,11 +12,14 @@ namespace DB
 class ASTIdentifier : public ASTWithAlias
 {
 public:
-    /// name. The composite identifier here will have a concatenated name (of the form a.b.c), and individual components will be available inside the children.
+    /// The composite identifier will have a concatenated name (of the form a.b.c),
+    /// and individual components will be available inside the name_parts.
     String name;
+    std::vector<String> name_parts;
 
-    ASTIdentifier(const String & name_)
+    ASTIdentifier(const String & name_, std::vector<String> && name_parts_ = {})
         : name(name_)
+        , name_parts(name_parts_)
         , special(false)
     {
     }
@@ -36,11 +39,13 @@ protected:
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 
 private:
+    using ASTWithAlias::children; /// ASTIdentifier is child free
+
     bool special; /// TODO: it would be ptr to semantic here
 
-    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name_)
+    static std::shared_ptr<ASTIdentifier> createSpecial(const String & name, std::vector<String> && name_parts = {})
     {
-        auto ret = std::make_shared<ASTIdentifier>(name_);
+        auto ret = std::make_shared<ASTIdentifier>(name, std::move(name_parts));
         ret->special = true;
         return ret;
     }

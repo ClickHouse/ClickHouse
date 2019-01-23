@@ -26,44 +26,33 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info, const Cluster::Address & address)
+    for (const auto & name_and_cluster : context.getClusters().getContainer())
     {
-        size_t i = 0;
-        res_columns[i++]->insert(cluster_name);
-        res_columns[i++]->insert(shard_info.shard_num);
-        res_columns[i++]->insert(shard_info.weight);
-        res_columns[i++]->insert(address.replica_num);
-        res_columns[i++]->insert(address.host_name);
-        res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
-        res_columns[i++]->insert(address.port);
-        res_columns[i++]->insert(shard_info.isLocal());
-        res_columns[i++]->insert(address.user);
-        res_columns[i++]->insert(address.default_database);
-    };
-
-    auto clusters = context.getClusters().getContainer();
-    for (const auto & entry : clusters)
-    {
-        const std::string cluster_name = entry.first;
-        const ClusterPtr cluster = entry.second;
-        const auto & addresses_with_failover = cluster->getShardsAddresses();
+        const String & cluster_name = name_and_cluster.first;
+        const ClusterPtr & cluster = name_and_cluster.second;
         const auto & shards_info = cluster->getShardsInfo();
+        const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-        if (!addresses_with_failover.empty())
+        for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
         {
-            auto it1 = addresses_with_failover.cbegin();
-            auto it2 = shards_info.cbegin();
+            const auto & shard_info = shards_info[shard_index];
+            const auto & shard_addresses = addresses_with_failover[shard_index];
 
-            while (it1 != addresses_with_failover.cend())
+            for (size_t replica_index = 0; replica_index < shard_addresses.size(); ++replica_index)
             {
-                const auto & addresses = *it1;
-                const auto & shard_info = *it2;
+                size_t i = 0;
+                const auto & address = shard_addresses[replica_index];
 
-                for (const auto & address : addresses)
-                    updateColumns(cluster_name, shard_info, address);
-
-                ++it1;
-                ++it2;
+                res_columns[i++]->insert(cluster_name);
+                res_columns[i++]->insert(shard_info.shard_num);
+                res_columns[i++]->insert(shard_info.weight);
+                res_columns[i++]->insert(replica_index + 1);
+                res_columns[i++]->insert(address.host_name);
+                res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
+                res_columns[i++]->insert(address.port);
+                res_columns[i++]->insert(shard_info.isLocal());
+                res_columns[i++]->insert(address.user);
+                res_columns[i++]->insert(address.default_database);
             }
         }
     }
