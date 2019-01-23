@@ -70,7 +70,7 @@ struct HostID
     static HostID fromString(const String & host_port_str)
     {
         HostID res;
-        Cluster::Address::fromString(host_port_str, res.host_name, res.port);
+        std::tie(res.host_name, res.port) = Cluster::Address::fromString(host_port_str);
         return res;
     }
 
@@ -276,7 +276,7 @@ bool DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason)
     catch (...)
     {
         /// What should we do if we even cannot parse host name and therefore cannot properly submit execution status?
-        /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be sucessfull.
+        /// We can try to create fail node using FQDN if it equal to host name in cluster config attempt will be successful.
         /// Otherwise, that node will be ignored by DDLQueryStatusInputSream.
 
         tryLogCurrentException(log, "Cannot parse DDL task " + entry_name + ", will try to send error status");
@@ -1076,9 +1076,7 @@ public:
                         status.tryDeserializeText(status_data);
                 }
 
-                String host;
-                UInt16 port;
-                Cluster::Address::fromString(host_id, host, port);
+                auto [host, port] = Cluster::Address::fromString(host_id);
 
                 if (status.code != 0 && first_exception == nullptr)
                     first_exception = std::make_unique<Exception>("There was an error on [" + host + ":" + toString(port) + "]: " + status.message, status.code);
@@ -1155,7 +1153,7 @@ private:
     Strings current_active_hosts; /// Hosts that were in active state at the last check
     size_t num_hosts_finished = 0;
 
-    /// Save the first detected error and throw it at the end of excecution
+    /// Save the first detected error and throw it at the end of execution
     std::unique_ptr<Exception> first_exception;
 
     Int64 timeout_seconds = 120;
