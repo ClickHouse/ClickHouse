@@ -100,8 +100,10 @@ Please fix this and reinstall this package." >&2
     #  but the executable file inside the container has capabilities,
     #  then attempt to run this file will end up with a cryptic "Operation not permitted" message.
 
+    TMPFILE=/tmp/test_setcap.sh
+
     command -v setcap >/dev/null \
-        && touch /tmp/test.sh && chmod a+x /tmp/test.sh && /tmp/test.sh && setcap "cap_net_admin,cap_ipc_lock+ep" /tmp/test.sh && /tmp/test.sh && rm /tmp/test.sh \
+        && echo > $TMPFILE && chmod a+x $TMPFILE && $TMPFILE && setcap "cap_net_admin,cap_ipc_lock+ep" $TMPFILE && $TMPFILE && rm $TMPFILE \
         && setcap "cap_net_admin,cap_ipc_lock+ep" "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
         || echo "Cannot set 'net_admin' or 'ipc_lock' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
 
