@@ -1,7 +1,7 @@
 #include "XDBCDictionarySource.h"
 
 #include <Columns/ColumnString.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class XDBCBridgeBlockInputStream : public IProfilingBlockInputStream
+    class XDBCBridgeBlockInputStream : public IBlockInputStream
     {
     public:
         XDBCBridgeBlockInputStream(

@@ -8,7 +8,7 @@
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 
 #include <IO/ReadBufferFromFile.h>
@@ -25,7 +25,7 @@ namespace DB
 /** Part of implementation. Merging array of ready (already read from somewhere) blocks.
   * Returns result of merge as stream of blocks, not more than 'max_merged_block_size' rows in each.
   */
-class MergeSortingBlocksBlockInputStream : public IProfilingBlockInputStream
+class MergeSortingBlocksBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
@@ -66,7 +66,7 @@ private:
 };
 
 
-class MergeSortingBlockInputStream : public IProfilingBlockInputStream
+class MergeSortingBlockInputStream : public IBlockInputStream
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
