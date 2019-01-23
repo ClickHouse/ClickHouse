@@ -4,7 +4,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Poco/String.h>    /// toLower
@@ -186,7 +186,7 @@ size_t rawSize(const StringRef & t)
     return t.size;
 }
 
-class JoinBlockInputStream : public IProfilingBlockInputStream
+class JoinBlockInputStream : public IBlockInputStream
 {
 public:
     JoinBlockInputStream(const Join & parent_, size_t max_block_size_, Block && sample_block_)
