@@ -860,7 +860,7 @@ private:
     }
 
 
-    /// Process the query that doesn't require transfering data blocks to the server.
+    /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
         connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -869,7 +869,7 @@ private:
     }
 
 
-    /// Process the query that requires transfering data blocks to the server.
+    /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
@@ -1136,7 +1136,7 @@ private:
     }
 
 
-    /// Process Log packets, exit when recieve Exception or EndOfStream
+    /// Process Log packets, exit when receive Exception or EndOfStream
     bool receiveEndOfQuery()
     {
         while (true)

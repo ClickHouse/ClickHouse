@@ -131,7 +131,7 @@ public:
                 if (storage.table_fd_init_offset < 0)
                     throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-                /// ReadBuffer's seek() doesn't make sence, since cache is empty
+                /// ReadBuffer's seek() doesn't make sense, since cache is empty
                 if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
                     throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
