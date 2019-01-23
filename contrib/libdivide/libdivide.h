@@ -342,7 +342,7 @@ static inline __m128i libdivide_get_0000FFFF(void) {
 #endif
 
 /// This is a bug in gcc-8, _MM_SHUFFLE was forgotten, though in trunk it is ok https://github.com/gcc-mirror/gcc/blob/master/gcc/config/rs6000/xmmintrin.h#L61
-#if __PPC__
+#if defined(__PPC__)
 #ifndef _MM_SHUFFLE
 #define _MM_SHUFFLE(w,x,y,z) (((w) << 6) | ((x) << 4) | ((y) << 2) | (z))
 #endif
