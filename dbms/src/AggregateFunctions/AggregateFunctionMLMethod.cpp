@@ -16,8 +16,8 @@ template <class Method>
 AggregateFunctionPtr createAggregateFunctionMLMethod(
         const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (parameters.size() > 1)
-        throw Exception("Aggregate function " + name + " requires at most one parameter", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (parameters.size() > 2)
+        throw Exception("Aggregate function " + name + " requires at most two parameters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
@@ -27,19 +27,22 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
                                   ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    Float64 learning_rate;
-    if (parameters.empty())
-    {
-        learning_rate = Float64(0.01);
-    } else
+    Float64 learning_rate = Float64(0.01);
+    UInt32 batch_size = 1;
+    if (!parameters.empty())
     {
         learning_rate = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
+    }
+    if (parameters.size() > 1)
+    {
+        batch_size = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[1]);
+
     }
 
     if (argument_types.size() < 2)
         throw Exception("Aggregate function " + name + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<Method>(argument_types.size() - 1, learning_rate);
+    return std::make_shared<Method>(argument_types.size() - 1, learning_rate, batch_size);
 }
 
 }
