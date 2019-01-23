@@ -137,7 +137,7 @@ protected:
     static const Data & data(ConstAggregateDataPtr place) { return *reinterpret_cast<const Data*>(place); }
 
 public:
-    void create(AggregateDataPtr place) const override
+    virtual void create(AggregateDataPtr place) const override
     {
         new (place) Data;
     }
