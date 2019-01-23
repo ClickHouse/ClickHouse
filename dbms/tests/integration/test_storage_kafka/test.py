@@ -88,10 +88,11 @@ def kafka_check_json_numbers(instance, insert_malformed=False, table='test.kafka
     kafka_produce(instance.cluster.kafka_docker_id, 'json', messages)
 
     # XXX: since the broken message breaks the `select` reading
-    #      we'll try to select a limited number of times.
+    #      we'll try to select 3 times - to be sure.
+    result = ''
     for i in range(3):
-        instance.query('SELECT * FROM {};'.format(table))
         time.sleep(1)
+        result += instance.query('SELECT * FROM {};'.format(table))
 
     fpath = p.join(p.dirname(__file__), 'test_kafka_json.reference')
     with open(fpath) as reference:
