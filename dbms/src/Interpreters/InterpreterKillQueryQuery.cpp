@@ -101,7 +101,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 
 
 
-class SyncKillQueryInputStream : public IProfilingBlockInputStream
+class SyncKillQueryInputStream : public IBlockInputStream
 {
 public:
     SyncKillQueryInputStream(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
@@ -140,7 +140,7 @@ public:
                 auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
                 /// Raise exception if this query is immortal, user have to know
-                /// This could happen only if query generate streams that don't implement IProfilingBlockInputStream
+                /// This could happen only if query generate streams that don't implement IBlockInputStream
                 if (code == CancellationCode::CancelCannotBeSent)
                     throw Exception("Can't kill query '" + curr_process.query_id + "' it consits of unkillable stages", ErrorCodes::CANNOT_KILL);
                 else if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
@@ -201,7 +201,7 @@ BlockIO InterpreterKillQueryQuery::execute()
             auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
 
             /// Raise exception if this query is immortal, user have to know
-            /// This could happen only if query generate streams that don't implement IProfilingBlockInputStream
+            /// This could happen only if query generate streams that don't implement IBlockInputStream
             if (code == CancellationCode::CancelCannotBeSent)
                 throw Exception("Can't kill query '" + query_desc.query_id + "' it consits of unkillable stages", ErrorCodes::CANNOT_KILL);
 

@@ -9,7 +9,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <common/logger_useful.h>
 #include <chrono>
 
@@ -374,10 +374,9 @@ ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & curr
 
     if (elem->tryGetQueryStreams(input_stream, output_stream))
     {
-        IProfilingBlockInputStream * input_stream_casted;
-        if (input_stream && (input_stream_casted = dynamic_cast<IProfilingBlockInputStream *>(input_stream.get())))
+        if (input_stream)
         {
-            input_stream_casted->cancel(kill);
+            input_stream->cancel(kill);
             return CancellationCode::CancelSent;
         }
         return CancellationCode::CancelCannotBeSent;

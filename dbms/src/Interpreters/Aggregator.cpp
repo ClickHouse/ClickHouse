@@ -10,7 +10,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
@@ -1723,7 +1723,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
   * (This is important for distributed processing.)
   * In doing so, it can handle different buckets in parallel, using up to `threads` threads.
   */
-class MergingAndConvertingBlockInputStream : public IProfilingBlockInputStream
+class MergingAndConvertingBlockInputStream : public IBlockInputStream
 {
 public:
     /** The input is a set of non-empty sets of partially aggregated data,
