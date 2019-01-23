@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 
@@ -30,6 +31,23 @@ ColumnAggregateFunction::~ColumnAggregateFunction()
 void ColumnAggregateFunction::addArena(ArenaPtr arena_)
 {
     arenas.push_back(arena_);
+}
+
+bool ColumnAggregateFunction::convertion(MutableColumnPtr* res_) const
+{
+    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+    {
+        auto res = createView();
+        res->set(function_state->getNestedFunction());
+        res->data.assign(data.begin(), data.end());
+        *res_ = std::move(res);
+        return true;
+    }
+
+    MutableColumnPtr res = func->getReturnType()->createColumn();
+    res->reserve(data.size());
+    *res_ = std::move(res);
+    return false;
 }
 
 MutableColumnPtr ColumnAggregateFunction::convertToValues() const
@@ -64,16 +82,21 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         *   AggregateFunction(quantileTiming(0.5), UInt64)
         * into UInt16 - already finished result of `quantileTiming`.
         */
-    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+//    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+//    {
+//        auto res = createView();
+//        res->set(function_state->getNestedFunction());
+//        res->data.assign(data.begin(), data.end());
+//        return res;
+//    }
+//
+//    MutableColumnPtr res = func->getReturnType()->createColumn();
+//    res->reserve(data.size());
+    MutableColumnPtr res;
+    if (convertion(&res))
     {
-        auto res = createView();
-        res->set(function_state->getNestedFunction());
-        res->data.assign(data.begin(), data.end());
         return res;
     }
-
-    MutableColumnPtr res = func->getReturnType()->createColumn();
-    res->reserve(data.size());
 
     for (auto val : data)
         func->insertResultInto(val, *res);
@@ -81,21 +104,24 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
     return res;
 }
 
-//MutableColumnPtr ColumnAggregateFunction::predictValues(std::vector<Float64> predict_feature) const
 MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const ColumnNumbers & arguments) const
 {
-    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+//    if (const AggregateFunctionState * function_state = typeid_cast<const AggregateFunctionState *>(func.get()))
+//    {
+//        auto res = createView();
+//        res->set(function_state->getNestedFunction());
+//        res->data.assign(data.begin(), data.end());
+//        return res;
+//    }
+//
+//    MutableColumnPtr res = func->getReturnType()->createColumn();
+//    res->reserve(data.size());
+    MutableColumnPtr res;
+    if (convertion(&res))
     {
-        auto res = createView();
-        res->set(function_state->getNestedFunction());
-        res->data.assign(data.begin(), data.end());
         return res;
     }
 
-    MutableColumnPtr res = func->getReturnType()->createColumn();
-    res->reserve(data.size());
-
-//    const AggregateFunctionMLMethod * ML_function = typeid_cast<const AggregateFunctionMLMethod *>(func.get());
     auto ML_function = typeid_cast<const AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression> *>(func.get());
     if (ML_function)
     {
@@ -105,7 +131,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             ++row_num;
         }
     } else {
-
+        throw Exception("Illegal aggregate function is passed",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     return res;
