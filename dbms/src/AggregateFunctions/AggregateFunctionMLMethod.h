@@ -20,9 +20,11 @@
 #include <Common/FieldVisitors.h>
 
 
-namespace DB {
+namespace DB
+{
 
-struct LinearRegressionData {
+struct LinearRegressionData
+{
     Float64 bias{0.0};
     std::vector<Float64> w1;
     Float64 learning_rate{0.01};
@@ -30,8 +32,10 @@ struct LinearRegressionData {
     UInt32 param_num = 0;
 
 
-    void add(Float64 target, std::vector<Float64>& feature, Float64 learning_rate_, UInt32 param_num_) {
-        if (w1.empty()) {
+    void add(Float64 target, std::vector<Float64>& feature, Float64 learning_rate_, UInt32 param_num_)
+    {
+        if (w1.empty())
+        {
             learning_rate = learning_rate_;
             param_num = param_num_;
             w1.resize(param_num);
@@ -53,11 +57,13 @@ struct LinearRegressionData {
         ++iter_num;
     }
 
-    void merge(const LinearRegressionData & rhs) {
+    void merge(const LinearRegressionData & rhs)
+    {
         if (iter_num == 0 && rhs.iter_num == 0)
             throw std::runtime_error("Strange...");
 
-        if (param_num == 0) {
+        if (param_num == 0)
+        {
             param_num = rhs.param_num;
             w1.resize(param_num);
         }
@@ -74,18 +80,22 @@ struct LinearRegressionData {
         iter_num += rhs.iter_num;
     }
 
-    void write(WriteBuffer & buf) const {
+    void write(WriteBuffer & buf) const
+    {
         writeBinary(bias, buf);
         writeBinary(w1, buf);
         writeBinary(iter_num, buf);
     }
 
-    void read(ReadBuffer & buf) {
+    void read(ReadBuffer & buf)
+    {
         readBinary(bias, buf);
         readBinary(w1, buf);
         readBinary(iter_num, buf);
     }
-    Float64 predict(std::vector<Float64>& predict_feature) const {
+
+    Float64 predict(std::vector<Float64>& predict_feature) const
+    {
         Float64 res{0.0};
         for (size_t i = 0; i < static_cast<size_t>(param_num); ++i)
         {
@@ -152,8 +162,9 @@ public:
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
         std::vector<Float64> predict_features(arguments.size() - 1);
-//        for (size_t row_num = 0, rows = block.rows(); row_num < rows; ++row_num) {
-        for (size_t i = 1; i < arguments.size(); ++i) {
+//        for (size_t row_num = 0, rows = block.rows(); row_num < rows; ++row_num)
+        for (size_t i = 1; i < arguments.size(); ++i)
+        {
 //            predict_features[i] = array_elements[i].get<Float64>();
             predict_features[i - 1] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*block.getByPosition(arguments[i]).column)[row_num]);
         }
@@ -162,7 +173,8 @@ public:
 //        }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override {
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    {
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
         std::ignore = column;
         std::ignore = place;
