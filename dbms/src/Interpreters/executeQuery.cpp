@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
@@ -501,6 +502,9 @@ void executeQuery(
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                 ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
+
+            if (ast_query_with_output && ast_query_with_output->settings)
+                InterpreterSetQuery(ast_query_with_output->settings, context).executeForCurrentContext();
 
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 

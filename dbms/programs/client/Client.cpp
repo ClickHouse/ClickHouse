@@ -56,6 +56,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
@@ -1205,6 +1206,10 @@ private:
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
                     current_format = id.name;
+                }
+                if (query_with_output->settings)
+                {
+                    InterpreterSetQuery(query_with_output->settings, context).executeForCurrentContext();
                 }
             }
 
