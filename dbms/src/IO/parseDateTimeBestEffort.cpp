@@ -44,6 +44,12 @@ inline size_t readAlpha(char * res, size_t max_chars, ReadBuffer & in)
     return num_chars;
 }
 
+#if __PPC__
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#endif
+
 template <size_t digit, size_t power_of_ten, typename T>
 inline void readDecimalNumberImpl(T & res, const char * src)
 {
@@ -513,6 +519,9 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
 }
 
+#if __PPC__
+#pragma GCC diagnostic pop
+#endif
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
