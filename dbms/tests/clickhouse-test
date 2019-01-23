@@ -369,12 +369,15 @@ if __name__ == '__main__':
             args.tmp = '/tmp/clickhouse-test'
     if args.tmp is None:
         args.tmp = args.queries
-
     if args.client is None:
         if os.access(args.binary + '-client', os.X_OK):
             args.client = args.binary + '-client'
-        else:
+        elif os.access(args.binary,os.X_OK):
             args.client = args.binary + ' client'
+        else:
+            print("No clickhouse binary found")
+            parser.print_help();
+            exit(0);
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
         if os.getenv("CLICKHOUSE_HOST"):
