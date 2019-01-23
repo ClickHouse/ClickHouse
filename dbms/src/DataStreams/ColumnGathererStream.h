@@ -51,7 +51,7 @@ using MergedRowSources = PODArray<RowSourcePart>;
 
 /** Gather single stream from multiple streams according to streams mask.
   * Stream mask maps row number to index of source stream.
-  * Streams should conatin exactly one column.
+  * Streams should contain exactly one column.
   */
 class ColumnGathererStream : public IProfilingBlockInputStream
 {

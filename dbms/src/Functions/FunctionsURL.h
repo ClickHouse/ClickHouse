@@ -23,7 +23,7 @@ namespace DB
   *  queryStringAndFragment
   *
   * Functions, removing parts from URL.
-  * If URL has nothing like, then it is retured unchanged.
+  * If URL has nothing like, then it is returned unchanged.
   *
   *  cutWWW
   *  cutFragment
