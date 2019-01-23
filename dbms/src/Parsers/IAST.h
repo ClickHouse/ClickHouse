@@ -76,7 +76,8 @@ public:
       */
     using Hash = std::pair<UInt64, UInt64>;
     Hash getTreeHash() const;
-    void getTreeHashImpl(SipHash & hash_state) const;
+    void updateTreeHash(SipHash & hash_state) const;
+    virtual void updateTreeHashImpl(SipHash & hash_state) const;
 
     void dumpTree(std::ostream & ostr, size_t indent = 0) const
     {
