@@ -27,7 +27,7 @@ if (HAVE_SSE41)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
 endif ()
 
-if (PPC64LE)
+if (ARCH_PPC64LE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
 endif ()
 

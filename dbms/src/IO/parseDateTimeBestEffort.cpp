@@ -44,7 +44,7 @@ inline size_t readAlpha(char * res, size_t max_chars, ReadBuffer & in)
     return num_chars;
 }
 
-#if __PPC__
+#if defined(__PPC__)
 #if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -519,7 +519,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
 }
 
-#if __PPC__
+#if defined(__PPC__)
 #if !__clang__
 #pragma GCC diagnostic pop
 #endif

@@ -26,7 +26,7 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(ppc64le.*|PPC64LE.*)")
-    set (PPC64LE 1)
+    set (ARCH_PPC64LE 1)
     if (COMPILER_CLANG OR (COMPILER_GCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8))
         message(FATAL_ERROR "Only gcc-8 is supported for powerpc architecture")
     endif ()

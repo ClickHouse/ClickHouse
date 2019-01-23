@@ -1,6 +1,6 @@
 enable_language(ASM)
 
-if (PPC64LE)
+if (ARCH_PPC64LE)
     add_library(unwind
     src/mi/init.c
     src/mi/flush_cache.c
