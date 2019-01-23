@@ -179,9 +179,9 @@ bool ParserColumnsOrIndicesDeclarationList::parseImpl(Pos & pos, ASTPtr & node, 
 
     for (const auto & elem : list->children)
     {
-        if (dynamic_cast<const ASTColumnDeclaration *>(elem.get()))
+        if (typeid_cast<const ASTColumnDeclaration *>(elem.get()))
             columns->children.push_back(elem);
-        else if (dynamic_cast<const ASTIndexDeclaration *>(elem.get()))
+        else if (typeid_cast<const ASTIndexDeclaration *>(elem.get()))
             indices->children.push_back(elem);
         else
             return false;

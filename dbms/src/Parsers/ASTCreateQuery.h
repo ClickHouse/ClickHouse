@@ -119,10 +119,11 @@ private:
             s.ostr << s.nl_or_ws << indent_str;
             s.ostr << (s.hilite ? hilite_keyword : "") << prefix << (s.hilite ? hilite_none : "");
 
-            FormatStateStacked frame_nested = frame;
-            ++frame_nested.indent;
+            FormatSettings nested_settings = s;
+            nested_settings.one_line = true;
+            nested_settings.nl_or_ws = ' ';
 
-            elem->formatImpl(s, state, frame_nested);
+            elem->formatImpl(nested_settings, state, frame);
         }
     };
 public:
