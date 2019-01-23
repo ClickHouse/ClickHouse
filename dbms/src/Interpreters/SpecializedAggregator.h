@@ -136,7 +136,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     AggregateDataPtr overflow_row) const
 {
     /// For all rows.
-    typename Method::Key prev_key;
+    typename Method::Key prev_key{};
     AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {

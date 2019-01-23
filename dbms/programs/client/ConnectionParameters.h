@@ -25,12 +25,12 @@ namespace ErrorCodes
 struct ConnectionParameters
 {
     String host;
-    UInt16 port;
+    UInt16 port{};
     String default_database;
     String user;
     String password;
-    Protocol::Secure security;
-    Protocol::Compression compression;
+    Protocol::Secure security = Protocol::Secure::Disable;
+    Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
 
     ConnectionParameters() {}
