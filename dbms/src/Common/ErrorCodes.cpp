@@ -409,6 +409,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_CODEC = 432;
     extern const int ILLEGAL_CODEC_PARAMETER = 433;
     extern const int CANNOT_PARSE_PROTOBUF_SCHEMA = 434;
+    extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD = 435;
+    extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE = 436;
+    extern const int PROTOBUF_FIELD_NOT_REPEATED = 437;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
