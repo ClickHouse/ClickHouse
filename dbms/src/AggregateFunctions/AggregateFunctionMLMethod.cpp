@@ -22,9 +22,9 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
         if (!WhichDataType(argument_types[i]).isFloat64())
-            throw Exception("Illegal type " + argument_types[i]->getName() + " of argument " +
-                                    std::to_string(i) + "for aggregate function " + name,
-                                  ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + argument_types[i]->getName() + " of argument " 
+			                    + std::to_string(i) + "for aggregate function " + name,
+                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     Float64 learning_rate = Float64(0.01);
@@ -47,7 +47,8 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 
 }
 
-void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory) {
+void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
+{
     factory.registerFunction("LinearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
 }
 
