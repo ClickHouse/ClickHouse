@@ -520,7 +520,9 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 }
 
 #if __PPC__
+#if !__clang__
 #pragma GCC diagnostic pop
+#endif
 #endif
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

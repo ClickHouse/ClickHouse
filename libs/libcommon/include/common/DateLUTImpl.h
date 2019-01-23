@@ -691,5 +691,7 @@ public:
 };
 
 #if __PPC__
+#if !__clang__
 #pragma GCC diagnostic pop
+#endif
 #endif
