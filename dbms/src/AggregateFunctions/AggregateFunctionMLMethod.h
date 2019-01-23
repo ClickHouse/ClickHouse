@@ -22,74 +22,82 @@
 
 namespace DB {
 
-struct LinearRegressionData {
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
+}
+
+
+struct LinearRegressionData
+{
+    LinearRegressionData()
+    {}
+    LinearRegressionData(Float64 learning_rate_, UInt32 param_num_)
+    : learning_rate(learning_rate_) {
+        weights.resize(param_num_);
+    }
+
     Float64 bias{0.0};
-    std::vector<Float64> w1;
-    Float64 learning_rate{0.01};
+    std::vector<Float64> weights;
+    Float64 learning_rate;
     UInt32 iter_num = 0;
-    UInt32 param_num = 0;
 
-
-    void add(Float64 target, std::vector<Float64>& feature, Float64 learning_rate_, UInt32 param_num_) {
-        if (w1.empty()) {
-            learning_rate = learning_rate_;
-            param_num = param_num_;
-            w1.resize(param_num);
-        }
-
+    void add(Float64 target, const IColumn ** columns, size_t row_num)
+    {
         Float64 derivative = (target - bias);
-        for (size_t i = 0; i < param_num; ++i)
+        for (size_t i = 0; i < weights.size(); ++i)
         {
-            derivative -= w1[i] * feature[i];
+            derivative -= weights[i] * static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];
+
         }
         derivative *= (2 * learning_rate);
 
         bias += derivative;
-        for (size_t i = 0; i < param_num; ++i)
+        for (size_t i = 0; i < weights.size(); ++i)
         {
-            w1[i] += derivative * feature[i];
+            weights[i] += derivative * static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];;
         }
 
         ++iter_num;
     }
 
-    void merge(const LinearRegressionData & rhs) {
+    void merge(const LinearRegressionData & rhs)
+    {
         if (iter_num == 0 && rhs.iter_num == 0)
-            throw std::runtime_error("Strange...");
-
-        if (param_num == 0) {
-            param_num = rhs.param_num;
-            w1.resize(param_num);
-        }
+            return;
 
         Float64 frac = static_cast<Float64>(iter_num) / (iter_num + rhs.iter_num);
         Float64 rhs_frac = static_cast<Float64>(rhs.iter_num) / (iter_num + rhs.iter_num);
 
-        for (size_t i = 0; i < param_num; ++i)
+        for (size_t i = 0; i < weights.size(); ++i)
         {
-            w1[i] = w1[i] * frac + rhs.w1[i] * rhs_frac;
+            weights[i] = weights[i] * frac + rhs.weights[i] * rhs_frac;
         }
 
         bias = bias * frac + rhs.bias * rhs_frac;
         iter_num += rhs.iter_num;
     }
 
-    void write(WriteBuffer & buf) const {
+    void write(WriteBuffer & buf) const
+    {
         writeBinary(bias, buf);
-        writeBinary(w1, buf);
+        writeBinary(weights, buf);
         writeBinary(iter_num, buf);
     }
 
-    void read(ReadBuffer & buf) {
+    void read(ReadBuffer & buf)
+    {
         readBinary(bias, buf);
-        readBinary(w1, buf);
+        readBinary(weights, buf);
         readBinary(iter_num, buf);
     }
-    Float64 predict(std::vector<Float64>& predict_feature) const {
+    Float64 predict(const std::vector<Float64>& predict_feature) const
+    {
         Float64 res{0.0};
-        for (size_t i = 0; i < static_cast<size_t>(param_num); ++i)
+        for (size_t i = 0; i < predict_feature.size(); ++i)
         {
-            res += predict_feature[i] * w1[i];
+            res += predict_feature[i] * weights[i];
         }
         res += bias;
 
@@ -118,18 +126,16 @@ public:
         return std::make_shared<DataTypeNumber<Float64>>();
     }
 
+    void create(AggregateDataPtr place) const override
+    {
+        new (place) Data(learning_rate, param_num);
+    }
+
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const auto & target = static_cast<const ColumnVector<Float64> &>(*columns[0]);
 
-        std::vector<Float64> x(param_num);
-        for (size_t i = 0; i < param_num; ++i)
-        {
-            x[i] = static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];
-        }
-
-        this->data(place).add(target.getData()[row_num], x, learning_rate, param_num);
-
+        this->data(place).add(target.getData()[row_num], columns, row_num);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -149,20 +155,26 @@ public:
 
     void predictResultInto(ConstAggregateDataPtr place, IColumn & to, Block & block, size_t row_num, const ColumnNumbers & arguments) const
     {
+        if (arguments.size() != param_num + 1)
+            throw Exception("Predict got incorrect number of arguments. Got: " + std::to_string(arguments.size()) + ". Required: " + std::to_string(param_num + 1),
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
 
         std::vector<Float64> predict_features(arguments.size() - 1);
-//        for (size_t row_num = 0, rows = block.rows(); row_num < rows; ++row_num) {
         for (size_t i = 1; i < arguments.size(); ++i) {
-//            predict_features[i] = array_elements[i].get<Float64>();
-            predict_features[i - 1] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*block.getByPosition(arguments[i]).column)[row_num]);
+            const auto& element = (*block.getByPosition(arguments[i]).column)[row_num];
+            if (element.getType() != Field::Types::Float64)
+                throw Exception("Prediction arguments must be values of type Float",
+                        ErrorCodes::BAD_ARGUMENTS);
+
+            predict_features[i - 1] = element.get<Float64>();
         }
-//            column.getData().push_back(this->data(place).predict(predict_features));
         column.getData().push_back(this->data(place).predict(predict_features));
-//        }
     }
 
-    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override {
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    {
         auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
         std::ignore = column;
         std::ignore = place;
