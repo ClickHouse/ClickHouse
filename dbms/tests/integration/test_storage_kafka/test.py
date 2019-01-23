@@ -60,7 +60,7 @@ def kafka_produce(kafka_id, topic, messages):
     p.stdin.close()
 
 
-def kafka_check_json_numbers(instance, insert_malformed=False, table='test.kafka'):
+def kafka_check_json_numbers(instance, insert_malformed=False, table='test.kafka', select_count=3):
     retries = 0
     while True:
         if kafka_is_available(instance.cluster.kafka_docker_id):
@@ -88,9 +88,9 @@ def kafka_check_json_numbers(instance, insert_malformed=False, table='test.kafka
     kafka_produce(instance.cluster.kafka_docker_id, 'json', messages)
 
     # XXX: since the broken message breaks the `select` reading
-    #      we'll try to select 3 times - to be sure.
+    #      we'll try to select a limited number of times.
     result = ''
-    for i in range(3):
+    for i in range(select_count):
         time.sleep(1)
         result += instance.query('SELECT * FROM {};'.format(table))
 
@@ -154,7 +154,7 @@ def test_kafka_json_materialized_view(started_cluster):
             SELECT * FROM test.kafka;
     ''')
 
-    kafka_check_json_numbers(instance, True, 'test.view')
+    kafka_check_json_numbers(instance, True, 'test.view', 1)
 
     instance.query('''
         DROP TABLE test.kafka;
