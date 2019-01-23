@@ -26,8 +26,8 @@ struct CommonParent {
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test.capnproto_parent"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test.capnproto_parent
 (
-	nestedone_parent_child String,
-	nestedtwo_parent_child String
+    nestedone_parent_child String,
+    nestedtwo_parent_child String
 ) ENGINE = Memory"
 
 echo -ne '\x00\x00\x00\x00\x09\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x04\x00\x00\x00\x00\x00\x01\x00\x0c\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00\x01\x00\x00\x00\x22\x00\x00\x00\x6f\x6e\x65\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x01\x00\x00\x00\x22\x00\x00\x00\x74\x77\x6f\x00\x00\x00\x00\x00' | $CLICKHOUSE_CLIENT --stacktrace --format_schema='test:CommonParent' --query="INSERT INTO test.capnproto_parent FORMAT CapnProto";
@@ -37,5 +37,3 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE test.capnproto_parent"
 
 # remove the schema file
 rm test.capnp
-
-
