@@ -4,6 +4,14 @@
 
 #if USE_AEROSPIKE
 
-#include <libaerospike.h>
+#    include "DictionaryStructure.h"
+#    include "IDictionarySource.h"
+#    include <aerospike/aerospike.h>
+
+namespace DB
+{
+
+}
 
 #endif
+
