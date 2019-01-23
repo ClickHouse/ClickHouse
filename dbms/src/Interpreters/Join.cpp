@@ -10,7 +10,7 @@
 #include <Interpreters/Join.h>
 #include <Interpreters/NullableUtils.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
@@ -1041,7 +1041,7 @@ struct AdderNonJoined<ASTTableJoin::Strictness::All, Mapped>
 
 
 /// Stream from not joined earlier rows of the right table.
-class NonJoinedBlockInputStream : public IProfilingBlockInputStream
+class NonJoinedBlockInputStream : public IBlockInputStream
 {
 public:
     NonJoinedBlockInputStream(const Join & parent_, const Block & left_sample_block, const Names & key_names_left, size_t max_block_size_)

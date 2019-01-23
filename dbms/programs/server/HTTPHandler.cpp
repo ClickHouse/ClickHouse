@@ -31,7 +31,7 @@
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
