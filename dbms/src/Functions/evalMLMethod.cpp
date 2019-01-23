@@ -59,6 +59,7 @@ namespace DB
 
         void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
         {
+            // завести МЛ_аггр_функции как отдельный класс, чтобы тут сразу это проверять, а не делать это внутри predictValues()
             const ColumnAggregateFunction * column_with_states
                     = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
             if (!column_with_states)
