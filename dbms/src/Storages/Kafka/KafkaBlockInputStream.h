@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <IO/DelimitedReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
@@ -26,7 +27,7 @@ private:
     Context context;
     size_t max_block_size;
     Block sample_block;
-    std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
+    std::unique_ptr<DelimitedReadBuffer> read_buf;
     BlockInputStreamPtr reader;
     bool finalized = false;
 

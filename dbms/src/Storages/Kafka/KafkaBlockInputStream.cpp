@@ -76,7 +76,7 @@ void KafkaBlockInputStream::readPrefixImpl()
         if (consumer == nullptr)
             throw Exception("Failed to claim consumer: ", ErrorCodes::TIMEOUT_EXCEEDED);
 
-        read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer, storage.log, storage.row_delimiter);
+        read_buf = std::make_unique<DelimitedReadBuffer>(new ReadBufferFromKafkaConsumer(consumer, storage.log), storage.row_delimiter);
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
@@ -90,8 +90,7 @@ void KafkaBlockInputStream::readSuffixImpl()
     if (hasClaimed())
     {
         reader->readSuffix();
-        // Store offsets read in this stream
-        read_buf->commit();
+        read_buf->subBufferAs<ReadBufferFromKafkaConsumer>()->commit(); // Store offsets read in this stream
     }
 
     // Mark as successfully finished

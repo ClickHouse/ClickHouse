@@ -12,31 +12,31 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
-    ReadBufferFromKafkaConsumer(ConsumerPtr consumer_, Poco::Logger * log_, char row_delimiter_)
-        : ReadBuffer(nullptr, 0), consumer(consumer_), log(log_), row_delimiter(row_delimiter_)
+    ReadBufferFromKafkaConsumer(ConsumerPtr consumer_, Poco::Logger * log_)
+        : ReadBuffer(nullptr, 0), consumer(consumer_), log(log_)
     {
-        if (row_delimiter != '\0')
-            LOG_TRACE(log, "Row delimiter is: " << row_delimiter);
     }
 
     /// Commit messages read with this consumer
-    void commit()
+    auto commit()
     {
-        LOG_TRACE(log, "Committing " << read_messages << " messages");
-        if (read_messages == 0)
-            return;
+        if (read_messages)
+        {
+            LOG_TRACE(log, "Committing " << read_messages << " messages");
+            consumer->async_commit();
+        }
 
-        consumer->async_commit();
+        auto result = read_messages;
         read_messages = 0;
+
+        return result;
     }
 
 private:
     ConsumerPtr consumer;
-    cppkafka::Message current;
-    bool current_pending = false; /// We've fetched "current" message and need to process it on the next iteration.
+    cppkafka::Message message;
     Poco::Logger * log;
     size_t read_messages = 0;
-    char row_delimiter;
 
     bool nextImpl() override;
 };
