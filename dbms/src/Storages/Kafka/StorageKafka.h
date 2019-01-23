@@ -80,6 +80,8 @@ private:
     std::mutex mutex;
     std::vector<ConsumerPtr> consumers; /// Available consumers
 
+    size_t skip_broken;
+
     // Stream thread
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
@@ -101,7 +103,7 @@ protected:
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, char row_delimiter_, const String & schema_name_,
-        size_t num_consumers_, size_t max_block_size_);
+        size_t num_consumers_, size_t max_block_size_, size_t skip_broken);
 };
 
 }

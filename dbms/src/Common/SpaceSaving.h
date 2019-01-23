@@ -40,7 +40,7 @@ struct SpaceSavingArena
 
 /*
  * Specialized storage for StringRef with a freelist arena.
- * Keys of this type that are retained on insertion must be serialised into local storage,
+ * Keys of this type that are retained on insertion must be serialized into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
 template <>
