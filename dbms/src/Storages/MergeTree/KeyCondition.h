@@ -339,7 +339,7 @@ private:
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,
-      *  that can be monotomic on certain ranges?
+      *  that can be monotonic on certain ranges?
       * If these conditions are true, then returns number of column in key, type of resulting expression
       *  and fills chain of possibly-monotonic functions.
       */
