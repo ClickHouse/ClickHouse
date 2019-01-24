@@ -230,15 +230,15 @@ The key for partitioning by month allows reading only those data blocks which co
 
 ### Data Skipping Indices
 
-Index declaration in the columns section of create query.
+Index declaration in the columns section of the `CREATE` query.
 ```sql
 INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
 ```
 
 For tables from the `*MergeTree` family data skipping indices can be specified.
 
-These indices aggregate some information about specified expression on blocks, which consist of `granularity_value` granules,
-then these aggregates is used in `SELECT` queries for reducing amount of data to read from disk by skipping big blocks of data where `where` query can not be satisfied.
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules,
+then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
 
 
 Example
@@ -255,7 +255,7 @@ CREATE TABLE table_name
 ...
 ```
 
-Indices from the example can be used by ClickHouse to reduce amount of data to read from disk in following queries.
+Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in following queries.
 ```sql
 SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
@@ -263,7 +263,7 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Available Types of Indices
 
-* `minmax` Stores extremes of specified expression (if expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like primary key.
+* `minmax` Stores extremes of specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like primary key.
 
 ```sql
 INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
