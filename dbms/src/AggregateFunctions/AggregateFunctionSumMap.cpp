@@ -12,7 +12,7 @@ namespace DB
 namespace
 {
 
-using SumMapArgs = std::pair<const DataTypePtr &, DataTypes>;
+using SumMapArgs = std::pair<DataTypePtr, DataTypes>;
 
 SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
 {
@@ -26,9 +26,10 @@ SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
 
-    const DataTypePtr & keys_type = array_type->getNestedType();
+    DataTypePtr keys_type = array_type->getNestedType();
 
     DataTypes values_types;
+    values_types.reserve(arguments.size() - 1);
     for (size_t i = 1; i < arguments.size(); ++i)
     {
         array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
@@ -38,7 +39,7 @@ SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
         values_types.push_back(array_type->getNestedType());
     }
 
-    return  {keys_type, std::move(values_types)};
+    return  {std::move(keys_type), std::move(values_types)};
 }
 
 AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, const DataTypes & arguments, const Array & params)
