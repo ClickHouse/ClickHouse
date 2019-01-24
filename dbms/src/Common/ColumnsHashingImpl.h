@@ -44,7 +44,7 @@ public:
             : value(value), cached_value(cached_value), inserted(inserted) {}
 
     bool isInserted() const { return inserted; }
-    const auto & getMapped() const { return value; }
+    auto & getMapped() const { return value; }
     void setMapped(const Mapped & mapped) { value = cached_value = mapped; }
 };
 
@@ -61,13 +61,13 @@ public:
 template <typename Mapped>
 class FindResultImpl
 {
-    Mapped value;
+    Mapped * value;
     bool found;
 
 public:
-    FindResultImpl(Mapped value, bool found) : value(value), found(found) {}
+    FindResultImpl(Mapped * value, bool found) : value(value), found(found) {}
     bool isFound() const { return found; }
-    const Mapped & getMapped() const { return value; }
+    Mapped & getMapped() const { return *value; }
 };
 
 template <>
@@ -142,7 +142,7 @@ protected:
             if (cache.check(key))
             {
                 if constexpr (has_mapped)
-                    return FindResult(cache.found ? cache.value.second : Mapped(), cache.found);
+                    return FindResult(&cache.value.second, cache.found);
                 else
                     return FindResult(cache.found);
             }
@@ -168,7 +168,7 @@ protected:
         }
 
         if constexpr (has_mapped)
-            return FindResult(found ? it->second : Mapped(), found);
+            return FindResult(found ? &it->second : nullptr, found);
         else
             return FindResult(found);
     }
