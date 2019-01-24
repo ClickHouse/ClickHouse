@@ -21,8 +21,6 @@ namespace ErrorCodes
 }
 
 
-// Converter -----------------------------------------------------------------------------------------------------------
-
 class ProtobufWriter::Converter : private boost::noncopyable
 {
 public:
@@ -128,8 +126,6 @@ protected:
 };
 
 
-// ToStringConverter ---------------------------------------------------------------------------------------------------
-
 class ProtobufWriter::ToStringConverter : public Converter
 {
 public:
@@ -231,8 +227,6 @@ private:
     std::optional<std::unordered_map<Int16, String>> enum_value_to_name_map;
 };
 
-
-// ToNumberConverter ---------------------------------------------------------------------------------------------------
 
 template <typename T>
 class ProtobufWriter::ToNumberConverter : public Converter
@@ -396,8 +390,6 @@ private:
 };
 
 
-// ToBoolConverter -----------------------------------------------------------------------------------------------------
-
 class ProtobufWriter::ToBoolConverter : public Converter
 {
 public:
@@ -450,8 +442,6 @@ private:
     void (ProtobufSimpleWriter::*write_field_function)(UInt32 b);
 };
 
-
-// ToEnumConverter -----------------------------------------------------------------------------------------------------
 
 class ProtobufWriter::ToEnumConverter : public Converter
 {
@@ -551,8 +541,6 @@ private:
     std::optional<std::unordered_map<Int16, int>> enum_value_to_pbnumber_map;
 };
 
-
-// ProtobufWriter ------------------------------------------------------------------------------------------------------
 
 ProtobufWriter::ProtobufWriter(WriteBuffer & out, const google::protobuf::Descriptor * message_type) : simple_writer(out)
 {
