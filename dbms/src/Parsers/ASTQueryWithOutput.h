@@ -14,7 +14,7 @@ class ASTQueryWithOutput : public IAST
 public:
     ASTPtr out_file;
     ASTPtr format;
-    ASTPtr settings;
+    ASTPtr settings_ast;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 

@@ -1210,9 +1210,9 @@ private:
                     const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
                     current_format = id.name;
                 }
-                if (query_with_output->settings)
+                if (query_with_output->settings_ast)
                 {
-                    InterpreterSetQuery(query_with_output->settings, context).executeForCurrentContext();
+                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
                 }
             }
 

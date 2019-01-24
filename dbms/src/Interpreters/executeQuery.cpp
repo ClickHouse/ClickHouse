@@ -499,8 +499,8 @@ void executeQuery(
                 ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
-            if (ast_query_with_output && ast_query_with_output->settings)
-                InterpreterSetQuery(ast_query_with_output->settings, context).executeForCurrentContext();
+            if (ast_query_with_output && ast_query_with_output->settings_ast)
+                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
