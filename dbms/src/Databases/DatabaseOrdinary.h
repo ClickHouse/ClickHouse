@@ -22,15 +22,11 @@ public:
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
-    void loadDictionaries(Context &, ThreadPool *, bool) override;
-
     void createTable(
         const Context & context,
         const String & table_name,
         const StoragePtr & table,
         const ASTPtr & query) override;
-
-    void createDictionary(const Context &, const String &, const DictionaryPtr &, const ASTPtr &) override;
 
     void removeTable(
         const Context & context,
@@ -68,8 +64,6 @@ public:
     String getTableMetadataPath(const String & table_name) const override;
 
     void drop() override;
-
-    void shutdown() override;
 
 private:
     const String metadata_path;

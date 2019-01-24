@@ -205,18 +205,6 @@ void DatabaseOrdinary::loadTables(
 }
 
 
-void DatabaseOrdinary::loadDictionaries(Context &, ThreadPool *, bool)
-{
-    throw Exception("DatabaseOrdinary: loadDictionaries() isn't supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-
-void DatabaseOrdinary::createDictionary(const Context &, const String &, const DictionaryPtr &, const ASTPtr &)
-{
-    throw Exception("DatabaseOrdinary: createDictionary() isn't supported", ErrorCodes::NOT_IMPLEMENTED);
-}
-
-
 void DatabaseOrdinary::startupTables(ThreadPool * thread_pool)
 {
     LOG_INFO(log, "Starting up tables.");
@@ -496,26 +484,6 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
     return ast;
 }
 
-
-void DatabaseOrdinary::shutdown()
-{
-    /// You can not hold a lock during shutdown.
-    /// Because inside `shutdown` function the tables can work with database, and mutex is not recursive.
-
-    Tables tables_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        tables_snapshot = tables;
-    }
-
-    for (const auto & kv: tables_snapshot)
-    {
-        kv.second->shutdown();
-    }
-
-    std::lock_guard lock(mutex);
-    tables.clear();
-}
 
 void DatabaseOrdinary::alterTable(
     const Context & context,
