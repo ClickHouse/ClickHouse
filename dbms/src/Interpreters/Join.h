@@ -8,6 +8,7 @@
 #include <Interpreters/SettingsCommon.h>
 
 #include <Common/Arena.h>
+#include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <Columns/ColumnString.h>

@@ -36,10 +36,10 @@ using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
 
 
 /// For the case where there is one numeric key.
-template <typename Value, typename Mapped, typename FieldType>    /// UInt8/16/32/64 for any type with corresponding bit width.
-struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<Value, Mapped, true>
+template <typename Value, typename Mapped, typename FieldType, bool use_cache = true>    /// UInt8/16/32/64 for any type with corresponding bit width.
+struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>
 {
-    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, true>;
+    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>;
     const char * vec;
 
     /// If the keys of a fixed length then key_sizes contains their lengths, empty otherwise.
@@ -90,10 +90,10 @@ protected:
 
 
 /// For the case where there is one string key.
-template <typename Value, typename Mapped>
-struct HashMethodString : public columns_hashing_impl::HashMethodBase<Value, Mapped, true>
+template <typename Value, typename Mapped, bool use_cache = true>
+struct HashMethodString : public columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>
 {
-    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, true>;
+    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>;
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
@@ -107,7 +107,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<Value, Map
 
     static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
 
-    StringRef getKey(size_t row) const { return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1); }
+    StringRef getKey(ssize_t row) const { return StringRef(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1); }
 
     template <typename Data>
     ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
@@ -150,10 +150,10 @@ protected:
 
 
 /// For the case where there is one fixed-length string key.
-template <typename Value, typename Mapped>
-struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<Value, Mapped, true>
+template <typename Value, typename Mapped, bool use_cache = true>
+struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>
 {
-    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, true>;
+    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>;
     size_t n;
     const ColumnFixedString::Chars * chars;
 
@@ -396,10 +396,13 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (is_nullable && row == 0)
         {
             visit_cache[row] = VisitValue::Found;
+            bool has_null_key = data.hasNullKeyData();
+            data.hasNullKeyData() = true;
+
             if constexpr (has_mapped)
-                return EmplaceResult(data.getNullKeyData(), mapped_cache[0], !data.hasNullKeyData());
+                return EmplaceResult(data.getNullKeyData(), mapped_cache[0], !has_null_key);
             else
-                return EmplaceResult(!data.hasNullKeyData());
+                return EmplaceResult(!has_null_key);
         }
 
         if (visit_cache[row] == VisitValue::Found)
@@ -446,7 +449,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (is_nullable && row == 0)
         {
             if constexpr (has_mapped)
-                return FindResult(data.hasNullKeyData() ? data.getNullKeyData() : Mapped(), data.hasNullKeyData());
+                return FindResult(data.hasNullKeyData() ? &data.getNullKeyData() : nullptr, data.hasNullKeyData());
             else
                 return FindResult(data.hasNullKeyData());
         }
@@ -454,7 +457,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (visit_cache[row] != VisitValue::Empty)
         {
             if constexpr (has_mapped)
-                return FindResult(mapped_cache[row], visit_cache[row] == VisitValue::Found);
+                return FindResult(&mapped_cache[row], visit_cache[row] == VisitValue::Found);
             else
                 return FindResult(visit_cache[row] == VisitValue::Found);
         }
@@ -477,7 +480,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         }
 
         if constexpr (has_mapped)
-            return FindResult(mapped_cache[row], found);
+            return FindResult(&mapped_cache[row], found);
         else
             return FindResult(found);
     }
@@ -507,10 +510,10 @@ template <>
 struct LowCardinalityKeys<false> {};
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename Value, typename Key, typename Mapped, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false>
+template <typename Value, typename Key, typename Mapped, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<Value, Mapped, true>
+    , public columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>
 {
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
@@ -520,7 +523,7 @@ struct HashMethodKeysFixed
     size_t keys_size;
 
     using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
-    using BaseHashed = columns_hashing_impl::HashMethodBase<Value, Mapped, true>;
+    using BaseHashed = columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>;
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const HashMethodContextPtr &)
         : key_sizes(std::move(key_sizes)), keys_size(key_columns.size())
@@ -590,10 +593,10 @@ struct HashMethodKeysFixed
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
   */
-template <typename Value, typename Mapped>
-struct HashMethodSerialized : public columns_hashing_impl::HashMethodBase<Value, Mapped, false>
+template <typename Value, typename Mapped, bool use_cache = true>
+struct HashMethodSerialized : public columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>
 {
-    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, false>;
+    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>;
     ColumnRawPtrs key_columns;
     size_t keys_size;
 
@@ -638,6 +641,47 @@ protected:
     ALWAYS_INLINE StringRef getKey(size_t row, Arena & pool) const
     {
         return serializeKeysToPoolContiguous(row, keys_size, key_columns, pool);
+    }
+};
+
+/// For the case where there is one string key.
+template <typename Value, typename Mapped, bool use_cache = true>
+struct HashMethodHashed : public columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>
+{
+    using Base = columns_hashing_impl::HashMethodBase<Value, Mapped, use_cache>;
+    using Key = UInt128;
+
+    ColumnRawPtrs key_columns;
+
+    HashMethodHashed(ColumnRawPtrs key_columns, const Sizes &, const HashMethodContextPtr &)
+        : key_columns(std::move(key_columns)) {}
+
+    static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
+
+    UInt128 getKey(size_t row) const { return hash128(row, key_columns.size(), key_columns); }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & /*pool*/)
+    {
+        typename Data::iterator it;
+        return Base::emplaceKeyImpl(getKey(row), data, it);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::FindResult findKey(Data & data, size_t row, Arena & /*pool*/)
+    {
+        return Base::findKeyImpl(getKey(row), data);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & /*pool*/)
+    {
+        return data.hash(getKey(row));
+    }
+
+    static StringRef getValueRef(const Value & value)
+    {
+        return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 };
 
