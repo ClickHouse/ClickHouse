@@ -93,8 +93,8 @@ are available:
 
 * `ALTER DROP INDEX name` - Removes index description from tables metadata and deletes index files from disk.
 
-These commands are lightweight in sense that they only change metadata or remove files.
-Also they are replicated (syncing indices metadata through ZooKeeper).
+These commands are lightweight in a sense that they only change metadata or remove files.
+Also, they are replicated (syncing indices metadata through ZooKeeper).
 
 ### Manipulations With Partitions and Parts
 
