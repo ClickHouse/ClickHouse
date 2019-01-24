@@ -2,7 +2,7 @@
 
 #include <Common/config.h>
 #if USE_PARQUET
-#    include <DataStreams/IProfilingBlockInputStream.h>
+#    include <DataStreams/IBlockInputStream.h>
 //#    include <parquet/file_reader.h>
 //#    include <parquet/arrow/reader.h>
 //#    include <arrow/buffer.h>
@@ -15,7 +15,7 @@ namespace DB
 {
 class Context;
 
-class ParquetBlockInputStream : public IProfilingBlockInputStream
+class ParquetBlockInputStream : public IBlockInputStream
 {
 public:
     ParquetBlockInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_);
