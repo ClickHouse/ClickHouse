@@ -279,7 +279,7 @@ template <typename T>
 class AggregateFunctionSumMapFiltered final : public AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T>>
 {
 private:
-    std::vector<T> keys_to_keep;
+    std::unordered_set<T> keys_to_keep;
 
 public:
     AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_)
@@ -288,17 +288,13 @@ public:
         keys_to_keep.reserve(keys_to_keep_.size());
         for (const Field & f : keys_to_keep_)
         {
-            keys_to_keep.emplace_back(f.safeGet<NearestFieldType<T>>());
+            keys_to_keep.emplace(f.safeGet<NearestFieldType<T>>());
         }
-        std::sort(begin(keys_to_keep), end(keys_to_keep));
     }
 
     String getName() const override { return "sumMapFiltered"; }
 
-    bool keepKey(const T & key) const
-    {
-        return std::binary_search(begin(keys_to_keep), end(keys_to_keep), key);
-    }
+    bool keepKey(const T & key) const { return keys_to_keep.count(key); }
 };
 
 }
