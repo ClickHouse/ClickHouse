@@ -60,10 +60,13 @@ AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, con
 AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     if (params.size() != 1)
-        throw Exception("Aggregate function " + name + "requires exactly one parameter of Array type.",
+        throw Exception("Aggregate function " + name + " requires exactly one parameter of Array type.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    Array keys_to_keep = params.front().safeGet<Array>();
+    Array keys_to_keep;
+    if (!params.front().tryGet<Array>(keys_to_keep))
+        throw Exception("Aggregate function " + name + " requires an Array as parameter.",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     auto [keys_type, values_types] = parseArguments(name, arguments);
 
