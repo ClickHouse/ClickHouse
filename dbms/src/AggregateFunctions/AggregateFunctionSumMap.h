@@ -259,7 +259,7 @@ public:
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 
-    virtual bool keepKey(const T & key) const = 0;
+    bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
 };
 
 template <typename T>
@@ -272,7 +272,7 @@ public:
 
     String getName() const override { return "sumMap"; }
 
-    bool keepKey(const T &) const override { return true; }
+    bool keepKey(const T &) const { return true; }
 };
 
 template <typename T>
@@ -295,7 +295,7 @@ public:
 
     String getName() const override { return "sumMapFiltered"; }
 
-    bool keepKey(const T & key) const override
+    bool keepKey(const T & key) const
     {
         return std::binary_search(begin(keys_to_keep), end(keys_to_keep), key);
     }
