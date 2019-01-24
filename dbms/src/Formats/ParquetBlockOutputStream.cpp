@@ -275,8 +275,6 @@ void ParquetBlockOutputStream::write(const Block & block)
     arrow_fields.reserve(columns_num);
     arrow_arrays.reserve(columns_num);
 
-    int64_t num_rows = -1;
-
     for (size_t column_i = 0; column_i < columns_num; ++column_i)
     {
         // TODO: constructed every iteration
@@ -326,9 +324,6 @@ void ParquetBlockOutputStream::write(const Block & block)
         ColumnPtr nested_column
             = is_column_nullable ? static_cast<const ColumnNullable &>(*column.column).getNestedColumnPtr() : column.column;
         const PaddedPODArray<UInt8> * null_bytemap = is_column_nullable ? extractNullBytemapPtr(column.column) : nullptr;
-
-        if (num_rows == -1)
-            num_rows = nested_column->size();
 
         if ("String" == column_nested_type_name)
         {
@@ -388,7 +383,7 @@ void ParquetBlockOutputStream::write(const Block & block)
 
     std::shared_ptr<arrow::Schema> arrow_schema = std::make_shared<arrow::Schema>(std::move(arrow_fields));
 
-    std::shared_ptr<arrow::Table> arrow_table = arrow::Table::Make(arrow_schema, arrow_arrays, num_rows);
+    std::shared_ptr<arrow::Table> arrow_table = arrow::Table::Make(arrow_schema, arrow_arrays);
 
     auto sink = std::make_shared<OstreamOutputStream>(ostr);
 
