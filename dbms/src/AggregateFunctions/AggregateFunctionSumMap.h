@@ -282,15 +282,15 @@ private:
     std::vector<T> keys_to_keep;
 
 public:
-    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep)
+    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type, const DataTypes & values_types, const Array & keys_to_keep_)
         : AggregateFunctionSumMapBase<T, AggregateFunctionSumMapFiltered<T>>{keys_type, values_types}
     {
-        this->keys_to_keep.reserve(keys_to_keep.size());
-        for (const Field & f : keys_to_keep)
+        keys_to_keep.reserve(keys_to_keep_.size());
+        for (const Field & f : keys_to_keep_)
         {
-            this->keys_to_keep.emplace_back(f.safeGet<NearestFieldType<T>>());
+            keys_to_keep.emplace_back(f.safeGet<NearestFieldType<T>>());
         }
-        std::sort(begin(this->keys_to_keep), end(this->keys_to_keep));
+        std::sort(begin(keys_to_keep), end(keys_to_keep));
     }
 
     String getName() const override { return "sumMapFiltered"; }
