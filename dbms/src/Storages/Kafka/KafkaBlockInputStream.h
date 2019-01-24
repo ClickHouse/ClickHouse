@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <IO/DelimitedReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
@@ -9,7 +9,7 @@ namespace DB
 {
 class StorageKafka;
 
-class KafkaBlockInputStream : public IProfilingBlockInputStream
+class KafkaBlockInputStream : public IBlockInputStream
 {
 public:
     KafkaBlockInputStream(StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_);

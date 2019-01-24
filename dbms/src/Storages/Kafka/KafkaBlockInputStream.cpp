@@ -19,7 +19,7 @@ KafkaBlockInputStream::KafkaBlockInputStream(
 
     // We don't use ratio since the number of Kafka messages may vary from stream to stream.
     // Thus, ratio is meaningless.
-    context.setSetting("input_format_allow_errors_ratio", 1.);
+    context.setSetting("input_format_allow_errors_ratio", 0.);
     context.setSetting("input_format_allow_errors_num", storage.skip_broken);
 
     if (schema.size() > 0)
