@@ -9,7 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -975,7 +975,7 @@ void DDLWorker::run()
 }
 
 
-class DDLQueryStatusInputSream : public IProfilingBlockInputStream
+class DDLQueryStatusInputSream : public IBlockInputStream
 {
 public:
 
