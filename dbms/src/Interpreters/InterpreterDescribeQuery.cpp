@@ -86,22 +86,17 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             String database_name;
             String table_name;
 
-            auto identifier = table_expression->database_and_table_name;
-            if (identifier->children.size() > 2)
+            auto identifier = typeid_cast<const ASTIdentifier *>(table_expression->database_and_table_name.get());
+            if (identifier->name_parts.size() > 2)
                 throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
 
-            if (identifier->children.size() > 1)
+            if (identifier->name_parts.size() > 1)
             {
-                auto database_ptr = identifier->children[0];
-                auto table_ptr = identifier->children[1];
-
-                if (database_ptr)
-                    database_name = typeid_cast<ASTIdentifier &>(*database_ptr).name;
-                if (table_ptr)
-                    table_name = typeid_cast<ASTIdentifier &>(*table_ptr).name;
+                database_name = identifier->name_parts[0];
+                table_name = identifier->name_parts[1];
             }
             else
-                table_name = typeid_cast<ASTIdentifier &>(*identifier).name;
+                table_name = identifier->name;
 
             table = context.getTable(database_name, table_name);
         }

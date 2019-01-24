@@ -8,13 +8,14 @@ namespace DB
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;
 
+NameSet removeDuplicateColumns(NamesAndTypesList & columns);
+
 struct SyntaxAnalyzerResult
 {
     StoragePtr storage;
 
     NamesAndTypesList source_columns;
 
-    /// Note: used only in tests.
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
 

@@ -96,11 +96,9 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
         if (!isValidFunction(expression->children[i], columns))
             return false;
 
-    if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&*expression))
-    {
-        if (identifier->general())
-            return columns.count(identifier->name);
-    }
+    if (auto opt_name = getColumnIdentifierName(expression))
+        return columns.count(*opt_name);
+
     return true;
 }
 

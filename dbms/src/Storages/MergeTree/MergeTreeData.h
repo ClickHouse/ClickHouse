@@ -219,6 +219,8 @@ public:
         /// If commit() was not called, deletes temporary files, canceling the ALTER.
         ~AlterDataPartTransaction();
 
+        const String & getPartName() const { return data_part->name; }
+
         /// Review the changes before the commit.
         const NamesAndTypesList & getNewColumns() const { return new_columns; }
         const DataPart::Checksums & getNewChecksums() const { return new_checksums; }
