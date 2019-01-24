@@ -8,19 +8,9 @@
   * Note: the function names are different to avoid confusion with symbols from the system libm.
   */
 
-#include <stdlib.h> /// for __THROW
-
-// freebsd have no __THROW
-#if !defined(__THROW)
-#define __THROW
-#endif
-
 extern "C"
 {
 
-double preciseExp10(double x) __THROW;
-double precisePow10(double x) __THROW;
-float preciseExp10f(float x) __THROW;
-float precisePow10f(float x) __THROW;
+double preciseExp10(double x);
 
 }

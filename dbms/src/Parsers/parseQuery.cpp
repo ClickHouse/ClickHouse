@@ -354,8 +354,6 @@ std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, s
         begin = pos;
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, 0);
-        if (!ast)
-            break;
 
         ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
 

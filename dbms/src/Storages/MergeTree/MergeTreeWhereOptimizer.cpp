@@ -121,7 +121,7 @@ void MergeTreeWhereOptimizer::optimizeConjunction(ASTSelectQuery & select, ASTFu
 
         SCOPE_EXIT(++idx);
 
-        if (cannotBeMoved(condition))
+        if (cannotBeMoved(conditions[idx]))
             continue;
 
         IdentifierNameSet identifiers{};
@@ -193,7 +193,7 @@ void MergeTreeWhereOptimizer::optimizeArbitrary(ASTSelectQuery & select) const
     auto & condition = select.where_expression;
 
     /// do not optimize restricted expressions
-    if (cannotBeMoved(select.where_expression.get()))
+    if (cannotBeMoved(select.where_expression))
         return;
 
     IdentifierNameSet identifiers{};
@@ -250,10 +250,10 @@ bool MergeTreeWhereOptimizer::isConditionGood(const IAST * condition) const
     auto right_arg = function->arguments->children.back().get();
 
     /// try to ensure left_arg points to ASTIdentifier
-    if (!typeid_cast<const ASTIdentifier *>(left_arg) && typeid_cast<const ASTIdentifier *>(right_arg))
+    if (!isIdentifier(left_arg) && isIdentifier(right_arg))
         std::swap(left_arg, right_arg);
 
-    if (typeid_cast<const ASTIdentifier *>(left_arg))
+    if (isIdentifier(left_arg))
     {
         /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
         if (const auto literal = typeid_cast<const ASTLiteral *>(right_arg))
@@ -286,8 +286,8 @@ bool MergeTreeWhereOptimizer::isConditionGood(const IAST * condition) const
 
 void MergeTreeWhereOptimizer::collectIdentifiersNoSubqueries(const IAST * const ast, IdentifierNameSet & set)
 {
-    if (const auto identifier = typeid_cast<const ASTIdentifier *>(ast))
-        return (void) set.insert(identifier->name);
+    if (auto opt_name = getIdentifierName(ast))
+        return (void) set.insert(*opt_name);
 
     if (typeid_cast<const ASTSubquery *>(ast))
         return;
@@ -364,9 +364,9 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const IdentifierNameSet & i
 }
 
 
-bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
+bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 {
-    if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr))
+    if (const auto function_ptr = typeid_cast<const ASTFunction *>(ptr.get()))
     {
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if (array_join_function_name == function_ptr->name)
@@ -381,17 +381,16 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
         if ("indexHint" == function_ptr->name)
             return true;
     }
-    else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))
+    else if (auto opt_name = getColumnIdentifierName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (identifier_ptr->general())
-            if (array_joined_names.count(identifier_ptr->name) ||
-                array_joined_names.count(Nested::extractTableName(identifier_ptr->name)))
-                return true;
+        if (array_joined_names.count(*opt_name) ||
+            array_joined_names.count(Nested::extractTableName(*opt_name)))
+            return true;
     }
 
     for (const auto & child : ptr->children)
-        if (cannotBeMoved(child.get()))
+        if (cannotBeMoved(child))
             return true;
 
     return false;

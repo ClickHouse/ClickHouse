@@ -129,7 +129,7 @@ static NO_INLINE void deserializeBinarySSE2(ColumnString::Chars & data, ColumnSt
 
         if (size)
         {
-#ifdef __SSE2__
+#ifdef __x86_64__
             /// An optimistic branch in which more efficient copying is possible.
             if (offset + 16 * UNROLL_TIMES <= data.allocated_bytes() && istr.position() + size + 16 * UNROLL_TIMES <= istr.buffer().end())
             {
@@ -322,7 +322,7 @@ void registerDataTypeString(DataTypeFactory & factory)
 
     factory.registerSimpleDataType("String", creator);
 
-    /// These synonims are added for compatibility.
+    /// These synonyms are added for compatibility.
 
     factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);

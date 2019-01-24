@@ -16,6 +16,24 @@ The same as `position`, but the position is returned in Unicode code points. Wor
 
 For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
+## multiPosition(haystack, [needle_1, needle_2, ..., needle_n])
+
+The same as `position`, but returns `Array` of the `position`s for all `needle_i`.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiPositionCaseInsensitive, multiPositionUTF8, multiPositionCaseInsensitiveUTF8`.
+
+## firstMatch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns the index `i` (starting from 1) of the first found `needle_i` in the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `firstMatchCaseInsensitive, firstMatchUTF8, firstMatchCaseInsensitiveUTF8`.
+
+## multiSearch(haystack, [needle_1, needle_2, ..., needle_n])
+
+Returns 1, if at least one string `needle_i` matches the string `haystack` and 0 otherwise.
+
+For a case-insensitive search or/and in UTF-8 format use functions `multiSearchCaseInsensitive, multiSearchUTF8, multiSearchCaseInsensitiveUTF8`.
+
 ## match(haystack, pattern)
 
 Checks whether the string matches the `pattern` regular expression. A `re2` regular expression. The [syntax](https://github.com/google/re2/wiki/Syntax) of the `re2` regular expressions is more limited than the syntax of the Perl regular expressions.

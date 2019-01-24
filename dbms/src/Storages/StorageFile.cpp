@@ -12,7 +12,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
@@ -113,7 +113,7 @@ StorageFile::StorageFile(
 }
 
 
-class StorageFileBlockInputStream : public IProfilingBlockInputStream
+class StorageFileBlockInputStream : public IBlockInputStream
 {
 public:
     StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
@@ -131,7 +131,7 @@ public:
                 if (storage.table_fd_init_offset < 0)
                     throw Exception("File descriptor isn't seekable, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
-                /// ReadBuffer's seek() doesn't make sence, since cache is empty
+                /// ReadBuffer's seek() doesn't make sense, since cache is empty
                 if (lseek(storage.table_fd, storage.table_fd_init_offset, SEEK_SET) < 0)
                     throwFromErrno("Cannot seek file descriptor, inside " + storage.getName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
             }
@@ -304,16 +304,16 @@ void registerStorageFile(StorageFactory & factory)
         {
             /// Will use FD if engine_args[1] is int literal or identifier with std* name
 
-            if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(engine_args[1].get()))
+            if (auto opt_name = getIdentifierName(engine_args[1]))
             {
-                if (identifier->name == "stdin")
+                if (*opt_name == "stdin")
                     source_fd = STDIN_FILENO;
-                else if (identifier->name == "stdout")
+                else if (*opt_name == "stdout")
                     source_fd = STDOUT_FILENO;
-                else if (identifier->name == "stderr")
+                else if (*opt_name == "stderr")
                     source_fd = STDERR_FILENO;
                 else
-                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                    throw Exception("Unknown identifier '" + *opt_name + "' in second arg of File storage constructor",
                                     ErrorCodes::UNKNOWN_IDENTIFIER);
             }
             else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))

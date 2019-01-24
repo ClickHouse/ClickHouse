@@ -904,7 +904,7 @@ public:
             using T0 = typename Types::LeftType;
             using T1 = typename Types::RightType;
 
-            if constexpr ((IsDecimalNumber<T0> && IsDecimalNumber<T1>) || (!IsDecimalNumber<T0> && !IsDecimalNumber<T1>))
+            if constexpr (IsDecimalNumber<T0> == IsDecimalNumber<T1>)
                 return executeTyped<T0, T1>(cond_col, block, arguments, result, input_rows_count);
             else
                 throw Exception("Conditional function with Decimal and non Decimal", ErrorCodes::NOT_IMPLEMENTED);
