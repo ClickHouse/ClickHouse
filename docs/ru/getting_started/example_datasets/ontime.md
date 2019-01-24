@@ -3,8 +3,8 @@
 
 Этот датасет может быть получен двумя способами:
 
-- импорт из сырых данных
-- скачивание готовых партиций
+- импорт из сырых данных;
+- скачивание готовых партиций.
 
 ## Импорт из сырых данных
 
@@ -149,7 +149,7 @@ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-
 ```bash
 curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
-# убедитесь, что с правами всё хорошо
+# убедитесь, что установлены корректные права доступа на файлы
 sudo service clickhouse-server restart
 clickhouse-client --query "select count(*) from datasets.ontime"
 ```

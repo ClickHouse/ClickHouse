@@ -2,8 +2,8 @@
 
 Этот датасет может быть получен двумя способами:
 
-- импорт из сырых данных
-- скачивание готовых партиций
+- импорт из сырых данных;
+- скачивание готовых партиций.
 
 ## Как импортировать сырые данные
 
@@ -282,7 +282,7 @@ WHERE (table = 'trips_mergetree') AND active
 ```bash
 curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
 tar xvf trips_mergetree.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
-# убедитесь, что с правами всё хорошо
+# убедитесь, что установлены корректные права доступа на файлы
 sudo service clickhouse-server restart
 clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```

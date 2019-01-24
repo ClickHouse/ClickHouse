@@ -1,10 +1,10 @@
 
 # OnTime
 
-This dataset can be received in two ways:
+This dataset can be obtained in two ways:
 
 - import from raw data
-- dowload of prepared partitions
+- download of prepared partitions
 
 ## Import From Raw Data
 
@@ -155,7 +155,7 @@ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
 !!!info
-    If you will run queries described bellow, you have to use full table name,
+    If you will run queries described below, you have to use full table name,
     `datasets.ontime`.
 
 ## Queries
