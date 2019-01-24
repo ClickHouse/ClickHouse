@@ -376,7 +376,7 @@ void QueryNormalizer::extractJoinUsingColumns(const ASTPtr ast, Data & data)
         for (const auto & key : keys.children)
             if (auto opt_column = getIdentifierName(key))
                 data.join_using_columns.insert(*opt_column);
-            else if (auto * literal = typeid_cast<const ASTLiteral *>(key.get()))
+            else if (typeid_cast<const ASTLiteral *>(key.get()))
                 data.join_using_columns.insert(key->getColumnName());
             else
             {
