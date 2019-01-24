@@ -22,6 +22,8 @@ using MutableColumnPtr = COWPtr<IColumn>::MutablePtr;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
+class ProtobufWriter;
+
 
 /** Properties of data type.
   * Contains methods for serialization/deserialization.
@@ -253,6 +255,9 @@ public:
     {
         serializeText(column, row_num, ostr, settings);
     }
+
+    /** Serialize to a protobuf. */
+    virtual void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const = 0;
 
     /** Create empty column for corresponding type.
       */
