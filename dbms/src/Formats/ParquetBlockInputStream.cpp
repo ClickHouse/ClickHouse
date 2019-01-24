@@ -218,6 +218,21 @@ void fillColumnWithTimestampData(std::shared_ptr<arrow::Column> & arrow_column, 
     }
 }
 
+void fillColumnWithDecimalData(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & internal_column)
+{
+    auto & column = static_cast<ColumnDecimal<Decimal128> &>(*internal_column);
+    auto & column_data = column.getData();
+    column_data.reserve(arrow_column->length());
+
+    for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->data()->num_chunks()); chunk_i < num_chunks; ++chunk_i)
+    {
+        auto & chunk = static_cast<arrow::DecimalArray &>(*(arrow_column->data()->chunk(chunk_i)));
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+        {
+            column_data.emplace_back(chunk.IsNull(value_i) ? Decimal128(0) : *reinterpret_cast<const Decimal128 *>(chunk.Value(value_i))); // TODO: copy column
+        }
+    }
+}
 
 /// Creates a null bytemap from arrow's null bitmap
 void fillByteMapFromArrowColumn(std::shared_ptr<arrow::Column> & arrow_column, MutableColumnPtr & bytemap)
@@ -294,7 +309,7 @@ Block ParquetBlockInputStream::readImpl()
     if (!istr.eof())
     {
         /*
-           First we load whole stream into string (its very bad and limiting .parquet file size to half? of RAM) 
+           First we load whole stream into string (its very bad and limiting .parquet file size to half? of RAM)
            Then producing blocks for every row_group (dont load big .parquet files with one row_group - it can eat x10+ RAM from .parquet file size)
         */
 
@@ -417,7 +432,8 @@ Block ParquetBlockInputStream::readImpl()
                 fillColumnWithTimestampData(arrow_column, read_column);
                 break;
             case arrow::Type::DECIMAL:
-                fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column);
+                //fillColumnWithNumericData<Decimal128, ColumnDecimal<Decimal128>>(arrow_column, read_column); // Have problems with trash values under NULL, but faster
+                fillColumnWithDecimalData(arrow_column, read_column /*, internal_nested_type*/);
                 break;
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
         case ARROW_NUMERIC_TYPE: \

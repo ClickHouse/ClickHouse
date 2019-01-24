@@ -9,7 +9,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal2;"
 
 # Simple small values
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal  (a DECIMAL(9,0), b DECIMAL(18,0), c DECIMAL(38,0), d DECIMAL(9, 9), e DECIMAL(18, 18), f DECIMAL(38, 38), g Decimal(9, 5), h decimal(18, 9), i deciMAL(38, 18), j DECIMAL(1,0)) ENGINE = Memory;"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 (a DECIMAL(9,0), b DECIMAL(18,0), c DECIMAL(38,0), d DECIMAL(9, 9), e DECIMAL(18, 18), f DECIMAL(38, 38), g Decimal(9, 5), h decimal(18, 9), i deciMAL(38, 18), j DECIMAL(1,0)) ENGINE = Memory;"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 AS test.decimal ENGINE = Memory;"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (0, 0, 0, 0, 0, 0, 0, 0, 0, 0);"
 #${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (1, 1, 1, 0.1, 0.1, 1, 1, 1, 1, 1);"
 #${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (10, 10, 10, 0.1, 0.1, 0.1, 10, 10, 10, 10);"
@@ -27,7 +27,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal2;"
 
 
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal  ( a DECIMAL(9,0), b DECIMAL(18,0), c DECIMAL(38,0), d DECIMAL(9, 9), e DECIMAL(18, 18), f DECIMAL(38, 38), g Decimal(9, 5), h decimal(18, 9), i deciMAL(38, 18), j DECIMAL(1,0)) ENGINE = Memory;"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 ( a DECIMAL(9,0), b DECIMAL(18,0), c DECIMAL(38,0), d DECIMAL(9, 9), e DECIMAL(18, 18), f DECIMAL(38, 38), g Decimal(9, 5), h decimal(18, 9), i deciMAL(38, 18), j DECIMAL(1,0)) ENGINE = Memory;"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 AS test.decimal ENGINE = Memory;"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, d, g) VALUES (999999999, 999999999999999999, 0.999999999, 9999.99999);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, d, g) VALUES (-999999999, -999999999999999999, -0.999999999, -9999.99999);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (c) VALUES (99999999999999999999999999999999999999);"
@@ -61,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal2;"
 
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal  (a DECIMAL(9,0), b DECIMAL(18,0), c DECIMAL(38,0), d DECIMAL(9, 9), e Decimal64(18), f Decimal128(38), g Decimal32(5), h Decimal64(9), i Decimal128(18), j dec(4,2)) ENGINE = Memory;"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 (a DECIMAL(9,0), b DECIMAL(18,0), c DECIMAL(38,0), d DECIMAL(9, 9), e Decimal64(18), f Decimal128(38), g Decimal32(5), h Decimal64(9), i Decimal128(18), j dec(4,2)) ENGINE = Memory;"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 AS test.decimal ENGINE = Memory;"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42);"
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42);"
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d, e, f, g, h, i, j;" > ${CLICKHOUSE_TMP}/parquet_decimal2_1.dump
@@ -72,3 +72,39 @@ echo diff2:
 diff ${CLICKHOUSE_TMP}/parquet_decimal2_1.dump ${CLICKHOUSE_TMP}/parquet_decimal2_2.dump
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal;"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal2;"
+
+
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal  (a Nullable(DECIMAL(9,0)), b Nullable(DECIMAL(18,0)), c Nullable(DECIMAL(38,0)), d Nullable(DECIMAL(9,0))) ENGINE = Memory;"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE IF NOT EXISTS test.decimal2 AS test.decimal ENGINE = Memory;"
+# Empty table test
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d  FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal3_1.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal2 FORMAT Parquet"
+echo nothing:
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal2 ORDER BY a, b, c, d;"
+${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.decimal2;"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal VALUES (Null, Null, Null, Null)"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal3_2.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal2 FORMAT Parquet"
+echo nulls:
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal2 ORDER BY a, b, c, d;"
+${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE test.decimal2;"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal VALUES (1, Null, Null, Null)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal VALUES (Null, 1, Null, Null)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal VALUES (Null, Null, 1, Null)"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d FORMAT Parquet;" > ${CLICKHOUSE_TMP}/parquet_decimal3_3.parquet
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d FORMAT Parquet;" | ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.decimal2 FORMAT Parquet"
+
+echo full orig:
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal ORDER BY a, b, c, d;"
+echo full inserted:
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal2 ORDER BY a, b, c, d;"
+
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal2 ORDER BY a, b, c, d;" > ${CLICKHOUSE_TMP}/parquet_decimal3_1.dump
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.decimal2 ORDER BY a, b, c, d;" > ${CLICKHOUSE_TMP}/parquet_decimal3_2.dump
+
+echo diff3:
+diff ${CLICKHOUSE_TMP}/parquet_decimal3_1.dump ${CLICKHOUSE_TMP}/parquet_decimal3_2.dump
+#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal;"
+#${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.decimal2;"
