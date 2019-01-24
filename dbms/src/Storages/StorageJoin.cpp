@@ -134,7 +134,7 @@ void registerStorageJoin(StorageFactory & factory)
         auto max_rows_in_join = settings.max_rows_in_join;
         auto max_bytes_in_join = settings.max_bytes_in_join;
         auto join_overflow_mode = settings.join_overflow_mode;
-        auto join_overwrite = settings.join_overwrite;
+        auto join_any_take_last_row = settings.join_any_take_last_row;
 
         if (args.storage_def && args.storage_def->settings)
         {
@@ -148,8 +148,8 @@ void registerStorageJoin(StorageFactory & factory)
                     max_bytes_in_join.set(setting.value);
                 else if (setting.name == "join_overflow_mode")
                     join_overflow_mode.set(setting.value);
-                else if (setting.name == "join_overwrite")
-                    join_overwrite.set(setting.value);
+                else if (setting.name == "join_any_take_last_row")
+                    join_any_take_last_row.set(setting.value);
                 else
                     throw Exception(
                         "Unknown setting " + setting.name + " for storage " + args.engine_name,
@@ -166,7 +166,7 @@ void registerStorageJoin(StorageFactory & factory)
             kind,
             strictness,
             args.columns,
-            join_overwrite);
+            join_any_take_last_row);
     });
 }
 
