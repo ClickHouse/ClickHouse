@@ -1,4 +1,10 @@
-add_library (clickhouse-performance-test-lib ${LINK_MODE} PerformanceTest.cpp)
+add_library (clickhouse-performance-test-lib ${LINK_MODE}
+  JSONString.cpp
+  StopConditionsSet.cpp
+  TestStopConditions.cpp
+  TestStats.cpp
+  PerformanceTest.cpp
+)
 target_link_libraries (clickhouse-performance-test-lib PRIVATE dbms clickhouse_common_io clickhouse_common_config ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-performance-test-lib SYSTEM PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 
