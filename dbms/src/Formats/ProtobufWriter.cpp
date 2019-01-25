@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_PROTOBUF
+
 #include <cassert>
 #include <optional>
 #include <math.h>
@@ -795,3 +798,5 @@ void ProtobufWriter::writeAggregateFunction(const AggregateFunctionPtr & functio
 }
 
 }
+
+#endif
