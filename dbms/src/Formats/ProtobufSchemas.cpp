@@ -1,3 +1,6 @@
+#include <Common/config.h>
+#if USE_PROTOBUF
+
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>
@@ -68,3 +71,5 @@ void ProtobufSchemas::AddError(const String & filename, int line, int column, co
 }
 
 }
+
+#endif
