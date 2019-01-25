@@ -180,6 +180,9 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
     // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.commit", "false");
 
+    // Ignore EOF messages
+    conf.set("enable.partition.eof", "false");
+
     // for debug logs inside rdkafka
     // conf.set("debug", "consumer,cgrp,topic,fetch");
 

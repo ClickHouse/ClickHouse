@@ -23,12 +23,11 @@ public:
 
 private:
     StorageKafka & storage;
-    ConsumerPtr consumer;
     Context context;
     size_t max_block_size;
-    Block sample_block;
-    std::unique_ptr<DelimitedReadBuffer> read_buf;
-    BlockInputStreamPtr reader;
+
+    ConsumerPtr consumer;
+    std::unique_ptr<DelimitedReadBuffer> buffer;
     bool finalized = false;
 
     // Return true if consumer has been claimed by the stream

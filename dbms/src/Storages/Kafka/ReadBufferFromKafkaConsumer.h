@@ -12,31 +12,23 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
 class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
 public:
-    ReadBufferFromKafkaConsumer(ConsumerPtr consumer_, Poco::Logger * log_)
-        : ReadBuffer(nullptr, 0), consumer(consumer_), log(log_)
+    ReadBufferFromKafkaConsumer(ConsumerPtr consumer_, Poco::Logger * log_, size_t max_batch_size)
+        : ReadBuffer(nullptr, 0), consumer(consumer_), log(log_), batch_size(max_batch_size), current(messages.begin())
     {
     }
 
-    /// Commit messages read with this consumer
-    auto commit()
-    {
-        if (read_messages)
-        {
-            LOG_TRACE(log, "Committing " << read_messages << " messages");
-            consumer->async_commit();
-        }
-
-        auto result = read_messages;
-        read_messages = 0;
-
-        return result;
-    }
+    // Commit all processed messages.
+    void commit();
 
 private:
+    using Messages = std::vector<cppkafka::Message>;
+
     ConsumerPtr consumer;
-    cppkafka::Message message;
     Poco::Logger * log;
-    size_t read_messages = 0;
+    const size_t batch_size = 1;
+
+    Messages messages;
+    Messages::const_iterator current;
 
     bool nextImpl() override;
 };
