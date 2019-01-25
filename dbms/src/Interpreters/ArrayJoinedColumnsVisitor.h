@@ -10,6 +10,7 @@
 
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Aliases.h>
 
 
 namespace DB
@@ -28,8 +29,6 @@ class ArrayJoinedColumnsMatcher
 public:
     struct Data
     {
-        using Aliases = std::unordered_map<String, ASTPtr>;
-
         const Aliases & aliases;
         NameToNameMap & array_join_name_to_alias;
         NameToNameMap & array_join_alias_to_name;

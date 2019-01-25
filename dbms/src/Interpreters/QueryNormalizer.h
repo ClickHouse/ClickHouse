@@ -1,11 +1,12 @@
 #pragma once
 
 #include <unordered_set>
+#include <map>
 
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <map>
+#include <Interpreters/Aliases.h>
 
 namespace DB
 {
@@ -45,7 +46,6 @@ class QueryNormalizer
     };
 
 public:
-    using Aliases = std::unordered_map<String, ASTPtr>;
     using TableWithColumnNames = std::pair<DatabaseAndTableWithAlias, Names>;
 
     struct Data
