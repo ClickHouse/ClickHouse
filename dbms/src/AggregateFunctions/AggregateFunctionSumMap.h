@@ -72,7 +72,7 @@ public:
         types.emplace_back(std::make_shared<DataTypeArray>(keys_type));
 
         for (const auto & value_type : values_types)
-            types.emplace_back(std::make_shared<DataTypeArray>(value_type));
+            types.emplace_back(std::make_shared<DataTypeArray>(widenDataType(value_type)));
 
         return std::make_shared<DataTypeTuple>(types);
     }
@@ -260,6 +260,16 @@ public:
     const char * getHeaderFilePath() const override { return __FILE__; }
 
     bool keepKey(const T & key) const { return static_cast<const Derived &>(*this).keepKey(key); }
+
+private:
+    static DataTypePtr widenDataType(const DataTypePtr & data_type)
+    {
+        if (!data_type->canBeWiden())
+            throw new Exception{"Values to be summed are expected to be Numeric, Float or Decimal.",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return data_type->getWidenDataType();
+    }
 };
 
 template <typename T>
