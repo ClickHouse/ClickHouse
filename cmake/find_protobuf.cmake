@@ -18,6 +18,7 @@ elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
     set(Protobuf_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/protobuf/src)
 
     set(USE_PROTOBUF 1)
+    set(USE_INTERNAL_PROTOBUF_LIBRARY 1)
     set(Protobuf_LIBRARY libprotobuf)
     set(Protobuf_PROTOC_LIBRARY libprotoc)
     set(Protobuf_LITE_LIBRARY libprotobuf-lite)
@@ -86,6 +87,5 @@ elseif(NOT MISSING_INTERNAL_PROTOBUF_LIBRARY)
         set(${HDRS} ${${HDRS}} PARENT_SCOPE)
     endfunction()
 endif()
-
 
 message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY}")
