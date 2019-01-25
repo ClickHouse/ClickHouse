@@ -7,6 +7,7 @@
 #include <boost/filesystem.hpp>
 #include <boost/program_options.hpp>
 #include <sys/stat.h>
+
 #include <common/DateLUT.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Client/Connection.h>
@@ -34,6 +35,11 @@
 #include <Common/InterruptListener.h>
 #include <Common/Config/configReadClient.h>
 
+#include "JSONString.h"
+#include "StopConditionsSet.h"
+#include "TestStopConditions.h"
+#include "TestStats.h"
+
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
@@ -45,9 +51,7 @@
   */
 namespace fs = boost::filesystem;
 using String = std::string;
-const String FOUR_SPACES = "    ";
 const std::regex QUOTE_REGEX{"\""};
-const std::regex NEW_LINE{"\n"};
 
 namespace DB
 {
@@ -59,438 +63,8 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-static String pad(size_t padding)
-{
-    return String(padding * 4, ' ');
-}
-
-
-/// NOTE The code is totally wrong.
-class JSONString
-{
-private:
-    std::map<String, String> content;
-    size_t padding;
-
-public:
-    explicit JSONString(size_t padding_ = 1) : padding(padding_) {}
-
-    void set(const String key, String value, bool wrap = true)
-    {
-        if (value.empty())
-            value = "null";
-
-        bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
-        if (!reserved && wrap)
-            value = '"' + std::regex_replace(value, NEW_LINE, "\\n") + '"';
-
-        content[key] = value;
-    }
-
-    template <typename T>
-    std::enable_if_t<std::is_arithmetic_v<T>> set(const String key, T value)
-    {
-        set(key, std::to_string(value), /*wrap= */ false);
-    }
-
-    void set(const String key, const std::vector<JSONString> & run_infos)
-    {
-        String value = "[\n";
-
-        for (size_t i = 0; i < run_infos.size(); ++i)
-        {
-            value += pad(padding + 1) + run_infos[i].asString(padding + 2);
-            if (i != run_infos.size() - 1)
-                value += ',';
-
-            value += "\n";
-        }
-
-        value += pad(padding) + ']';
-        content[key] = value;
-    }
-
-    String asString() const
-    {
-        return asString(padding);
-    }
-
-    String asString(size_t cur_padding) const
-    {
-        String repr = "{";
-
-        for (auto it = content.begin(); it != content.end(); ++it)
-        {
-            if (it != content.begin())
-                repr += ',';
-            /// construct "key": "value" string with padding
-            repr += "\n" + pad(cur_padding) + '"' + it->first + '"' + ": " + it->second;
-        }
-
-        repr += "\n" + pad(cur_padding - 1) + '}';
-        return repr;
-    }
-};
-
 
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
-
-/// A set of supported stop conditions.
-struct StopConditionsSet
-{
-    void loadFromConfig(const ConfigurationPtr & stop_conditions_view)
-    {
-        using Keys = std::vector<String>;
-        Keys keys;
-        stop_conditions_view->keys(keys);
-
-        for (const String & key : keys)
-        {
-            if (key == "total_time_ms")
-                total_time_ms.value = stop_conditions_view->getUInt64(key);
-            else if (key == "rows_read")
-                rows_read.value = stop_conditions_view->getUInt64(key);
-            else if (key == "bytes_read_uncompressed")
-                bytes_read_uncompressed.value = stop_conditions_view->getUInt64(key);
-            else if (key == "iterations")
-                iterations.value = stop_conditions_view->getUInt64(key);
-            else if (key == "min_time_not_changing_for_ms")
-                min_time_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
-            else if (key == "max_speed_not_changing_for_ms")
-                max_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
-            else if (key == "average_speed_not_changing_for_ms")
-                average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
-            else
-                throw DB::Exception("Met unkown stop condition: " + key, DB::ErrorCodes::LOGICAL_ERROR);
-
-            ++initialized_count;
-        }
-    }
-
-    void reset()
-    {
-        total_time_ms.fulfilled = false;
-        rows_read.fulfilled = false;
-        bytes_read_uncompressed.fulfilled = false;
-        iterations.fulfilled = false;
-        min_time_not_changing_for_ms.fulfilled = false;
-        max_speed_not_changing_for_ms.fulfilled = false;
-        average_speed_not_changing_for_ms.fulfilled = false;
-
-        fulfilled_count = 0;
-    }
-
-    /// Note: only conditions with UInt64 minimal thresholds are supported.
-    /// I.e. condition is fulfilled when value is exceeded.
-    struct StopCondition
-    {
-        UInt64 value = 0;
-        bool fulfilled = false;
-    };
-
-    void report(UInt64 value, StopCondition & condition)
-    {
-        if (condition.value && !condition.fulfilled && value >= condition.value)
-        {
-            condition.fulfilled = true;
-            ++fulfilled_count;
-        }
-    }
-
-    StopCondition total_time_ms;
-    StopCondition rows_read;
-    StopCondition bytes_read_uncompressed;
-    StopCondition iterations;
-    StopCondition min_time_not_changing_for_ms;
-    StopCondition max_speed_not_changing_for_ms;
-    StopCondition average_speed_not_changing_for_ms;
-
-    size_t initialized_count = 0;
-    size_t fulfilled_count = 0;
-};
-
-/// Stop conditions for a test run. The running test will be terminated in either of two conditions:
-/// 1. All conditions marked 'all_of' are fulfilled
-/// or
-/// 2. Any condition  marked 'any_of' is  fulfilled
-class TestStopConditions
-{
-public:
-    void loadFromConfig(ConfigurationPtr & stop_conditions_config)
-    {
-        if (stop_conditions_config->has("all_of"))
-        {
-            ConfigurationPtr config_all_of(stop_conditions_config->createView("all_of"));
-            conditions_all_of.loadFromConfig(config_all_of);
-        }
-        if (stop_conditions_config->has("any_of"))
-        {
-            ConfigurationPtr config_any_of(stop_conditions_config->createView("any_of"));
-            conditions_any_of.loadFromConfig(config_any_of);
-        }
-    }
-
-    bool empty() const
-    {
-        return !conditions_all_of.initialized_count && !conditions_any_of.initialized_count;
-    }
-
-#define DEFINE_REPORT_FUNC(FUNC_NAME, CONDITION)                      \
-    void FUNC_NAME(UInt64 value)                                      \
-    {                                                                 \
-        conditions_all_of.report(value, conditions_all_of.CONDITION); \
-        conditions_any_of.report(value, conditions_any_of.CONDITION); \
-    }
-
-    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms)
-    DEFINE_REPORT_FUNC(reportRowsRead, rows_read)
-    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed)
-    DEFINE_REPORT_FUNC(reportIterations, iterations)
-    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms)
-    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
-    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
-
-#undef REPORT
-
-    bool areFulfilled() const
-    {
-        return (conditions_all_of.initialized_count && conditions_all_of.fulfilled_count >= conditions_all_of.initialized_count)
-            || (conditions_any_of.initialized_count && conditions_any_of.fulfilled_count);
-    }
-
-    void reset()
-    {
-        conditions_all_of.reset();
-        conditions_any_of.reset();
-    }
-
-private:
-    StopConditionsSet conditions_all_of;
-    StopConditionsSet conditions_any_of;
-};
-
-struct Stats
-{
-    Stopwatch watch;
-    Stopwatch watch_per_query;
-    Stopwatch min_time_watch;
-    Stopwatch max_rows_speed_watch;
-    Stopwatch max_bytes_speed_watch;
-    Stopwatch avg_rows_speed_watch;
-    Stopwatch avg_bytes_speed_watch;
-
-    bool last_query_was_cancelled = false;
-
-    size_t queries = 0;
-
-    size_t total_rows_read = 0;
-    size_t total_bytes_read = 0;
-
-    size_t last_query_rows_read = 0;
-    size_t last_query_bytes_read = 0;
-
-    using Sampler = ReservoirSampler<double>;
-    Sampler sampler{1 << 16};
-
-    /// min_time in ms
-    UInt64 min_time = std::numeric_limits<UInt64>::max();
-    double total_time = 0;
-
-    double max_rows_speed = 0;
-    double max_bytes_speed = 0;
-
-    double avg_rows_speed_value = 0;
-    double avg_rows_speed_first = 0;
-    static double avg_rows_speed_precision;
-
-    double avg_bytes_speed_value = 0;
-    double avg_bytes_speed_first = 0;
-    static double avg_bytes_speed_precision;
-
-    size_t number_of_rows_speed_info_batches = 0;
-    size_t number_of_bytes_speed_info_batches = 0;
-
-    bool ready = false; // check if a query wasn't interrupted by SIGINT
-    String exception;
-
-    String getStatisticByName(const String & statistic_name)
-    {
-        if (statistic_name == "min_time")
-        {
-            return std::to_string(min_time) + "ms";
-        }
-        if (statistic_name == "quantiles")
-        {
-            String result = "\n";
-
-            for (double percent = 10; percent <= 90; percent += 10)
-            {
-                result += FOUR_SPACES + std::to_string((percent / 100));
-                result += ": " + std::to_string(sampler.quantileInterpolated(percent / 100.0));
-                result += "\n";
-            }
-            result += FOUR_SPACES + "0.95:   " + std::to_string(sampler.quantileInterpolated(95 / 100.0)) + "\n";
-            result += FOUR_SPACES + "0.99: " + std::to_string(sampler.quantileInterpolated(99 / 100.0)) + "\n";
-            result += FOUR_SPACES + "0.999: " + std::to_string(sampler.quantileInterpolated(99.9 / 100.)) + "\n";
-            result += FOUR_SPACES + "0.9999: " + std::to_string(sampler.quantileInterpolated(99.99 / 100.));
-
-            return result;
-        }
-        if (statistic_name == "total_time")
-        {
-            return std::to_string(total_time) + "s";
-        }
-        if (statistic_name == "queries_per_second")
-        {
-            return std::to_string(queries / total_time);
-        }
-        if (statistic_name == "rows_per_second")
-        {
-            return std::to_string(total_rows_read / total_time);
-        }
-        if (statistic_name == "bytes_per_second")
-        {
-            return std::to_string(total_bytes_read / total_time);
-        }
-
-        if (statistic_name == "max_rows_per_second")
-        {
-            return std::to_string(max_rows_speed);
-        }
-        if (statistic_name == "max_bytes_per_second")
-        {
-            return std::to_string(max_bytes_speed);
-        }
-        if (statistic_name == "avg_rows_per_second")
-        {
-            return std::to_string(avg_rows_speed_value);
-        }
-        if (statistic_name == "avg_bytes_per_second")
-        {
-            return std::to_string(avg_bytes_speed_value);
-        }
-
-        return "";
-    }
-
-    void update_min_time(const UInt64 min_time_candidate)
-    {
-        if (min_time_candidate < min_time)
-        {
-            min_time = min_time_candidate;
-            min_time_watch.restart();
-        }
-    }
-
-    void update_average_speed(const double new_speed_info,
-        Stopwatch & avg_speed_watch,
-        size_t & number_of_info_batches,
-        double precision,
-        double & avg_speed_first,
-        double & avg_speed_value)
-    {
-        avg_speed_value = ((avg_speed_value * number_of_info_batches) + new_speed_info);
-        ++number_of_info_batches;
-        avg_speed_value /= number_of_info_batches;
-
-        if (avg_speed_first == 0)
-        {
-            avg_speed_first = avg_speed_value;
-        }
-
-        if (std::abs(avg_speed_value - avg_speed_first) >= precision)
-        {
-            avg_speed_first = avg_speed_value;
-            avg_speed_watch.restart();
-        }
-    }
-
-    void update_max_speed(const size_t max_speed_candidate, Stopwatch & max_speed_watch, double & max_speed)
-    {
-        if (max_speed_candidate > max_speed)
-        {
-            max_speed = max_speed_candidate;
-            max_speed_watch.restart();
-        }
-    }
-
-    void add(size_t rows_read_inc, size_t bytes_read_inc)
-    {
-        total_rows_read += rows_read_inc;
-        total_bytes_read += bytes_read_inc;
-        last_query_rows_read += rows_read_inc;
-        last_query_bytes_read += bytes_read_inc;
-
-        double new_rows_speed = last_query_rows_read / watch_per_query.elapsedSeconds();
-        double new_bytes_speed = last_query_bytes_read / watch_per_query.elapsedSeconds();
-
-        /// Update rows speed
-        update_max_speed(new_rows_speed, max_rows_speed_watch, max_rows_speed);
-        update_average_speed(new_rows_speed,
-            avg_rows_speed_watch,
-            number_of_rows_speed_info_batches,
-            avg_rows_speed_precision,
-            avg_rows_speed_first,
-            avg_rows_speed_value);
-        /// Update bytes speed
-        update_max_speed(new_bytes_speed, max_bytes_speed_watch, max_bytes_speed);
-        update_average_speed(new_bytes_speed,
-            avg_bytes_speed_watch,
-            number_of_bytes_speed_info_batches,
-            avg_bytes_speed_precision,
-            avg_bytes_speed_first,
-            avg_bytes_speed_value);
-    }
-
-    void updateQueryInfo()
-    {
-        ++queries;
-        sampler.insert(watch_per_query.elapsedSeconds());
-        update_min_time(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
-    }
-
-    void setTotalTime()
-    {
-        total_time = watch.elapsedSeconds();
-    }
-
-    void clear()
-    {
-        watch.restart();
-        watch_per_query.restart();
-        min_time_watch.restart();
-        max_rows_speed_watch.restart();
-        max_bytes_speed_watch.restart();
-        avg_rows_speed_watch.restart();
-        avg_bytes_speed_watch.restart();
-
-        last_query_was_cancelled = false;
-
-        sampler.clear();
-
-        queries = 0;
-        total_rows_read = 0;
-        total_bytes_read = 0;
-        last_query_rows_read = 0;
-        last_query_bytes_read = 0;
-
-        min_time = std::numeric_limits<UInt64>::max();
-        total_time = 0;
-        max_rows_speed = 0;
-        max_bytes_speed = 0;
-        avg_rows_speed_value = 0;
-        avg_bytes_speed_value = 0;
-        avg_rows_speed_first = 0;
-        avg_bytes_speed_first = 0;
-        avg_rows_speed_precision = 0.001;
-        avg_bytes_speed_precision = 0.001;
-        number_of_rows_speed_info_batches = 0;
-        number_of_bytes_speed_info_batches = 0;
-    }
-};
-
-double Stats::avg_rows_speed_precision = 0.001;
-double Stats::avg_bytes_speed_precision = 0.001;
 
 class PerformanceTest : public Poco::Util::Application
 {
@@ -618,7 +192,7 @@ private:
     };
 
     size_t times_to_run = 1;
-    std::vector<Stats> statistics_by_run;
+    std::vector<TestStats> statistics_by_run;
 
     /// Removes configurations that has a given value. If leave is true, the logic is reversed.
     void removeConfigurationsIf(
@@ -876,12 +450,12 @@ private:
 
             if (std::find(config_settings.begin(), config_settings.end(), "average_rows_speed_precision") != config_settings.end())
             {
-                Stats::avg_rows_speed_precision = test_config->getDouble("settings.average_rows_speed_precision");
+                TestStats::avg_rows_speed_precision = test_config->getDouble("settings.average_rows_speed_precision");
             }
 
             if (std::find(config_settings.begin(), config_settings.end(), "average_bytes_speed_precision") != config_settings.end())
             {
-                Stats::avg_bytes_speed_precision = test_config->getDouble("settings.average_bytes_speed_precision");
+                TestStats::avg_bytes_speed_precision = test_config->getDouble("settings.average_bytes_speed_precision");
             }
         }
 
@@ -1062,7 +636,7 @@ private:
         for (const auto & [query, run_index] : queries_with_indexes)
         {
             TestStopConditions & stop_conditions = stop_conditions_by_run[run_index];
-            Stats & statistics = statistics_by_run[run_index];
+            TestStats & statistics = statistics_by_run[run_index];
 
             statistics.clear();
             try
@@ -1093,7 +667,7 @@ private:
         }
     }
 
-    void execute(const Query & query, Stats & statistics, TestStopConditions & stop_conditions)
+    void execute(const Query & query, TestStats & statistics, TestStopConditions & stop_conditions)
     {
         statistics.watch_per_query.restart();
         statistics.last_query_was_cancelled = false;
@@ -1117,7 +691,7 @@ private:
     }
 
     void checkFulfilledConditionsAndUpdate(
-        const Progress & progress, RemoteBlockInputStream & stream, Stats & statistics, TestStopConditions & stop_conditions)
+        const Progress & progress, RemoteBlockInputStream & stream, TestStats & statistics, TestStopConditions & stop_conditions)
     {
         statistics.add(progress.rows, progress.bytes);
 
@@ -1256,7 +830,7 @@ public:
         {
             for (size_t number_of_launch = 0; number_of_launch < times_to_run; ++number_of_launch)
             {
-                Stats & statistics = statistics_by_run[number_of_launch * queries.size() + query_index];
+                TestStats & statistics = statistics_by_run[number_of_launch * queries.size() + query_index];
 
                 if (!statistics.ready)
                     continue;
