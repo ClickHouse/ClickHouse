@@ -280,7 +280,7 @@ public:
 
     /** Return the promoted numeric data type of the current data type. Throw an exception if `canBePromoted() == false`.
       */
-    virtual DataTypePtr promoteNumericType() const; 
+    virtual DataTypePtr promoteNumericType() const;
 
     /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
       * This should be overriden if data type default value differs from column default value (example: Enum data types).
