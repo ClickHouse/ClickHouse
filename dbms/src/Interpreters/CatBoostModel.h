@@ -62,13 +62,11 @@ public:
 
     std::string getName() const override { return name; }
 
-    bool isDefinedInDDL() const override { return false; }
-
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override;
 
-    std::unique_ptr<IExternalLoadable> clone() const override;
+    LoadablePtr clone() const override;
 
     std::chrono::time_point<std::chrono::system_clock> getCreationTime() const override { return creation_time; }
     std::exception_ptr getCreationException() const override { return creation_exception; }
