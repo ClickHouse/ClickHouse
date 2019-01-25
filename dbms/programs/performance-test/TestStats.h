@@ -51,6 +51,8 @@ struct TestStats
     bool ready = false; // check if a query wasn't interrupted by SIGINT
     String exception;
 
+    bool got_SIGINT = false;
+
     String getStatisticByName(const String & statistic_name);
 
     void update_min_time(UInt64 min_time_candidate);

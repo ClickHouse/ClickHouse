@@ -157,6 +157,7 @@ void TestStats::clear()
     total_bytes_read = 0;
     last_query_rows_read = 0;
     last_query_bytes_read = 0;
+    got_SIGINT = false;
 
     min_time = std::numeric_limits<UInt64>::max();
     total_time = 0;
