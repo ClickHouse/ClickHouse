@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Common/config.h>
+#if USE_PROTOBUF
+
 #include <optional>
 #include <Core/Types.h>
 #include <google/protobuf/compiler/importer.h>
@@ -47,3 +50,5 @@ private:
 };
 
 }
+
+#endif
