@@ -18,11 +18,11 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
     bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 
-    bool canBeWiden() const override { return true; }
-    DataTypePtr getWidenDataType() const override
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override
     {
-        using WidenDataType = DataTypeNumber<NearestFieldType<T>>;
-        return std::make_shared<WidenDataType>();
+        using PromotedType = DataTypeNumber<NearestFieldType<T>>;
+        return std::make_shared<PromotedType>();
     }
 };
 

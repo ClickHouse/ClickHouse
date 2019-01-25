@@ -149,10 +149,10 @@ Field DataTypeDecimal<T>::getDefault() const
 
 
 template <typename T>
-DataTypePtr DataTypeDecimal<T>::getWidenDataType() const
+DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
-    using WidenDataType = DataTypeDecimal<Decimal128>;
-    return std::make_shared<WidenDataType>(WidenDataType::maxPrecision(), scale);
+    using PromotedType = DataTypeDecimal<Decimal128>;
+    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), scale);
 }
 
 

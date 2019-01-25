@@ -273,14 +273,14 @@ public:
       */
     virtual Field getDefault() const = 0;
 
-    /** The data type can be widen in order to try to avoid overflows.
-      * Widenable data types are typically Number or Decimal data types.
+    /** The data type can be promoted in order to try to avoid overflows.
+      * Data types which can be promoted are typically Number or Decimal data types.
       */
-    virtual bool canBeWiden() const { return false; }
+    virtual bool canBePromoted() const { return false; }
 
-    /** Return the widen data type of the current data type. Throw an exception if `canBeWiden() == false`.
+    /** Return the promoted numeric data type of the current data type. Throw an exception if `canBePromoted() == false`.
       */
-    virtual DataTypePtr getWidenDataType() const; 
+    virtual DataTypePtr promoteNumericType() const; 
 
     /** Directly insert default value into a column. Default implementation use method IColumn::insertDefault.
       * This should be overriden if data type default value differs from column default value (example: Enum data types).
