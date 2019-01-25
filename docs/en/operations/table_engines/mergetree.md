@@ -26,7 +26,7 @@ Main features:
     The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
 
 
-## Creating a Table
+## Creating a Table  {#table_engine-mergetree-creating-a-table}
 
 ```
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

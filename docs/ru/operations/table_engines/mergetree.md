@@ -24,7 +24,7 @@
     При необходимости можно задать способ сэмплирования данных в таблице.
 
 
-## Создание таблицы
+## Создание таблицы {#table_engine-mergetree-creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

@@ -183,10 +183,10 @@ SharedLibraryPtr Compiler::getOrCount(
 static void addCodeToAssertHeadersMatch(WriteBuffer & out)
 {
     out <<
-        "#define STRING2(x) #x\n"
-        "#define STRING(x) STRING2(x)\n"
         "#include <Common/config_version.h>\n"
         "#if VERSION_REVISION != " << ClickHouseRevision::get() << "\n"
+        "#define STRING2(x) #x\n"
+        "#define STRING(x) STRING2(x)\n"
         "#pragma message \"ClickHouse headers revision = \" STRING(VERSION_REVISION) \n"
         "#error \"ClickHouse headers revision doesn't match runtime revision of the server (" << ClickHouseRevision::get() << ").\"\n"
         "#endif\n\n";

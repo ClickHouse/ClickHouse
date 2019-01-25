@@ -271,7 +271,7 @@ private:
       */
     void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
-    void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
+    void makeSetsForIndexImpl(const ASTPtr & node);
 
     bool isRemoteStorage() const;
 };

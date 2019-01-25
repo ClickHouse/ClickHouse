@@ -258,20 +258,25 @@ void ExpressionAnalyzer::makeSetsForIndex()
     if (storage && select_query && storage->supportsIndexForIn())
     {
         if (select_query->where_expression)
-            makeSetsForIndexImpl(select_query->where_expression, storage->getSampleBlock());
+            makeSetsForIndexImpl(select_query->where_expression);
         if (select_query->prewhere_expression)
-            makeSetsForIndexImpl(select_query->prewhere_expression, storage->getSampleBlock());
+            makeSetsForIndexImpl(select_query->prewhere_expression);
     }
 }
 
 
 void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
-    BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
+    auto set_key = PreparedSetKey::forSubquery(*subquery_or_table_name);
+    if (prepared_sets.count(set_key))
+        return; /// Already prepared.
+
+    auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {});
+    BlockIO res = interpreter_subquery->execute();
 
     SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
-
     set->setHeader(res.in->getHeader());
+
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
@@ -279,24 +284,24 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
             return;
     }
 
-    prepared_sets[subquery_or_table_name->range] = std::move(set);
+    prepared_sets[set_key] = std::move(set);
 }
 
 
-void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block)
+void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node)
 {
     for (auto & child : node->children)
     {
-        /// Don't descent into subqueries.
+        /// Don't descend into subqueries.
         if (typeid_cast<ASTSubquery *>(child.get()))
             continue;
 
-        /// Don't dive into lambda functions
+        /// Don't descend into lambda functions
         const ASTFunction * func = typeid_cast<const ASTFunction *>(child.get());
         if (func && func->name == "lambda")
             continue;
 
-        makeSetsForIndexImpl(child, sample_block);
+        makeSetsForIndexImpl(child);
     }
 
     const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get());
@@ -307,28 +312,24 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         if (storage && storage->mayBenefitFromIndexForIn(args.children.at(0)))
         {
             const ASTPtr & arg = args.children.at(1);
-
-            if (!prepared_sets.count(arg->range)) /// Not already prepared.
+            if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
             {
-                if (typeid_cast<ASTSubquery *>(arg.get()) || isIdentifier(arg))
-                {
-                    if (settings.use_index_for_in_with_subqueries)
-                        tryMakeSetForIndexFromSubquery(arg);
-                }
-                else
-                {
-                    NamesAndTypesList temp_columns = source_columns;
-                    temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
-                    for (const auto & joined_column : columns_added_by_join)
-                        temp_columns.push_back(joined_column.name_and_type);
-                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
-                    getRootActions(func->arguments->children.at(0), true, temp_actions);
+                if (settings.use_index_for_in_with_subqueries)
+                    tryMakeSetForIndexFromSubquery(arg);
+            }
+            else
+            {
+                NamesAndTypesList temp_columns = source_columns;
+                temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
+                for (const auto & joined_column : columns_added_by_join)
+                    temp_columns.push_back(joined_column.name_and_type);
+                ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
+                getRootActions(func->arguments->children.at(0), true, temp_actions);
 
-                    Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
-                    if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
-                        makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
-                                        settings.size_limits_for_set, prepared_sets);
-                }
+                Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
+                if (sample_block_with_calculated_columns.has(args.children.at(0)->getColumnName()))
+                    makeExplicitSet(func, sample_block_with_calculated_columns, true, context,
+                        settings.size_limits_for_set, prepared_sets);
             }
         }
     }

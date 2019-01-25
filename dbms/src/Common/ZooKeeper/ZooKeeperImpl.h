@@ -42,7 +42,7 @@
   * - extremely creepy code for implementation of "chroot" feature.
   *
   * As of 2018, there are no active maintainers of libzookeeper:
-  * - bugs in JIRA are fixed only occasionaly with ad-hoc patches by library users.
+  * - bugs in JIRA are fixed only occasionally with ad-hoc patches by library users.
   *
   * libzookeeper is a classical example of bad code written in C.
   *

@@ -81,9 +81,13 @@ option (ENABLE_TESTS "Enables tests" ON)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (OS_LINUX)
+    if (OS_LINUX AND NOT UNBUNDLED)
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif()
+        if (GLIBC_COMPATIBILITY)
+            message (STATUS "Some symbols from glibc will be replaced for compatibility")
+            link_libraries(glibc-compatibility)
+        endif ()
+    endif ()
 endif ()
 
 if (GLIBC_COMPATIBILITY)
@@ -179,8 +183,8 @@ endif (TEST_COVERAGE)
 
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
-    enable_testing()
 endif ()
+enable_testing() # Enable for tests without binary
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -228,6 +232,7 @@ include (cmake/find_llvm.cmake)
 include (cmake/find_cpuid.cmake)
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
+include (cmake/find_protobuf.cmake)
 include (cmake/find_hdfs3.cmake)
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
@@ -251,7 +256,7 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
-add_subdirectory (contrib)
+add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
