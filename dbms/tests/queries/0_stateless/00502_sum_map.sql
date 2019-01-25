@@ -23,6 +23,7 @@ CREATE TABLE test.sum_map_overflow(events Array(UInt8), counts Array(UInt8)) ENG
 INSERT INTO test.sum_map_overflow VALUES ([1], [255]), ([1], [2]);
 
 SELECT sumMap(events, counts) FROM test.sum_map_overflow;
+SELECT sumMapWithOverflow(events, counts) FROM test.sum_map_overflow;
 
 DROP TABLE test.sum_map_overflow;
 
