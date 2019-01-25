@@ -46,7 +46,6 @@
 * Refactored code with ASTIdentifier. [#4056](https://github.com/yandex/ClickHouse/pull/4056) [#4077](https://github.com/yandex/ClickHouse/pull/4077) [#4087](https://github.com/yandex/ClickHouse/pull/4087) ([4ertus2](https://github.com/4ertus2))
 * Improve error message in `clickhouse-test` script when no ClickHouse binary was found. [#4130](https://github.com/yandex/ClickHouse/pull/4130) ([Miniwoffer](https://github.com/Miniwoffer))
 * Rewrited code to calculate integer conversion function monotonicity. [#3921](https://github.com/yandex/ClickHouse/pull/3921) ([alexey-milovidov](https://github.com/alexey-milovidov))
-* Added minor optimizations. [#4075](https://github.com/yandex/ClickHouse/pull/4075) ([danlark1](https://github.com/danlark1))
 * Fixed typos in comments. [#4089](https://github.com/yandex/ClickHouse/pull/4089) ([kvinty](https://github.com/kvinty))
 
 ### Build/Testing/Packaging Improvements
