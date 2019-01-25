@@ -135,7 +135,9 @@ else()
     message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
 endif()
 
-include (cmake/test_cpu.cmake)
+if(NOT DISABLE_CPU_OPTIMIZE)
+    include(cmake/test_cpu.cmake)
+endif()
 
 if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
     option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
