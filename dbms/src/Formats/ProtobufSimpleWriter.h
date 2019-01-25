@@ -74,7 +74,7 @@ private:
     void finishCurrentField();
 
     enum WireType : UInt32;
-    void writeKey(WriteBuffer & buf, WireType wire_type);
+    void writeKey(WireType wire_type, WriteBuffer & buf);
 
     WriteBuffer & out;
     bool were_messages = false;

@@ -53,9 +53,9 @@ int main(int, char **)
         person.add_color(100);
         person.add_color(200);
         person.add_color(50);
-        person.set_hometown("Tver");
-        person.add_location(54.782635);
-        person.add_location(32.045251);
+        person.set_hometown("Plymouth");
+        person.add_location(50.403724);
+        person.add_location(-4.142123);
         person.set_pi(3.14159);
         person.set_someratio(0.007);
         person.set_temperature(5.4);
@@ -120,8 +120,8 @@ int main(int, char **)
 
     {
         AltPerson person;
-        person.add_location(54);
-        person.add_location(32);
+        person.add_location(50);
+        person.add_location(-4);
         person.set_pi(3.14159);
         person.set_uuid("c694ad8a-f714-4ea3-907d-fd54fb25d9b5");
         person.set_name("Natalia");
@@ -208,9 +208,9 @@ int main(int, char **)
         person.add_color("100");
         person.add_color("200");
         person.add_color("50");
-        person.set_hometown("Tver");
-        person.add_location("54.782635");
-        person.add_location("32.045251");
+        person.set_hometown("Plymouth");
+        person.add_location("50.403724");
+        person.add_location("-4.142123");
         person.set_pi("3.14159");
         person.set_someratio("0.007");
         person.set_temperature("5.4");
@@ -290,9 +290,9 @@ int main(int, char **)
         person.add_color(100);
         person.add_color(200);
         person.add_color(50);
-        person.set_hometown("Tver");
-        person.add_location(54.782635);
-        person.add_location(32.045251);
+        person.set_hometown("Plymouth");
+        person.add_location(50.403724);
+        person.add_location(-4.142123);
         person.set_pi(3.14159);
         person.set_someratio(0.007);
         person.set_temperature(5.4);
