@@ -2,6 +2,7 @@ set(RDKAFKA_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/librdkafka/src)
 
 set(SRCS
   ${RDKAFKA_SOURCE_DIR}/crc32c.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_zstd.c
   ${RDKAFKA_SOURCE_DIR}/rdaddr.c
   ${RDKAFKA_SOURCE_DIR}/rdavl.c
   ${RDKAFKA_SOURCE_DIR}/rdbuf.c
