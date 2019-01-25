@@ -87,8 +87,8 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         if (!global_context)
             global_context = thread_group->global_context;
 
-        if (!thread_group->thread_statuses.emplace(thread_number, this).second)
-            throw Exception("Thread " + std::to_string(thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
+        /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
+        thread_group->thread_statuses.emplace(thread_number, this);
     }
 
     initPerformanceCounters();
