@@ -71,6 +71,9 @@ std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 
 ThreadGroupStatusPtr CurrentThread::getGroup()
 {
+    if (!current_thread)
+        return nullptr;
+
     return get().getThreadGroup();
 }
 

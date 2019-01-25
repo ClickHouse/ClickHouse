@@ -37,7 +37,6 @@ String ThreadStatus::getQueryID()
 void CurrentThread::defaultThreadDeleter()
 {
     ThreadStatus & thread = CurrentThread::get();
-    LOG_TRACE(thread.log, "Thread " << thread.thread_number << " exited");
     thread.detachQuery(true, true);
 }
 
