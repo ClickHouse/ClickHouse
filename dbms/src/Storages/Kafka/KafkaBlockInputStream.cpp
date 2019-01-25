@@ -42,7 +42,6 @@ KafkaBlockInputStream::~KafkaBlockInputStream()
 
     // Return consumer for another reader
     storage.pushConsumer(consumer);
-    consumer = nullptr;
 }
 
 String KafkaBlockInputStream::getName() const
@@ -52,13 +51,10 @@ String KafkaBlockInputStream::getName() const
 
 Block KafkaBlockInputStream::readImpl()
 {
-    if (isCancelledOrThrowIfKilled() || !hasClaimed())
+    if (!hasClaimed())
         return {};
 
-    if (!reader)
-        throw Exception("Logical error: reader is not initialized", ErrorCodes::LOGICAL_ERROR);
-
-    return reader->read();
+    return children.back()->read();
 }
 
 Block KafkaBlockInputStream::getHeader() const
@@ -76,22 +72,18 @@ void KafkaBlockInputStream::readPrefixImpl()
         if (consumer == nullptr)
             throw Exception("Failed to claim consumer: ", ErrorCodes::TIMEOUT_EXCEEDED);
 
-        read_buf = std::make_unique<DelimitedReadBuffer>(new ReadBufferFromKafkaConsumer(consumer, storage.log), storage.row_delimiter);
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        buffer = std::make_unique<DelimitedReadBuffer>(new ReadBufferFromKafkaConsumer(consumer, storage.log, max_block_size), storage.row_delimiter);
+        addChild(FormatFactory::instance().getInput(storage.format_name, *buffer, storage.getSampleBlock(), context, max_block_size));
     }
 
     // Start reading data
     finalized = false;
-    reader->readPrefix();
 }
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
     if (hasClaimed())
-    {
-        reader->readSuffix();
-        read_buf->subBufferAs<ReadBufferFromKafkaConsumer>()->commit(); // Store offsets read in this stream
-    }
+        buffer->subBufferAs<ReadBufferFromKafkaConsumer>()->commit();
 
     // Mark as successfully finished
     finalized = true;
