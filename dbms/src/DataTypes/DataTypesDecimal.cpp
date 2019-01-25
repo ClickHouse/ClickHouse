@@ -149,6 +149,14 @@ Field DataTypeDecimal<T>::getDefault() const
 
 
 template <typename T>
+DataTypePtr DataTypeDecimal<T>::getWidenDataType() const
+{
+    using WidenDataType = DataTypeDecimal<Decimal128>;
+    return std::make_shared<WidenDataType>(WidenDataType::maxPrecision(), scale);
+}
+
+
+template <typename T>
 MutableColumnPtr DataTypeDecimal<T>::createColumn() const
 {
     return ColumnType::create(0, scale);
