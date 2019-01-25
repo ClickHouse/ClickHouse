@@ -17,6 +17,13 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
     bool canBeUsedInBitOperations() const override { return true; }
     bool canBeUsedInBooleanContext() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+
+    bool canBeWiden() const override { return true; }
+    DataTypePtr getWidenDataType() const override
+    {
+        using WidenDataType = DataTypeNumber<NearestFieldType<T>>;
+        return std::make_shared<WidenDataType>();
+    }
 };
 
 using DataTypeUInt8 = DataTypeNumber<UInt8>;
