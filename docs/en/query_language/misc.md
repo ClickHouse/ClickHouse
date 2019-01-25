@@ -16,6 +16,7 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
 
+
 ## CHECK TABLE
 
 Checks if the data in the table is corrupted.
@@ -137,7 +138,7 @@ A test query (`TEST`) only checks the user's rights and displays a list of queri
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/misc/) <!--hide-->
 
-## OPTIMIZE
+## OPTIMIZE {#misc_operations-optimize}
 
 ``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
