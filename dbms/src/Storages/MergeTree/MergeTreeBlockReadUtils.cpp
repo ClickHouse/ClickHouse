@@ -84,7 +84,7 @@ MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     : data_part(data_part_)
 {
     number_of_rows_in_part = data_part->rows_count;
-    /// Initialize with sample block untill update won't called.
+    /// Initialize with sample block until update won't called.
     initialize(sample_block, columns);
 }
 
@@ -173,7 +173,7 @@ void MergeTreeBlockSizePredictor::update(const Block & block, double decay)
     block_size_rows = new_rows;
 
     /// Make recursive updates for each read row: v_{i+1} = (1 - decay) v_{i} + decay v_{target}
-    /// Use sum of gemetric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
+    /// Use sum of geometric sequence formula to update multiple rows: v{n} = (1 - decay)^n v_{0} + (1 - (1 - decay)^n) v_{target}
     /// NOTE: DEFAULT and MATERIALIZED columns without data has inaccurate estimation of v_{target}
     double alpha = std::pow(1. - decay, diff_rows);
 

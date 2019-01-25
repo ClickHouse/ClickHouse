@@ -64,6 +64,14 @@ public:
         set(nullptr, 0);
     }
 
+    bool isFinished() const { return is_finished; }
+
+    void restart()
+    {
+        set(reinterpret_cast<Position>(vector.data()), vector.size());
+        is_finished = false;
+    }
+
     ~WriteBufferFromVector() override
     {
         if (!is_finished)

@@ -2,13 +2,17 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
 
-set (MAX_COMPILER_MEMORY 2500 CACHE INTERNAL "")
-if (MAKE_STATIC_LIBRARIES)
-    set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "")
+if(COMPILER_PIPE)
+    set(MAX_COMPILER_MEMORY 2500)
 else()
-    set (MAX_LINKER_MEMORY 2500 CACHE INTERNAL "")
-endif ()
-include (../cmake/limit_jobs.cmake)
+    set(MAX_COMPILER_MEMORY 1500)
+endif()
+if(MAKE_STATIC_LIBRARIES)
+    set(MAX_LINKER_MEMORY 3500)
+else()
+    set(MAX_LINKER_MEMORY 2500)
+endif()
+include(../cmake/limit_jobs.cmake)
 
 include(cmake/find_vectorclass.cmake)
 
@@ -283,6 +287,7 @@ endif ()
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms PRIVATE ${RDKAFKA_LIBRARY})
+    target_link_libraries (dbms PRIVATE ${CPPKAFKA_LIBRARY})
     if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
@@ -293,9 +298,12 @@ target_link_libraries(dbms PRIVATE ${OPENSSL_CRYPTO_LIBRARY} Threads::Threads)
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
 target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
+target_link_libraries (dbms PRIVATE ${Protobuf_LIBRARY})
+target_include_directories (dbms SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
+
 if (USE_HDFS)
-    target_link_libraries (dbms PRIVATE ${HDFS3_LIBRARY})
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
+    target_link_libraries (clickhouse_common_io PRIVATE ${HDFS3_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${HDFS3_INCLUDE_DIR})
 endif()
 
 if (USE_JEMALLOC)
@@ -312,11 +320,6 @@ target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE
 
 add_subdirectory (programs)
 add_subdirectory (tests)
-
-if (GLIBC_COMPATIBILITY AND NOT CLICKHOUSE_SPLIT_BINARY)
-    MESSAGE(STATUS "Some symbols from glibc will be replaced for compatibility")
-    target_link_libraries(dbms PUBLIC glibc-compatibility)
-endif()
 
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)

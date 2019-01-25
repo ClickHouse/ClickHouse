@@ -494,7 +494,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local)
-                dir_names.push_back(address.toStringFull());
+                dir_names.push_back(address.toFullString());
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);
