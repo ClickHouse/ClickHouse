@@ -648,7 +648,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
     ///  that is going in insertion order.
-    std::shared_ptr<IProfilingBlockInputStream> merged_stream;
+    std::shared_ptr<IBlockInputStream> merged_stream;
 
     switch (data.merging_params.mode)
     {
@@ -714,7 +714,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         if (disk_reservation && sum_input_rows_upper_bound)
         {
             /// The same progress from merge_entry could be used for both algorithms (it should be more accurate)
-            /// But now we are using inaccurate row-based estimation in Horizontal case for backward compability
+            /// But now we are using inaccurate row-based estimation in Horizontal case for backward compatibility
             Float64 progress = (merge_alg == MergeAlgorithm::Horizontal)
                 ? std::min(1., 1. * rows_written / sum_input_rows_upper_bound)
                 : std::min(1., merge_entry->progress.load(std::memory_order_relaxed));

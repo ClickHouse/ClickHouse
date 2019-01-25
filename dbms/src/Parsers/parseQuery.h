@@ -49,7 +49,7 @@ ASTPtr parseQuery(
 
 
 /** Split queries separated by ; on to list of single queries
-  * Returns pointer to the end of last sucessfuly parsed query (first), and true if all queries are sucessfuly parsed (second)
+  * Returns pointer to the end of last successfully parsed query (first), and true if all queries are successfully parsed (second)
   * NOTE: INSERT's data should be placed in single line.
   */
 std::pair<const char *, bool> splitMultipartQuery(const std::string & queries, std::vector<std::string> & queries_list);

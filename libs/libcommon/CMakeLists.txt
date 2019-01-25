@@ -39,6 +39,7 @@ add_library (common ${LINK_MODE}
     include/common/demangle.h
     include/common/SetTerminalEcho.h
     include/common/find_symbols.h
+    include/common/constexpr_helpers.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

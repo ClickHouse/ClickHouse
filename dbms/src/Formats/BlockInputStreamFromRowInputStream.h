@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/IRowInputStream.h>
 
@@ -14,7 +14,7 @@ namespace DB
   *
   * Also controls over parsing errors and prints diagnostic information about them.
   */
-class BlockInputStreamFromRowInputStream : public IProfilingBlockInputStream
+class BlockInputStreamFromRowInputStream : public IBlockInputStream
 {
 public:
     /** sample_ - block with zero rows, that structure describes how to interpret values */

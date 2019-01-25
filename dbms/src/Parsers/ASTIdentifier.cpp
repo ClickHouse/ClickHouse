@@ -18,14 +18,14 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
 
     /// A simple or compound identifier?
 
-    if (children.size() > 1)
+    if (name_parts.size() > 1)
     {
-        for (size_t i = 0, size = children.size(); i < size; ++i)
+        for (size_t i = 0, size = name_parts.size(); i < size; ++i)
         {
             if (i != 0)
                 settings.ostr << '.';
 
-            format_element(static_cast<const ASTIdentifier &>(*children[i].get()).name);
+            format_element(name_parts[i]);
         }
     }
     else
@@ -44,11 +44,7 @@ ASTPtr createTableIdentifier(const String & database_name, const String & table_
     if (database_name.empty())
         return ASTIdentifier::createSpecial(table_name);
 
-    ASTPtr database = ASTIdentifier::createSpecial(database_name);
-    ASTPtr table = ASTIdentifier::createSpecial(table_name);
-
-    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
-    database_and_table->children = {database, table};
+    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name, {database_name, table_name});
     return database_and_table;
 }
 
@@ -121,30 +117,30 @@ void addIdentifierQualifier(ASTIdentifier & identifier, const String & database,
 {
     if (!alias.empty())
     {
-        identifier.children.emplace_back(std::make_shared<ASTIdentifier>(alias));
+        identifier.name_parts.emplace_back(alias);
     }
     else
     {
         if (!database.empty())
-            identifier.children.emplace_back(std::make_shared<ASTIdentifier>(database));
-        identifier.children.emplace_back(std::make_shared<ASTIdentifier>(table));
+            identifier.name_parts.emplace_back(database);
+        identifier.name_parts.emplace_back(table);
     }
 }
 
 bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & database, const String & table)
 {
-    size_t num_components = identifier.children.size();
+    size_t num_components = identifier.name_parts.size();
     if (num_components >= 3)
-        return  *getIdentifierName(identifier.children[0]) == database &&
-                *getIdentifierName(identifier.children[1]) == table;
+        return identifier.name_parts[0] == database &&
+               identifier.name_parts[1] == table;
     return false;
 }
 
 bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table)
 {
-    size_t num_components = identifier.children.size();
+    size_t num_components = identifier.name_parts.size();
     if (num_components >= 2)
-        return *getIdentifierName(identifier.children[0]) == table;
+        return identifier.name_parts[0] == table;
     return false;
 }
 

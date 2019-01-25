@@ -165,7 +165,7 @@ void OptimizedRegularExpressionImpl<thread_safe>::analyze(
                 ++pos;
                 break;
 
-            /// Quantifiers that allow a zero number of occurences.
+            /// Quantifiers that allow a zero number of occurrences.
             case '{':
                 in_curly_braces = true;
                 [[fallthrough]];

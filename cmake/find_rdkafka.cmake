@@ -1,4 +1,4 @@
-if (NOT ARCH_ARM AND NOT ARCH_32)
+if (NOT ARCH_ARM AND NOT ARCH_32 AND NOT APPLE)
     option (ENABLE_RDKAFKA "Enable kafka" ON)
 endif ()
 
