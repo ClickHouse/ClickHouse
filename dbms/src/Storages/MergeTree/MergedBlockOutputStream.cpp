@@ -449,9 +449,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     auto primary_key_column_names = storage.primary_key_columns;
     Names skip_indexes_column_names;
-    for (const auto index : storage.skip_indices) {
+    for (const auto index : storage.skip_indices)
         std::copy(index->columns.cbegin(), index->columns.cend(), std::back_inserter(skip_indexes_column_names));
-    }
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_key_columns(primary_key_column_names.size());
@@ -550,7 +549,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
             auto & stream = *skip_indices_streams[i];
             size_t prev_pos = 0;
 
-            while (prev_pos < rows) {
+            while (prev_pos < rows)
+            {
                 size_t limit = 0;
                 if (prev_pos == 0 && index_offset != 0)
                 {
@@ -559,7 +559,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 else
                 {
                     limit = storage.index_granularity;
-                    if (!skip_indices_granules[i]) {
+                    if (!skip_indices_granules[i])
+                    {
                         skip_indices_granules[i] = index->createIndexGranule();
                         skip_index_filling[i] = 0;
 
@@ -574,11 +575,13 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
                 size_t pos = prev_pos;
                 skip_indices_granules[i]->update(block, &pos, limit);
 
-                if (pos == prev_pos + limit) {
+                if (pos == prev_pos + limit)
+                {
                     ++skip_index_filling[i];
 
                     /// write index if it is filled
-                    if (skip_index_filling[i] == index->granularity) {
+                    if (skip_index_filling[i] == index->granularity)
+                    {
                         skip_indices_granules[i]->serializeBinary(stream.compressed);
                         skip_indices_granules[i].reset();
                         skip_index_filling[i] = 0;

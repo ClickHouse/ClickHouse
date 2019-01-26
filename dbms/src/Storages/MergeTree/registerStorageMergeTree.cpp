@@ -623,7 +623,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
-static void registerMergeTreeSkipIndices() {
+static void registerMergeTreeSkipIndices()
+{
     auto & factory = MergeTreeIndexFactory::instance();
     factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
 }

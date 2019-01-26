@@ -4,9 +4,11 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
-namespace DB {
+namespace DB
+{
 
-class MergeTreeIndexReader {
+class MergeTreeIndexReader
+{
 public:
     MergeTreeIndexReader(
         MergeTreeIndexPtr index,

@@ -26,7 +26,8 @@ public:
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Index"; }
 
-    ASTPtr clone() const override {
+    ASTPtr clone() const override
+    {
         auto res = std::make_shared<ASTIndexDeclaration>();
 
         res->name = name;

@@ -137,10 +137,9 @@ bool MinMaxCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
 {
     std::shared_ptr<MergeTreeMinMaxGranule> granule
         = std::dynamic_pointer_cast<MergeTreeMinMaxGranule>(idx_granule);
-    if (!granule) {
+    if (!granule)
         throw Exception(
             "Minmax index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
-    }
 
     return condition.mayBeTrueInParallelogram(granule->parallelogram, index.data_types);
 }

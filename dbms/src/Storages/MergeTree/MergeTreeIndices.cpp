@@ -45,11 +45,10 @@ std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
                 "Unknown Index type '" + node->type->name + "'. Available index types: " +
                 std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
                         [] (auto && lft, const auto & rht) -> std::string {
-                            if (lft == "") {
+                            if (lft == "")
                                 return rht.first;
-                            } else {
+                            else
                                 return lft + ", " + rht.first;
-                            }
                         }),
                 ErrorCodes::INCORRECT_QUERY);
     return it->second(data, node, context);
