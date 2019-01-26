@@ -1,6 +1,6 @@
 #pragma once
 
-#include <unordered_map>
+#include <Interpreters/Aliases.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
 namespace DB
@@ -10,8 +10,6 @@ class ASTSelectWithUnionQuery;
 class ASTSubquery;
 struct ASTTableExpression;
 struct ASTArrayJoin;
-
-using Aliases = std::unordered_map<String, ASTPtr>;
 
 /// Visits AST node to collect aliases.
 class QueryAliasesMatcher

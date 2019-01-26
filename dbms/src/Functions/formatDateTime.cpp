@@ -36,7 +36,7 @@ namespace ErrorCodes
   *
   * It is implemented in two steps.
   * At first step, it creates a pattern of zeros, literal characters, whitespaces, etc.
-  *  and quickly fills resulting charater array (string column) with this pattern.
+  *  and quickly fills resulting character array (string column) with this pattern.
   * At second step, it walks across the resulting character array and modifies/replaces specific charaters,
   *  by calling some functions by pointers and shifting cursor by specified amount.
   *

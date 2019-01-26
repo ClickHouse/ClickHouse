@@ -109,8 +109,7 @@ void RemoteBlockInputStream::cancel(bool kill)
         /// Stop sending external data.
         for (auto & vec : external_tables_data)
             for (auto & elem : vec)
-                if (IProfilingBlockInputStream * stream = dynamic_cast<IProfilingBlockInputStream *>(elem.first.get()))
-                    stream->cancel(kill);
+                elem.first->cancel(kill);
     }
 
     if (!isQueryPending() || hasThrownException())

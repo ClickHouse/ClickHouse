@@ -1,10 +1,10 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 namespace DB
 {
-class DictionaryBlockInputStreamBase : public IProfilingBlockInputStream
+class DictionaryBlockInputStreamBase : public IBlockInputStream
 {
 protected:
     DictionaryBlockInputStreamBase(size_t rows_count, size_t max_block_size);

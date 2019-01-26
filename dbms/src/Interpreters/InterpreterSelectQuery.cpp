@@ -586,7 +586,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executePreLimit(pipeline);
             }
 
-            // If there is no global subqueries, we can run subqueries only when recieve them on server.
+            // If there is no global subqueries, we can run subqueries only when receive them on server.
             if (!query_analyzer->hasGlobalSubqueries() && !expressions.subqueries_for_sets.empty())
                 executeSubqueriesInSetsAndJoins(pipeline, expressions.subqueries_for_sets);
         }
@@ -978,8 +978,8 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         /// Set the limits and quota for reading data, the speed and time of the query.
         {
-            IProfilingBlockInputStream::LocalLimits limits;
-            limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+            IBlockInputStream::LocalLimits limits;
+            limits.mode = IBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
             limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
@@ -1001,13 +1001,10 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             pipeline.transform([&](auto & stream)
             {
-                if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-                {
-                    p_stream->setLimits(limits);
+                stream->setLimits(limits);
 
-                    if (to_stage == QueryProcessingStage::Complete)
-                        p_stream->setQuota(quota);
-                }
+                if (to_stage == QueryProcessingStage::Complete)
+                    stream->setQuota(quota);
             });
         }
     }
@@ -1260,8 +1257,8 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
         auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
         /// Limits on sorting
-        IProfilingBlockInputStream::LocalLimits limits;
-        limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+        IBlockInputStream::LocalLimits limits;
+        limits.mode = IBlockInputStream::LIMITS_TOTAL;
         limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
         sorting_stream->setLimits(limits);
 
@@ -1459,8 +1456,7 @@ void InterpreterSelectQuery::executeExtremes(Pipeline & pipeline)
 
     pipeline.transform([&](auto & stream)
     {
-        if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
-            p_stream->enableExtremes();
+        stream->enableExtremes();
     });
 }
 
@@ -1506,4 +1502,3 @@ void InterpreterSelectQuery::initSettings()
 }
 
 }
-
