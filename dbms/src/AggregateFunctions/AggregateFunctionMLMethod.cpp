@@ -10,14 +10,14 @@ namespace DB
 namespace
 {
 
-using FuncLinearRegression = AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression>;
+using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;
 
 template <class Method>
 AggregateFunctionPtr createAggregateFunctionMLMethod(
         const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
-    if (parameters.size() > 2)
-        throw Exception("Aggregate function " + name + " requires at most two parameters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (parameters.size() > 4)
+        throw Exception("Aggregate function " + name + " requires at most four parameters", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (size_t i = 0; i < argument_types.size(); ++i)
     {
@@ -29,6 +29,9 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 
     Float64 learning_rate = Float64(0.01);
     UInt32 batch_size = 1;
+
+    std::shared_ptr<IGradientComputer> gc;
+    std::shared_ptr<IWeightsUpdater> wu;
     if (!parameters.empty())
     {
         learning_rate = applyVisitor(FieldVisitorConvertToNumber<Float64>(), parameters[0]);
@@ -39,10 +42,32 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 
     }
 
+    /// Gradient_Computer for LinearRegression has LinearRegression gradient computer
+    if (std::is_same<Method, FuncLinearRegression>::value)
+    {
+       gc = std::make_shared<LinearRegression>(argument_types.size());
+    } else
+    {
+        throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+    if (parameters.size() > 2)
+    {
+        if (applyVisitor(FieldVisitorConvertToNumber<UInt32>(), parameters[2]) == Float64{1.0})
+        {
+            wu = std::make_shared<StochasticGradientDescent>();
+        } else
+        {
+            throw Exception("Such weights updater is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    } else
+    {
+        wu = std::make_unique<StochasticGradientDescent>();
+    }
+
     if (argument_types.size() < 2)
         throw Exception("Aggregate function " + name + " requires at least two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<Method>(argument_types.size() - 1, learning_rate, batch_size);
+    return std::make_shared<Method>(argument_types.size() - 1, gc, wu, learning_rate, batch_size);
 }
 
 }

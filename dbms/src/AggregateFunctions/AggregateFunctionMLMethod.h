@@ -32,122 +32,47 @@ namespace ErrorCodes
 class IGradientComputer
 {
 public:
-    virtual ~IGradientComputer()
+    IGradientComputer(UInt32 sz)
+    : batch_gradient(sz, 0)
     {}
+    virtual ~IGradientComputer() = default;
 
-    void add(/* weights, */Float64 target, const IColumn ** columns, size_t row_num) final
+    virtual void compute(const std::vector<Float64> & weights, Float64 bias, Float64 learning_rate,
+            Float64 target, const IColumn ** columns, size_t row_num) = 0;
+
+    void reset()
     {
-        ++cur_batch;
-        std::vector<Float64> cur_grad = compute_gradient(/*...*/);
-        for (size_t i = 0; i != batch_gradient.size(); ++i) {
-            batch_gradient[i] += cur_grad[i];
-        }
+        batch_gradient.assign(batch_gradient.size(), 0);
     }
 
-    std::vector<Float64> get() final
+    void write(WriteBuffer & buf) const
     {
-        std::vector<Float64> result(batch_gradient.size());
-        for (size_t i = 0; i != batch_gradient.size(); ++i) {
-            result[i] = batch_gradient[i] / cur_batch;
-            batch_gradient[i] = 0.0;
-        }
-        cur_batch = 0;
-        return result;
+        writeBinary(batch_gradient, buf);
+    }
+
+    void read(ReadBuffer & buf)
+    {
+        readBinary(batch_gradient, buf);
+    }
+
+    const std::vector<Float64> & get() const
+    {
+        return batch_gradient;
     }
 
 protected:
-    virtual std::vector<Float64> compute_gradient(/* weights, */Float64 target, const IColumn ** columns, size_t row_num) = 0;
-
-private:
-    UInt32 cur_batch = 0;
     std::vector<Float64> batch_gradient;  // gradient for bias lies in batch_gradient[batch_gradient.size() - 1]
 };
 
 class LinearRegression : public IGradientComputer
 {
 public:
-    virtual ~LinearRegression()
+    LinearRegression(UInt32 sz)
+    : IGradientComputer(sz)
     {}
 
-protected:
-    virtual std::vector<Float64> compute_gradient(/* weights, */Float64 target, const IColumn ** columns, size_t row_num)
-    {
-        // TODO
-    }
-};
-
-class IWeightsUpdater
-{
-public:
-    virtual ~IWeightsUpdater()
-    {}
-
-    virtual void update(/* weights, gradient */) = 0;
-};
-
-class GradientDescent : public IWeightsUpdater
-{
-public:
-    virtual ~GradientDescent()
-    {}
-
-    virtual void update(/* weights, gradient */) = 0 {
-        // TODO
-    }
-};
-
-struct LinearModelData
-{
-    LinearModelData()
-    {}
-
-    LinearModelData(Float64 learning_rate_, UInt32 param_num_, UInt32 batch_size_)
-    : learning_rate(learning_rate_), batch_size(batch_size_) {
-        weights.resize(param_num_, Float64{0.0});
-        batch_gradient.resize(param_num_ + 1, Float64{0.0});
-        cur_batch = 0;
-    }
-
-    std::vector<Float64> weights;
-    Float64 bias{0.0};
-    std::shared_ptr<IGradientComputer> gradient_computer;
-    std::shared_ptr<IWeightsUpdater> weights_updater;
-
-    void add(Float64 target, const IColumn ** columns, size_t row_num)
-    {
-        gradient_cumputer->add(target, columns, row_num);
-        if (cur_batch == batch_size)
-        {
-            cur_batch = 0;
-            weights_updater->update(/* weights */, gradient_computer->get());
-        }
-    }
-
-    void merge(const LinearModelData & rhs)
-    {
-    }
-};
-
-struct LinearRegressionData
-{
-    LinearRegressionData()
-    {}
-    LinearRegressionData(Float64 learning_rate_, UInt32 param_num_, UInt32 batch_size_)
-    : learning_rate(learning_rate_), batch_size(batch_size_) {
-        weights.resize(param_num_, Float64{0.0});
-        batch_gradient.resize(param_num_ + 1, Float64{0.0});
-        cur_batch = 0;
-    }
-
-    Float64 bias{0.0};
-    std::vector<Float64> weights;
-    Float64 learning_rate;
-    UInt32 iter_num = 0;
-    std::vector<Float64> batch_gradient;
-    UInt32 cur_batch;
-    UInt32 batch_size;
-
-    void update_gradient(Float64 target, const IColumn ** columns, size_t row_num)
+    void compute(const std::vector<Float64> & weights, Float64 bias, Float64 learning_rate,
+            Float64 target, const IColumn ** columns, size_t row_num) override
     {
         Float64 derivative = (target - bias);
         for (size_t i = 0; i < weights.size(); ++i)
@@ -156,47 +81,72 @@ struct LinearRegressionData
         }
         derivative *= (2 * learning_rate);
 
-//        bias += derivative;
         batch_gradient[weights.size()] += derivative;
         for (size_t i = 0; i < weights.size(); ++i)
         {
             batch_gradient[i] += derivative * static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];;
         }
     }
+};
 
-    void update_weights()
-    {
-        if (!cur_batch)
-            return;
+class IWeightsUpdater
+{
+public:
+    virtual ~IWeightsUpdater() = default;
 
+    virtual void update(UInt32 cur_batch, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & gradient) = 0;
+};
+
+class StochasticGradientDescent : public IWeightsUpdater
+{
+public:
+    void update(UInt32 cur_batch, std::vector<Float64> & weights, Float64 & bias, const std::vector<Float64> & batch_gradient) override {
         for (size_t i = 0; i < weights.size(); ++i)
         {
             weights[i] += batch_gradient[i] / cur_batch;
         }
         bias += batch_gradient[weights.size()] / cur_batch;
+    }
+};
 
-        batch_gradient.assign(batch_gradient.size(), Float64{0.0});
+class LinearModelData
+{
+public:
+    LinearModelData()
+    {}
 
-        ++iter_num;
+    LinearModelData(Float64 learning_rate,
+            UInt32 param_num,
+            UInt32 batch_size,
+            std::shared_ptr<IGradientComputer> gc,
+            std::shared_ptr<IWeightsUpdater> wu)
+    : learning_rate(learning_rate),
+    batch_size(batch_size),
+    gradient_computer(std::move(gc)),
+    weights_updater(std::move(wu))
+    {
+        weights.resize(param_num, Float64{0.0});
         cur_batch = 0;
     }
 
+
+
     void add(Float64 target, const IColumn ** columns, size_t row_num)
     {
-        update_gradient(target, columns, row_num);
+        gradient_computer->compute(weights, bias, learning_rate, target, columns, row_num);
         ++cur_batch;
         if (cur_batch == batch_size)
         {
-            update_weights();
+            update_state();
         }
     }
 
-    void merge(const LinearRegressionData & rhs)
+    void merge(const LinearModelData & rhs)
     {
         if (iter_num == 0 && rhs.iter_num == 0)
             return;
 
-        update_weights();
+        update_state();
         /// нельзя обновить из-за константости
 //        rhs.update_weights();
 
@@ -217,8 +167,8 @@ struct LinearRegressionData
         writeBinary(bias, buf);
         writeBinary(weights, buf);
         writeBinary(iter_num, buf);
-        writeBinary(batch_gradient, buf);
         writeBinary(cur_batch, buf);
+        gradient_computer->write(buf);
     }
 
     void read(ReadBuffer & buf)
@@ -226,11 +176,11 @@ struct LinearRegressionData
         readBinary(bias, buf);
         readBinary(weights, buf);
         readBinary(iter_num, buf);
-        readBinary(batch_gradient, buf);
         readBinary(cur_batch, buf);
+        gradient_computer->read(buf);
     }
 
-    Float64 predict(const std::vector<Float64>& predict_feature) const
+    Float64 predict(const std::vector<Float64> & predict_feature) const
     {
         /// не обновляем веса при предикте, т.к. это может замедлить предсказание
         /// однако можно например обновлять их при каждом мердже не зависимо от того, сколько элементнов в батче
@@ -248,6 +198,27 @@ struct LinearRegressionData
 
         return res;
     }
+
+private:
+    std::vector<Float64> weights;
+    Float64 learning_rate;
+    UInt32 batch_size;
+    Float64 bias{0.0};
+    UInt32 iter_num = 0;
+    UInt32 cur_batch;
+    std::shared_ptr<IGradientComputer> gradient_computer;
+    std::shared_ptr<IWeightsUpdater> weights_updater;
+
+    void update_state()
+    {
+        if (cur_batch == 0)
+            return;
+
+        weights_updater->update(cur_batch, weights, bias, gradient_computer->get());
+        cur_batch = 0;
+        ++iter_num;
+        gradient_computer->reset();
+    }
 };
 
 template <
@@ -261,10 +232,17 @@ class AggregateFunctionMLMethod final : public IAggregateFunctionDataHelper<Data
 public:
     String getName() const override { return Name::name; }
 
-    explicit AggregateFunctionMLMethod(UInt32 param_num, Float64 learning_rate, UInt32 batch_size)
-            : param_num(param_num), learning_rate(learning_rate), batch_size(batch_size)
-    {
-    }
+    explicit AggregateFunctionMLMethod(UInt32 param_num,
+                                        std::shared_ptr<IGradientComputer> gradient_computer,
+                                        std::shared_ptr<IWeightsUpdater> weights_updater,
+                                        Float64 learning_rate,
+                                        UInt32 batch_size)
+            : param_num(param_num),
+            learning_rate(learning_rate),
+            batch_size(batch_size),
+            gc(std::move(gradient_computer)),
+            wu(std::move(weights_updater))
+    {}
 
     DataTypePtr getReturnType() const override
     {
@@ -273,7 +251,7 @@ public:
 
     void create(AggregateDataPtr place) const override
     {
-        new (place) Data(learning_rate, param_num, batch_size);
+        new (place) Data(learning_rate, param_num, batch_size, gc, wu);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -322,9 +300,9 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto &column = dynamic_cast<ColumnVector<Float64> &>(to);
-        std::ignore = column;
         std::ignore = place;
+        std::ignore = to;
+        return;
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
@@ -333,6 +311,8 @@ private:
     UInt32 param_num;
     Float64 learning_rate;
     UInt32 batch_size;
+    std::shared_ptr<IGradientComputer> gc;
+    std::shared_ptr<IWeightsUpdater> wu;
 };
 
 struct NameLinearRegression { static constexpr auto name = "LinearRegression"; };
