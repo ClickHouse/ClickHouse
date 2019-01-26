@@ -341,7 +341,8 @@ static void extractMergingAndGatheringColumns(
 {
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
-    for (const auto & index : indexes) {
+    for (const auto & index : indexes)
+    {
         Names index_columns_vec = index->expr->getRequiredColumns();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
                   std::inserter(key_columns, key_columns.end()));
@@ -636,15 +637,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
         BlockInputStreamPtr stream = std::move(input);
-        if (data.skip_indices_expr) {
+        if (data.skip_indices_expr)
             stream = std::make_shared<MaterializingBlockInputStream>(
                     std::make_shared<ExpressionBlockInputStream>(stream, data.skip_indices_expr));
-        }
 
-        if (data.hasPrimaryKey()) {
+        if (data.hasPrimaryKey())
             stream = std::make_shared<MaterializingBlockInputStream>(
                     std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_expr));
-        }
 
         src_streams.emplace_back(stream);
     }
@@ -945,15 +944,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// TODO: check that we modify only non-key columns in this case.
 
         /// Checks if columns used in skipping indexes modified/
-        for (const auto & col : in_header.getNames()) {
-            for (const auto index : data.skip_indices) {
+        for (const auto & col : in_header.getNames())
+        {
+            for (const auto index : data.skip_indices)
+            {
                 const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
-                if (it != cend(index_cols)) {
+                if (it != cend(index_cols))
                     throw Exception("You can not modify columns used in index. Index name: '"
                                     + index->name
                                     + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);
-                }
             }
         }
 

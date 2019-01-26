@@ -333,7 +333,8 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         if (std::any_of(
                 indices_description.indices.cbegin(),
                 indices_description.indices.cend(),
-                [this](const ASTPtr & index_ast) {
+                [this](const ASTPtr & index_ast)
+                {
                     return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
                 }))
         {
@@ -351,13 +352,15 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
             insert_it = std::find_if(
                     indices_description.indices.begin(),
                     indices_description.indices.end(),
-                    [this](const ASTPtr & index_ast) {
+                    [this](const ASTPtr & index_ast)
+                    {
                         return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == after_index_name;
                     });
-            if (insert_it == indices_description.indices.end()) {
+
+            if (insert_it == indices_description.indices.end())
                 throw Exception("Wrong index name. Cannot find index `" + after_index_name + "` to insert after.",
                         ErrorCodes::LOGICAL_ERROR);
-            }
+
             ++insert_it;
         }
 
@@ -368,14 +371,14 @@ void AlterCommand::apply(ColumnsDescription & columns_description, IndicesDescri
         auto erase_it = std::find_if(
                 indices_description.indices.begin(),
                 indices_description.indices.end(),
-                [this](const ASTPtr & index_ast) {
+                [this](const ASTPtr & index_ast)
+                {
                     return typeid_cast<const ASTIndexDeclaration &>(*index_ast).name == index_name;
                 });
+
         if (erase_it == indices_description.indices.end())
-        {
             throw Exception("Wrong index name. Cannot find index `" + index_name + "` to drop.",
                     ErrorCodes::LOGICAL_ERROR);
-        }
 
         indices_description.indices.erase(erase_it);
     }

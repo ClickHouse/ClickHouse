@@ -534,9 +534,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
         /// It can be done in multiple threads (one thread for each part).
         /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
-        for (auto index : data.skip_indices) {
+        for (auto index : data.skip_indices)
+        {
             auto condition = index->createIndexCondition(query_info, context);
-            if (!condition->alwaysUnknownOrTrue()) {
+            if (!condition->alwaysUnknownOrTrue())
+            {
                 ranges.ranges = filterMarksUsingIndex(index, condition, part, ranges.ranges, settings);
             }
         }
@@ -962,9 +964,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MarkRanges & ranges,
     const Settings & settings) const
 {
-    if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists()) {
+    if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists())
         return ranges;
-    }
 
     const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
 

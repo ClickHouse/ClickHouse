@@ -42,7 +42,8 @@ using MergeTreeIndexGranulePtr = std::shared_ptr<MergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
 
 /// Condition on the index.
-class IndexCondition {
+class IndexCondition
+{
 public:
     virtual ~IndexCondition() = default;
     /// Checks if this index is useful for query.
@@ -73,7 +74,7 @@ public:
     virtual ~MergeTreeIndex() = default;
 
     /// gets filename without extension
-    String getFileName() const { return INDEX_FILE_PREFIX + name; };
+    String getFileName() const { return INDEX_FILE_PREFIX + name; }
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
@@ -109,9 +110,7 @@ public:
 
     void registerIndex(const std::string & name, Creator creator);
 
-    const auto & getAllIndexes() const {
-        return indexes;
-    }
+    const auto & getAllIndexes() const { return indexes; }
 
 protected:
     MergeTreeIndexFactory() = default;
