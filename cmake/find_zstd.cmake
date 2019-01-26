@@ -14,6 +14,7 @@ if (ZSTD_LIBRARY AND ZSTD_INCLUDE_DIR)
 else ()
     set (USE_INTERNAL_ZSTD_LIBRARY 1)
     set (ZSTD_LIBRARY zstd)
+    set (ZSTD_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/zstd/lib)
 endif ()
 
 message (STATUS "Using zstd: ${ZSTD_INCLUDE_DIR} : ${ZSTD_LIBRARY}")

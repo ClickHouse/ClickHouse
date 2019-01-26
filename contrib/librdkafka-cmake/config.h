@@ -51,6 +51,8 @@
 //#define WITH_PLUGINS 1
 // zlib
 #define WITH_ZLIB 1
+// zstd
+#define WITH_ZSTD 1
 // WITH_SNAPPY
 #define WITH_SNAPPY 1
 // WITH_SOCKEM
