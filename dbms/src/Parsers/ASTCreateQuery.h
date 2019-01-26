@@ -91,7 +91,7 @@ private:
         String prefix;
         IAST * elem;
 
-        String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); };
+        String getID(char c) const override { return "ASTColumnsElement for " + elem->getID(c); }
 
         ASTPtr clone() const override
         {
