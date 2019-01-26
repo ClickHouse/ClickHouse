@@ -13,7 +13,7 @@
 namespace DB
 {
 struct IDictionaryBase;
-using DictionaryPtr = std::unique_ptr<IDictionaryBase>;
+using DictionaryPtr = std::shared_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
 class ColumnString;
@@ -54,11 +54,6 @@ struct IDictionaryBase : public IExternalLoadable
     {
         auto source = getSource();
         return source && source->isModified();
-    }
-
-    bool isDefinedInDDL() const override
-    {
-        return false;
     }
 
     std::shared_ptr<IDictionaryBase> shared_from_this()

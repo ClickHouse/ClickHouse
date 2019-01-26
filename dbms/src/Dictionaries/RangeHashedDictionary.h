@@ -44,7 +44,7 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<RangeHashedDictionary>(*this); }
+    LoadablePtr clone() const override { return std::make_shared<RangeHashedDictionary>(*this); }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
@@ -57,11 +57,6 @@ public:
     bool isInjective(const std::string & attribute_name) const override
     {
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
-    }
-
-    bool isDefinedInDDL() const override
-    {
-        return false;
     }
 
     typedef Int64 RangeStorageType;
