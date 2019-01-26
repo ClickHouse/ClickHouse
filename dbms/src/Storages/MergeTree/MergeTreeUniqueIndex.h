@@ -2,7 +2,6 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/KeyCondition.h>
 
 #include <memory>
 
@@ -45,7 +44,6 @@ public:
     ~UniqueCondition() override = default;
 private:
     const MergeTreeUniqueIndex & index;
-    KeyCondition condition;
 };
 
 
@@ -57,8 +55,9 @@ public:
             ExpressionActionsPtr expr,
             const Names & columns,
             const DataTypes & data_types,
-            size_t granularity)
-            : MergeTreeIndex(name, expr, columns, data_types, granularity) {}
+            size_t granularity,
+            size_t _max_rows)
+            : MergeTreeIndex(name, expr, columns, data_types, granularity), max_rows(_max_rows) {}
 
     ~MergeTreeUniqueIndex() override = default;
 
@@ -67,6 +66,7 @@ public:
     IndexConditionPtr createIndexCondition(
             const SelectQueryInfo & query, const Context & context) const override;
 
+    size_t max_rows = 0;
 };
 
 std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
