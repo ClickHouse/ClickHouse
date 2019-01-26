@@ -39,8 +39,9 @@ public:
 
     virtual const String & name() const = 0;
     virtual StoragePtr & table() const = 0;
+    virtual DictionaryPtr & dictionary() const = 0;
 
-    virtual ~IDatabaseIterator() {}
+    virtual ~IDatabaseIterator() = default;
 };
 
 using DatabaseIteratorPtr = std::unique_ptr<IDatabaseIterator>;
@@ -68,9 +69,10 @@ public:
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
+    // TODO: может быть, has_restore_data_flag не нужен
     /// Load a set of existing dictionaries.
     virtual void loadDictionaries(
-        const Context & context,
+        Context & context,
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) = 0;
 
@@ -98,6 +100,10 @@ public:
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     virtual DatabaseIteratorPtr getIterator(const Context & context) = 0;
 
+    /// TODO: проверить позже описание
+    /// Get and iterator that allows you to pass through all the tables.
+    virtual DatabaseIteratorPtr getDictionaryIterator(const Context & context) = 0;
+
     /// Is the database empty.
     virtual bool empty(const Context & context) const = 0;
 
@@ -110,7 +116,7 @@ public:
 
     /// Add the dictionary to the database. Record its presence in the metadata.
     virtual void createDictionary(
-        const Context & context,
+        Context & context,
         const String & name,
         const DictionaryPtr & dictionary,
         const ASTPtr & query) = 0;
@@ -118,6 +124,12 @@ public:
     /// Delete the table from the database. Delete the metadata.
     virtual void removeTable(
         const Context & context,
+        const String & name) = 0;
+
+    /// TODO: проверить позже описание здесь.
+    /// Delete the dictionary from the database. Delete the metadata.
+    virtual void removeDictionary(
+        Context & context,
         const String & name) = 0;
 
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
