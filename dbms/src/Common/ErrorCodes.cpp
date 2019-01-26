@@ -411,6 +411,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS = 434;
     extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 435;
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 436;
+    extern const int UNKNOWN_DICTIONARY = 437;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
