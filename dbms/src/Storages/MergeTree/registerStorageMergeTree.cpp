@@ -3,6 +3,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeMinMaxIndex.h>
+#include <Storages/MergeTree/MergeTreeUniqueIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/OptimizedRegularExpression.h>
@@ -627,6 +628,7 @@ static void registerMergeTreeSkipIndices()
 {
     auto & factory = MergeTreeIndexFactory::instance();
     factory.registerIndex("minmax", MergeTreeMinMaxIndexCreator);
+    factory.registerIndex("unique", MergeTreeUniqueIndexCreator);
 }
 
 

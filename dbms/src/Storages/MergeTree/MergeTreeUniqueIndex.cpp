@@ -1,5 +1,11 @@
 #include <Storages/MergeTree/MergeTreeUniqueIndex.h>
 
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Parsers/ASTLiteral.h>
+
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -28,7 +34,7 @@ void MergeTreeUniqueGranule::serializeBinary(WriteBuffer & ostr) const
     {
         const DataTypePtr & type = index.data_types[i];
 
-        type->serializeBinary(block.getByPosition(i).column, ostr);
+        type->serializeBinaryBulk(*block.getByPosition(i).column, ostr, 0, 0);
     }
 }
 
@@ -43,7 +49,7 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
         const DataTypePtr & type = index.data_types[i];
 
         auto new_column = type->createColumn();
-        type->deserializeBinary(*new_column, istr);
+        type->deserializeBinaryBulk(*new_column, istr, 0, 0);
 
         block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
     }
@@ -79,7 +85,6 @@ void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_
     LOG_DEBUG(log, "update Granule " << new_block.columns()
                                      << " pos: "<< *pos << " limit: " << limit << " rows: " << new_block.rows());
 
-    size_t cur = 0;
     size_t block_size = new_block.getByPosition(0).column->size();
 
     if (!block.columns())
@@ -91,26 +96,90 @@ void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_
         }
     }
 
-    for (cur = 0; cur < limit && cur + *pos < block_size; ++cur)
+    for (size_t cur = 0; cur < limit && cur + *pos < block_size; ++cur)
     {
-        Field field;
-        column->get(cur + *pos, field);
-        LOG_DEBUG(log, "upd:: " << applyVisitor(FieldVisitorToString(), field));
-        if (parallelogram.size() <= i)
-        {
-            LOG_DEBUG(log, "emplaced");
-            parallelogram.emplace_back(field, true, field, true);
-        }
-        else
-        {
-            parallelogram[i].left = std::min(parallelogram[i].left, field);
-            parallelogram[i].right = std::max(parallelogram[i].right, field);
-        }
+        // TODO
+        ++(*pos);
     }
-    *pos += cur;
-
-    LOG_DEBUG(log, "updated rows_read: " << rows_read);
-
 };
+
+UniqueCondition::UniqueCondition(
+        const SelectQueryInfo &,
+        const Context &,
+        const MergeTreeUniqueIndex &index)
+        : IndexCondition(), index(index) {};
+
+bool UniqueCondition::alwaysUnknownOrTrue() const
+{
+    return true;
+}
+
+bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
+{
+    auto granule = std::dynamic_pointer_cast<MergeTreeUniqueGranule>(idx_granule);
+    if (!granule)
+        throw Exception(
+                "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
+
+    return true;
+}
+
+
+MergeTreeIndexGranulePtr MergeTreeUniqueIndex::createIndexGranule() const
+{
+    return std::make_shared<MergeTreeUniqueGranule>(*this);
+}
+
+IndexConditionPtr MergeTreeUniqueIndex::createIndexCondition(
+        const SelectQueryInfo & query, const Context & context) const
+{
+    return std::make_shared<UniqueCondition>(query, context, *this);
+};
+
+
+std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
+        const MergeTreeData & data,
+        std::shared_ptr<ASTIndexDeclaration> node,
+        const Context & context)
+{
+    if (node->name.empty())
+        throw Exception("Index must have unique name", ErrorCodes::INCORRECT_QUERY);
+
+    size_t max_rows = 0;
+    if (node->type->arguments)
+    {
+        if (node->type->arguments->children.size() > 1)
+            throw Exception("Unique index cannot have only 0 or 1 argument", ErrorCodes::INCORRECT_QUERY);
+        else if (node->type->arguments->children.size() == 1)
+            max_rows = typeid_cast<const ASTLiteral &>(
+                    *node->type->arguments->children[0]).value.get<size_t>();
+    }
+
+
+    ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
+    auto syntax = SyntaxAnalyzer(context, {}).analyze(
+            expr_list, data.getColumns().getAllPhysical());
+    auto unique_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
+
+    auto sample = ExpressionAnalyzer(expr_list, syntax, context)
+            .getActions(true)->getSampleBlock();
+
+    Names columns;
+    DataTypes data_types;
+
+    Poco::Logger * log = &Poco::Logger::get("unique_idx");
+    LOG_DEBUG(log, "new unique index" << node->name);
+    for (size_t i = 0; i < expr_list->children.size(); ++i)
+    {
+        const auto & column = sample.getByPosition(i);
+
+        columns.emplace_back(column.name);
+        data_types.emplace_back(column.type);
+        LOG_DEBUG(log, ">" << column.name << " " << column.type->getName());
+    }
+
+    return std::make_unique<MergeTreeUniqueIndex>(
+            node->name, std::move(unique_expr), columns, data_types, node->granularity.get<size_t>(), max_rows);;
+}
 
 }
