@@ -28,11 +28,23 @@ public:
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
+
+    void loadDictionaries(Context &, ThreadPool *, bool) override
+    {
+    }
+
+
     void createTable(
         const Context & context,
         const String & table_name,
         const StoragePtr & table,
         const ASTPtr & query) override;
+
+
+    void createDictionary(Context &, const String &, const DictionaryPtr &, const ASTPtr &) override
+    {
+        throw Exception("DatabaseMemory: createDictionary() isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     void removeTable(
         const Context & context,
