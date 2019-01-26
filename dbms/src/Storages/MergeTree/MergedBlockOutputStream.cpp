@@ -542,7 +542,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     rows_count += rows;
 
     {
-        /// Filling and writing skip indexes like in IMergedBlockOutputStream::writeData
+        /// Filling and writing skip indices like in IMergedBlockOutputStream::writeData
         for (size_t i = 0; i < storage.skip_indices.size(); ++i)
         {
             const auto index = storage.skip_indices[i];

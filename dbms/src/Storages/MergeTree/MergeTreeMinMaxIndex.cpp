@@ -82,39 +82,36 @@ String MergeTreeMinMaxGranule::toString() const
 
 void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
 {
+    /// TODO: remove logs
     Poco::Logger * log = &Poco::Logger::get("minmax_idx");
 
     LOG_DEBUG(log, "update Granule " << parallelogram.size()
     << " pos: "<< *pos << " limit: " << limit << " rows: " << block.rows());
 
-    size_t rows_read = 0;
+    size_t rows_read = std::min(limit, block.rows() - *pos);
+
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         LOG_DEBUG(log, "granule column: " << index.columns[i]);
 
-        auto column = block.getByName(index.columns[i]).column;
-        size_t cur;
-        /// TODO: more effective (index + getExtremes??)
-        for (cur = 0; cur < limit && cur + *pos < column->size(); ++cur)
+        const auto & column = block.getByName(index.columns[i]).column;
+
+        Field field_min, field_max;
+        column->cut(*pos, rows_read)->getExtremes(field_min, field_max);
+
+        if (parallelogram.size() <= i)
         {
-            Field field;
-            column->get(cur + *pos, field);
-            LOG_DEBUG(log, "upd:: " << applyVisitor(FieldVisitorToString(), field));
-            if (parallelogram.size() <= i)
-            {
-                LOG_DEBUG(log, "emplaced");
-                parallelogram.emplace_back(field, true, field, true);
-            }
-            else
-            {
-                parallelogram[i].left = std::min(parallelogram[i].left, field);
-                parallelogram[i].right = std::max(parallelogram[i].right, field);
-            }
+            parallelogram.emplace_back(field_min, true, field_max, true);
         }
+        else
+        {
+            parallelogram[i].left = std::min(parallelogram[i].left, field_min);
+            parallelogram[i].right = std::max(parallelogram[i].right, field_max);
+        }
+
         LOG_DEBUG(log, "res:: ["
             << applyVisitor(FieldVisitorToString(), parallelogram[i].left) << ", "
             << applyVisitor(FieldVisitorToString(), parallelogram[i].right) << "]");
-        rows_read = cur;
     }
     LOG_DEBUG(log, "updated rows_read: " << rows_read);
 
