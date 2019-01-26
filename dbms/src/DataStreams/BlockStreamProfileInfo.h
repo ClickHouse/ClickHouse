@@ -10,13 +10,13 @@ namespace DB
 class Block;
 class ReadBuffer;
 class WriteBuffer;
-class IProfilingBlockInputStream;
+class IBlockInputStream;
 
-/// Information for profiling. See IProfilingBlockInputStream.h
+/// Information for profiling. See IBlockInputStream.h
 struct BlockStreamProfileInfo
 {
     /// Info about stream object this profile info refers to.
-    IProfilingBlockInputStream * parent = nullptr;
+    IBlockInputStream * parent = nullptr;
 
     bool started = false;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};    /// Time with waiting time

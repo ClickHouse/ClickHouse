@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
 
@@ -17,7 +17,7 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
   * The query could be executed without wrapping it in an empty BlockInputStream,
   *  but the progress of query execution and the ability to cancel the query would not work.
   */
-class NullAndDoCopyBlockInputStream : public IProfilingBlockInputStream
+class NullAndDoCopyBlockInputStream : public IBlockInputStream
 {
 public:
     NullAndDoCopyBlockInputStream(const BlockInputStreamPtr & input_, BlockOutputStreamPtr output_)

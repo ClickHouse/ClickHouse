@@ -39,7 +39,7 @@ namespace DB
   * replaceRegexpOne(haystack, pattern, replacement) - replaces the pattern with the specified regexp, only the first occurrence.
   * replaceRegexpAll(haystack, pattern, replacement) - replaces the pattern with the specified type, all occurrences.
   *
-  * multiPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find first occurences (positions) of all the const patterns inside haystack
+  * multiPosition(haystack, [pattern_1, pattern_2, ..., pattern_n]) -- find first occurrences (positions) of all the const patterns inside haystack
   * multiPositionUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiPositionCaseInsensitive(haystack, [pattern_1, pattern_2, ..., pattern_n])
   * multiPositionCaseInsensitiveUTF8(haystack, [pattern_1, pattern_2, ..., pattern_n])

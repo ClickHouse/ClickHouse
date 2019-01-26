@@ -14,6 +14,11 @@
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+#endif
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
   * First time was implemented for OLAPServer, that needed to do billions of such transformations.
@@ -684,3 +689,9 @@ public:
         return s;
     }
 };
+
+#if defined(__PPC__)
+#if !__clang__
+#pragma GCC diagnostic pop
+#endif
+#endif

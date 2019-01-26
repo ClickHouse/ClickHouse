@@ -183,7 +183,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (is_local)
     {
         auto input_block = executeQuery(request, context, true).in;
-        return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream &>((*input_block)));
+        return readInvalidateQuery(*input_block);
     }
     else
     {
