@@ -122,7 +122,8 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
         return res;
     }
 
-    auto ML_function = typeid_cast<AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression> *>(func.get());
+//    auto ML_function = typeid_cast<AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression> *>(func.get());
+    auto ML_function = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
     if (ML_function)
     {
         size_t row_num = 0;
