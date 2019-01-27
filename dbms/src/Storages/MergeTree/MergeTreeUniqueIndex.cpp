@@ -17,8 +17,9 @@ namespace ErrorCodes
 }
 
 MergeTreeUniqueGranule::MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index)
-        : MergeTreeIndexGranule(), index(index), block()
+        : MergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
 {
+    set->setHeader(index.header);
 }
 
 void MergeTreeUniqueGranule::serializeBinary(WriteBuffer & ostr) const
@@ -30,11 +31,16 @@ void MergeTreeUniqueGranule::serializeBinary(WriteBuffer & ostr) const
 
     LOG_DEBUG(log, "serializeBinary Granule");
 
+    const auto & columns = set->getSetElements();
+
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    size_type->serializeBinary(size(), ostr);
+
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
-        const DataTypePtr & type = index.data_types[i];
+        const auto & type = index.data_types[i];
 
-        type->serializeBinaryBulk(*block.getByPosition(i).column, ostr, 0, 0);
+        type->serializeBinaryBulk(*columns[i], ostr, 0, size());
     }
 }
 
@@ -43,33 +49,48 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
     Poco::Logger * log = &Poco::Logger::get("unique_idx");
 
     LOG_DEBUG(log, "deserializeBinary Granule");
-    block.clear();
+    if (!set->empty())
+    {
+        auto new_set = std::make_unique<Set>(SizeLimits{}, true);
+        set.swap(new_set);
+    }
+
+    Block block;
+
+    Field field_rows;
+    const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+    size_type->deserializeBinary(field_rows, istr);
+    size_t rows_to_read = field_rows.get<size_t>();
+
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
-        const DataTypePtr & type = index.data_types[i];
+        const auto & type = index.data_types[i];
 
         auto new_column = type->createColumn();
-        type->deserializeBinaryBulk(*new_column, istr, 0, 0);
+        type->deserializeBinaryBulk(*new_column, istr, rows_to_read, 0);
 
         block.insert(ColumnWithTypeAndName(new_column->getPtr(), type, index.columns[i]));
     }
+
+    set->insertFromBlock(block);
 }
 
 String MergeTreeUniqueGranule::toString() const
 {
     String res = "unique granule:\n";
 
-    for (size_t i = 0; i < block.columns(); ++i)
+    const auto & columns = set->getSetElements();
+
+    for (size_t i = 0; i < index.columns.size(); ++i)
     {
-        const auto & column = block.getByPosition(i);
-        res += column.name;
+        const auto & column = columns[i];
         res += " [";
-        for (size_t j = 0; j < column.column->size(); ++j)
+        for (size_t j = 0; j < column->size(); ++j)
         {
             if (j != 0)
                 res += ", ";
             Field field;
-            column.column->get(j, field);
+            column->get(j, field);
             res += applyVisitor(FieldVisitorToString(), field);
         }
         res += "]\n";
@@ -84,23 +105,31 @@ void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_
 
     LOG_DEBUG(log, "update Granule " << new_block.columns()
                                      << " pos: "<< *pos << " limit: " << limit << " rows: " << new_block.rows());
+    size_t rows_read = std::min(limit, new_block.rows() - *pos);
 
-    size_t block_size = new_block.getByPosition(0).column->size();
-
-    if (!block.columns())
+    if (index.max_rows && size() > index.max_rows)
     {
-        for (size_t i = 0; i < index.columns.size(); ++i)
-        {
-            const DataTypePtr & type = index.data_types[i];
-            block.insert(ColumnWithTypeAndName(type->createColumn(), type, index.columns[i]));
-        }
+        *pos += rows_read;
+        return;
     }
 
-    for (size_t cur = 0; cur < limit && cur + *pos < block_size; ++cur)
+    Block key_block;
+    for (size_t i = 0; i < index.columns.size(); ++i)
     {
-        // TODO
-        ++(*pos);
+        const auto & name = index.columns[i];
+        const auto & type = index.data_types[i];
+        key_block.insert(
+                ColumnWithTypeAndName(
+                    new_block.getByName(name).column->cut(*pos, rows_read),
+                    type,
+                    name));
     }
+
+    set->insertFromBlock(key_block);
+
+    LOG_DEBUG(log, "unique rows: " << set->getTotalRowCount());
+
+    *pos += rows_read;
 };
 
 UniqueCondition::UniqueCondition(
@@ -111,7 +140,7 @@ UniqueCondition::UniqueCondition(
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
 {
-    return true;
+    return false;
 }
 
 bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
@@ -164,6 +193,8 @@ std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)
             .getActions(true)->getSampleBlock();
 
+    Block header;
+
     Names columns;
     DataTypes data_types;
 
@@ -175,11 +206,13 @@ std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
 
         columns.emplace_back(column.name);
         data_types.emplace_back(column.type);
+
+        header.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
         LOG_DEBUG(log, ">" << column.name << " " << column.type->getName());
     }
 
     return std::make_unique<MergeTreeUniqueIndex>(
-            node->name, std::move(unique_expr), columns, data_types, node->granularity.get<size_t>(), max_rows);;
+            node->name, std::move(unique_expr), columns, data_types, header, node->granularity.get<size_t>(), max_rows);;
 }
 
 }

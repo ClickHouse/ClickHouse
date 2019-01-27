@@ -57,8 +57,9 @@ public:
         ExpressionActionsPtr expr,
         const Names & columns,
         const DataTypes & data_types,
+        const Block & header,
         size_t granularity)
-        : MergeTreeIndex(name, expr, columns, data_types, granularity) {}
+        : MergeTreeIndex(name, expr, columns, data_types, header, granularity) {}
 
     ~MergeTreeMinMaxIndex() override = default;
 
