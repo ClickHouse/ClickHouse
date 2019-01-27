@@ -219,5 +219,12 @@ if (USE_INTERNAL_HDFS3_LIBRARY)
 endif ()
 
 if (USE_BASE64)
-    add_subdirectory (base64-cmake)
+    add_subdirectory(base64-cmake)
+endif()
+
+if (USE_CASSANDRA)
+    # TODO osfavstov: cassandra/CMakeLists.txt change
+    # 5: set(CASS_ROOT_DIR "${CMAKE_SOURCE_DIR}/contrib/cassandra");
+    # 10: include(${ClickHouse_SOURCE_DIR}/contrib/cassandra/cmake/modules/CppDriver.cmake)
+    add_subdirectory(cassandra)
 endif()

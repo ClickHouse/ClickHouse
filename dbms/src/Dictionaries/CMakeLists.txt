@@ -11,7 +11,7 @@ generate_code(CacheDictionary_generate2 UInt8 UInt16 UInt32 UInt64 UInt128 Int8 
 generate_code(CacheDictionary_generate3 UInt8 UInt16 UInt32 UInt64 UInt128 Int8 Int16 Int32 Int64 Float32 Float64 Decimal32 Decimal64 Decimal128)
 add_headers_and_sources(clickhouse_dictionaries ${CMAKE_CURRENT_BINARY_DIR}/generated/)
 
-add_library(clickhouse_dictionaries ${LINK_MODE} ${clickhouse_dictionaries_sources})
+add_library(clickhouse_dictionaries ${LINK_MODE} ${clickhouse_dictionaries_sources} CassandraDBDictionarySource.cpp CassandraDBDictionarySource.h)
 target_link_libraries(clickhouse_dictionaries PRIVATE clickhouse_common_io pocoext ${MYSQLXX_LIBRARY} ${BTRIE_LIBRARIES})
 
 if(Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
@@ -34,6 +34,10 @@ endif()
 
 if(USE_POCO_MONGODB)
     target_link_libraries(clickhouse_dictionaries PRIVATE ${Poco_MongoDB_LIBRARY})
+endif()
+
+if(USE_CASSANDRA)
+    target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${CASSANDRA_INCLUDE_DIR})
 endif()
 
 add_subdirectory(Embedded)
