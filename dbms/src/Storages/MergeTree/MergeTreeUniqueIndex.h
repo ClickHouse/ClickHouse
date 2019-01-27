@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+#include <Interpreters/Set.h>
+
 #include <memory>
 
 
@@ -19,14 +21,15 @@ struct MergeTreeUniqueGranule : public MergeTreeIndexGranule
     void deserializeBinary(ReadBuffer & istr) override;
 
     String toString() const override;
-    bool empty() const override { return !block.rows(); }
+    size_t size() const { return set->getTotalRowCount(); }
+    bool empty() const override { return !size(); }
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     ~MergeTreeUniqueGranule() override = default;
 
     const MergeTreeUniqueIndex & index;
-    Block block;
+    std::unique_ptr<Set> set;
 };
 
 class UniqueCondition : public IndexCondition
@@ -55,9 +58,10 @@ public:
             ExpressionActionsPtr expr,
             const Names & columns,
             const DataTypes & data_types,
+            const Block & header,
             size_t granularity,
             size_t _max_rows)
-            : MergeTreeIndex(name, expr, columns, data_types, granularity), max_rows(_max_rows) {}
+            : MergeTreeIndex(name, expr, columns, data_types, header, granularity), max_rows(_max_rows) {}
 
     ~MergeTreeUniqueIndex() override = default;
 

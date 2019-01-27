@@ -188,7 +188,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     }
 
     return std::make_unique<MergeTreeMinMaxIndex>(
-            node->name, std::move(minmax_expr), columns, data_types, node->granularity.get<size_t>());;
+            node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity.get<size_t>());;
 }
 
 }

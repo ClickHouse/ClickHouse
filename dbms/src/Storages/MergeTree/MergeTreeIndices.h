@@ -64,11 +64,13 @@ public:
         ExpressionActionsPtr expr,
         const Names & columns,
         const DataTypes & data_types,
+        const Block & header,
         size_t granularity)
         : name(name)
         , expr(expr)
         , columns(columns)
         , data_types(data_types)
+        , header(header)
         , granularity(granularity) {}
 
     virtual ~MergeTreeIndex() = default;
@@ -85,6 +87,7 @@ public:
     ExpressionActionsPtr expr;
     Names columns;
     DataTypes data_types;
+    Block header;
     size_t granularity;
 };
 
