@@ -117,25 +117,10 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
-        Int64 cursor = 0;
-        Poco::Redis::Array keys;
-
-        do
-        {
-            Poco::Redis::Array commandForKeys;
-            commandForKeys << "SCAN" << cursor << "COUNT 1000";
-
-            Poco::Redis::Array replyForKeys = client->execute<Poco::Redis::Array>(commandForKeys);
-            cursor = replyForKeys.get<Int64>(0);
-
-            Poco::Redis::Array response = replyForKeys.get<Poco::Redis::Array>(1);
-            if (response.isNull())
-                continue;
-
-            for (const Poco::Redis::RedisType::Ptr & key : response)
-                keys.addRedisType(key);
-        }
-        while (cursor != 0);
+        Poco::Redis::Array commandForKeys;
+        commandForKeys << "KEYS" << "*";
+        
+        Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(commandForKeys);
 
         Poco::Redis::Array commandForValues;
         commandForValues << "MGET";
