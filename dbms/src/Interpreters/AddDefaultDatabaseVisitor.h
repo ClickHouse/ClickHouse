@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -15,7 +15,7 @@ namespace DB
 {
 
 /// Visitors consist of functions with unified interface 'void visit(Casted & x, ASTPtr & y)', there x is y, successfully casted to Casted.
-/// Both types and fuction could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
+/// Both types and function could have const specifiers. The second argument is used by visitor to replaces AST node (y) if needed.
 
 /// Visits AST nodes, add default database to tables if not set. There's different logic for DDLs and selects.
 class AddDefaultDatabaseVisitor
@@ -31,7 +31,7 @@ public:
     {
         visitDDLChildren(ast);
 
-        if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
+        if (!tryVisitDynamicCast<ASTQueryWithTableOrDictionaryAndOutput>(ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(ast))
         {}
     }
@@ -164,7 +164,7 @@ private:
     }
 
 
-    void visitDDL(ASTQueryWithTableAndOutput & node, ASTPtr &) const
+    void visitDDL(ASTQueryWithTableOrDictionaryAndOutput & node, ASTPtr &) const
     {
         if (node.database.empty())
             node.database = database_name;
