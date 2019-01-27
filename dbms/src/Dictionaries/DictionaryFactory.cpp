@@ -52,7 +52,7 @@ DictionaryPtr DictionaryFactory::create(
 DictionaryPtr DictionaryFactory::create(const String & name, const ASTCreateQuery & create, Context & context) const
 {
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> config = getDictionaryConfigFromAST(create);
-    return this->create(name, *config, "", context);
+    return this->create(name, *config, "dictionary", context);
 }
 
 }
