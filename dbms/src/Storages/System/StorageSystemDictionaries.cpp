@@ -19,6 +19,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
     return {
         { "name", std::make_shared<DataTypeString>() },
+        { "definition_type", std::make_shared<DataTypeString>() },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "key", std::make_shared<DataTypeString>() },
@@ -45,7 +46,8 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         size_t i = 0;
 
         res_columns[i++]->insert(dict_info.first);
-        res_columns[i++]->insert(dict_info.second.origin.name);
+        res_columns[i++]->insert("xml configuration");
+        res_columns[i++]->insert(dict_info.second.origin);
 
         if (dict_info.second.loadable)
         {
@@ -84,6 +86,42 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         }
         else
             res_columns[i++]->insertDefault();
+    }
+
+    const auto & databases = context.getDatabases();
+    for (const auto & db : databases)
+    {
+        if (db.second->getEngineName() != "Dictionary")
+            continue;
+
+        auto it = db.second->getDictionaryIterator(context);
+        while (true)
+        {
+            if (!it->isValid())
+                break;
+
+            const auto dict = it->dictionary();
+            size_t column_index = 0;
+            res_columns[column_index++]->insert(dict->getName());
+            res_columns[column_index++]->insert("DDL");
+            res_columns[column_index++]->insertDefault(); // Origin
+            res_columns[column_index++]->insert(dict->getTypeName());
+
+            const auto & dict_struct = dict->getStructure();
+            res_columns[column_index++]->insert(dict_struct.getKeyDescription());
+            res_columns[column_index++]->insertDefault();
+            res_columns[column_index++]->insertDefault();
+            res_columns[column_index++]->insert(dict->getBytesAllocated());
+            res_columns[column_index++]->insert(dict->getQueryCount());
+            res_columns[column_index++]->insert(dict->getHitRate());
+            res_columns[column_index++]->insert(dict->getElementCount());
+            res_columns[column_index++]->insert(dict->getLoadFactor());
+            res_columns[column_index++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(dict->getCreationTime())));
+            res_columns[column_index++]->insert(dict->getSource()->toString());
+            res_columns[column_index++]->insertDefault(); // exception
+
+            it->next();
+        }
     }
 }
 
