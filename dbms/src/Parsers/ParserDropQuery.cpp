@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 bool ParserDropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -59,12 +58,14 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_database("DATABASE");
+    ParserKeyword s_dictionary("DICTIONARY");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
     ParserIdentifier name_p;
 
     ASTPtr database;
     ASTPtr table;
+    ASTPtr dictionary;
     String cluster_str;
     bool if_exists = false;
     bool temporary = false;
@@ -88,19 +89,24 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
         if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!s_table.ignore(pos, expected))
+        ASTPtr * argument = nullptr;
+        if (s_table.ignore(pos, expected))
+            argument = &table;
+        else if (s_dictionary.ignore(pos, expected))
+            argument = &dictionary;
+        else
             return false;
 
         if (s_if_exists.ignore(pos, expected))
             if_exists = true;
 
-        if (!name_p.parse(pos, table, expected))
+        if (!name_p.parse(pos, *argument, expected))
             return false;
 
         if (s_dot.ignore(pos, expected))
         {
-            database = table;
-            if (!name_p.parse(pos, table, expected))
+            database = *argument;
+            if (!name_p.parse(pos, *argument, expected))
                 return false;
         }
 
@@ -121,6 +127,8 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
         query->database = typeid_cast<ASTIdentifier &>(*database).name;
     if (table)
         query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    if (dictionary)
+        query->dictionary = typeid_cast<ASTIdentifier &>(*dictionary).name;
     query->cluster = cluster_str;
 
     return true;

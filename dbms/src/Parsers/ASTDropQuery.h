@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -9,7 +9,7 @@ namespace DB
 
 /** DROP query
   */
-class ASTDropQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
+class ASTDropQuery : public ASTQueryWithTableOrDictionaryAndOutput, public ASTQueryWithOnCluster
 {
 public:
     enum Kind

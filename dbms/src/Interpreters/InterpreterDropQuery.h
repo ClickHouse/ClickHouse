@@ -5,16 +5,17 @@
 #include <Databases/IDatabase.h>
 
 
-
 namespace DB
 {
 class Context;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 using DatabaseAndTable = std::pair<DatabasePtr, StoragePtr>;
+using DatabaseAndDictionary = std::pair<DatabasePtr, DictionaryPtr>;
+
 
 /** Allow to either drop table with all its data (DROP),
-  * or remove information about table (just forget) from server (DETACH),
+  * or remove information about table or dictionary (just forget) from server (DETACH),
   * or just clear all data in table (TRUNCATE).
   */
 class InterpreterDropQuery : public IInterpreter
@@ -34,9 +35,13 @@ private:
 
     BlockIO executeToTable(String & database_name, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary);
 
+    BlockIO executeToDictionary(String & database_name, String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists);
+
     DatabasePtr tryGetDatabase(String & database_name, bool exists);
 
     DatabaseAndTable tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists);
+
+    DatabaseAndDictionary tryGetDatabaseAndDictionary(String & database_name, String & dictionary_name, bool if_exists);
 
     BlockIO executeToTemporaryTable(String & table_name, ASTDropQuery::Kind kind);
 };

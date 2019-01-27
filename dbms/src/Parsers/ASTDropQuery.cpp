@@ -12,12 +12,19 @@ namespace ErrorCodes
 
 String ASTDropQuery::getID(char delim) const
 {
+    String suffix = delim + database;
+    if (!table.empty())
+        suffix += delim + table;
+
+    if (!dictionary.empty())
+        suffix = delim + dictionary;
+
     if (kind == ASTDropQuery::Kind::Drop)
-        return "DropQuery" + (delim + database) + delim + table;
+        return "DropQuery" + suffix;
     else if (kind == ASTDropQuery::Kind::Detach)
-        return "DetachQuery" + (delim + database) + delim + table;
+        return "DetachQuery" + suffix;
     else if (kind == ASTDropQuery::Kind::Truncate)
-        return "TruncateQuery" + (delim + database) + delim + table;
+        return "TruncateQuery" + suffix;
     else
         throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
 }
@@ -44,17 +51,27 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     if (temporary)
         settings.ostr << "TEMPORARY ";
 
-    settings.ostr << ((table.empty() && !database.empty()) ? "DATABASE " : "TABLE ");
+    if (!table.empty() && !dictionary.empty())
+        throw Exception("Can't format table and dictionary together", ErrorCodes::LOGICAL_ERROR);
+
+    if (!database.empty() && table.empty() && dictionary.empty())
+        settings.ostr << "DATABASE ";
+    else if (!table.empty())
+        settings.ostr << "TABLE ";
+    else
+        settings.ostr << "DICTIONARY ";
 
     if (if_exists)
         settings.ostr << "IF EXISTS ";
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (table.empty() && !database.empty())
+    if (dictionary.empty() && table.empty() && !database.empty())
         settings.ostr << backQuoteIfNeed(database);
-    else
+    else if (!table.empty())
         settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+    else
+        settings.ostr << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(dictionary);
 
     formatOnCluster(settings);
 }
