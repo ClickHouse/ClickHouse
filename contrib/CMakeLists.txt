@@ -207,14 +207,14 @@ if (USE_INTERNAL_LIBXML2_LIBRARY)
     add_subdirectory(libxml2-cmake)
 endif ()
 
+if (USE_INTERNAL_PROTOBUF_LIBRARY)
+    set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
+    set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
+    set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
+    add_subdirectory(protobuf/cmake)
+endif ()
+
 if (USE_INTERNAL_HDFS3_LIBRARY)
-    include(${ClickHouse_SOURCE_DIR}/cmake/find_protobuf.cmake)
-    if (USE_INTERNAL_PROTOBUF_LIBRARY)
-        set(protobuf_BUILD_TESTS OFF CACHE INTERNAL "" FORCE)
-        set(protobuf_BUILD_SHARED_LIBS OFF CACHE INTERNAL "" FORCE)
-        set(protobuf_WITH_ZLIB 0 CACHE INTERNAL "" FORCE) # actually will use zlib, but skip find
-        add_subdirectory(protobuf/cmake)
-    endif ()
     add_subdirectory(libhdfs3-cmake)
 endif ()
 
