@@ -64,3 +64,6 @@
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
 	url = https://github.com/mfontanini/cppkafka.git
+[submodule "contrib/cassandra"]
+	path = contrib/cassandra
+	url = https://github.com/datastax/cpp-driver.git
