@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 
 namespace DB
 {
 
-struct ASTCheckQuery : public ASTQueryWithTableAndOutput
+struct ASTCheckQuery : public ASTQueryWithTableOrDictionaryAndOutput
 {
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "CheckQuery" + (delim + database) + delim + table; }

@@ -5,7 +5,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 
@@ -104,7 +104,7 @@ public:
 
 
 /// CREATE TABLE or ATTACH TABLE query or CREATE DICTIONARY or CREATE DATABASE
-class ASTCreateQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
+class ASTCreateQuery : public ASTQueryWithTableOrDictionaryAndOutput, public ASTQueryWithOnCluster
 {
 public:
     bool attach{false};    /// Query ATTACH TABLE, not CREATE TABLE.
@@ -197,8 +197,6 @@ protected:
                 << (if_not_exists ? "IF NOT EXISTS " : "")
                 << (settings.hilite ? hilite_none : "")
                 << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(dictionary);
-
-            // TODO: нужно ли делать formatOnCluster(settings). ? Скорее всего нет
         }
 
         if (!to_table.empty())
