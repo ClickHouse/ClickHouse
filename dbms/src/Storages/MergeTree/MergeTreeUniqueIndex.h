@@ -25,12 +25,14 @@ struct MergeTreeUniqueGranule : public MergeTreeIndexGranule
     bool empty() const override { return !size(); }
 
     void update(const Block & block, size_t * pos, size_t limit) override;
+    Block getElementsBlock() const;
 
     ~MergeTreeUniqueGranule() override = default;
 
     const MergeTreeUniqueIndex & index;
     std::unique_ptr<Set> set;
 };
+
 
 class UniqueCondition : public IndexCondition
 {
