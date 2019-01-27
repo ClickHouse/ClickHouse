@@ -33,6 +33,7 @@ SELECT * FROM (SELECT toUInt64(b), sum(id) AS b FROM test.test) WHERE `toUInt64(
 SELECT date, id, name, value FROM (SELECT date, name, value, min(id) AS id FROM test.test GROUP BY date, name, value) WHERE id = 1;
 SELECT * FROM (SELECT toUInt64(table_alias.b) AS a, sum(id) AS b FROM test.test AS table_alias) AS outer_table_alias WHERE outer_table_alias.b = 3;
 
+SELECT '-------Force push down-------';
 SET force_primary_key = 1;
 
 -- Optimize predicate expression with asterisk
@@ -65,7 +66,7 @@ SELECT * FROM (SELECT 1 AS id, toDate('2000-01-01') AS date FROM system.numbers 
 SELECT * FROM test.test_view WHERE id = 1;
 SELECT * FROM test.test_view WHERE id = 2;
 SELECT id FROM test.test_view WHERE id  = 1;
-SELECT s.id FROM test.test_view AS s WHERE id = 1;
+SELECT s.id FROM test.test_view AS s WHERE s.id = 1;
 
 SELECT '-------Push to having expression, need check.-------';
 SELECT id FROM (SELECT min(id) AS id FROM test.test) WHERE id = 1; -- { serverError 277 }
