@@ -103,6 +103,8 @@ public:
     void serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const override;
 
     Field getDefault() const override;
+    bool canBePromoted() const override { return true; }
+    DataTypePtr promoteNumericType() const override;
     MutableColumnPtr createColumn() const override;
     bool equals(const IDataType & rhs) const override;
 
