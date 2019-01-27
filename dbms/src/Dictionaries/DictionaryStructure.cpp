@@ -6,8 +6,15 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/queryToString.h>
 
-#include <Poco/Util/MapConfiguration.h>
+#include <Poco/DOM/Document.h>
+#include <Poco/DOM/Element.h>
+#include <Poco/DOM/Text.h>
+#include <Poco/DOM/AutoPtr.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/XMLConfiguration.h>
 
 #include <numeric>
 #include <unordered_map>
@@ -391,71 +398,163 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     return res_attributes;
 }
 
-using Poco::AutoPtr;
-using namespace Poco::Util;
-void addSourceFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
-{
-    (void)conf;
-    // TODO: тут может быть жесть
-    String prefix = "source." + create.dictionary_source->source->name;
-}
 
-
-void addLayoutFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
+void buildXMLRecursive(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTKeyValueFunction * func)
 {
-    String prefix = "layout." + create.dictionary_source->layout->name;
-    if (create.dictionary_source->layout->name == "cache") // TODO: may be factory here would be more appropriate
-    {
-        prefix += ".size_in_cells";
-        const IAST & args = *create.dictionary_source->layout->arguments;
-        conf->setUInt64(prefix, typeid_cast<ASTLiteral &>(*args.children.at(0)).value.get<UInt64>());
+    if (func == nullptr)
         return;
-    }
 
-    conf->setString(prefix, "");
-}
-
-
-void addLifetimeFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
-{
-    const String prefix = "lifetime";
-    const IAST & args = *create.dictionary_source->lifetime->arguments;
-    if (args.children.size() == 0 || args.children.size() > 2)
-        throw Exception("Lifetime section should include either max time, or min,max times", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
-
-    UInt64 min_time = 0;
-    UInt64 max_time = 0;
-    if (args.children.size() == 2)
+    Poco::AutoPtr<Poco::XML::Element> xml_element = doc->createElement(func->name);
+    root->appendChild(xml_element);
+    const ASTExpressionList * ast_expr_list = typeid_cast<const ASTExpressionList *>(func->children[0].get());
+    for (size_t index = 0; index != ast_expr_list->children.size(); ++index)
     {
-        min_time = typeid_cast<ASTLiteral &>(*args.children.at(0)).value.get<UInt64>();
+        const IAST * ast_element = ast_expr_list->children[index].get();
+        if (ast_element->getID() == "pair")
+        {
+            const ASTPair * pair = typeid_cast<const ASTPair *>(ast_element);
+            Poco::AutoPtr<Poco::XML::Element> current_xml_element = doc->createElement(pair->first);
+            xml_element->appendChild(current_xml_element);
+            const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair->second.get());
+            current_xml_element->appendChild(doc->createTextNode(literal->value.get<String>()));
+        }
+        else if(startsWith(ast_element->getID(), "KeyValueFunction"))
+        {
+            const ASTKeyValueFunction * current_func = typeid_cast<const ASTKeyValueFunction *>(ast_element);
+            buildXMLRecursive(doc, xml_element, current_func);
+        }
+        else
+            throw Exception("Source KeyValueFunction may contain only pair or another KeyValueFunction",
+                    ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST);
     }
-
-    size_t index = args.children.size() - 1;
-    max_time = typeid_cast<ASTLiteral &>(*args.children.at(index)).value.get<UInt64>();
-
-    conf->setUInt64(prefix + ".min", min_time);
-    conf->setUInt64(prefix + ".max", max_time);
 }
 
 
-void addStructureFieldsFromAST(AutoPtr<AbstractConfiguration> conf, const ASTCreateQuery & create)
+void addSourceFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTCreateQuery & create)
 {
-    // TODO: тут тоже может быть жесть
-    (void)conf;
-    (void)create;
+    if (create.dictionary_source == nullptr || create.dictionary_source->source == nullptr)
+        return; // TODO: maybe it would be great throw an exception
+
+    buildXMLRecursive(doc, root, create.dictionary_source->source);
+}
+
+
+void addLayoutFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTCreateQuery & create)
+{
+    const auto * layout = create.dictionary_source;
+    if (layout == nullptr)
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout is empty", ErrorCodes::BAD_ARGUMENTS);
+
+    const auto * ast_expr_list = create.dictionary_source->layout->children[0].get();
+    if (ast_expr_list->children.size() != 1)
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout may contain only one parameter", ErrorCodes::BAD_ARGUMENTS);
+
+    const auto & layout_type = typeid_cast<const ASTKeyValueFunction &>(*ast_expr_list->children[0].get());
+    Poco::AutoPtr<Poco::XML::Element> layout_element = doc->createElement("layout");
+    root->appendChild(layout_element);
+    Poco::AutoPtr<Poco::XML::Element> layout_type_element = doc->createElement(layout_type.name);
+    layout_element->appendChild(layout_type_element);
+    // TODO: add here parameter in layout_type_element
+}
+
+
+void addLifetimeFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTCreateQuery & create)
+{
+    auto lifetime = ExternalLoadableLifetime(create.dictionary_source->lifetime);
+    Poco::AutoPtr<Poco::XML::Element> lifetime_element = doc->createElement("lifetime");
+    Poco::AutoPtr<Poco::XML::Element> min_element = doc->createElement("min");
+    Poco::AutoPtr<Poco::XML::Element> max_element = doc->createElement("max");
+    min_element->appendChild(doc->createTextNode(toString(lifetime.min_sec)));
+    max_element->appendChild(doc->createTextNode(toString(lifetime.max_sec)));
+    lifetime_element->appendChild(min_element);
+    lifetime_element->appendChild(max_element);
+    root->appendChild(lifetime_element);
+}
+
+
+void addStructureFieldsFromAST(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTCreateQuery & create)
+{
+    const auto * source = create.dictionary_source;
+    Poco::AutoPtr<Poco::XML::Element> structure_element = doc->createElement("structure");
+    root->appendChild(structure_element);
+    if (source->primary_key)
+    {
+        const auto * primary_key_ptr = source->primary_key;
+        const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(source->primary_key);
+        std::cerr << "Size: " << primary_key_ptr->children.size() << "\n";
+        if (expr_list->children.size() != 1)
+            throw Exception("Primary key may be only one column", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST); // TODO: this is wrong because of complex key
+
+        // TODO: support complex key here later
+        auto column_name = expr_list->children[0]->getColumnName();
+        Poco::AutoPtr<Poco::XML::Element> id_element = doc->createElement("id");
+        structure_element->appendChild(id_element);
+        Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
+        id_element->appendChild(name_element);
+        name_element->appendChild(doc->createTextNode(column_name));
+    }
+
+    for (size_t index = 0; index != create.columns->children.size(); ++index)
+    {
+        const auto * child = create.columns->children[index].get();
+        const ASTColumnDeclaration * column_declaration = typeid_cast<const ASTColumnDeclaration *>(child);
+
+        Poco::AutoPtr<Poco::XML::Element> attribute_element = doc->createElement("attribute");
+        structure_element->appendChild(attribute_element);
+        Poco::AutoPtr<Poco::XML::Element> name_element = doc->createElement("name");
+        name_element->appendChild(doc->createTextNode(column_declaration->name));
+        attribute_element->appendChild(name_element);
+
+        // TODO: it would be great to check type
+        auto type = typeid_cast<const ASTFunction *>(column_declaration->type.get())->name;
+        Poco::AutoPtr<Poco::XML::Element> type_element = doc->createElement("type");
+        type_element->appendChild(doc->createTextNode(type));
+        attribute_element->appendChild(type_element);
+
+        Poco::AutoPtr<Poco::XML::Element> null_value_element = doc->createElement("null_value");
+        null_value_element->appendChild(doc->createTextNode(queryToString(column_declaration->default_expression)));
+        attribute_element->appendChild(null_value_element);
+    }
+
+    // TODO: add here another additional fields like injective
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(const ASTCreateQuery & create)
 {
-    Poco::AutoPtr<Poco::Util::AbstractConfiguration> conf = new Poco::Util::MapConfiguration();
+    Poco::AutoPtr<Poco::XML::Document> xml_document = new Poco::XML::Document();
+    Poco::AutoPtr<Poco::XML::Element> document_root = xml_document->createElement("dictionaries");
+    xml_document->appendChild(document_root);
+    Poco::AutoPtr<Poco::XML::Element> current_dictionary = xml_document->createElement("dictionary");
+    document_root->appendChild(current_dictionary);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> conf = new Poco::Util::XMLConfiguration();
     if (create.dictionary.empty())
         return conf;
 
-    conf->setString("name", create.dictionary);
-    addSourceFieldsFromAST(conf, create);
-    addLayoutFieldsFromAST(conf, create);
-    addStructureFieldsFromAST(conf, create);
-    addLifetimeFieldsFromAST(conf, create);
+    Poco::AutoPtr<Poco::XML::Element> name_element = xml_document->createElement("name");
+    name_element->appendChild(xml_document->createTextNode("create.dictionary"));
+    current_dictionary->appendChild(name_element);
+
+    addSourceFieldsFromAST(xml_document, current_dictionary, create);
+    addLayoutFieldsFromAST(xml_document, current_dictionary, create);
+    addStructureFieldsFromAST(xml_document, current_dictionary, create);
+    addLifetimeFieldsFromAST(xml_document, current_dictionary, create);
+
+    conf->load(xml_document);
     return conf;
 }
 
