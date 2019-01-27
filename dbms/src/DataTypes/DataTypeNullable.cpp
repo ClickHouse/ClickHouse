@@ -311,6 +311,13 @@ void DataTypeNullable::serializeTextXML(const IColumn & column, size_t row_num, 
         nested_data_type->serializeTextXML(col.getNestedColumn(), row_num, ostr, settings);
 }
 
+void DataTypeNullable::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
+    if (!col.isNullAt(row_num))
+        nested_data_type->serializeProtobuf(col.getNestedColumn(), row_num, protobuf);
+}
+
 MutableColumnPtr DataTypeNullable::createColumn() const
 {
     return ColumnNullable::create(nested_data_type->createColumn(), ColumnUInt8::create());

@@ -1,5 +1,10 @@
-if (NOT ARCH_ARM AND NOT ARCH_32)
+if (NOT ARCH_ARM AND NOT ARCH_32 AND NOT APPLE)
     option (ENABLE_RDKAFKA "Enable kafka" ON)
+endif ()
+
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cppkafka/CMakeLists.txt")
+   message (WARNING "submodule contrib/cppkafka is missing. to fix try run: \n git submodule update --init --recursive")
+   set (ENABLE_RDKAFKA 0)
 endif ()
 
 if (ENABLE_RDKAFKA)

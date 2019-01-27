@@ -77,7 +77,7 @@ BlockIO InterpreterRenameQuery::execute()
 
     std::set<UniqueTableName> unique_tables_from;
 
-    /// Don't allow to drop tables (that we are renaming); do't allow to create tables in places where tables will be renamed.
+    /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
     std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
 
     for (const auto & elem : rename.elements)

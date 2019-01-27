@@ -80,7 +80,7 @@ Rounds down a date with time to the start of the minute.
 
 ## toStartOfFiveMinute
 
-Rounds down a date with time to the start of the hour.
+Rounds down a date with time to the start of the five-minute interval.
 
 ## toStartOfFifteenMinutes
 
