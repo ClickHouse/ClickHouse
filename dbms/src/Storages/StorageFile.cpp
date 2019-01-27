@@ -121,7 +121,7 @@ public:
     {
         if (storage.use_table_fd)
         {
-            storage.rwlock.lock();
+            unique_lock = std::unique_lock(storage.rwlock);
 
             /// We could use common ReadBuffer and WriteBuffer in storage to leverage cache
             ///  and add ability to seek unseekable files, but cache sync isn't supported.
@@ -141,20 +141,12 @@ public:
         }
         else
         {
-            storage.rwlock.lock_shared();
+            shared_lock = std::shared_lock(storage.rwlock);
 
             read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
 
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
-    }
-
-    ~StorageFileBlockInputStream() override
-    {
-        if (storage.use_table_fd)
-            storage.rwlock.unlock();
-        else
-            storage.rwlock.unlock_shared();
     }
 
     String getName() const override
@@ -184,6 +176,9 @@ private:
     Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
+
+    std::shared_lock<std::shared_mutex> shared_lock;
+    std::unique_lock<std::shared_mutex> unique_lock;
 };
 
 
