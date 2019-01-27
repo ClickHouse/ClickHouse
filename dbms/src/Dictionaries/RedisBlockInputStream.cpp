@@ -35,10 +35,11 @@ namespace DB
 
 
     RedisBlockInputStream::RedisBlockInputStream(
-            const Poco::Redis::Array & reply_array_,
+            const std::shared_ptr<Poco::Redis::Client> & client_,
+            const Poco::Redis::Array & keys_,
             const DB::Block & sample_block,
             const size_t max_block_size)
-            : reply_array(reply_array_), max_block_size{max_block_size}
+            : client(client_), keys(keys_), max_block_size{max_block_size}
     {
         description.init(sample_block);
     }
@@ -102,6 +103,7 @@ namespace DB
                                         ErrorCodes::TYPE_MISMATCH};
                 }
             };
+
             switch (type)
             {
                 case ValueType::UInt8:
@@ -204,9 +206,7 @@ namespace DB
         };
 
         size_t num_rows = 0;
-
-        const auto & keys = reply_array.get<Poco::Redis::Array>(0);
-        const auto & values = reply_array.get<Poco::Redis::Array>(1);
+        Poco::Redis::Command commandForValues("MGET");
 
         while (num_rows < max_block_size)
         {
@@ -220,16 +220,20 @@ namespace DB
 
             const auto & key = *(keys.begin() + cursor);
             insertValueByIdx(0, key);
+            commandForValues.addRedisType(key);
+        }
 
-            const auto & value = *(values.begin() + cursor);
+        if (num_rows == 0)
+            return {};
+
+        Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
+        for (size_t i = 0; i < num_rows; ++i) {
+            const Poco::Redis::RedisType::Ptr & value = *(values.begin() + i);
             if (value.isNull())
                 insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
             else
                 insertValueByIdx(1, value);
         }
-
-        if (num_rows == 0)
-            return {};
 
         return description.sample_block.cloneWithColumns(std::move(columns));
     }

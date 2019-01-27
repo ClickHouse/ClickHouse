@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include "ExternalResultDescription.h"
 
 
@@ -18,11 +18,12 @@ namespace Poco
 namespace DB
 {
 /// Converts Redis Cursor to a stream of Blocks
-    class RedisBlockInputStream final : public IProfilingBlockInputStream
+    class RedisBlockInputStream final : public IBlockInputStream
     {
     public:
         RedisBlockInputStream(
-                const Poco::Redis::Array & reply_array_,
+                const std::shared_ptr<Poco::Redis::Client> & client_,
+                const Poco::Redis::Array & keys_,
                 const Block & sample_block,
                 const size_t max_block_size);
 
@@ -35,7 +36,8 @@ namespace DB
     private:
         Block readImpl() override;
 
-        Poco::Redis::Array reply_array;
+        std::shared_ptr<Poco::Redis::Client> client;
+        Poco::Redis::Array keys;
         const size_t max_block_size;
         ExternalResultDescription description;
         size_t cursor = 0;
