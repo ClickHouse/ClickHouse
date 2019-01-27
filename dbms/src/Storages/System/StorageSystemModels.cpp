@@ -28,7 +28,7 @@ void StorageSystemModels::fillData(MutableColumns & res_columns, const Context &
     for (const auto & model_info : models)
     {
         res_columns[0]->insert(model_info.first);
-        res_columns[1]->insert(model_info.second.origin.name);
+        res_columns[1]->insert(model_info.second.origin);
 
         if (model_info.second.loadable)
         {
