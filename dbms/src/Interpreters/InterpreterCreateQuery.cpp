@@ -126,10 +126,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     /// Create directories for tables metadata.
     String path = context.getPath();
-    String metadata_path = path + "metadata/" + database_name_escaped + "/";
+    Poco::Path metadata_path = path;
+    metadata_path.append("metadata").append(database_name_escaped);
     Poco::File(metadata_path).createDirectory();
+    if (database_engine_name == "Dictionary")
+        Poco::File(Poco::Path(metadata_path).append("dictionaries")).createDirectory();
 
-    DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path, context);
+    DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path.toString(), context);
 
     /// Will write file with database metadata, if needed.
     String metadata_file_tmp_path = path + "metadata/" + database_name_escaped + ".sql.tmp";
@@ -160,11 +163,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     try
     {
         context.addDatabase(database_name, database);
-
         if (need_write_metadata)
             Poco::File(metadata_file_tmp_path).renameTo(metadata_file_path);
 
         database->loadTables(context, thread_pool, has_force_restore_data_flag);
+        database->loadDictionaries(context, thread_pool, has_force_restore_data_flag);
     }
     catch (...)
     {
@@ -686,9 +689,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
 {
     String dictionary_name = create.dictionary;
-    String database_name = create.database.empty() ? create.database : context.getCurrentDatabase();
+    String database_name = !create.database.empty() ? create.database : context.getCurrentDatabase();
 
-    // TODO: может быть этот гард не нужен
     auto guard = context.getDDLGuard(database_name, dictionary_name);
     DatabasePtr database = context.getDatabase(database_name);
 
@@ -700,8 +702,8 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery &create)
             throw Exception("Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
-    // auto res = DictionaryFactory::instance().create(dictionary_name, create, context);
-    // database->createDictionary(context, dictionary_name, res, query_ptr);
+    auto res = DictionaryFactory::instance().create(dictionary_name, create, context);
+    database->createDictionary(context, dictionary_name, res, query_ptr);
     return {};
 }
 
