@@ -53,17 +53,6 @@ namespace DB
 #    include "RedisBlockInputStream.h"
 
 
-namespace
-{
-    template <class K, class V>
-    Poco::Redis::Array makeResult(const K & keys, const V & values) {
-        Poco::Redis::Array result;
-        result << keys << values;
-        return result;
-    }
-}
-
-
 namespace DB
 {
     namespace ErrorCodes
@@ -122,14 +111,7 @@ namespace DB
         
         Poco::Redis::Array keys = client->execute<Poco::Redis::Array>(commandForKeys);
 
-        Poco::Redis::Array commandForValues;
-        commandForValues << "MGET";
-        for (const Poco::Redis::RedisType::Ptr & key : keys)
-            commandForValues.addRedisType(key);
-
-        Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
-
-        return std::make_shared<RedisBlockInputStream>(makeResult(keys, values), sample_block, max_block_size);
+        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
 
 
@@ -139,18 +121,11 @@ namespace DB
             throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
         Poco::Redis::Array keys;
-        Poco::Redis::Array command;
-        command << "MGET";
 
         for (const UInt64 id : ids)
-        {
             keys << static_cast<Int64>(id);
-            command << static_cast<Int64>(id);
-        }
 
-        Poco::Redis::Array values = client->execute<Poco::Redis::Array>(command);
-
-        return std::make_shared<RedisBlockInputStream>(makeResult(keys, values), sample_block, max_block_size);
+        return std::make_shared<RedisBlockInputStream>(client, std::move(keys), sample_block, max_block_size);
     }
 
 
