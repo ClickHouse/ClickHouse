@@ -51,14 +51,15 @@ namespace DB
 
         bool supportsSelectiveLoad() const override { return true; }
 
-        BlockInputStreamPtr loadIds(const std::vector<UInt64> & /* ids */) override {throw 1;};
+        BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-        BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override {throw 1;};
+        BlockInputStreamPtr loadKeys(const Columns & /* key_columns */, const std::vector<size_t> & /* requested_rows */) override
+        {
+            throw Exception{"Method loadKeys is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+        };
 
-        /// @todo: for Redis, modification date can somehow be determined from the `_id` object field
         bool isModified() const override { return true; }
 
-        ///Not yet supported
         bool hasUpdateField() const override { return false; }
 
         DictionarySourcePtr clone() const override { return std::make_unique<RedisDictionarySource>(*this); }

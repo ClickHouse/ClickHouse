@@ -35,10 +35,10 @@ namespace DB
 
 
     RedisBlockInputStream::RedisBlockInputStream(
-            std::shared_ptr<Poco::Redis::Client> client_,
+            const Poco::Redis::Array & reply_array_,
             const DB::Block & sample_block,
             const size_t max_block_size)
-            : client(client_), max_block_size{max_block_size}
+            : reply_array(reply_array_), max_block_size{max_block_size}
     {
         description.init(sample_block);
     }
@@ -190,55 +190,42 @@ namespace DB
         for (const auto i : ext::range(0, size))
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
+        const auto insertValueByIdx = [this, &columns](size_t idx, const auto & value)
+        {
+            const auto & name = description.sample_block.getByPosition(idx).name;
+            if (description.types[idx].second)
+            {
+                ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
+                insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value, name);
+                column_nullable.getNullMapData().emplace_back(0);
+            }
+            else
+                insertValue(*columns[idx], description.types[idx].first, value, name);
+        };
+
         size_t num_rows = 0;
+
+        const auto & keys = reply_array.get<Poco::Redis::Array>(0);
+        const auto & values = reply_array.get<Poco::Redis::Array>(1);
+
         while (num_rows < max_block_size)
         {
-            RedisArray commandForKeys;
-            commandForKeys << "SCAN" << cursor;
-
-            auto replyForKeys = client->execute<RedisArray>(commandForKeys);
-            if (cursor = replyForKeys.get<int64_t>(0); cursor == 0)
-            {
+            if (cursor == keys.size()) {
                 all_read = true;
                 break;
             }
 
-            auto response = replyForKeys.get<RedisArray>(1);
-            if (response.isNull())
-                continue;
+            ++num_rows;
+            ++cursor;
 
-            Poco::Redis::Array commandForValues;
-            commandForValues << "MGET";
+            const auto & key = *(keys.begin() + cursor);
+            insertValueByIdx(0, key);
 
-            const auto insertValueByIdx = [this, &columns](size_t idx, const auto & value)
-            {
-                const auto & name = description.sample_block.getByPosition(idx).name;
-                if (description.types[idx].second)
-                {
-                    ColumnNullable & column_nullable = static_cast<ColumnNullable &>(*columns[idx]);
-                    insertValue(column_nullable.getNestedColumn(), description.types[idx].first, value, name);
-                    column_nullable.getNullMapData().emplace_back(0);
-                }
-                else
-                    insertValue(*columns[idx], description.types[idx].first, value, name);
-            };
-
-            for (const auto & key : response)
-            {
-                ++num_rows;
-                String keyS = static_cast<const Poco::Redis::Type<String> *>(key.get())->value();
-                commandForValues << keyS;
-                insertValueByIdx(0, key);
-            }
-
-            auto replyForValues = client->execute<RedisArray>(commandForValues);
-            for (const auto & value : replyForValues)
-            {
-                if (value.isNull())
-                    insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
-                else
-                    insertValueByIdx(1, value);
-            }
+            const auto & value = *(values.begin() + cursor);
+            if (value.isNull())
+                insertDefaultValue(*columns[1], *description.sample_block.getByPosition(1).column);
+            else
+                insertValueByIdx(1, value);
         }
 
         if (num_rows == 0)
