@@ -26,7 +26,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     ASTPtr database;
     ASTPtr table;
-    std::shared_ptr<ASTQueryWithTableAndOutput> query;
+    std::shared_ptr<ASTQueryWithTableOrDictionaryAndOutput> query;
 
     bool parse_only_database_name = false;
 

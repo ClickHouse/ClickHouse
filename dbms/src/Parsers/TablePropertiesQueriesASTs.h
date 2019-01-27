@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 
 
 namespace DB
