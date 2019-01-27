@@ -640,25 +640,25 @@ bool ParserKeyValuePair::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 {
     ParserIdentifier id_parser;
     ParserLiteral literal_parser;
+    ParserExpression expression_parser;
 
     ASTPtr identifier;
-    ASTPtr literal;
+    ASTPtr value;
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    // TODO: нужно ли здесь парсить пробел?
-
-    if (!literal_parser.parse(pos, literal, expected))
+    if (!expression_parser.parse(pos, value, expected))
         return false;
 
     auto pair = std::make_shared<ASTPair>();
     pair->first = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
-    pair->second = literal;
+    pair->second = value;
     node = pair;
     return true;
 }
 
-class TMPParser : public IParserBase
+
+class ParserKeyValueFunctionPair : public IParserBase
 {
 protected:
     const char * getName() const override { return "stacked parser"; }
@@ -671,12 +671,23 @@ protected:
     }
 };
 
-bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+
+bool ParserKeyValueFunctionPairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
-        std::make_unique<TMPParser>(),
+        std::make_unique<ParserKeyValueFunctionPair>(),
         std::make_unique<ParserToken>(TokenType::Comma))
         .parse(pos, node, expected);
 }
+
+
+bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(
+        std::make_unique<ParserKeyValuePair>(),
+        std::make_unique<ParserToken>(separator))
+        .parse(pos, node, expected);
+}
+
 
 }

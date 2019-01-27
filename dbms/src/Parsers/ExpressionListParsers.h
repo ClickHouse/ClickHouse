@@ -379,10 +379,24 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserKeyValuePairsList : public IParserBase
+class ParserKeyValueFunctionPairsList : public IParserBase
 {
 protected:
     const char * getName() const override { return "list of key-value pairs"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+
+class ParserKeyValuePairsList : public IParserBase
+{
+public:
+    explicit ParserKeyValuePairsList(TokenType type_ = TokenType::Comma) : separator(type_)
+    {
+    }
+
+protected:
+    TokenType separator;
+    const char * getName() const override { return "list of pairs"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
