@@ -5,6 +5,8 @@
 #include <Storages/IStorage.h>
 #include <Databases/IDatabase.h>
 
+#include <tuple>
+
 
 /// General functionality for several different database engines.
 
@@ -37,7 +39,11 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 
 String getDictionaryDefinitionFromCreateQuery(const ASTPtr & query);
 
-std::pair<String, DictionaryPtr> createDictionaryFromDefinition();
+std::pair<String, DictionaryPtr> createDictionaryFromDefinition(
+    const String & definition,
+    const String & database_name,
+    Context & context,
+    const String & description_for_error_message);
 
 /// Copies list of tables and iterates through such snapshot.
 class DatabaseSnapshotIterator final : public IDatabaseIterator
@@ -45,6 +51,7 @@ class DatabaseSnapshotIterator final : public IDatabaseIterator
 private:
     Tables tables;
     Tables::iterator it;
+    mutable DictionaryPtr dict_ptr = {};
 
 public:
     DatabaseSnapshotIterator(Tables & tables_)
@@ -53,25 +60,15 @@ public:
     DatabaseSnapshotIterator(Tables && tables_)
         : tables(tables_), it(tables.begin()) {}
 
-    void next() override
-    {
-        ++it;
-    }
+    void next() override { ++it; }
 
-    bool isValid() const override
-    {
-        return it != tables.end();
-    }
+    bool isValid() const override { return it != tables.end(); }
 
-    const String & name() const override
-    {
-        return it->first;
-    }
+    const String & name() const override { return it->first; }
 
-    StoragePtr & table() const override
-    {
-        return it->second;
-    }
+    StoragePtr & table() const override { return it->second; }
+
+    DictionaryPtr & dictionary() const override { return dict_ptr; }
 };
 
 /// A base class for databases that manage their own list of tables.
@@ -94,8 +91,21 @@ public:
         const Context & context,
         const String & dictionary_name) const override;
 
-    bool empty(const Context & context) const override;
+    void createDictionary(
+        Context & context,
+        const String & dictionary_name,
+        const DictionaryPtr & dict_ptr,
+        const ASTPtr & create) override;
 
+    void removeDictionary(Context & context, const String & dictionary_name) override;
+
+    void loadDictionaries(Context & context,
+        ThreadPool * thread_pool,
+        bool has_force_restore_data_flag) override;
+
+    DatabaseIteratorPtr getDictionaryIterator(const Context&) override { return {}; };
+
+    bool empty(const Context & context) const override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
 

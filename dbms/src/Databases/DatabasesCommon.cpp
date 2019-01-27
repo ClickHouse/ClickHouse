@@ -8,6 +8,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Storages/StorageFactory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Dictionaries/DictionaryFactory.h>
 
 
 namespace DB
@@ -15,10 +16,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -84,6 +85,44 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 }
 
 
+String getDictionaryDefinitionFromCreateQuery(const ASTPtr & query)
+{
+    ASTPtr query_clone = query->clone();
+    ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_clone.get());
+    if (create.dictionary.empty())
+        throw Exception("Can't get dictionary definition from create query", ErrorCodes::BAD_ARGUMENTS);
+
+    // TODO: maybe add more accurate check of ASTCreateQuery
+
+    std::ostringstream statement_stream;
+    formatAST(create, statement_stream, false);
+    statement_stream << "\n";
+    return statement_stream.str();
+}
+
+
+std::pair<String, DictionaryPtr> createDictionaryFromDefinition(
+    const String & definition,
+    const String & database_name,
+    Context & context,
+    const String & description_for_error_message)
+{
+    ParserCreateDictionaryQuery parser;
+    ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
+    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+    ast_create_query.database = database_name;
+
+    if (!ast_create_query.columns)
+        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+
+    auto dictionary_ptr = DictionaryFactory::instance().create(ast_create_query.dictionary, ast_create_query, context);
+
+    return {
+        ast_create_query.dictionary,
+        dictionary_ptr,
+    };
+}
+
 bool DatabaseWithOwnTablesBase::isTableExist(
     const Context & /*context*/,
     const String & table_name) const
@@ -93,9 +132,9 @@ bool DatabaseWithOwnTablesBase::isTableExist(
 }
 
 
-bool DatabaseWithOwnTablesBase::isDictionaryExist(const Context &context, const String &) const
+bool DatabaseWithOwnTablesBase::isDictionaryExist(const Context & context, const String &) const
 {
-    throw Exception("Dictionaries isn't supported in " + context.getDatabase(name)->getEngineName() + " database engine.", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(context.getDatabase(name)->getEngineName() + ": isDictionaryExist() isn't supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
@@ -111,11 +150,27 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
 }
 
 
-DictionaryPtr DatabaseWithOwnTablesBase::tryGetDictionary(const Context &context, const String &) const
+DictionaryPtr DatabaseWithOwnTablesBase::tryGetDictionary(const Context & context, const String &) const
 {
-    throw Exception("Dictionaries aren't supported in " + context.getDatabase(name)->getEngineName() + " database engine.", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception(context.getDatabase(name)->getEngineName() + ": tryGetDictionary() isn't supported.", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+
+void DatabaseWithOwnTablesBase::loadDictionaries(Context &, ThreadPool *, bool)
+{
+}
+
+
+void DatabaseWithOwnTablesBase::createDictionary(Context & context, const String &, const DictionaryPtr &, const ASTPtr &)
+{
+    throw Exception(context.getDatabase(name)->getEngineName() + ": createDicitonary() isn't supported.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
+void DatabaseWithOwnTablesBase::removeDictionary(Context & context, const String & /*dictionary_name*/)
+{
+    throw Exception(context.getDatabase(name)->getEngineName() + ": removeDictionary() isn't supported.", ErrorCodes::NOT_IMPLEMENTED);
+}
 
 DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
 {
@@ -148,7 +203,7 @@ void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const Sto
 {
     std::lock_guard lock(mutex);
     if (!tables.emplace(table_name, table).second)
-        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+        throw Exception("Database " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
 void DatabaseWithOwnTablesBase::shutdown()
