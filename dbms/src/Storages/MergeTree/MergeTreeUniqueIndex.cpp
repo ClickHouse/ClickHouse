@@ -3,8 +3,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Parsers/ASTLiteral.h>
+
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <Poco/Logger.h>
 
@@ -176,6 +178,8 @@ UniqueCondition::UniqueCondition(
             "bitAnd",
             new_expression,
             std::make_shared<ASTLiteral>(Field(1)));
+
+    traverseAST(new_expression, context);
 }
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
@@ -210,11 +214,30 @@ void UniqueCondition::traverseAST(ASTPtr & node, const Context & context)
         *node = ASTLiteral(Field(3)); /// Unknown
 }
 
-bool termFromAST(const ASTPtr & node, const Context & context)
+bool UniqueCondition::termFromAST(const ASTPtr & node, const Context & context)
 {
-    /// function with args
+    /// Function, literal or column
+
+    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(node.get()))
+        return true;
+
+    if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
+        return key_columns.count(identifier->name) != 0;
+
+    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node)) {
+        if (key_columns.count(func->name) != 0)
+            return true;
+
+        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+
+        for (size_t i = 0, size = args.size(); i < size; ++i)
+            if (!termFromAST(args[i], context))
+                return false;
+
+        return true;
+    }
+
     return false;
-    termFromAST(node, context);
 }
 
 bool UniqueCondition::atomFromAST(const ASTPtr & node, const Context & context)
