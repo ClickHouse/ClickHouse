@@ -35,8 +35,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ALIAS_REQUIRED;
-    extern const int MULTIPLE_EXPRESSIONS_FOR_ALIAS;
     extern const int EMPTY_NESTED_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
@@ -102,12 +100,13 @@ void normalizeTree(
     const Names & source_columns,
     const NameSet & source_columns_set,
     const Context & context,
-    const ASTSelectQuery * select_query,
-    bool asterisk_left_columns_only)
+    const ASTSelectQuery * select_query)
 {
+    const auto & settings = context.getSettingsRef();
+
     Names all_columns_name = source_columns;
 
-    if (!asterisk_left_columns_only)
+    if (!settings.asterisk_left_columns_only)
     {
         auto columns_from_joined_table = result.analyzed_join.getColumnsFromJoinedTable(source_columns_set, context, select_query);
         for (auto & column : columns_from_joined_table)
@@ -117,37 +116,7 @@ void normalizeTree(
     if (all_columns_name.empty())
         throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    std::vector<QueryNormalizer::TableWithColumnNames> table_with_columns;
-    if (select_query && select_query->tables && !select_query->tables->children.empty())
-    {
-        std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
-
-        bool first = true;
-        String current_database = context.getCurrentDatabase();
-        for (const auto * table_expression : tables_expression)
-        {
-            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
-            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
-
-            removeDuplicateColumns(names_and_types);
-
-            if (!first)
-            {
-                /// For joined tables qualify duplicating names.
-                for (auto & name_and_type : names_and_types)
-                    if (source_columns_set.count(name_and_type.name))
-                        name_and_type.name = table_name.getQualifiedNamePrefix() + name_and_type.name;
-            }
-
-            first = false;
-
-            table_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
-        }
-    }
-    else
-        table_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
-
-    QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef(), std::move(table_with_columns));
+    QueryNormalizer::Data normalizer_data(result.aliases, settings, context, source_columns_set, std::move(all_columns_name));
     QueryNormalizer(normalizer_data).visit(query);
 }
 
@@ -434,33 +403,13 @@ void optimizeUsing(const ASTSelectQuery * select_query)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const Names & source_columns, const NameSet & source_columns_set)
 {
-    ASTPtr array_join_expression_list = select_query->array_join_expression_list();
-    if (array_join_expression_list)
+    if (ASTPtr array_join_expression_list = select_query->array_join_expression_list())
     {
-        ASTs & array_join_asts = array_join_expression_list->children;
-        for (const auto & ast : array_join_asts)
-        {
-            const String nested_table_name = ast->getColumnName();
-            const String nested_table_alias = ast->getAliasOrColumnName();
-
-            if (nested_table_alias == nested_table_name && !isIdentifier(ast))
-                throw Exception("No alias for non-trivial value in ARRAY JOIN: " + nested_table_name,
-                                ErrorCodes::ALIAS_REQUIRED);
-
-            if (result.array_join_alias_to_name.count(nested_table_alias) || result.aliases.count(nested_table_alias))
-                throw Exception("Duplicate alias in ARRAY JOIN: " + nested_table_alias,
-                                ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS);
-
-            result.array_join_alias_to_name[nested_table_alias] = nested_table_name;
-            result.array_join_name_to_alias[nested_table_name] = nested_table_alias;
-        }
-
-        {
-            ArrayJoinedColumnsVisitor::Data visitor_data{result.array_join_name_to_alias,
-                                                         result.array_join_alias_to_name,
-                                                         result.array_join_result_to_source};
-            ArrayJoinedColumnsVisitor(visitor_data).visit(query);
-        }
+        ArrayJoinedColumnsVisitor::Data visitor_data{result.aliases,
+                                                    result.array_join_name_to_alias,
+                                                    result.array_join_alias_to_name,
+                                                    result.array_join_result_to_source};
+        ArrayJoinedColumnsVisitor(visitor_data).visit(query);
 
         /// If the result of ARRAY JOIN is not used, it is necessary to ARRAY-JOIN any column,
         /// to get the correct number of rows.
@@ -776,7 +725,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree(query, result, (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
-                  context, select_query, settings.asterisk_left_columns_only != 0);
+                  context, select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -788,7 +737,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth);
 
-    /// Optimize if with constant condition after constants was substituted instead of sclalar subqueries.
+    /// Optimize if with constant condition after constants was substituted instead of scalar subqueries.
     OptimizeIfWithConstantConditionVisitor(result.aliases).visit(query);
 
     if (select_query)

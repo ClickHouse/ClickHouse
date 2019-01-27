@@ -22,7 +22,7 @@ The possible values are:
 - `allow`  — Allows the use of these types of subqueries.
 
 
-## fallback_to_stale_replicas_for_distributed_queries
+## fallback_to_stale_replicas_for_distributed_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
 Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../operations/table_engines/replication.md)".
 

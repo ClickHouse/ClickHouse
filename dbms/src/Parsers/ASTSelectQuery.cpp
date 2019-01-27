@@ -51,8 +51,6 @@ ASTPtr ASTSelectQuery::clone() const
 
 #undef CLONE
 
-    if (semantic)
-        res->semantic = semantic->clone();
     return res;
 }
 

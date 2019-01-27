@@ -2,7 +2,7 @@
 
 #include <Poco/Event.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <common/ThreadPool.h>
@@ -26,7 +26,7 @@ namespace DB
   *     has come over the network with a request to interrupt the execution of the query.
   *    It also allows you to execute multiple queries at the same time.
   */
-class AsynchronousBlockInputStream : public IProfilingBlockInputStream
+class AsynchronousBlockInputStream : public IBlockInputStream
 {
 public:
     AsynchronousBlockInputStream(const BlockInputStreamPtr & in)

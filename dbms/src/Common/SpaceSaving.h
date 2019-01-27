@@ -40,7 +40,7 @@ struct SpaceSavingArena
 
 /*
  * Specialized storage for StringRef with a freelist arena.
- * Keys of this type that are retained on insertion must be serialised into local storage,
+ * Keys of this type that are retained on insertion must be serialized into local storage,
  * otherwise the reference would be invalid after the processed block is released.
  */
 template <>
@@ -79,7 +79,7 @@ private:
     constexpr uint64_t nextAlphaSize(uint64_t x)
     {
         constexpr uint64_t ALPHA_MAP_ELEMENTS_PER_COUNTER = 6;
-        return 1ULL<<(sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
+        return 1ULL << (sizeof(uint64_t) * 8 - __builtin_clzll(x * ALPHA_MAP_ELEMENTS_PER_COUNTER));
     }
 
 public:

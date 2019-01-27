@@ -9,7 +9,7 @@
 
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
@@ -150,7 +151,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
-    size_t query_size;
+    const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
@@ -162,10 +163,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-        if (!(begin <= ast->range.first && ast->range.second <= end))
-            throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
-        query_size = ast->range.second - begin;
+        const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+        if (insert_query && insert_query->data)
+            query_end = insert_query->data;
+        else
+            query_end = end;
     }
     catch (...)
     {
@@ -180,7 +182,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    String query(begin, query_size);
+    /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+    String query(begin, query_end);
     BlockIO res;
 
     try
@@ -235,22 +238,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         if (res.in)
         {
-            if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(res.in.get()))
+            res.in->setProgressCallback(context.getProgressCallback());
+            res.in->setProcessListElement(context.getProcessListElement());
+
+            /// Limits on the result, the quota on the result, and also callback for progress.
+            /// Limits apply only to the final result.
+            if (stage == QueryProcessingStage::Complete)
             {
-                stream->setProgressCallback(context.getProgressCallback());
-                stream->setProcessListElement(context.getProcessListElement());
+                IBlockInputStream::LocalLimits limits;
+                limits.mode = IBlockInputStream::LIMITS_CURRENT;
+                limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
 
-                /// Limits on the result, the quota on the result, and also callback for progress.
-                /// Limits apply only to the final result.
-                if (stage == QueryProcessingStage::Complete)
-                {
-                    IProfilingBlockInputStream::LocalLimits limits;
-                    limits.mode = IProfilingBlockInputStream::LIMITS_CURRENT;
-                    limits.size_limits = SizeLimits(settings.max_result_rows, settings.max_result_bytes, settings.result_overflow_mode);
-
-                    stream->setLimits(limits);
-                    stream->setQuota(quota);
-                }
+                res.in->setLimits(limits);
+                res.in->setQuota(quota);
             }
         }
 
@@ -317,20 +317,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (stream_in)
                 {
-                    if (auto profiling_stream = dynamic_cast<const IProfilingBlockInputStream *>(stream_in))
-                    {
-                        const BlockStreamProfileInfo & stream_in_info = profiling_stream->getProfileInfo();
+                    const BlockStreamProfileInfo & stream_in_info = stream_in->getProfileInfo();
 
-                        /// NOTE: INSERT SELECT query contains zero metrics
-                        elem.result_rows = stream_in_info.rows;
-                        elem.result_bytes = stream_in_info.bytes;
-                    }
+                    /// NOTE: INSERT SELECT query contains zero metrics
+                    elem.result_rows = stream_in_info.rows;
+                    elem.result_bytes = stream_in_info.bytes;
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
                     if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
-                        /// NOTE: Redundancy. The same values coulld be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
+                        /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().rows;
                         elem.result_bytes = counting_stream->getProgress().bytes;
                     }
@@ -502,21 +499,21 @@ void executeQuery(
                 ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
 
+            if (ast_query_with_output && ast_query_with_output->settings_ast)
+                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
+
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 
-            if (auto stream = dynamic_cast<IProfilingBlockInputStream *>(streams.in.get()))
-            {
-                /// Save previous progress callback if any. TODO Do it more conveniently.
-                auto previous_progress_callback = context.getProgressCallback();
+            /// Save previous progress callback if any. TODO Do it more conveniently.
+            auto previous_progress_callback = context.getProgressCallback();
 
-                /// NOTE Progress callback takes shared ownership of 'out'.
-                stream->setProgressCallback([out, previous_progress_callback] (const Progress & progress)
-                {
-                    if (previous_progress_callback)
-                        previous_progress_callback(progress);
-                    out->onProgress(progress);
-                });
-            }
+            /// NOTE Progress callback takes shared ownership of 'out'.
+            streams.in->setProgressCallback([out, previous_progress_callback] (const Progress & progress)
+            {
+                if (previous_progress_callback)
+                    previous_progress_callback(progress);
+                out->onProgress(progress);
+            });
 
             if (set_content_type)
                 set_content_type(out->getContentType());
