@@ -46,8 +46,8 @@ join on complex expression
 2	3
 2	3
 duplicate column names
-{"a1":1,"test.tab1_copy.a1":2}
-{"a1":1,"test.tab1_copy.a1":2}
+{"a1":1,"tab1_copy.a1":2}
+{"a1":1,"tab1_copy.a1":2}
 {"a1":1,"copy.a1":2}
 {"a1":1,"copy.a1":2}
 {"a1":1,"copy.a1":2}
