@@ -18,6 +18,8 @@ public:
     ASTPtr codec;
     ASTPtr comment;
 
+    ASTPtr expr_list; /// some key-value pairs for dictionary keys attributes like injective, expression and etc.
+
     String getID(char delim) const override { return "ColumnDeclaration" + (delim + name); }
 
     ASTPtr clone() const override
@@ -80,6 +82,12 @@ public:
         {
             settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << "COMMENT" << (settings.hilite ? hilite_none : "") << ' ';
             comment->formatImpl(settings, state, frame);
+        }
+
+        if (expr_list)
+        {
+            settings.ostr << " ";
+            expr_list->formatImpl(settings, state, frame);
         }
     }
 };
