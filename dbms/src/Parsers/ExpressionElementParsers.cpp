@@ -1332,7 +1332,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 bool ParserKeyValueFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
-    ParserKeyValuePairsList pairs_list_parser;
+    ParserKeyValueFunctionPairsList pairs_list_parser;
 
     ASTPtr identifier;
     ASTPtr expr_list_args;
