@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
 #include <Poco/Logger.h>
 
@@ -141,10 +142,41 @@ Block MergeTreeUniqueGranule::getElementsBlock() const
 
 
 UniqueCondition::UniqueCondition(
-        const SelectQueryInfo &,
-        const Context &,
+        const SelectQueryInfo & query,
+        const Context & context,
         const MergeTreeUniqueIndex &index)
-        : IndexCondition(), index(index) {}
+        : IndexCondition(), index(index)
+{
+    for (size_t i = 0, size = index.columns.size(); i < size; ++i)
+    {
+        std::string name = index.columns[i];
+        if (!key_columns.count(name))
+            key_columns[name] = i;
+    }
+
+    const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query.query);
+
+    /// Replace logical functions with bit functions.
+    /// Working with UInt8: last bit -- can be true, previous -- can be false.
+    ASTPtr new_expression;
+    if (select.where_expression && select.prewhere_expression)
+        new_expression = makeASTFunction(
+                "and",
+                select.where_expression->clone(),
+                select.prewhere_expression->clone());
+    else if (select.where_expression)
+        new_expression = select.where_expression->clone();
+    else if (select.prewhere_expression)
+        new_expression = select.prewhere_expression->clone();
+    else
+        /// 11_2 -- can be true and false at the same time
+        new_expression = std::make_shared<ASTLiteral>(Field(3));
+
+    new_expression = makeASTFunction(
+            "bitAnd",
+            new_expression,
+            std::make_shared<ASTLiteral>(Field(1)));
+}
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
 {
@@ -157,6 +189,71 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     if (!granule)
         throw Exception(
                 "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
+
+    return true;
+}
+
+void UniqueCondition::traverseAST(ASTPtr & node, const Context & context)
+{
+    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
+    {
+        if (operatorFromAST(func)) {
+            auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+
+            for (size_t i = 0, size = args.size(); i < size; ++i)
+                traverseAST(args[i], context);
+            return;
+        }
+    }
+
+    if (!atomFromAST(node, context))
+        *node = ASTLiteral(Field(3)); /// Unknown
+}
+
+bool termFromAST(const ASTPtr & node, const Context & context)
+{
+    /// function with args
+    return false;
+    termFromAST(node, context);
+}
+
+bool UniqueCondition::atomFromAST(const ASTPtr & node, const Context & context)
+{
+    /// Functions < > = != <= >= in `notIn`
+    if (termFromAST(node, context))
+        return true;
+
+    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    {
+        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+
+        for (size_t i = 0, size = args.size(); i < size; ++i)
+            if (!termFromAST(args[i], context))
+                return false;
+
+        return true;
+    }
+
+    return false;
+}
+
+bool UniqueCondition::operatorFromAST(ASTFunction * func)
+{
+    /// Functions AND, OR, NOT. Replace with bit*.
+    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+
+    if (func->name == "not")
+    {
+        if (args.size() != 1)
+            return false;
+        func->name = "bitNot";
+    }
+    else if (func->name == "and" || func->name == "indexHint")
+        func->name = "bitAnd";
+    else if (func->name == "or")
+        func->name = "bitOR";
+    else
+        return false;
 
     return true;
 }
