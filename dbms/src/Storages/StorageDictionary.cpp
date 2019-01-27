@@ -25,12 +25,15 @@ namespace ErrorCodes
 
 StorageDictionary::StorageDictionary(
     const String & table_name_,
+    const String & database_name_,
     const ColumnsDescription & columns_,
     const DictionaryStructure & dictionary_structure_,
     const String & dictionary_name_)
-    : IStorage{columns_}, table_name(table_name_),
-    dictionary_name(dictionary_name_),
-    logger(&Poco::Logger::get("StorageDictionary"))
+    : IStorage{columns_}
+    , table_name(table_name_)
+    , database_name(database_name_)
+    , dictionary_name(dictionary_name_)
+    , logger(&Poco::Logger::get("StorageDictionary"))
 {
     checkNamesAndTypesCompatibleWithDictionary(dictionary_structure_);
 }
@@ -43,7 +46,20 @@ BlockInputStreams StorageDictionary::read(
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+    DictionaryPtr dictionary;
+    if (database_name.empty())
+    {
+        dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
+    }
+    else
+    {
+        auto db = context.getDatabase(database_name);
+        if (db->getEngineName() != "Dictionary")
+            throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
+
+        dictionary = db->tryGetDictionary(context, dictionary_name);
+    }
+
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
 
@@ -95,13 +111,33 @@ void registerStorageDictionary(StorageFactory & factory)
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         args.engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args.engine_args[0], args.local_context);
+        String database_name;
         String dictionary_name = typeid_cast<const ASTLiteral &>(*args.engine_args[0]).value.safeGet<String>();
+        if (auto pos = dictionary_name.find('.'); pos != String::npos)
+        {
+            database_name = dictionary_name.substr(0, pos);
+            dictionary_name = dictionary_name.substr(pos + 1);
+        }
 
-        const auto & dictionary = args.context.getExternalDictionaries().getDictionary(dictionary_name);
+        DictionaryPtr dictionary;
+        if (database_name.empty())
+        {
+            dictionary = args.context.getExternalDictionaries().getDictionary(dictionary_name);
+        }
+        else
+        {
+            auto db = args.context.getDatabase(database_name);
+            if (db->getEngineName() != "Dictionary")
+                throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
+
+            dictionary = db->tryGetDictionary(args.context, dictionary_name);
+            if (!dictionary) // TODO: it would be great if tryGet throws an exception
+                throw Exception("There is no " + dictionary_name + " dictionary", ErrorCodes::BAD_ARGUMENTS);
+        }
+
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
-
         return StorageDictionary::create(
-            args.table_name, args.columns, dictionary_structure, dictionary_name);
+            args.table_name, database_name, args.columns, dictionary_structure, dictionary_name);
     });
 }
 

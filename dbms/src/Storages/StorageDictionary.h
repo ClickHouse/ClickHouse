@@ -58,13 +58,16 @@ private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
     String table_name;
+    String database_name;
     String dictionary_name;
     Poco::Logger * logger;
 
     void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const;
 
 protected:
-    StorageDictionary(const String & table_name_,
+    StorageDictionary(
+        const String & table_name_,
+        const String & database_name,
         const ColumnsDescription & columns_,
         const DictionaryStructure & dictionary_structure_,
         const String & dictionary_name_);
