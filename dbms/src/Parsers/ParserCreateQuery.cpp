@@ -442,7 +442,7 @@ bool ParserDictionarySource::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword lifetime_keyword("LIFETIME");
     ParserKeyword layout_keyword("LAYOUT");
     ParserKeyValueFunction key_value_pairs_p;
-    ParserExpression expression_parser;
+    ParserExpressionList expression_parser(false);
 
     ASTPtr primary_key;
     ASTPtr ast_source;
@@ -511,6 +511,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     ParserIdentifier name_p;
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
+    ParserToken s_dot(TokenType::Dot);
     ParserColumnDeclarationList columns_p;
     ParserDictionarySource source_p;
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
@@ -518,6 +519,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     bool if_not_exists = false;
     bool or_replace = false;
 
+    ASTPtr database;
     ASTPtr dictionary;
     ASTPtr columns;
     ASTPtr source;
@@ -537,6 +539,12 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
     if (!s_dictionary.ignore(pos, expected))
         return false;
 
+    if (!name_p.parse(pos, database, expected))
+        return false;
+
+    if (!s_dot.ignore(pos))
+        return false;
+
     if (!name_p.parse(pos, dictionary, expected))
         return false;
 
@@ -554,6 +562,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos &pos, ASTPtr &node, Exp
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
+
+    if (database)
+        query->database = typeid_cast<ASTIdentifier &>(*database).name;
 
     if (dictionary)
         query->dictionary = typeid_cast<ASTIdentifier &>(*dictionary).name;

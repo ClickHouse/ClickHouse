@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 
@@ -102,7 +103,6 @@ public:
     }
 
 protected:
-    using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
 
     const char * getName() const { return "column declaration"; }
 
@@ -128,6 +128,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
 
+    ParserKeyValuePairsList pairs_list_parser(TokenType::Whitespace);
+
     /// mandatory column name
     ASTPtr name;
     if (!name_parser.parse(pos, name, expected))
@@ -141,11 +143,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr default_expression;
     ASTPtr comment_expression;
     ASTPtr codec_expression;
+    ASTPtr pairs_list;
 
     if (!s_default.check_without_moving(pos, expected) &&
         !s_materialized.check_without_moving(pos, expected) &&
         !s_alias.check_without_moving(pos, expected) &&
-        !s_comment.check_without_moving(pos, expected) &&
+        !s_comment.check_without_moving(pos, expected) && // TODO: maybe it should be deleted
         !s_codec.check_without_moving(pos, expected))
     {
         if (!type_parser.parse(pos, type, expected))
@@ -165,7 +168,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     if (require_type && !type && !default_expression)
         return false; /// reject column name without type
 
-
     if (s_comment.ignore(pos, expected))
     {
         /// should be followed by a string literal
@@ -178,6 +180,13 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         if (!codec_parser.parse(pos, codec_expression, expected))
             return false;
     }
+
+    if (!pairs_list_parser.parse(pos, pairs_list, expected))
+    {
+        return false;
+    }
+
+
 
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
@@ -206,6 +215,12 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         column_declaration->codec = codec_expression;
         column_declaration->children.push_back(std::move(codec_expression));
+    }
+
+    if (pairs_list)
+    {
+        column_declaration->expr_list = pairs_list;
+        column_declaration->children.push_back(std::move(pairs_list));
     }
 
     return true;
