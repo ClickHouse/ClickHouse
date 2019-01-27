@@ -8,9 +8,9 @@ namespace DB
 {
 
 
-/** Query specifying table name and, possibly, the database and the FORMAT section.
+/** Query specifying the name of table or dictionary and, possibly, the database and the FORMAT section.
     */
-class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
+class ASTQueryWithTableOrDictionaryAndOutput : public ASTQueryWithOutput
 {
 public:
     String database;
@@ -22,31 +22,32 @@ protected:
     void formatHelper(const FormatSettings & settings, const char * name) const
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << name << " " << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            << (!database.empty() ? backQuoteIfNeed(database) + "." : "");
+
+        if (!table.empty())
+            settings.ostr << backQuoteIfNeed(table);
+
+        if (!dictionary.empty())
+            settings.ostr << backQuoteIfNeed(dictionary);
     }
 };
 
-
-// TODO кажется это не нужно
-/** Query specifying dictionary name and the FORMAT section.
- */
-class ASTQueryWithDictionaryAndOutput : public ASTQueryWithOutput
-{
-public:
-    String dictionary;
-
-protected:
-    void formatHelper(const FormatSettings & settings, const char * name) const
-    {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << name;
-    }
-};
 
 template <typename AstIDAndQueryNames>
-class ASTQueryWithTableAndOutputImpl : public ASTQueryWithTableAndOutput
+class ASTQueryWithTableAndOutputImpl : public ASTQueryWithTableOrDictionaryAndOutput
 {
 public:
-    String getID(char delim) const override { return AstIDAndQueryNames::ID + (delim + database) + delim + table; }
+    String getID(char delim) const override
+    {
+        String id = AstIDAndQueryNames::ID + (delim + database);
+        if (!table.empty())
+            id += delim + table;
+
+        if (!dictionary.empty())
+            id += delim + dictionary;
+
+        return id;
+    }
 
     ASTPtr clone() const override
     {
