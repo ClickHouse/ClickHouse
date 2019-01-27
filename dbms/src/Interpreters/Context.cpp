@@ -1193,6 +1193,7 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 }
 
 
+// TODO: rewrite it (not trivial)
 ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_error) const
 {
     std::lock_guard lock(shared->external_dictionaries_mutex);
