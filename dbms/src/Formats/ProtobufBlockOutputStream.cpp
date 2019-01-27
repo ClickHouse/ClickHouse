@@ -9,6 +9,7 @@
 #include <Formats/FormatSchemaInfo.h>
 #include <Formats/ProtobufSchemas.h>
 #include <Interpreters/Context.h>
+#include <google/protobuf/descriptor.h>
 
 
 namespace DB
