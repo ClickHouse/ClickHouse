@@ -116,14 +116,14 @@ void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t li
     LOG_DEBUG(log, "updated rows_read: " << rows_read);
 
     *pos += rows_read;
-};
+}
 
 
 MinMaxCondition::MinMaxCondition(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeMinMaxIndex &index)
-    : IndexCondition(), index(index), condition(query, context, index.columns, index.expr) {};
+    : IndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
 
 bool MinMaxCondition::alwaysUnknownOrTrue() const
 {

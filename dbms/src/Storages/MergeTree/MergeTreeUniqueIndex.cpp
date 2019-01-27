@@ -130,13 +130,21 @@ void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_
     LOG_DEBUG(log, "unique rows: " << set->getTotalRowCount());
 
     *pos += rows_read;
-};
+}
+
+Block MergeTreeUniqueGranule::getElementsBlock() const
+{
+    if (index.max_rows && size() > index.max_rows)
+        return index.header;
+    return index.header.cloneWithColumns(set->getSetElements());
+}
+
 
 UniqueCondition::UniqueCondition(
         const SelectQueryInfo &,
         const Context &,
         const MergeTreeUniqueIndex &index)
-        : IndexCondition(), index(index) {};
+        : IndexCondition(), index(index) {}
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
 {
