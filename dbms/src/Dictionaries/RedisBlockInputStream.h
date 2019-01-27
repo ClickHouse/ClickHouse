@@ -9,6 +9,7 @@ namespace Poco
 {
     namespace Redis
     {
+        class Array;
         class Client;
     }
 }
@@ -21,7 +22,7 @@ namespace DB
     {
     public:
         RedisBlockInputStream(
-                std::shared_ptr<Poco::Redis::Client> client_,
+                const Poco::Redis::Array & reply_array_,
                 const Block & sample_block,
                 const size_t max_block_size);
 
@@ -34,10 +35,10 @@ namespace DB
     private:
         Block readImpl() override;
 
-        std::shared_ptr<Poco::Redis::Client> client;
+        Poco::Redis::Array reply_array;
         const size_t max_block_size;
         ExternalResultDescription description;
-        int64_t cursor = 0;
+        size_t cursor = 0;
         bool all_read = false;
     };
 

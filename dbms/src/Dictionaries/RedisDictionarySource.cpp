@@ -53,6 +53,17 @@ namespace DB
 #    include "RedisBlockInputStream.h"
 
 
+namespace
+{
+    template <class K, class V>
+    Poco::Redis::Array makeResult(const K & keys, const V & values) {
+        Poco::Redis::Array result;
+        result << keys << values;
+        return result;
+    }
+}
+
+
 namespace DB
 {
     namespace ErrorCodes
@@ -106,83 +117,57 @@ namespace DB
 
     BlockInputStreamPtr RedisDictionarySource::loadAll()
     {
-        return std::make_shared<RedisBlockInputStream>(client, sample_block, max_block_size);
+        Int64 cursor = 0;
+        Poco::Redis::Array keys;
+
+        do
+        {
+            Poco::Redis::Array commandForKeys;
+            commandForKeys << "SCAN" << cursor << "COUNT 1000";
+
+            Poco::Redis::Array replyForKeys = client->execute<Poco::Redis::Array>(commandForKeys);
+            cursor = replyForKeys.get<Int64>(0);
+
+            Poco::Redis::Array response = replyForKeys.get<Poco::Redis::Array>(1);
+            if (response.isNull())
+                continue;
+
+            for (const Poco::Redis::RedisType::Ptr & key : response)
+                keys.addRedisType(key);
+        }
+        while (cursor != 0);
+
+        Poco::Redis::Array commandForValues;
+        commandForValues << "MGET";
+        for (const Poco::Redis::RedisType::Ptr & key : keys)
+            commandForValues.addRedisType(key);
+
+        Poco::Redis::Array values = client->execute<Poco::Redis::Array>(commandForValues);
+
+        return std::make_shared<RedisBlockInputStream>(makeResult(keys, values), sample_block, max_block_size);
     }
 
-/*
+
     BlockInputStreamPtr RedisDictionarySource::loadIds(const std::vector<UInt64> & ids)
     {
         if (!dict_struct.id)
             throw Exception{"'id' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
 
-        Poco::Redis::Array ids_array(new Poco::Redis::Array);
+        Poco::Redis::Array keys;
+        Poco::Redis::Array command;
+        command << "MGET";
+
         for (const UInt64 id : ids)
-            ids_array->add(DB::toString(id), Int32(id));
-
-        cursor->query().selector().addNewDocument(dict_struct.id->name).add("$in", ids_array);
-
-        return std::make_shared<RedisBlockInputStream>(connection, sample_block, max_block_size);
-    }
-
-
-    BlockInputStreamPtr RedisDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
-    {
-        if (!dict_struct.key)
-            throw Exception{"'key' is required for selective loading", ErrorCodes::UNSUPPORTED_METHOD};
-
-        Poco::Redis::Array::Ptr keys_array(new Poco::Redis::Array);
-
-        for (const auto row_idx : requested_rows)
         {
-            auto & key = keys_array->addNewDocument(DB::toString(row_idx));
-
-            for (const auto attr : ext::enumerate(*dict_struct.key))
-            {
-                switch (attr.second.underlying_type)
-                {
-                    case AttributeUnderlyingType::UInt8:
-                    case AttributeUnderlyingType::UInt16:
-                    case AttributeUnderlyingType::UInt32:
-                    case AttributeUnderlyingType::UInt64:
-                    case AttributeUnderlyingType::UInt128:
-                    case AttributeUnderlyingType::Int8:
-                    case AttributeUnderlyingType::Int16:
-                    case AttributeUnderlyingType::Int32:
-                    case AttributeUnderlyingType::Int64:
-                    case AttributeUnderlyingType::Decimal32:
-                    case AttributeUnderlyingType::Decimal64:
-                    case AttributeUnderlyingType::Decimal128:
-                        key.add(attr.second.name, Int32(key_columns[attr.first]->get64(row_idx)));
-                        break;
-
-                    case AttributeUnderlyingType::Float32:
-                    case AttributeUnderlyingType::Float64:
-                        key.add(attr.second.name, applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*key_columns[attr.first])[row_idx]));
-                        break;
-
-                    case AttributeUnderlyingType::String:
-                        String _str(get<String>((*key_columns[attr.first])[row_idx]));
-                        /// Convert string to ObjectID
-                        if (attr.second.is_object_id)
-                        {
-                            Poco::Redis::ObjectId::Ptr _id(new Poco::Redis::ObjectId(_str));
-                            key.add(attr.second.name, _id);
-                        }
-                        else
-                        {
-                            key.add(attr.second.name, _str);
-                        }
-                        break;
-                }
-            }
+            keys << static_cast<Int64>(id);
+            command << static_cast<Int64>(id);
         }
 
-        /// If more than one key we should use $or
-        cursor->query().selector().add("$or", keys_array);
+        Poco::Redis::Array values = client->execute<Poco::Redis::Array>(command);
 
-        return std::make_shared<RedisBlockInputStream>(connection, sample_block, max_block_size);
+        return std::make_shared<RedisBlockInputStream>(makeResult(keys, values), sample_block, max_block_size);
     }
-*/
+
 
     std::string RedisDictionarySource::toString() const
     {
