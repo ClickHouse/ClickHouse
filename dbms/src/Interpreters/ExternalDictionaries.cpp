@@ -26,22 +26,6 @@ namespace
 }
 
 
-Dictionaries::Dictionaries(
-    std::unique_ptr<IConfigRepository> config_repository,
-    Context & context,
-    bool throw_on_error)
-        : ExternalLoader(context.getConfigRef(),
-                         externalDictionariesUpdateSettings,
-                         getExternalDictionariesConfigSettings(),
-                         std::move(config_repository),
-                         &Logger::get("ExternalDictionaries"),
-                         "external dictionary"),
-          context(context)
-{
-    init(throw_on_error); // TODO: внутри ExternalLoader может быть нужно будет чуть чуть поправить
-}
-
-
 ExternalDictionaries::ExternalDictionaries(
     std::unique_ptr<IConfigRepository> config_repository,
     Context & context,
@@ -57,7 +41,7 @@ ExternalDictionaries::ExternalDictionaries(
     init(throw_on_error);
 }
 
-std::unique_ptr<IExternalLoadable> ExternalDictionaries::create(
+std::shared_ptr<IExternalLoadable> ExternalDictionaries::create(
         const std::string & name, const Configuration & config, const std::string & config_prefix)
 {
     return DictionaryFactory::instance().create(name, config, config_prefix, context);
