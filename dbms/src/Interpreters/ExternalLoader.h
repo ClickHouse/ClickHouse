@@ -14,6 +14,7 @@
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
 
+#include <optional>
 
 namespace DB
 {
@@ -67,37 +68,32 @@ struct ExternalLoaderConfigSettings
 class ExternalLoader
 {
 public:
-    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
+    using LoadablePtr = IExternalLoadable::LoadablePtr;
+    using Configuration = Poco::Util::AbstractConfiguration;
 
-    struct OriginSource
+    enum class ConfigurationSourceType
     {
-        enum class Type
-        {
-            AST,
-            File,
-        };
-
-        Type type;
-        std::string name;
+        DDL,
+        Filesystem,
     };
-private:
 
     struct LoadableInfo final
     {
         LoadablePtr loadable;
-        OriginSource origin;
+        ConfigurationSourceType source_type;
+        std::string origin;
         std::exception_ptr exception;
     };
 
+private:
     struct FailedLoadableInfo final
     {
-        std::shared_ptr<IExternalLoadable> loadable;
+        LoadablePtr loadable;
         std::chrono::system_clock::time_point next_attempt_time;
         UInt64 error_count;
     };
 
 public:
-    using Configuration = Poco::Util::AbstractConfiguration;
     using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
 
     /// Objects will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
@@ -106,7 +102,15 @@ public:
                    const ExternalLoaderConfigSettings & config_settings,
                    std::unique_ptr<IConfigRepository> config_repository,
                    Logger * log, const std::string & loadable_object_name);
+
     virtual ~ExternalLoader();
+
+    void addObjectFromDDL(
+        const std::string & object_name,
+        std::shared_ptr<IExternalLoadable> loadable_object);
+
+    // TODO: for start supports only DDL objects
+    void removeObject(const std::string & name);
 
     /// Forcibly reloads all loadable objects.
     void reload();
@@ -118,6 +122,7 @@ public:
     LoadablePtr tryGetLoadable(const std::string & name) const;
 
 protected:
+    //  TODO: maybe change config_prefix to something else
     virtual std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                                       const std::string & config_prefix) = 0;
 
@@ -150,23 +155,35 @@ private:
     /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
     mutable std::mutex all_mutex;
 
+    // TODO: describe it later
+    mutable std::mutex insert_mutex;
+
+    // TODO: describe it later
+    mutable std::mutex remove_mutex;
+
     /// name -> loadable.
     ObjectsMap loadable_objects;
+    ObjectsMap objects_from_ddl_to_insert;
+    std::unordered_set<std::string> objects_names_from_ddl_to_remove;
 
+
+    // TODO: fix this description
     /// Here are loadable objects, that has been never loaded successfully.
     /// They are also in 'loadable_objects', but with nullptr as 'loadable'.
     std::unordered_map<std::string, FailedLoadableInfo> failed_loadable_objects;
 
     /// Both for loadable_objects and failed_loadable_objects.
-    std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
+    using TimePoint = std::chrono::system_clock::time_point;
+    std::unordered_map<std::string, TimePoint> update_times;
 
+    // TODO: not the best name.
     std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
 
     pcg64 rnd_engine{randomSeed()};
 
     const Configuration & config_main;
-    const ExternalLoaderUpdateSettings & update_settings;
-    const ExternalLoaderConfigSettings & config_settings;
+    const ExternalLoaderUpdateSettings update_settings;
+    const ExternalLoaderConfigSettings config_settings;
 
     std::unique_ptr<IConfigRepository> config_repository;
 
@@ -179,16 +196,28 @@ private:
 
     std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 
+private:
     /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
     /// If loadable_name is not empty, load only loadable object with name loadable_name
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
     void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
                                 const bool force_reload, const std::string & loadable_name);
 
+    void reloadFromDDL(bool throw_on_error);
+
     /// Check config files and update expired loadable objects
     void reloadAndUpdate(bool throw_on_error = false);
 
+    /// Update expired loadable object
+    void update(bool throw_on_error = false);
+
     void reloadPeriodically();
+
+    bool consistLoadableObject(const std::string &object_name) const;
+
+    bool checkLoadableObjectToUpdate(LoadableInfo object);
+
+    TimePoint getNextUpdateTime(const LoadablePtr & loadable);
 
     LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
 };
