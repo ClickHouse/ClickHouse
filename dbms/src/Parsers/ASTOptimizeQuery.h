@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTQueryWithTableOrDictionaryAndOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
 namespace DB
@@ -10,7 +10,7 @@ namespace DB
 
 /** OPTIMIZE query
   */
-class ASTOptimizeQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
+class ASTOptimizeQuery : public ASTQueryWithTableOrDictionaryAndOutput, public ASTQueryWithOnCluster
 {
 public:
     /// The partition to optimize can be specified.
