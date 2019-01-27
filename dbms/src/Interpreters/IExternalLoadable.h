@@ -5,12 +5,7 @@
 #include <memory>
 #include <Core/Types.h>
 #include <Parsers/ASTFunction.h>
-
-
-namespace Poco::Util
-{
-    class AbstractConfiguration;
-}
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -31,6 +26,8 @@ struct ExternalLoadableLifetime final
 class IExternalLoadable : public std::enable_shared_from_this<IExternalLoadable>
 {
 public:
+    using LoadablePtr = std::shared_ptr<IExternalLoadable>;
+
     virtual ~IExternalLoadable() = default;
 
     virtual const ExternalLoadableLifetime & getLifetime() const = 0;
@@ -41,7 +38,7 @@ public:
     /// If lifetime exceeded and isModified() ExternalLoader replace current object with the result of clone().
     virtual bool isModified() const = 0;
     /// Returns new object with the same configuration. Is used to update modified object when lifetime exceeded.
-    virtual std::unique_ptr<IExternalLoadable> clone() const = 0;
+    virtual LoadablePtr clone() const = 0;
 
     virtual std::chrono::time_point<std::chrono::system_clock> getCreationTime() const = 0;
 
