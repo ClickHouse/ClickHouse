@@ -6,6 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
+#include <Poco/Path.h>
 
 namespace Poco
 {
@@ -17,13 +18,40 @@ namespace DB
 {
 class ExternalDictionaries;
 
+// TODO: describe it later
+using DictionariesMap = std::map<String, DictionaryPtr>;
+
+class DatabaseSnapshotDictionariesIterator final : public IDatabaseIterator
+{
+private:
+    DictionariesMap dictionaries;
+    DictionariesMap::iterator it;
+    mutable StoragePtr storage_ptr = {};
+
+public:
+    explicit DatabaseSnapshotDictionariesIterator(DictionariesMap & dictionaries_)
+        : dictionaries(dictionaries_), it(dictionaries.begin()) {}
+
+    void next() override { ++it; }
+
+    bool isValid() const override { return it != dictionaries.end(); }
+
+    const String & name() const override { return it->first; }
+
+    DictionaryPtr & dictionary() const override { return it->second; }
+
+    StoragePtr & table() const override { return storage_ptr; }
+};
+
+
+// TODO: rewrite this description
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
 class DatabaseDictionary : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, const String & metadata_path, const Context & context);
+    DatabaseDictionary(const String & name_, const Poco::Path & metadata_path_, const Context & context_);
 
     String getDatabaseName() const override;
 
@@ -33,6 +61,11 @@ public:
     }
 
     void loadTables(
+        Context & context,
+        ThreadPool * thread_pool,
+        bool has_force_restore_data_flag) override;
+
+    void loadDictionaries(
         Context & context,
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
@@ -55,6 +88,8 @@ public:
 
     DatabaseIteratorPtr getIterator(const Context & context) override;
 
+    DatabaseIteratorPtr getDictionaryIterator(const Context & context) override;
+
     bool empty(const Context & context) const override;
 
     void createTable(
@@ -64,14 +99,23 @@ public:
         const ASTPtr & query) override;
 
     void createDictionary(
-        const Context & context,
+        Context & context,
         const String & table_name,
         const DictionaryPtr & table,
         const ASTPtr &query) override;
 
+    void attachDictionary(
+        const String & name,
+        DictionaryPtr dictionary);
+    // TODO: do I need detachDictionary function ?
+
     void removeTable(
         const Context & context,
         const String & table_name) override;
+
+    void removeDictionary(
+        Context & context,
+        const String & dictionary_name) override;
 
     void attachTable(const String & table_name, const StoragePtr & table) override;
     StoragePtr detachTable(const String & table_name) override;
@@ -104,14 +148,19 @@ public:
 
     String getMetadataPath() const override;
 
+    String getDictionaryMetadataPath(const String & dictionary_name) const;
+
     void shutdown() override;
 
 private:
     const String name;
-    const String metadata_path;
+    Poco::Path metadata_path;
+    Poco::Path dictionaries_metadata_path;
     mutable std::mutex mutex;
     const ExternalDictionaries & external_dictionaries;
     std::unordered_set<String> deleted_tables;
+
+    DictionariesMap dictionaries;
 
     Poco::Logger * log;
 
