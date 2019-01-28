@@ -107,22 +107,16 @@ public:
         return res;
     }
 };
-class LogicRegression : public IGradientComputer
+class LogisticRegression : public IGradientComputer
 {
 public:
-    LogicRegression(UInt32 sz)
+    LogisticRegression(UInt32 sz)
     : IGradientComputer(sz)
     {}
 
     void compute(const std::vector<Float64> & weights, Float64 bias, Float64 learning_rate,
             Float64 target, const IColumn ** columns, size_t row_num) override
     {
-        //Float64 derivative = (target - bias);
-        //for (size_t i = 0; i < weights.size(); ++i)
-        //{
-        //    derivative -= weights[i] * static_cast<const ColumnVector<Float64> &>(*columns[i + 1]).getData()[row_num];
-        //}
-        //derivative *= (2 * learning_rate);
         Float64 derivative = bias;
         for (size_t i = 0; i < weights.size(); ++i)
         {
@@ -409,5 +403,5 @@ private:
 };
 
 struct NameLinearRegression { static constexpr auto name = "LinearRegression"; };
-struct NameLogicRegression { static constexpr auto name = "LogicRegression"; };
+struct NameLogisticRegression { static constexpr auto name = "LogisticRegression"; };
 }

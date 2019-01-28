@@ -11,7 +11,7 @@ namespace
 {
 
 using FuncLinearRegression = AggregateFunctionMLMethod<LinearModelData, NameLinearRegression>;
-using FuncLogicRegression = AggregateFunctionMLMethod<LinearModelData, NameLogicRegression>;
+using FuncLogisticRegression = AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression>;
 template <class Method>
 AggregateFunctionPtr createAggregateFunctionMLMethod(
         const std::string & name, const DataTypes & argument_types, const Array & parameters)
@@ -46,9 +46,9 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
     if (std::is_same<Method, FuncLinearRegression>::value)
     {
        gc = std::make_shared<LinearRegression>(argument_types.size());
-    } else if (std::is_same<Method, FuncLogicRegression>::value)
+    } else if (std::is_same<Method, FuncLogisticRegression>::value)
     {
-       gc = std::make_shared<LogicRegression>(argument_types.size());
+       gc = std::make_shared<LogisticRegression>(argument_types.size());
     } else
     {
         throw Exception("Such gradient computer is not implemented yet", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -81,7 +81,7 @@ AggregateFunctionPtr createAggregateFunctionMLMethod(
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("LinearRegression", createAggregateFunctionMLMethod<FuncLinearRegression>);
-    factory.registerFunction("LogicRegression", createAggregateFunctionMLMethod<FuncLogicRegression>);
+    factory.registerFunction("LogisticRegression", createAggregateFunctionMLMethod<FuncLogisticRegression>);
 }
 
 }
