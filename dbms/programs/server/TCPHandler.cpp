@@ -55,6 +55,7 @@ namespace ErrorCodes
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);

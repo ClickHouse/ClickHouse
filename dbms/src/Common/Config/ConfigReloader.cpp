@@ -33,7 +33,7 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    thread = std::thread(&ConfigReloader::run, this);
+    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
 }
 
 
