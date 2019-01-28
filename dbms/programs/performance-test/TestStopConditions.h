@@ -45,6 +45,10 @@ public:
         conditions_any_of.reset();
     }
 
+    /// Return max exec time for these conditions
+    /// Return zero if max time cannot be determined
+    UInt64 getMaxExecTime() const;
+
 private:
     StopConditionsSet conditions_all_of;
     StopConditionsSet conditions_any_of;

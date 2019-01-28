@@ -1,5 +1,7 @@
 #pragma once
 #include "PerformanceTestInfo.h"
+#include <vector>
+#include <string>
 
 namespace DB
 {

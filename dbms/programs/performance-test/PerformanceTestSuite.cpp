@@ -1,57 +1,43 @@
-#include <functional>
 #include <iostream>
 #include <limits>
 #include <regex>
 #include <thread>
+#include <memory>
+
 #include <port/unistd.h>
-#include <boost/filesystem.hpp>
-#include <boost/program_options.hpp>
 #include <sys/stat.h>
 
+#include <boost/filesystem.hpp>
+#include <boost/program_options.hpp>
 
-#include <common/logger_useful.h>
-#include <common/DateLUT.h>
-#include <AggregateFunctions/ReservoirSampler.h>
-#include <Client/Connection.h>
-#include <Common/ConcurrentBoundedQueue.h>
-#include <Common/Stopwatch.h>
-#include <Common/getFQDNOrHostName.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Core/Types.h>
-#include <DataStreams/RemoteBlockInputStream.h>
-#include <IO/ReadBufferFromFile.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/UseSSL.h>
-#include <Interpreters/Settings.h>
-#include <common/ThreadPool.h>
-#include <common/getMemoryAmount.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/Exception.h>
-#include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/XML/XMLStream.h>
-#include <Poco/Util/Application.h>
 #include <Poco/Logger.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
-#include <Common/InterruptListener.h>
-#include <Common/Config/configReadClient.h>
 
-#include "JSONString.h"
-#include "StopConditionsSet.h"
+
+#include <common/logger_useful.h>
+#include <Client/Connection.h>
+#include <Core/Types.h>
+#include <Interpreters/Context.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
+#include <Interpreters/Settings.h>
+#include <Poco/AutoPtr.h>
+#include <Common/Exception.h>
+#include <Common/InterruptListener.h>
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 #include "TestStopConditions.h"
 #include "TestStats.h"
 #include "ConfigPreprocessor.h"
 #include "PerformanceTest.h"
 #include "ReportBuilder.h"
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
 
 
 /** Tests launcher for ClickHouse.
@@ -59,31 +45,28 @@
   * tests' descriptions and launches it.
   */
 namespace fs = boost::filesystem;
-using String = std::string;
+namespace po = boost::program_options;
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
 
-class PerformanceTestSuite : public Poco::Util::Application
+class PerformanceTestSuite
 {
 public:
-    using Strings = std::vector<String>;
 
-    PerformanceTestSuite(const String & host_,
+    PerformanceTestSuite(const std::string & host_,
         const UInt16 port_,
         const bool secure_,
-        const String & default_database_,
-        const String & user_,
-        const String & password_,
+        const std::string & default_database_,
+        const std::string & user_,
+        const std::string & password_,
         const bool lite_output_,
-        const String & profiles_file_,
+        const std::string & profiles_file_,
         Strings && input_files_,
         Strings && tests_tags_,
         Strings && skip_tags_,
@@ -92,49 +75,48 @@ public:
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
         const ConnectionTimeouts & timeouts)
-        : connection(host_, port_, default_database_, user_, password_, timeouts, "performance-test", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
-          lite_output(lite_output_),
-          profiles_file(profiles_file_),
-          input_files(input_files_),
-          tests_tags(std::move(tests_tags_)),
-          skip_tags(std::move(skip_tags_)),
-          tests_names(std::move(tests_names_)),
-          skip_names(std::move(skip_names_)),
-          tests_names_regexp(std::move(tests_names_regexp_)),
-          skip_names_regexp(std::move(skip_names_regexp_))
+        : connection(host_, port_, default_database_, user_,
+            password_, timeouts, "performance-test", Protocol::Compression::Enable,
+            secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable)
+        , tests_tags(std::move(tests_tags_))
+        , tests_names(std::move(tests_names_))
+        , tests_names_regexp(std::move(tests_names_regexp_))
+        , skip_tags(std::move(skip_tags_))
+        , skip_names(std::move(skip_names_))
+        , skip_names_regexp(std::move(skip_names_regexp_))
+        , lite_output(lite_output_)
+        , profiles_file(profiles_file_)
+        , input_files(input_files_)
+        , log(&Poco::Logger::get("PerformanceTestSuite"))
     {
         if (input_files.size() < 1)
-        {
-            throw DB::Exception("No tests were specified", DB::ErrorCodes::BAD_ARGUMENTS);
-        }
+            throw Exception("No tests were specified", ErrorCodes::BAD_ARGUMENTS);
     }
 
-    void initialize(Poco::Util::Application & self [[maybe_unused]])
-    {
-        std::string home_path;
-        const char * home_path_cstr = getenv("HOME");
-        if (home_path_cstr)
-            home_path = home_path_cstr;
-        configReadClient(Poco::Util::Application::instance().config(), home_path);
-    }
+    /// This functionality seems strange.
+    //void initialize(Poco::Util::Application & self [[maybe_unused]])
+    //{
+    //    std::string home_path;
+    //    const char * home_path_cstr = getenv("HOME");
+    //    if (home_path_cstr)
+    //        home_path = home_path_cstr;
+    //    configReadClient(Poco::Util::Application::instance().config(), home_path);
+    //}
 
-    int main(const std::vector < std::string > & /* args */)
+    int run()
     {
         std::string name;
         UInt64 version_major;
         UInt64 version_minor;
         UInt64 version_patch;
         UInt64 version_revision;
-        std::cerr << "IN APP\n";
         connection.getServerVersion(name, version_major, version_minor, version_patch, version_revision);
 
         std::stringstream ss;
         ss << version_major << "." << version_minor << "." << version_patch;
         server_version = ss.str();
-        std::cerr << "SErver version:" << server_version << std::endl;
 
         report_builder = std::make_shared<ReportBuilder>(server_version);
-        std::cerr << "REPORT BUILDER created\n";
 
         processTestsConfigurations(input_files);
 
@@ -142,6 +124,8 @@ public:
     }
 
 private:
+    Connection connection;
+
     const Strings & tests_tags;
     const Strings & tests_names;
     const Strings & tests_names_regexp;
@@ -152,7 +136,6 @@ private:
     Context global_context = Context::createGlobal();
     std::shared_ptr<ReportBuilder> report_builder;
 
-    Connection connection;
     std::string server_version;
 
     InterruptListener interrupt_listener;
@@ -161,15 +144,16 @@ private:
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
 
     bool lite_output;
-    String profiles_file;
+    std::string profiles_file;
 
     Strings input_files;
     std::vector<XMLConfigurationPtr> tests_configurations;
+    Poco::Logger * log;
 
-    void processTestsConfigurations(const std::vector<std::string> & paths)
+    void processTestsConfigurations(const Strings & paths)
     {
+        LOG_INFO(log, "Preparing test configurations");
         ConfigPreprocessor config_prep(paths);
-        std::cerr << "CONFIG CREATED\n";
         tests_configurations = config_prep.processConfig(
             tests_tags,
             tests_names,
@@ -178,19 +162,22 @@ private:
             skip_names,
             skip_names_regexp);
 
-        std::cerr << "CONFIGURATIONS RECEIVED\n";
+        LOG_INFO(log, "Test configurations prepared");
+
         if (tests_configurations.size())
         {
             Strings outputs;
 
             for (auto & test_config : tests_configurations)
             {
-                std::cerr << "RUNNING TEST\n";
-                String output = runTest(test_config);
+                auto [output, signal] = runTest(test_config);
                 if (lite_output)
                     std::cout << output;
                 else
                     outputs.push_back(output);
+
+                if (signal)
+                    break;
             }
 
             if (!lite_output && outputs.size())
@@ -211,34 +198,34 @@ private:
         }
     }
 
-    String runTest(XMLConfigurationPtr & test_config)
+    std::pair<std::string, bool> runTest(XMLConfigurationPtr & test_config)
     {
-        //test_name = test_config->getString("name");
-        //std::cerr << "Running: " << test_name << "\n";
-
-        std::cerr << "RUNNING TEST really\n";
         PerformanceTestInfo info(test_config, profiles_file);
-        std::cerr << "INFO CREATED\n";
+        LOG_INFO(log, "Config for test '" << info.test_name << "' parsed");
         PerformanceTest current(test_config, connection, interrupt_listener, info, global_context);
-        std::cerr << "Checking preconditions\n";
-        current.checkPreconditions();
 
-        std::cerr << "Executing\n";
+        current.checkPreconditions();
+        LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
+
+        LOG_INFO(log, "Running test '" << info.test_name << "'");
         auto result = current.execute();
+        LOG_INFO(log, "Test '" << info.test_name << "' finished");
 
         if (lite_output)
-            return report_builder->buildCompactReport(info, result);
+            return {report_builder->buildCompactReport(info, result), current.checkSIGINT()};
         else
-            return report_builder->buildFullReport(info, result);
+            return {report_builder->buildFullReport(info, result), current.checkSIGINT()};
     }
 
 };
+
 }
 
-static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_files, const bool recursive = false)
+static void getFilesFromDir(const fs::path & dir, std::vector<std::string> & input_files, const bool recursive = false)
 {
+    Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
     if (dir.extension().string() == ".xml")
-        std::cerr << "Warning: '" + dir.string() + "' is a directory, but has .xml extension" << std::endl;
+        LOG_WARNING(log, dir.string() + "' is a directory, but has .xml extension");
 
     fs::directory_iterator end;
     for (fs::directory_iterator it(dir); it != end; ++it)
@@ -251,62 +238,9 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
     }
 }
 
-
-int mainEntryClickHousePerformanceTest(int argc, char ** argv)
-try
+static std::vector<std::string> getInputFiles(const po::variables_map & options, Poco::Logger * log)
 {
-    using boost::program_options::value;
-    using Strings = std::vector<String>;
-
-    Poco::Logger::root().setLevel("information");
-    Poco::Logger::root().setChannel(new Poco::FormattingChannel(new Poco::PatternFormatter("%Y.%m.%d %H:%M:%S.%F <%p> %t"), new Poco::ConsoleChannel));
-    Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
-
-    std::cerr << "HELLO\n";
-    boost::program_options::options_description desc("Allowed options");
-    desc.add_options()
-        ("help", "produce help message")
-        ("lite", "use lite version of output")
-        ("profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")
-        ("host,h", value<String>()->default_value("localhost"), "")
-        ("port", value<UInt16>()->default_value(9000), "")
-        ("secure,s", "Use TLS connection")
-        ("database", value<String>()->default_value("default"), "")
-        ("user", value<String>()->default_value("default"), "")
-        ("password", value<String>()->default_value(""), "")
-        ("tags", value<Strings>()->multitoken(), "Run only tests with tag")
-        ("skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")
-        ("names", value<Strings>()->multitoken(), "Run tests with specific name")
-        ("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")
-        ("names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")
-        ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
-        ("recursive,r", "Recurse in directories to find all xml's");
-
-    /// These options will not be displayed in --help
-    boost::program_options::options_description hidden("Hidden options");
-    hidden.add_options()
-        ("input-files", value<std::vector<String>>(), "");
-
-    /// But they will be legit, though. And they must be given without name
-    boost::program_options::positional_options_description positional;
-    positional.add("input-files", -1);
-
-    boost::program_options::options_description cmdline_options;
-    cmdline_options.add(desc).add(hidden);
-
-    boost::program_options::variables_map options;
-    boost::program_options::store(
-        boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(positional).run(), options);
-    boost::program_options::notify(options);
-
-    if (options.count("help"))
-    {
-        std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
-        std::cout << desc << "\n";
-        return 0;
-    }
-
-    Strings input_files;
+    std::vector<std::string> input_files;
     bool recursive = options.count("recursive");
 
     if (!options.count("input-files"))
@@ -317,21 +251,17 @@ try
         getFilesFromDir(curr_dir, input_files, recursive);
 
         if (input_files.empty())
-        {
-            std::cerr << std::endl;
             throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
-        }
         else
-            std::cerr << " found " << input_files.size() << " files." << std::endl;
+            LOG_INFO(log, "Found " << input_files.size() << " files");
     }
     else
     {
-        std::cerr << "WOLRD\n";
-        input_files = options["input-files"].as<Strings>();
+        input_files = options["input-files"].as<std::vector<std::string>>();
         LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
-        Strings collected_files;
+        std::vector<std::string> collected_files;
 
-        for (const String & filename : input_files)
+        for (const std::string & filename : input_files)
         {
             fs::path file(filename);
 
@@ -352,6 +282,70 @@ try
 
         input_files = std::move(collected_files);
     }
+    return input_files;
+}
+
+int mainEntryClickHousePerformanceTest(int argc, char ** argv)
+try
+{
+    using po::value;
+    using Strings = DB::Strings;
+
+
+    po::options_description desc("Allowed options");
+    desc.add_options()
+        ("help", "produce help message")
+        ("lite", "use lite version of output")
+        ("profiles-file", value<std::string>()->default_value(""), "Specify a file with global profiles")
+        ("host,h", value<std::string>()->default_value("localhost"), "")
+        ("port", value<UInt16>()->default_value(9000), "")
+        ("secure,s", "Use TLS connection")
+        ("database", value<std::string>()->default_value("default"), "")
+        ("user", value<std::string>()->default_value("default"), "")
+        ("password", value<std::string>()->default_value(""), "")
+        ("log-level", value<std::string>()->default_value("information"), "Set log level")
+        ("tags", value<Strings>()->multitoken(), "Run only tests with tag")
+        ("skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")
+        ("names", value<Strings>()->multitoken(), "Run tests with specific name")
+        ("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")
+        ("names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")
+        ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
+        ("recursive,r", "Recurse in directories to find all xml's");
+
+    /// These options will not be displayed in --help
+    po::options_description hidden("Hidden options");
+    hidden.add_options()
+        ("input-files", value<std::vector<std::string>>(), "");
+
+    /// But they will be legit, though. And they must be given without name
+    po::positional_options_description positional;
+    positional.add("input-files", -1);
+
+    po::options_description cmdline_options;
+    cmdline_options.add(desc).add(hidden);
+
+    po::variables_map options;
+    po::store(
+        po::command_line_parser(argc, argv).
+        options(cmdline_options).positional(positional).run(), options);
+    po::notify(options);
+
+    Poco::AutoPtr<Poco::PatternFormatter> formatter(new Poco::PatternFormatter("%Y.%m.%d %H:%M:%S.%F <%p> %s: %t"));
+    Poco::AutoPtr<Poco::ConsoleChannel> console_chanel(new Poco::ConsoleChannel);
+    Poco::AutoPtr<Poco::FormattingChannel> channel(new Poco::FormattingChannel(formatter, console_chanel));
+
+    Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    Poco::Logger::root().setChannel(channel);
+
+    Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
+    if (options.count("help"))
+    {
+        std::cout << "Usage: " << argv[0] << " [options] [test_file ...] [tests_folder]\n";
+        std::cout << desc << "\n";
+        return 0;
+    }
+
+    Strings input_files = getInputFiles(options, log);
 
     Strings tests_tags = options.count("tags") ? options["tags"].as<Strings>() : Strings({});
     Strings skip_tags = options.count("skip-tags") ? options["skip-tags"].as<Strings>() : Strings({});
@@ -364,16 +358,15 @@ try
 
     DB::UseSSL use_ssl;
 
-    LOG_INFO(log, "Running something");
-    DB::PerformanceTestSuite performance_test(
-        options["host"].as<String>(),
+    DB::PerformanceTestSuite performance_test_suite(
+        options["host"].as<std::string>(),
         options["port"].as<UInt16>(),
         options.count("secure"),
-        options["database"].as<String>(),
-        options["user"].as<String>(),
-        options["password"].as<String>(),
+        options["database"].as<std::string>(),
+        options["user"].as<std::string>(),
+        options["password"].as<std::string>(),
         options.count("lite") > 0,
-        options["profiles-file"].as<String>(),
+        options["profiles-file"].as<std::string>(),
         std::move(input_files),
         std::move(tests_tags),
         std::move(skip_tags),
@@ -382,8 +375,7 @@ try
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
         timeouts);
-    std::cerr << "TEST CREATED\n";
-    return performance_test.run();
+    return performance_test_suite.run();
 }
 catch (...)
 {

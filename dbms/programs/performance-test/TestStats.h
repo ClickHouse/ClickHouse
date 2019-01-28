@@ -34,8 +34,8 @@ struct TestStats
     UInt64 min_time = std::numeric_limits<UInt64>::max();
     double total_time = 0;
 
-    double max_rows_speed = 0;
-    double max_bytes_speed = 0;
+    UInt64 max_rows_speed = 0;
+    UInt64 max_bytes_speed = 0;
 
     double avg_rows_speed_value = 0;
     double avg_rows_speed_first = 0;
@@ -49,11 +49,12 @@ struct TestStats
     size_t number_of_bytes_speed_info_batches = 0;
 
     bool ready = false; // check if a query wasn't interrupted by SIGINT
-    String exception;
+    std::string exception;
 
+    /// Hack, actually this field doesn't required for statistics
     bool got_SIGINT = false;
 
-    String getStatisticByName(const String & statistic_name);
+    std::string getStatisticByName(const std::string & statistic_name);
 
     void update_min_time(UInt64 min_time_candidate);
 
@@ -68,7 +69,7 @@ struct TestStats
     void update_max_speed(
         size_t max_speed_candidate,
         Stopwatch & max_speed_watch,
-        double & max_speed);
+        UInt64 & max_speed);
 
     void add(size_t rows_read_inc, size_t bytes_read_inc);
 

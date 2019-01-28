@@ -2,6 +2,7 @@
 #include <IO/Progress.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Core/Block.h>
+
 namespace DB
 {
 namespace

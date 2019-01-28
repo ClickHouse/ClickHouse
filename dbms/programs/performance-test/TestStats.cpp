@@ -4,17 +4,17 @@ namespace DB
 
 namespace
 {
-const String FOUR_SPACES = "    ";
+const std::string FOUR_SPACES = "    ";
 }
 
-String TestStats::getStatisticByName(const String & statistic_name)
+std::string TestStats::getStatisticByName(const std::string & statistic_name)
 {
     if (statistic_name == "min_time")
         return std::to_string(min_time) + "ms";
 
     if (statistic_name == "quantiles")
     {
-        String result = "\n";
+        std::string result = "\n";
 
         for (double percent = 10; percent <= 90; percent += 10)
         {
@@ -69,7 +69,7 @@ void TestStats::update_min_time(UInt64 min_time_candidate)
 void TestStats::update_max_speed(
     size_t max_speed_candidate,
     Stopwatch & max_speed_watch,
-    double & max_speed)
+    UInt64 & max_speed)
 {
     if (max_speed_candidate > max_speed)
     {
