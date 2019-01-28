@@ -150,7 +150,7 @@ EmbeddedDictionaries::EmbeddedDictionaries(
     , reload_period(context_.getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
 {
     reloadImpl(throw_on_error);
-    reloading_thread = std::thread([this] { reloadPeriodically(); });
+    reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });
 }
 
 

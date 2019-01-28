@@ -4,6 +4,7 @@
 #include <thread>
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/ThreadPool.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
@@ -110,7 +111,7 @@ private:
 
     Poco::Event shutdown_event;
     /// Resets data by timeout.
-    std::thread flush_thread;
+    ThreadFromGlobalPool flush_thread;
 
     void flushAllBuffers(bool check_thresholds = true);
     /// Reset the buffer. If check_thresholds is set - resets only if thresholds are exceeded.

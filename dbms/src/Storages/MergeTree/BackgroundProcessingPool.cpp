@@ -67,7 +67,7 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 
     threads.resize(size);
     for (auto & thread : threads)
-        thread = std::thread([this] { threadFunction(); });
+        thread = ThreadFromGlobalPool([this] { threadFunction(); });
 }
 
 
@@ -110,7 +110,7 @@ BackgroundProcessingPool::~BackgroundProcessingPool()
     {
         shutdown = true;
         wake_event.notify_all();
-        for (std::thread & thread : threads)
+        for (auto & thread : threads)
             thread.join();
     }
     catch (...)
