@@ -203,8 +203,12 @@ target_link_libraries (clickhouse_common_io
     ${CMAKE_DL_LIBS}
 )
 
-if (NOT ARCH_ARM AND CPUID_LIBRARY)
-    target_link_libraries (clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+if(CPUID_LIBRARY)
+    target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+endif()
+
+if(CPUINFO_LIBRARY)
+    target_link_libraries(clickhouse_common_io PRIVATE ${CPUINFO_LIBRARY})
 endif()
 
 target_link_libraries (dbms
