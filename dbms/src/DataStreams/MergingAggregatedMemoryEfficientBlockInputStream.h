@@ -4,7 +4,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <condition_variable>
 
 

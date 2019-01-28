@@ -1000,8 +1000,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     initializeTerminationAndSignalProcessing();
-
-    DB::CurrentThread::get();   /// TODO Why do we need this?
     logRevision();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
