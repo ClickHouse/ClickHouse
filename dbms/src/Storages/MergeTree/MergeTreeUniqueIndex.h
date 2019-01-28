@@ -48,9 +48,9 @@ public:
 
     ~UniqueCondition() override = default;
 private:
-    void traverseAST(ASTPtr & node, const Context & context);
-    bool termFromAST(const ASTPtr & node, const Context & context);
-    bool atomFromAST(const ASTPtr & node, const Context & context);
+    void traverseAST(ASTPtr & node);
+    bool atomFromAST(const ASTPtr & node);
+    bool termFromAST(const ASTPtr & node);
     bool operatorFromAST(ASTFunction * func);
 
     const MergeTreeUniqueIndex & index;

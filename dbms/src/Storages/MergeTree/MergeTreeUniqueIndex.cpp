@@ -145,7 +145,7 @@ Block MergeTreeUniqueGranule::getElementsBlock() const
 
 UniqueCondition::UniqueCondition(
         const SelectQueryInfo & query,
-        const Context & context,
+        const Context &,
         const MergeTreeUniqueIndex &index)
         : IndexCondition(), index(index)
 {
@@ -179,7 +179,7 @@ UniqueCondition::UniqueCondition(
             new_expression,
             std::make_shared<ASTLiteral>(Field(1)));
 
-    traverseAST(new_expression, context);
+    traverseAST(new_expression);
 }
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
@@ -197,7 +197,7 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     return true;
 }
 
-void UniqueCondition::traverseAST(ASTPtr & node, const Context & context)
+void UniqueCondition::traverseAST(ASTPtr & node)
 {
     if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
     {
@@ -205,33 +205,33 @@ void UniqueCondition::traverseAST(ASTPtr & node, const Context & context)
             auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
             for (size_t i = 0, size = args.size(); i < size; ++i)
-                traverseAST(args[i], context);
+                traverseAST(args[i]);
             return;
         }
     }
 
-    if (!atomFromAST(node, context))
+    if (!atomFromAST(node))
         *node = ASTLiteral(Field(3)); /// Unknown
 }
 
-bool UniqueCondition::termFromAST(const ASTPtr & node, const Context & context)
+bool UniqueCondition::termFromAST(const ASTPtr & node)
 {
     /// Function, literal or column
 
-    if (const ASTLiteral * lit = typeid_cast<const ASTLiteral *>(node.get()))
+    if (typeid_cast<const ASTLiteral *>(node.get()))
         return true;
 
     if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
-        return key_columns.count(identifier->name) != 0;
+        return key_columns.count(identifier->getColumnName()) != 0;
 
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node)) {
-        if (key_columns.count(func->name) != 0)
+    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get())) {
+        if (key_columns.count(func->getColumnName()))
             return true;
 
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!termFromAST(args[i], context))
+            if (!termFromAST(args[i]))
                 return false;
 
         return true;
@@ -240,10 +240,10 @@ bool UniqueCondition::termFromAST(const ASTPtr & node, const Context & context)
     return false;
 }
 
-bool UniqueCondition::atomFromAST(const ASTPtr & node, const Context & context)
+bool UniqueCondition::atomFromAST(const ASTPtr & node)
 {
     /// Functions < > = != <= >= in `notIn`
-    if (termFromAST(node, context))
+    if (termFromAST(node))
         return true;
 
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
@@ -251,7 +251,7 @@ bool UniqueCondition::atomFromAST(const ASTPtr & node, const Context & context)
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!termFromAST(args[i], context))
+            if (!termFromAST(args[i]))
                 return false;
 
         return true;
@@ -269,7 +269,7 @@ bool UniqueCondition::operatorFromAST(ASTFunction * func)
     {
         if (args.size() != 1)
             return false;
-        func->name = "bitNot";
+        func->name = "bitNot"; /// 3 - val
     }
     else if (func->name == "and" || func->name == "indexHint")
         func->name = "bitAnd";
