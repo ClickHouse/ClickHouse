@@ -51,7 +51,7 @@ private:
     void traverseAST(ASTPtr & node);
     bool atomFromAST(const ASTPtr & node);
     bool termFromAST(const ASTPtr & node);
-    bool operatorFromAST(ASTFunction * func);
+    bool operatorFromAST(ASTPtr & node);
 
     const MergeTreeUniqueIndex & index;
 

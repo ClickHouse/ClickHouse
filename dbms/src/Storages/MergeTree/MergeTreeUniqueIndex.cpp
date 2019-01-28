@@ -199,15 +199,13 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
 
 void UniqueCondition::traverseAST(ASTPtr & node)
 {
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(&*node))
-    {
-        if (operatorFromAST(func)) {
-            auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
+    if (operatorFromAST(node)) {
+        ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
+        auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
-            for (size_t i = 0, size = args.size(); i < size; ++i)
-                traverseAST(args[i]);
-            return;
-        }
+        for (size_t i = 0, size = args.size(); i < size; ++i)
+            traverseAST(args[i]);
+        return;
     }
 
     if (!atomFromAST(node))
@@ -260,16 +258,39 @@ bool UniqueCondition::atomFromAST(const ASTPtr & node)
     return false;
 }
 
-bool UniqueCondition::operatorFromAST(ASTFunction * func)
+bool UniqueCondition::operatorFromAST(ASTPtr & node)
 {
     /// Functions AND, OR, NOT. Replace with bit*.
+    ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
+    if (!func)
+        return false;
+
     const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
     if (func->name == "not")
     {
         if (args.size() != 1)
             return false;
-        func->name = "bitNot"; /// 3 - val
+
+        auto one = std::make_shared<ASTLiteral>(Field(1));
+        auto two = std::make_shared<ASTLiteral>(Field(2));
+
+        node = makeASTFunction(
+                "bitOr",
+                makeASTFunction(
+                        "bitShiftLeft",
+                        makeASTFunction(
+                                "bitAnd",
+                                node->clone(),
+                                one->clone()),
+                        one->clone()),
+                makeASTFunction(
+                        "bitShiftRight",
+                        makeASTFunction(
+                                "bitAnd",
+                                node->clone(),
+                                two->clone()),
+                        one->clone()));
     }
     else if (func->name == "and" || func->name == "indexHint")
         func->name = "bitAnd";
