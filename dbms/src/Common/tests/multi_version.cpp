@@ -1,8 +1,8 @@
 #include <string.h>
 #include <iostream>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <functional>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
 #include <Poco/Exception.h>
 
 
@@ -23,7 +23,7 @@ void thread2(MV & x, const char * result)
 }
 
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
     try
     {
