@@ -413,6 +413,7 @@ namespace ErrorCodes
     extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE = 436;
     extern const int PROTOBUF_FIELD_NOT_REPEATED = 437;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED = 438;
+    extern const int CANNOT_SCHEDULE_TASK = 439;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
