@@ -48,14 +48,15 @@ public:
 
     ~UniqueCondition() override = default;
 private:
-    void traverseAST(ASTPtr & node);
-    bool atomFromAST(const ASTPtr & node);
-    bool termFromAST(const ASTPtr & node);
-    bool operatorFromAST(ASTPtr & node);
+    void traverseAST(ASTPtr & node, bool replace_all = false) const;
+    bool atomFromAST(const ASTPtr & node, bool replace_all = false) const;
+    bool termFromAST(const ASTPtr & node, bool replace_all = false) const;
+    bool operatorFromAST(ASTPtr & node) const;
 
     const MergeTreeUniqueIndex & index;
 
     std::map<String, size_t> key_columns;
+    ASTPtr expression_ast;
     ExpressionActionsPtr actions;
 };
 

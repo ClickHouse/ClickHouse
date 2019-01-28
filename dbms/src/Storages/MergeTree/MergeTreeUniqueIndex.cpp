@@ -145,7 +145,7 @@ Block MergeTreeUniqueGranule::getElementsBlock() const
 
 UniqueCondition::UniqueCondition(
         const SelectQueryInfo & query,
-        const Context &,
+        const Context & context,
         const MergeTreeUniqueIndex &index)
         : IndexCondition(), index(index)
 {
@@ -174,12 +174,30 @@ UniqueCondition::UniqueCondition(
         /// 11_2 -- can be true and false at the same time
         new_expression = std::make_shared<ASTLiteral>(Field(3));
 
-    new_expression = makeASTFunction(
+    expression_ast = makeASTFunction(
             "bitAnd",
             new_expression,
             std::make_shared<ASTLiteral>(Field(1)));
 
-    traverseAST(new_expression);
+    traverseAST(expression_ast);
+
+
+    /// expression for alwaysUnknownOrTrue() checking
+    /*auto check_expression = expression_ast->clone();
+    traverseAST(check_expression,  replace_all =  true);
+
+    Block result
+    {
+        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
+    };
+
+    const auto check_expr = ExpressionAnalyzer(check_expression, query.syntax_analyzer_result, context).getActions(true);
+    check_expr->execute(result);
+    alwaysNotFalse = result.getByName(check_expression->getColumnName()).column->getBool(0);
+    if (!alwaysNotFalse)
+        return*/
+
+    actions = ExpressionAnalyzer(expression_ast, query.syntax_analyzer_result, context).getActions(true);
 }
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
@@ -194,30 +212,46 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
         throw Exception(
                 "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
 
-    return true;
+    if (granule->size() > index.max_rows)
+        return true;
+
+    Block result = granule->getElementsBlock();
+    actions->execute(result);
+
+
+    const auto & column = result.getByName(expression_ast->getColumnName()).column;
+
+    for (size_t i = 0; i < column->size(); ++i)
+        if (column->getBool(i))
+            return true;
+
+    return false;
 }
 
-void UniqueCondition::traverseAST(ASTPtr & node)
+void UniqueCondition::traverseAST(ASTPtr & node, bool replace_all) const
 {
     if (operatorFromAST(node)) {
         ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
         auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            traverseAST(args[i]);
+            traverseAST(args[i], replace_all);
         return;
     }
 
-    if (!atomFromAST(node))
+    if (!atomFromAST(node, replace_all))
         *node = ASTLiteral(Field(3)); /// Unknown
 }
 
-bool UniqueCondition::termFromAST(const ASTPtr & node)
+bool UniqueCondition::termFromAST(const ASTPtr & node, bool replace_all) const
 {
     /// Function, literal or column
 
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return true;
+
+    if (replace_all)
+        return false;
 
     if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
         return key_columns.count(identifier->getColumnName()) != 0;
@@ -238,18 +272,21 @@ bool UniqueCondition::termFromAST(const ASTPtr & node)
     return false;
 }
 
-bool UniqueCondition::atomFromAST(const ASTPtr & node)
+bool UniqueCondition::atomFromAST(const ASTPtr & node, bool replace_all) const
 {
     /// Functions < > = != <= >= in `notIn`
-    if (termFromAST(node))
+    if (termFromAST(node, replace_all))
         return true;
+
+    if (replace_all)
+        return false;
 
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
     {
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!termFromAST(args[i]))
+            if (!termFromAST(args[i], replace_all))
                 return false;
 
         return true;
@@ -258,7 +295,7 @@ bool UniqueCondition::atomFromAST(const ASTPtr & node)
     return false;
 }
 
-bool UniqueCondition::operatorFromAST(ASTPtr & node)
+bool UniqueCondition::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
     ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
