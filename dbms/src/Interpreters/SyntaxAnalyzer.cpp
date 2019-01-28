@@ -18,6 +18,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -100,12 +101,13 @@ void normalizeTree(
     const Names & source_columns,
     const NameSet & source_columns_set,
     const Context & context,
-    const ASTSelectQuery * select_query,
-    bool asterisk_left_columns_only)
+    const ASTSelectQuery * select_query)
 {
+    const auto & settings = context.getSettingsRef();
+
     Names all_columns_name = source_columns;
 
-    if (!asterisk_left_columns_only)
+    if (!settings.asterisk_left_columns_only)
     {
         auto columns_from_joined_table = result.analyzed_join.getColumnsFromJoinedTable(source_columns_set, context, select_query);
         for (auto & column : columns_from_joined_table)
@@ -115,37 +117,7 @@ void normalizeTree(
     if (all_columns_name.empty())
         throw Exception("An asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    std::vector<QueryNormalizer::TableWithColumnNames> table_with_columns;
-    if (select_query && select_query->tables && !select_query->tables->children.empty())
-    {
-        std::vector<const ASTTableExpression *> tables_expression = getSelectTablesExpression(*select_query);
-
-        bool first = true;
-        String current_database = context.getCurrentDatabase();
-        for (const auto * table_expression : tables_expression)
-        {
-            DatabaseAndTableWithAlias table_name(*table_expression, current_database);
-            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(*table_expression, context);
-
-            removeDuplicateColumns(names_and_types);
-
-            if (!first)
-            {
-                /// For joined tables qualify duplicating names.
-                for (auto & name_and_type : names_and_types)
-                    if (source_columns_set.count(name_and_type.name))
-                        name_and_type.name = table_name.getQualifiedNamePrefix() + name_and_type.name;
-            }
-
-            first = false;
-
-            table_with_columns.emplace_back(std::move(table_name), names_and_types.getNames());
-        }
-    }
-    else
-        table_with_columns.emplace_back(DatabaseAndTableWithAlias{}, std::move(all_columns_name));
-
-    QueryNormalizer::Data normalizer_data(result.aliases, context.getSettingsRef(), std::move(table_with_columns));
+    QueryNormalizer::Data normalizer_data(result.aliases, settings, context, source_columns_set, std::move(all_columns_name));
     QueryNormalizer(normalizer_data).visit(query);
 }
 
@@ -506,20 +478,18 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<TableBelonging(const ASTPtr &)> get_table_belonging;
     get_table_belonging = [&](const ASTPtr & ast) -> TableBelonging
     {
-        if (getColumnIdentifierName(ast))
+        if (IdentifierSemantic::getColumnName(ast))
         {
             auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
 
-            {
-                auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
-                auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
+            size_t left_match_degree = IdentifierSemantic::canReferColumnToTable(*identifier, left_source_names);
+            size_t right_match_degree = IdentifierSemantic::canReferColumnToTable(*identifier, right_source_names);
 
-                /// Assume that component from definite table if num_components is greater than for the other table.
-                if (left_num_components > right_num_components)
-                    return {identifier, nullptr};
-                if (left_num_components < right_num_components)
-                    return {nullptr, identifier};
-            }
+            if (left_match_degree > right_match_degree)
+                return {identifier, nullptr};
+            if (left_match_degree < right_match_degree)
+                return {nullptr, identifier};
+
             return {};
         }
 
@@ -545,19 +515,15 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<void(ASTPtr &, const DatabaseAndTableWithAlias &, bool)> translate_qualified_names;
     translate_qualified_names = [&](ASTPtr & ast, const DatabaseAndTableWithAlias & source_names, bool right_table)
     {
-        if (getColumnIdentifierName(ast))
+        if (IdentifierSemantic::getColumnName(ast))
         {
-            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+            auto * identifier = typeid_cast<ASTIdentifier *>(ast.get());
 
-            {
-                auto num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, source_names);
-                stripIdentifier(ast, num_components);
+            size_t match = IdentifierSemantic::canReferColumnToTable(*identifier, source_names);
+            IdentifierSemantic::setColumnShortName(*identifier, match);
 
-                if (right_table && source_columns.count(ast->getColumnName()))
-                    source_names.makeQualifiedName(ast);
-
-            }
-            return;
+            if (right_table && source_columns.count(ast->getColumnName()))
+                IdentifierSemantic::setColumnQualifiedName(*identifier, source_names);
         }
 
         for (auto & child : ast->children)
@@ -754,7 +720,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree(query, result, (storage ? storage->getColumns().ordinary.getNames() : source_columns_list), source_columns_set,
-                  context, select_query, settings.asterisk_left_columns_only != 0);
+                  context, select_query);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.

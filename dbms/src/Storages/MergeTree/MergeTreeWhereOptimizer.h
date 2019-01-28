@@ -77,7 +77,6 @@ private:
     const string_set_t primary_key_columns;
     const string_set_t table_columns;
     const Block block_with_constants;
-    const PreparedSets & prepared_sets;
     Poco::Logger * log;
     std::unordered_map<std::string, size_t> column_sizes{};
     size_t total_column_size{};
