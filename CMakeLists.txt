@@ -246,7 +246,10 @@ include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
-include (cmake/find_cpuid.cmake)
+include (cmake/find_cpuid.cmake) # Freebsd, bundled
+if (NOT USE_CPUID)
+    include (cmake/find_cpuinfo.cmake) # Debian
+endif()
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
 include (cmake/find_protobuf.cmake)
