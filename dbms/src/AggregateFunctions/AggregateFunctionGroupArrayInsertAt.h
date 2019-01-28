@@ -203,7 +203,7 @@ public:
         for (size_t i = arr.size(); i < result_array_size; ++i)
             to_data.insert(default_value);
 
-        to_offsets.push_back((to_offsets.empty() ? 0 : to_offsets.back()) + result_array_size);
+        to_offsets.push_back(to_offsets.back() + result_array_size);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }

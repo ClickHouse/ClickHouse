@@ -742,7 +742,7 @@ private:
         if (0 == size)
             throw Exception{"Empty arrays are illegal in function " + getName(), ErrorCodes::BAD_ARGUMENTS};
 
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard lock(mutex);
 
         if (initialized)
             return;

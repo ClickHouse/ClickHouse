@@ -56,6 +56,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
@@ -74,8 +75,8 @@
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
 /// Similar codes \e[s, \e[u don't work in VT100 and Mosh.
-#define SAVE_CURSOR_POSITION "\e7"
-#define RESTORE_CURSOR_POSITION "\e8"
+#define SAVE_CURSOR_POSITION "\033""7"
+#define RESTORE_CURSOR_POSITION "\033""8"
 
 #define CLEAR_TO_END_OF_LINE "\033[K"
 
@@ -219,6 +220,9 @@ private:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
+        /// Set path for format schema files
+        if (config().has("format_schema_path"))
+            context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
     }
 
 
@@ -554,10 +558,10 @@ private:
 
     void loop()
     {
-        String query;
-        String prev_query;
+        String input;
+        String prev_input;
 
-        while (char * line_ = readline(query.empty() ? prompt().c_str() : ":-] "))
+        while (char * line_ = readline(input.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
@@ -577,17 +581,17 @@ private:
             if (ends_with_backslash)
                 line = line.substr(0, ws - 1);
 
-            query += line;
+            input += line;
 
             if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
             {
-                if (query != prev_query)
+                if (input != prev_input)
                 {
                     /// Replace line breaks with spaces to prevent the following problem.
                     /// Every line of multi-line query is saved to history file as a separate line.
                     /// If the user restarts the client then after pressing the "up" button
                     /// every line of the query will be displayed separately.
-                    std::string logged_query = query;
+                    std::string logged_query = input;
                     std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
                     add_history(logged_query.c_str());
 
@@ -596,18 +600,18 @@ private:
                         throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
 
-                    prev_query = query;
+                    prev_input = input;
                 }
 
                 if (has_vertical_output_suffix)
-                    query = query.substr(0, query.length() - 2);
+                    input = input.substr(0, input.length() - 2);
 
                 try
                 {
                     /// Determine the terminal size.
                     ioctl(0, TIOCGWINSZ, &terminal_size);
 
-                    if (!process(query))
+                    if (!process(input))
                         break;
                 }
                 catch (const Exception & e)
@@ -633,11 +637,11 @@ private:
                     connect();
                 }
 
-                query = "";
+                input = "";
             }
             else
             {
-                query += '\n';
+                input += '\n';
             }
         }
     }
@@ -666,10 +670,14 @@ private:
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
+            {   /// disable logs if expects errors
+                TestHint test_hint(test_mode, text);
+                if (test_hint.clientError() || test_hint.serverError())
+                    process("SET send_logs_level = 'none'");
+            }
+
             /// Several queries separated by ';'.
             /// INSERT data is ended by the end of line, not ';'.
-
-            String query;
 
             const char * begin = text.data();
             const char * end = begin + text.size();
@@ -702,19 +710,19 @@ private:
                     insert->end = pos;
                 }
 
-                query = text.substr(begin - text.data(), pos - begin);
+                String str = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
                 while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
-                TestHint test_hint(test_mode, query);
+                TestHint test_hint(test_mode, str);
                 expected_client_error = test_hint.clientError();
                 expected_server_error = test_hint.serverError();
 
                 try
                 {
-                    if (!processSingleQuery(query, ast) && !ignore_error)
+                    if (!processSingleQuery(str, ast) && !ignore_error)
                         return false;
                 }
                 catch (...)
@@ -722,7 +730,7 @@ private:
                     last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     actual_client_error = last_exception->code();
                     if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
+                        std::cerr << "Error on processing query: " << str << std::endl << last_exception->message();
                     got_exception = true;
                 }
 
@@ -856,7 +864,7 @@ private:
     }
 
 
-    /// Process the query that doesn't require transfering data blocks to the server.
+    /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
         connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -865,7 +873,7 @@ private:
     }
 
 
-    /// Process the query that requires transfering data blocks to the server.
+    /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
@@ -897,8 +905,6 @@ private:
     {
         ParserQuery parser(end, true);
         ASTPtr res;
-
-        const auto ignore_error = config().getBool("ignore-error", false);
 
         if (is_interactive || ignore_error)
         {
@@ -1134,7 +1140,7 @@ private:
     }
 
 
-    /// Process Log packets, exit when recieve Exception or EndOfStream
+    /// Process Log packets, exit when receive Exception or EndOfStream
     bool receiveEndOfQuery()
     {
         while (true)
@@ -1203,6 +1209,10 @@ private:
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
                     current_format = id.name;
+                }
+                if (query_with_output->settings_ast)
+                {
+                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
                 }
             }
 
@@ -1610,10 +1620,10 @@ public:
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed = po::command_line_parser(
+            po::parsed_options parsed_tables = po::command_line_parser(
                 external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
             po::variables_map external_options;
-            po::store(parsed, external_options);
+            po::store(parsed_tables, external_options);
 
             try
             {

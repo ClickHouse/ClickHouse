@@ -15,12 +15,15 @@ if (NOT USE_INTERNAL_HDFS3_LIBRARY)
 endif ()
 
 if (HDFS3_LIBRARY AND HDFS3_INCLUDE_DIR)
-else ()
+    set(USE_HDFS 1)
+elseif (LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
     set(HDFS3_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
     set(HDFS3_LIBRARY hdfs3)
+    set(USE_HDFS 1)
+else()
+    set(USE_INTERNAL_HDFS3_LIBRARY 0)
 endif()
-set (USE_HDFS 1)
 
 endif()
 
-message (STATUS "Using hdfs3: ${HDFS3_INCLUDE_DIR} : ${HDFS3_LIBRARY}")
+message (STATUS "Using hdfs3=${USE_HDFS}: ${HDFS3_INCLUDE_DIR} : ${HDFS3_LIBRARY}")

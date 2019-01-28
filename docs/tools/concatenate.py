@@ -18,9 +18,9 @@ import os
 
 
 def concatenate(lang, docs_path, single_page_file):
-
     proj_config = os.path.join(docs_path, 'toc_%s.yml' % lang)
     lang_path = os.path.join(docs_path, lang)
+    az_re = re.compile(r'[a-z]')
 
     with open(proj_config) as cfg_file:
         files_to_concatenate = []
@@ -38,17 +38,28 @@ def concatenate(lang, docs_path, single_page_file):
 
     for path in files_to_concatenate:
         with open(os.path.join(lang_path, path)) as f:
-            tmp_path = path.replace('.md', '/')
+            anchors = set()
+            tmp_path = path.replace('/index.md', '/').replace('.md', '/')
             prefixes = ['', '../', '../../', '../../../']
             parts = tmp_path.split('/')
-            single_page_file.write('<a name="%s/"></a>\n' % parts[-2])
+            anchors.add(parts[-2] + '/')
+            anchors.add('/'.join(parts[1:]))
+
+            for part in parts[0:-2] if len(parts) > 2 else parts:
+                for prefix in prefixes:
+                    anchor = prefix + tmp_path
+                    if anchor:
+                        anchors.add(anchor)
+                        anchors.add('../' + anchor)
+                        anchors.add('../../' + anchor)
+                tmp_path = tmp_path.replace(part, '..')
+
+            for anchor in anchors:
+                if re.search(az_re, anchor):
+                    single_page_file.write('<a name="%s"></a>\n' % anchor)
+
             single_page_file.write('\n\n')
 
-            for part in parts[0:-2]:
-                for prefix in prefixes:
-                    single_page_file.write('<a name="%s"></a>\n' % (prefix + tmp_path))
-                tmp_path = tmp_path.replace(part, '..')
-                
             for l in f:
                 if l.startswith('#'):
                     l = '#' + l

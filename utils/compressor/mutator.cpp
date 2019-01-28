@@ -8,7 +8,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Common/PODArray.h>
@@ -106,7 +106,7 @@ static void mutate(pcg64 & generator, void * src, size_t length)
             && isAlphaASCII(pos[2]))
         {
             auto res = rand(generator, 0, 3);
-            if (res == 2) 
+            if (res == 2)
             {
                 std::swap(pos[0], pos[1]);
             }
@@ -118,7 +118,7 @@ static void mutate(pcg64 & generator, void * src, size_t length)
         else if (pos + 5 <= end
             && pos[0] >= 0xC0 && pos[0] <= 0xDF && pos[1] >= 0x80 && pos[1] <= 0xBF
             && pos[2] >= 0x20 && pos[2] < 0x80 && !isAlphaASCII(pos[2])
-            && pos[3] >= 0xC0 && pos[0] <= 0xDF && pos[4] >= 0x80 && pos[4] <= 0xBF)
+            && pos[3] >= 0xC0 && pos[3] <= 0xDF && pos[4] >= 0x80 && pos[4] <= 0xBF)
         {
             auto res = rand(generator, 0, 3);
             if (res == 2)

@@ -88,7 +88,7 @@ Block BlockInputStreamFromRowInputStream::readImpl()
                     throw;
 
                 ++num_errors;
-                Float64 current_error_ratio = static_cast<Float64>(num_errors) / total_rows;
+                Float32 current_error_ratio = static_cast<Float32>(num_errors) / total_rows;
 
                 if (num_errors > allow_errors_num
                     && current_error_ratio > allow_errors_ratio)

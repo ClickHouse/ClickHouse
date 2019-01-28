@@ -12,7 +12,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 
 
@@ -60,7 +60,7 @@ inline void intrusive_ptr_release(detail::SharedBlock * ptr)
 
 /** Merges several sorted streams into one sorted stream.
   */
-class MergingSortedBlockInputStream : public IProfilingBlockInputStream
+class MergingSortedBlockInputStream : public IBlockInputStream
 {
 public:
     /** limit - if isn't 0, then we can produce only first limit rows in sorted order.

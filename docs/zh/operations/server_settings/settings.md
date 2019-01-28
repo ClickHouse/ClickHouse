@@ -42,7 +42,7 @@ Block field `<case>`:
 - ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
 - ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
 
-ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
+ClickHouse checks `min_part_size` and `min_part_size_ratio` and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
 
 **Example**
 
@@ -74,7 +74,7 @@ To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.m
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the parameter [user_config](#user-config).
+Settings profiles are located in the file specified in the parameter `user_config`.
 
 **Example**
 
@@ -120,7 +120,7 @@ The default is `true`.
 
 ## format_schema_path
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#format_capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
 **Example**
 
@@ -221,9 +221,7 @@ Opens `https://tabix.io/` when accessing ` http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-<a name="server_settings-include_from"></a>
-
-## include_from
+## include_from {#server_settings-include_from}
 
 The path to the file with substitutions.
 
@@ -458,7 +456,7 @@ Keys for server/client settings:
 - requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name>  </invalidCertificateHandler>`` .
+- invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>`` .
 - disableProtocols – Protocols that are not allowed to use.
 - preferServerCiphers – Preferred server ciphers on the client.
 
@@ -640,9 +638,9 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user_files_path
+## user_files_path {#server_settings-user_files_path}
 
-The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md).
+The directory with user files. Used in the table function [file()](../../query_language/table_functions/file.md).
 
 **Example**
 
@@ -680,7 +678,20 @@ For more information, see the section "[Replication](../../operations/table_engi
 **Example**
 
 ```xml
-<zookeeper incl="zookeeper-servers" optional="true" />
+<zookeeper>
+    <node index="1">
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node index="2">
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node index="3">
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
 ```
 
 

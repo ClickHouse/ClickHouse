@@ -9,6 +9,7 @@
 #include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -248,6 +249,12 @@ void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer 
 }
 
 
+void DataTypeAggregateFunction::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeAggregateFunction(function, static_cast<const ColumnAggregateFunction &>(column).getData()[row_num]);
+}
+
+
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
     return ColumnAggregateFunction::create(function);
@@ -317,9 +324,9 @@ static DataTypePtr create(const ASTPtr & arguments)
             params_row[i] = lit->value;
         }
     }
-    else if (const ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(arguments->children[0].get()))
+    else if (auto opt_name = getIdentifierName(arguments->children[0]))
     {
-        function_name = identifier->name;
+        function_name = *opt_name;
     }
     else if (typeid_cast<ASTLiteral *>(arguments->children[0].get()))
     {

@@ -29,8 +29,6 @@ public:
         bool require_nonempty,
         BlockPtr saved_block = nullptr);
 
-    ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other);
-
     std::string getKeyDescription() const { return key_description; }
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
@@ -51,7 +49,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<ComplexKeyHashedDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<ComplexKeyHashedDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, saved_block);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

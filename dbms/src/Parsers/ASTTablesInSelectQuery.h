@@ -15,7 +15,7 @@ namespace DB
   * or
   *  (subquery)
   *
-  * Optionally with alias (correllation name):
+  * Optionally with alias (correlation name):
   *  [AS] alias
   *
   * Table may contain FINAL and SAMPLE modifiers:
