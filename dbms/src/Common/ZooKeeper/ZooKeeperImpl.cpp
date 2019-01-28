@@ -853,8 +853,8 @@ ZooKeeper::ZooKeeper(
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
 
-    send_thread = std::thread([this] { sendThread(); });
-    receive_thread = std::thread([this] { receiveThread(); });
+    send_thread = ThreadFromGlobalPool([this] { sendThread(); });
+    receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
