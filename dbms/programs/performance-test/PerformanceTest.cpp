@@ -25,11 +25,14 @@ PerformanceTest::PerformanceTest(
     const XMLConfigurationPtr & config_,
     Connection & connection_,
     InterruptListener & interrupt_listener_,
-    const PerformanceTestInfo & test_info_)
+    const PerformanceTestInfo & test_info_,
+    Context & context_)
     : config(config_)
     , connection(connection_)
     , interrupt_listener(interrupt_listener_)
     , test_info(test_info_)
+    , context(context_)
+    , log(&Poco::Logger::get("PerformanceTest"))
 {
 }
 
@@ -38,6 +41,7 @@ bool PerformanceTest::checkPreconditions() const
     if (!config->has("preconditions"))
         return true;
 
+    LOG_INFO(log, "Checking preconditions");
     std::vector<std::string> preconditions;
     config->keys("preconditions", preconditions);
     size_t table_precondition_index = 0;
@@ -63,7 +67,7 @@ bool PerformanceTest::checkPreconditions() const
 
             if (ram_size_needed > actual_ram)
             {
-                std::cerr << "Not enough RAM: need = " << ram_size_needed << ", present = " << actual_ram << std::endl;
+                LOG_ERROR(log, "Not enough RAM: need = " << ram_size_needed << ", present = " << actual_ram);
                 return false;
             }
         }
@@ -150,7 +154,7 @@ void PerformanceTest::runQueries(
         statistics.clear();
         try
         {
-            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener);
+            executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
 
             if (test_info.exec_type == ExecutionType::Loop)
             {
@@ -160,7 +164,7 @@ void PerformanceTest::runQueries(
                     if (stop_conditions.areFulfilled())
                         break;
 
-                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener);
+                    executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
                 }
             }
         }

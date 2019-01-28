@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 
 
+#include <common/logger_useful.h>
 #include <common/DateLUT.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <Client/Connection.h>
@@ -33,6 +34,10 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
 #include <Poco/Util/Application.h>
+#include <Poco/Logger.h>
+#include <Poco/ConsoleChannel.h>
+#include <Poco/FormattingChannel.h>
+#include <Poco/PatternFormatter.h>
 #include <Common/InterruptListener.h>
 #include <Common/Config/configReadClient.h>
 
@@ -65,9 +70,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FILE_DOESNT_EXIST;
 }
-
-
-using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
 class PerformanceTestSuite : public Poco::Util::Application
 {
@@ -123,13 +125,16 @@ public:
         UInt64 version_minor;
         UInt64 version_patch;
         UInt64 version_revision;
+        std::cerr << "IN APP\n";
         connection.getServerVersion(name, version_major, version_minor, version_patch, version_revision);
 
         std::stringstream ss;
         ss << version_major << "." << version_minor << "." << version_patch;
         server_version = ss.str();
+        std::cerr << "SErver version:" << server_version << std::endl;
 
         report_builder = std::make_shared<ReportBuilder>(server_version);
+        std::cerr << "REPORT BUILDER created\n";
 
         processTestsConfigurations(input_files);
 
@@ -137,8 +142,6 @@ public:
     }
 
 private:
-    std::string test_name;
-
     const Strings & tests_tags;
     const Strings & tests_names;
     const Strings & tests_names_regexp;
@@ -146,51 +149,27 @@ private:
     const Strings & skip_names;
     const Strings & skip_names_regexp;
 
+    Context global_context = Context::createGlobal();
     std::shared_ptr<ReportBuilder> report_builder;
-    using Query = String;
-    using Queries = std::vector<Query>;
-    using QueriesWithIndexes = std::vector<std::pair<Query, size_t>>;
-    Queries queries;
 
     Connection connection;
     std::string server_version;
-
-    using Keys = std::vector<String>;
 
     InterruptListener interrupt_listener;
 
     using XMLConfiguration = Poco::Util::XMLConfiguration;
     using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
 
-    using Paths = std::vector<String>;
-    using StringToVector = std::map<String, std::vector<String>>;
-    using StringToMap = std::map<String, StringToVector>;
-    StringToMap substitutions;
-
-
-    std::vector<TestStopConditions> stop_conditions_by_run;
-    String main_metric;
     bool lite_output;
     String profiles_file;
 
     Strings input_files;
     std::vector<XMLConfigurationPtr> tests_configurations;
 
-
-    enum class ExecutionType
-    {
-        Loop,
-        Once
-    };
-    ExecutionType exec_type;
-
-
-    size_t times_to_run = 1;
-    std::vector<TestStats> statistics_by_run;
-
-    void processTestsConfigurations(const Paths & paths)
+    void processTestsConfigurations(const std::vector<std::string> & paths)
     {
         ConfigPreprocessor config_prep(paths);
+        std::cerr << "CONFIG CREATED\n";
         tests_configurations = config_prep.processConfig(
             tests_tags,
             tests_names,
@@ -199,12 +178,14 @@ private:
             skip_names,
             skip_names_regexp);
 
+        std::cerr << "CONFIGURATIONS RECEIVED\n";
         if (tests_configurations.size())
         {
             Strings outputs;
 
             for (auto & test_config : tests_configurations)
             {
+                std::cerr << "RUNNING TEST\n";
                 String output = runTest(test_config);
                 if (lite_output)
                     std::cout << output;
@@ -235,12 +216,15 @@ private:
         //test_name = test_config->getString("name");
         //std::cerr << "Running: " << test_name << "\n";
 
+        std::cerr << "RUNNING TEST really\n";
         PerformanceTestInfo info(test_config, profiles_file);
-        PerformanceTest current(test_config, connection, interrupt_listener, info);
+        std::cerr << "INFO CREATED\n";
+        PerformanceTest current(test_config, connection, interrupt_listener, info, global_context);
+        std::cerr << "Checking preconditions\n";
         current.checkPreconditions();
 
+        std::cerr << "Executing\n";
         auto result = current.execute();
-
 
         if (lite_output)
             return report_builder->buildCompactReport(info, result);
@@ -274,6 +258,11 @@ try
     using boost::program_options::value;
     using Strings = std::vector<String>;
 
+    Poco::Logger::root().setLevel("information");
+    Poco::Logger::root().setChannel(new Poco::FormattingChannel(new Poco::PatternFormatter("%Y.%m.%d %H:%M:%S.%F <%p> %t"), new Poco::ConsoleChannel));
+    Poco::Logger * log = &Poco::Logger::get("PerformanceTestSuite");
+
+    std::cerr << "HELLO\n";
     boost::program_options::options_description desc("Allowed options");
     desc.add_options()
         ("help", "produce help message")
@@ -322,7 +311,7 @@ try
 
     if (!options.count("input-files"))
     {
-        std::cerr << "Trying to find test scenario files in the current folder...";
+        LOG_INFO(log, "Trying to find test scenario files in the current folder...");
         fs::path curr_dir(".");
 
         getFilesFromDir(curr_dir, input_files, recursive);
@@ -337,7 +326,9 @@ try
     }
     else
     {
+        std::cerr << "WOLRD\n";
         input_files = options["input-files"].as<Strings>();
+        LOG_INFO(log, "Found " + std::to_string(input_files.size()) + " input files");
         Strings collected_files;
 
         for (const String & filename : input_files)
@@ -373,6 +364,7 @@ try
 
     DB::UseSSL use_ssl;
 
+    LOG_INFO(log, "Running something");
     DB::PerformanceTestSuite performance_test(
         options["host"].as<String>(),
         options["port"].as<UInt16>(),
@@ -390,6 +382,7 @@ try
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
         timeouts);
+    std::cerr << "TEST CREATED\n";
     return performance_test.run();
 }
 catch (...)

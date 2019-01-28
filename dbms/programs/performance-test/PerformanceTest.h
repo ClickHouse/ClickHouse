@@ -4,7 +4,7 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Common/InterruptListener.h>
 #include "PerformanceTestInfo.h"
-
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -22,7 +22,8 @@ public:
         const XMLConfigurationPtr & config_,
         Connection & connection_,
         InterruptListener & interrupt_listener_,
-        const PerformanceTestInfo & test_info_);
+        const PerformanceTestInfo & test_info_,
+        Context & context_);
 
     bool checkPreconditions() const;
     std::vector<TestStats> execute();
@@ -44,6 +45,9 @@ private:
     InterruptListener & interrupt_listener;
 
     PerformanceTestInfo test_info;
+    Context & context;
+
+    Poco::Logger * log;
 
 };
 }
