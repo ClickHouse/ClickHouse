@@ -1,6 +1,7 @@
 #include <Poco/String.h>
 #include <Core/Names.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/AnalyzedJoin.h>
 #include <Parsers/ASTAsterisk.h>
@@ -107,7 +108,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     auto & current_asts = data.current_asts;
     String & current_alias = data.current_alias;
 
-    if (!getColumnIdentifierName(node))
+    if (!IdentifierSemantic::getColumnName(node))
         return;
 
     /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
@@ -124,7 +125,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
         if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
         {
             /// Avoid infinite recursion here
-            auto opt_name = getColumnIdentifierName(alias_node);
+            auto opt_name = IdentifierSemantic::getColumnName(alias_node);
             bool is_cycle = opt_name && *opt_name == node.name;
 
             if (!is_cycle)
@@ -273,8 +274,7 @@ void QueryNormalizer::visitChildren(const ASTPtr & node, Data & data)
             visit(child, data);
         }
     }
-    else if (!typeid_cast<ASTIdentifier *>(node.get()) &&
-             !typeid_cast<ASTSelectQuery *>(node.get()))
+    else if (!typeid_cast<ASTSelectQuery *>(node.get()))
     {
         for (auto & child : node->children)
         {
