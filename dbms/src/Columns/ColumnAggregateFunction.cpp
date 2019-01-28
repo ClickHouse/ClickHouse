@@ -124,7 +124,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
 
 //    auto ML_function = typeid_cast<AggregateFunctionMLMethod<LinearRegressionData, NameLinearRegression> *>(func.get());
     auto ML_function_Linear = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLinearRegression> *>(func.get());
-    auto ML_function_Logic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogicRegression> *>(func.get());
+    auto ML_function_Logistic = typeid_cast<AggregateFunctionMLMethod<LinearModelData, NameLogisticRegression> *>(func.get());
     if (ML_function_Linear)
     {
         size_t row_num = 0;
@@ -132,11 +132,11 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             ML_function_Linear->predictResultInto(val, *res, block, row_num, arguments);
             ++row_num;
         }
-    } else if (ML_function_Logic)
+    } else if (ML_function_Logistic)
     {
         size_t row_num = 0;
         for (auto val : data) {
-            ML_function_Logic->predictResultInto(val, *res, block, row_num, arguments);
+            ML_function_Logistic->predictResultInto(val, *res, block, row_num, arguments);
             ++row_num;
         }
     } else 
