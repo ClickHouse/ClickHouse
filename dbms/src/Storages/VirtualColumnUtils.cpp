@@ -4,6 +4,7 @@
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -96,7 +97,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
         if (!isValidFunction(expression->children[i], columns))
             return false;
 
-    if (auto opt_name = getColumnIdentifierName(expression))
+    if (auto opt_name = IdentifierSemantic::getColumnName(expression))
         return columns.count(*opt_name);
 
     return true;
