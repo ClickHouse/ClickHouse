@@ -6,7 +6,7 @@
 #   include <libcpuid/libcpuid.h>
 #   include <Common/Exception.h>
     namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
-#elseif USE_CPUINFO
+#elif USE_CPUINFO
 #   include <cpuinfo.h>
 #endif
 
@@ -38,7 +38,7 @@ unsigned getNumberOfPhysicalCPUCores()
 
     if (res != 0)
         return res;
-#elseif USE_CPUINFO
+#elif USE_CPUINFO
     uint32_t cores = 0;
     if (cpuinfo_initialize())
         cores = cpuinfo_get_cores_count();
