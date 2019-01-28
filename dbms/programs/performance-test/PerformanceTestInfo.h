@@ -20,8 +20,9 @@ enum class ExecutionType
 
 using XMLConfiguration = Poco::Util::XMLConfiguration;
 using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
-using StringToVector = std::map<String, std::vector<String>>;
+using StringToVector = std::map<std::string, Strings>;
 
+/// Class containing all info to run performance test
 class PerformanceTestInfo
 {
 public:
@@ -30,13 +31,14 @@ public:
     std::string test_name;
     std::string main_metric;
 
-    std::vector<std::string> queries;
-    std::vector<std::string> metrics;
+    Strings queries;
+    Strings metrics;
 
     Settings settings;
     ExecutionType exec_type;
     StringToVector substitutions;
     size_t times_to_run;
+
     std::string profiles_file;
     std::vector<TestStopConditions> stop_conditions_by_run;
 

@@ -7,7 +7,7 @@ namespace DB
 
 void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVector & out_substitutions)
 {
-    std::vector<std::string> xml_substitutions;
+    Strings xml_substitutions;
     substitutions_view->keys(xml_substitutions);
 
     for (size_t i = 0; i != xml_substitutions.size(); ++i)
@@ -16,10 +16,10 @@ void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVecto
 
         /// Property values for substitution will be stored in a vector
         /// accessible by property name
-        std::vector<String> xml_values;
+        Strings xml_values;
         xml_substitution->keys("values", xml_values);
 
-        String name = xml_substitution->getString("name");
+        std::string name = xml_substitution->getString("name");
 
         for (size_t j = 0; j != xml_values.size(); ++j)
         {
@@ -32,8 +32,8 @@ void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVecto
 /// and replaces property {names} by their values
 void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
     StringToVector::iterator substitutions_right,
-    const String & template_query,
-    std::vector<String> & out_queries)
+    const std::string & template_query,
+    Strings & out_queries)
 {
     if (substitutions_left == substitutions_right)
     {
@@ -41,25 +41,25 @@ void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
         return;
     }
 
-    String substitution_mask = "{" + substitutions_left->first + "}";
+    std::string substitution_mask = "{" + substitutions_left->first + "}";
 
-    if (template_query.find(substitution_mask) == String::npos) /// nothing to substitute here
+    if (template_query.find(substitution_mask) == std::string::npos) /// nothing to substitute here
     {
         runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, template_query, out_queries);
         return;
     }
 
-    for (const String & value : substitutions_left->second)
+    for (const std::string & value : substitutions_left->second)
     {
         /// Copy query string for each unique permutation
         std::string query = template_query;
         size_t substr_pos = 0;
 
-        while (substr_pos != String::npos)
+        while (substr_pos != std::string::npos)
         {
             substr_pos = query.find(substitution_mask);
 
-            if (substr_pos != String::npos)
+            if (substr_pos != std::string::npos)
                 query.replace(substr_pos, substitution_mask.length(), value);
         }
 
@@ -67,9 +67,9 @@ void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
     }
 }
 
-std::vector<String> formatQueries(const String & query, StringToVector substitutions_to_generate)
+Strings formatQueries(const std::string & query, StringToVector substitutions_to_generate)
 {
-    std::vector<String> queries_res;
+    Strings queries_res;
     runThroughAllOptionsAndPush(
         substitutions_to_generate.begin(),
         substitutions_to_generate.end(),

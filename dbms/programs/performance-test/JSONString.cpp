@@ -1,20 +1,21 @@
 #include "JSONString.h"
 
 #include <regex>
+#include <sstream>
 namespace DB
 {
 
 namespace
 {
-String pad(size_t padding)
+std::string pad(size_t padding)
 {
-    return String(padding * 4, ' ');
+    return std::string(padding * 4, ' ');
 }
 
 const std::regex NEW_LINE{"\n"};
 }
 
-void JSONString::set(const String key, String value, bool wrap)
+void JSONString::set(const std::string & key, std::string value, bool wrap)
 {
     if (value.empty())
         value = "null";
@@ -26,37 +27,39 @@ void JSONString::set(const String key, String value, bool wrap)
     content[key] = value;
 }
 
-void JSONString::set(const String key, const std::vector<JSONString> & run_infos)
+void JSONString::set(const std::string & key, const std::vector<JSONString> & run_infos)
 {
-    String value = "[\n";
+    std::ostringstream value;
+    value << "[\n";
 
     for (size_t i = 0; i < run_infos.size(); ++i)
     {
-        value += pad(padding + 1) + run_infos[i].asString(padding + 2);
+        value << pad(padding + 1) + run_infos[i].asString(padding + 2);
         if (i != run_infos.size() - 1)
-            value += ',';
+            value << ',';
 
-        value += "\n";
+        value << "\n";
     }
 
-    value += pad(padding) + ']';
-    content[key] = value;
+    value << pad(padding) << ']';
+    content[key] = value.str();
 }
 
-String JSONString::asString(size_t cur_padding) const
+std::string JSONString::asString(size_t cur_padding) const
 {
-    String repr = "{";
+    std::ostringstream repr;
+    repr << "{";
 
     for (auto it = content.begin(); it != content.end(); ++it)
     {
         if (it != content.begin())
-            repr += ',';
+            repr << ',';
         /// construct "key": "value" string with padding
-        repr += "\n" + pad(cur_padding) + '"' + it->first + '"' + ": " + it->second;
+        repr << "\n" << pad(cur_padding) << '"' << it->first << '"' << ": " << it->second;
     }
 
-    repr += "\n" + pad(cur_padding - 1) + '}';
-    return repr;
+    repr << "\n" << pad(cur_padding - 1) << '}';
+    return repr.str();
 }
 
 

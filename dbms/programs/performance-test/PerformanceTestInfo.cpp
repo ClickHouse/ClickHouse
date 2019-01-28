@@ -11,10 +11,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-extern const int NOT_IMPLEMENTED;
-extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
-extern const int FILE_DOESNT_EXIST;
 }
 
 namespace
@@ -22,16 +19,16 @@ namespace
 
 void extractSettings(
     const XMLConfigurationPtr & config,
-    const String & key,
+    const std::string & key,
     const Strings & settings_list,
-    std::map<String, String> & settings_to_apply)
+    std::map<std::string, std::string> & settings_to_apply)
 {
-    for (const String & setup : settings_list)
+    for (const std::string & setup : settings_list)
     {
         if (setup == "profile")
             continue;
 
-        String value = config->getString(key + "." + setup);
+        std::string value = config->getString(key + "." + setup);
         if (value.empty())
             value = "true";
 
@@ -39,14 +36,14 @@ void extractSettings(
     }
 }
 
-void checkMetricsInput(const std::vector<std::string> & metrics, ExecutionType exec_type)
+void checkMetricsInput(const Strings & metrics, ExecutionType exec_type)
 {
-    std::vector<String> loop_metrics = {
+    Strings loop_metrics = {
         "min_time", "quantiles", "total_time",
         "queries_per_second", "rows_per_second",
         "bytes_per_second"};
 
-    std::vector<String> non_loop_metrics = {
+    Strings non_loop_metrics = {
         "max_rows_per_second", "max_bytes_per_second",
         "avg_rows_per_second", "avg_bytes_per_second"};
 
@@ -86,27 +83,20 @@ PerformanceTestInfo::PerformanceTestInfo(
     : profiles_file(profiles_file_)
 {
     test_name = config->getString("name");
-    std::cerr << "In constructor\n";
     applySettings(config);
-    std::cerr << "Settings applied\n";
     extractQueries(config);
-    std::cerr << "Queries exctracted\n";
     processSubstitutions(config);
-    std::cerr << "Substituions parsed\n";
     getExecutionType(config);
-    std::cerr << "Execution type choosen\n";
     getStopConditions(config);
-    std::cerr << "Stop conditions are ok\n";
     getMetrics(config);
-    std::cerr << "Metrics are ok\n";
 }
 
 void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
 {
     if (config->has("settings"))
     {
-        std::map<String, String> settings_to_apply;
-        std::vector<std::string> config_settings;
+        std::map<std::string, std::string> settings_to_apply;
+        Strings config_settings;
         config->keys("settings", config_settings);
 
         auto settings_contain = [&config_settings] (const std::string & setting)
@@ -120,10 +110,10 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         {
             if (!profiles_file.empty())
             {
-                String profile_name = config->getString("settings.profile");
+                std::string profile_name = config->getString("settings.profile");
                 XMLConfigurationPtr profiles_config(new XMLConfiguration(profiles_file));
 
-                std::vector<std::string> profile_settings;
+                Strings profile_settings;
                 profiles_config->keys("profiles." + profile_name, profile_settings);
 
                 extractSettings(profiles_config, "profiles." + profile_name, profile_settings, settings_to_apply);
@@ -135,7 +125,7 @@ void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
         /// This macro goes through all settings in the Settings.h
         /// and, if found any settings in test's xml configuration
         /// with the same name, sets its value to settings
-        std::map<String, String>::iterator it;
+        std::map<std::string, std::string>::iterator it;
 #define EXTRACT_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)   \
         it = settings_to_apply.find(#NAME);                 \
         if (it != settings_to_apply.end())                  \
@@ -162,7 +152,7 @@ void PerformanceTestInfo::extractQueries(XMLConfigurationPtr config)
 
     if (config->has("query_file"))
     {
-        const String filename = config->getString("query_file");
+        const std::string filename = config->getString("query_file");
         if (filename.empty())
             throw Exception("Empty file name", ErrorCodes::BAD_ARGUMENTS);
 
@@ -216,7 +206,7 @@ void PerformanceTestInfo::getExecutionType(XMLConfigurationPtr config)
         throw Exception("Missing type property in config: " + test_name,
             ErrorCodes::BAD_ARGUMENTS);
 
-    String config_exec_type = config->getString("type");
+    std::string config_exec_type = config->getString("type");
     if (config_exec_type == "loop")
         exec_type = ExecutionType::Loop;
     else if (config_exec_type == "once")
@@ -230,10 +220,8 @@ void PerformanceTestInfo::getExecutionType(XMLConfigurationPtr config)
 void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
 {
     TestStopConditions stop_conditions_template;
-    std::cerr << "Checking stop conditions";
     if (config->has("stop_conditions"))
     {
-        std::cerr << "They are exists\n";
         ConfigurationPtr stop_conditions_config(config->createView("stop_conditions"));
         stop_conditions_template.loadFromConfig(stop_conditions_config);
     }
@@ -257,7 +245,7 @@ void PerformanceTestInfo::getMetrics(XMLConfigurationPtr config)
 
     if (config->has("main_metric"))
     {
-        std::vector<std::string> main_metrics;
+        Strings main_metrics;
         config->keys("main_metric", main_metrics);
         if (main_metrics.size())
             main_metric = main_metrics[0];

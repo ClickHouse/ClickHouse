@@ -11,10 +11,10 @@ extern const int LOGICAL_ERROR;
 
 void StopConditionsSet::loadFromConfig(const ConfigurationPtr & stop_conditions_view)
 {
-    std::vector<String> keys;
+    Strings keys;
     stop_conditions_view->keys(keys);
 
-    for (const String & key : keys)
+    for (const std::string & key : keys)
     {
         if (key == "total_time_ms")
             total_time_ms.value = stop_conditions_view->getUInt64(key);
@@ -31,7 +31,7 @@ void StopConditionsSet::loadFromConfig(const ConfigurationPtr & stop_conditions_
         else if (key == "average_speed_not_changing_for_ms")
             average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
         else
-            throw DB::Exception("Met unkown stop condition: " + key, DB::ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Met unkown stop condition: " + key, ErrorCodes::LOGICAL_ERROR);
     }
     ++initialized_count;
 }

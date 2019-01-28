@@ -42,14 +42,14 @@ void ConfigPreprocessor::removeConfigurationsIf(
 
         if (filter_type == FilterType::Tag)
         {
-            std::vector<std::string> tags_keys;
+            Strings tags_keys;
             config->keys("tags", tags_keys);
 
             Strings tags(tags_keys.size());
             for (size_t i = 0; i != tags_keys.size(); ++i)
                 tags[i] = config->getString("tags.tag[" + std::to_string(i) + "]");
 
-            for (const String & config_tag : tags)
+            for (const std::string & config_tag : tags)
             {
                 if (std::find(values.begin(), values.end(), config_tag) != values.end())
                     remove_or_not = true;
@@ -63,8 +63,8 @@ void ConfigPreprocessor::removeConfigurationsIf(
 
         if (filter_type == FilterType::Name_regexp)
         {
-            String config_name = config->getString("name", "");
-            auto regex_checker = [&config_name](const String & name_regexp)
+            std::string config_name = config->getString("name", "");
+            auto regex_checker = [&config_name](const std::string & name_regexp)
             {
                 std::regex pattern(name_regexp);
                 return std::regex_search(config_name, pattern);

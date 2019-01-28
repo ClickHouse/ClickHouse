@@ -2,6 +2,7 @@
 
 #include <Poco/DOM/Document.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Core/Types.h>
 #include <vector>
 #include <string>
 
@@ -11,12 +12,11 @@ namespace DB
 using XMLConfiguration = Poco::Util::XMLConfiguration;
 using XMLConfigurationPtr = Poco::AutoPtr<XMLConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
-using Strings = std::vector<std::string>;
 
 class ConfigPreprocessor
 {
 public:
-    ConfigPreprocessor(const std::vector<std::string> & paths_)
+    ConfigPreprocessor(const Strings & paths_)
         : paths(paths_)
     {}
 
@@ -45,6 +45,6 @@ private:
         const Strings & values,
         bool leave = false) const;
 
-    const std::vector<std::string> paths;
+    const Strings paths;
 };
 }

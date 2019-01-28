@@ -1,14 +1,18 @@
 #include "ReportBuilder.h"
-#include "JSONString.h"
+
 #include <algorithm>
 #include <regex>
+#include <sstream>
+
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getFQDNOrHostName.h>
 #include <common/getMemoryAmount.h>
 
+#include "JSONString.h"
 
 namespace DB
 {
+
 namespace
 {
 const std::regex QUOTE_REGEX{"\""};
@@ -55,21 +59,22 @@ std::string ReportBuilder::buildFullReport(
 
         for (auto it = test_info.substitutions.begin(); it != test_info.substitutions.end(); ++it)
         {
-            String parameter = it->first;
-            std::vector<String> values = it->second;
+            std::string parameter = it->first;
+            Strings values = it->second;
 
-            String array_string = "[";
+            std::ostringstream array_string;
+            array_string << "[";
             for (size_t i = 0; i != values.size(); ++i)
             {
-                array_string += '"' + std::regex_replace(values[i], QUOTE_REGEX, "\\\"") + '"';
+                array_string << '"' << std::regex_replace(values[i], QUOTE_REGEX, "\\\"") << '"';
                 if (i != values.size() - 1)
                 {
-                    array_string += ", ";
+                    array_string << ", ";
                 }
             }
-            array_string += ']';
+            array_string << ']';
 
-            json_parameters.set(parameter, array_string);
+            json_parameters.set(parameter, array_string.str());
         }
 
         json_output.set("parameters", json_parameters.asString());
@@ -104,7 +109,7 @@ std::string ReportBuilder::buildFullReport(
                     JSONString quantiles(4); /// here, 4 is the size of \t padding
                     for (double percent = 10; percent <= 90; percent += 10)
                     {
-                        String quantile_key = std::to_string(percent / 100.0);
+                        std::string quantile_key = std::to_string(percent / 100.0);
                         while (quantile_key.back() == '0')
                             quantile_key.pop_back();
 
@@ -167,24 +172,23 @@ std::string ReportBuilder::buildCompactReport(
     std::vector<TestStats> & stats) const
 {
 
-    String output;
+    std::ostringstream output;
 
     for (size_t query_index = 0; query_index < test_info.queries.size(); ++query_index)
     {
         for (size_t number_of_launch = 0; number_of_launch < test_info.times_to_run; ++number_of_launch)
         {
             if (test_info.queries.size() > 1)
-                output += "query \"" + test_info.queries[query_index] + "\", ";
+                output << "query \"" << test_info.queries[query_index] << "\", ";
 
-            output += "run " + std::to_string(number_of_launch + 1) + ": ";
-            output += test_info.main_metric + " = ";
+            output << "run " << std::to_string(number_of_launch + 1) << ": ";
+            output << test_info.main_metric << " = ";
             size_t index = number_of_launch * test_info.queries.size() + query_index;
-            output += stats[index].getStatisticByName(test_info.main_metric);
-            output += "\n";
+            output << stats[index].getStatisticByName(test_info.main_metric);
+            output << "\n";
         }
     }
-    return output;
+    return output.str();
 }
-
 
 }

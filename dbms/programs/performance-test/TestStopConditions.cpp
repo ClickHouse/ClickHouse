@@ -23,4 +23,16 @@ bool TestStopConditions::areFulfilled() const
         || (conditions_any_of.initialized_count && conditions_any_of.fulfilled_count);
 }
 
+UInt64 TestStopConditions::getMaxExecTime() const
+{
+    UInt64 all_of_time = conditions_all_of.total_time_ms.value;
+    if (all_of_time == 0 && conditions_all_of.initialized_count != 0) /// max time is not set in all conditions
+        return 0;
+    else if(all_of_time != 0 && conditions_all_of.initialized_count > 1) /// max time is set, but we have other conditions
+        return 0;
+
+    UInt64 any_of_time = conditions_any_of.total_time_ms.value;
+    return std::max(all_of_time, any_of_time);
+}
+
 }
