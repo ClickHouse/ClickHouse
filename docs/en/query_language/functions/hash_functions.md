@@ -64,5 +64,52 @@ A fast, decent-quality non-cryptographic hash function for a string obtained fro
 `URLHash(s, N)` – Calculates a hash from a string up to the N level in the URL hierarchy, without one of the trailing symbols `/`,`?` or `#` at the end, if present.
 Levels are the same as in URLHierarchy. This function is specific to Yandex.Metrica.
 
+## farmHash64
+
+Calculates SipHash from a string.
+Accepts a String-type argument. Returns UInt64.
+For more information, see the link: <https://github.com/google/farmhash>
+
+## javaHash
+
+Calculates JavaHash from a string.
+Accepts a String-type argument. Returns Int32.
+For more information, see the link: <http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452>
+
+## hiveHash
+
+Calculates HiveHash from a string.
+Accepts a String-type argument. Returns Int32.
+Same as for javaHash, except that the return value never has a negative number.
+
+## metroHash64
+
+Calculates metroHash from a string.
+Accepts a String-type argument. Returns UInt64.
+For more information, see the link: <http://www.jandrewrogers.com/2015/05/27/metrohash/>
+
+## jumpConsistentHash
+
+Calculates consistentHash form a UInt64.
+Accepts a UInt64-type argument. Returns Int32.
+For more information, see the link: <https://arxiv.org/pdf/1406.2294.pdf>
+
+## murmurHash2_32, murmurHash2_64
+
+Calculates murmurHash2 from a string.
+Accepts a String-type argument. Returns UInt64 Or UInt32.
+For more information, see the link: <https://github.com/aappleby/smhasher>
+
+## murmurHash3_32, murmurHash3_64, murmurHash3_128
+
+Calculates murmurHash3 from a string.
+Accepts a String-type argument. Returns UInt64 Or UInt32 Or FixedString(16).
+For more information, see the link: <https://github.com/aappleby/smhasher>
+
+## xxHash32, xxHash64
+
+Calculates xxHash from a string.
+ccepts a String-type argument. Returns UInt64 Or UInt32.
+For more information, see the link: <http://cyan4973.github.io/xxHash/>
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/hash_functions/) <!--hide-->
