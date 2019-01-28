@@ -1,14 +1,14 @@
 #include <Common/Exception.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
 namespace DB
 {
 
-class NumbersBlockInputStream : public IProfilingBlockInputStream
+class NumbersBlockInputStream : public IBlockInputStream
 {
 public:
     NumbersBlockInputStream(size_t block_size_, size_t offset_, size_t step_)

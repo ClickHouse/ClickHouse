@@ -60,7 +60,7 @@ static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & cont
 }
 
 
-class TablesBlockInputStream : public IProfilingBlockInputStream
+class TablesBlockInputStream : public IBlockInputStream
 {
 public:
     TablesBlockInputStream(

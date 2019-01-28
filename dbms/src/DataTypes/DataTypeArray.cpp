@@ -430,6 +430,18 @@ void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
 }
 
 
+void DataTypeArray::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+    size_t offset = offsets[row_num - 1];
+    size_t next_offset = offsets[row_num];
+    const IColumn & nested_column = column_array.getData();
+    for (size_t i = offset; i < next_offset; ++i)
+        nested->serializeProtobuf(nested_column, i, protobuf);
+}
+
+
 MutableColumnPtr DataTypeArray::createColumn() const
 {
     return ColumnArray::create(nested->createColumn(), ColumnArray::ColumnOffsets::create());

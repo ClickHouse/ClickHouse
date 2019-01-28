@@ -49,3 +49,16 @@ DROP TABLE test.join_any_left_null;
 DROP TABLE test.join_all_inner;
 DROP TABLE test.join_all_left;
 DROP TABLE test.join_string_key;
+
+-- test provided by Alexander Zaitsev
+DROP TABLE IF EXISTS test.join_test;
+CREATE TABLE test.join_test (a UInt8, b UInt8) Engine = Join(ANY, LEFT, a);
+
+USE test;
+select joinGet('join_test', 'b', 1);
+
+USE system;
+SELECT joinGet('test.join_test', 'b', 1);
+
+USE default;
+DROP TABLE test.join_test;
