@@ -81,7 +81,7 @@ option (ENABLE_TESTS "Enables tests" ON)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (OS_LINUX AND NOT UNBUNDLED)
+    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES)
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
         if (GLIBC_COMPATIBILITY)
             message (STATUS "Some symbols from glibc will be replaced for compatibility")

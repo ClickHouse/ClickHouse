@@ -72,7 +72,7 @@ void ExternalLoader::init(bool throw_on_error)
         reloadAndUpdate(throw_on_error);
     }
 
-    reloading_thread = std::thread{&ExternalLoader::reloadPeriodically, this};
+    reloading_thread = ThreadFromGlobalPool{&ExternalLoader::reloadPeriodically, this};
 }
 
 

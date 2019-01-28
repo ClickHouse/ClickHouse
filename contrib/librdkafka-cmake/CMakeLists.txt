@@ -2,6 +2,7 @@ set(RDKAFKA_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/librdkafka/src)
 
 set(SRCS
   ${RDKAFKA_SOURCE_DIR}/crc32c.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_zstd.c
   ${RDKAFKA_SOURCE_DIR}/rdaddr.c
   ${RDKAFKA_SOURCE_DIR}/rdavl.c
   ${RDKAFKA_SOURCE_DIR}/rdbuf.c
@@ -59,5 +60,6 @@ set(SRCS
 
 add_library(rdkafka ${LINK_MODE} ${SRCS})
 target_include_directories(rdkafka SYSTEM PUBLIC include)
-target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})
-target_link_libraries(rdkafka PUBLIC ${ZLIB_LIBRARIES} ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
+target_include_directories(rdkafka SYSTEM PRIVATE ${ZSTD_INCLUDE_DIR}/common)   # Because wrong path to "zstd_errors.h" is used.
+target_link_libraries(rdkafka PUBLIC ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})

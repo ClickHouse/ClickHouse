@@ -1,15 +1,15 @@
 #include <cassert>
 #include <Formats/ProtobufSimpleWriter.h>
-#include <Poco/ByteOrder.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
 namespace
 {
-    void writeBytes(WriteBuffer & buf, const void * data, size_t size) { buf.write(reinterpret_cast<const char *>(data), size); }
-
-    void writeVariant(WriteBuffer & buf, UInt32 value)
+    // Note: We cannot simply use writeVarUInt() from IO/VarInt.h here because there is one small difference:
+    // Google protobuf's representation of 64-bit integer contains from 1 to 10 bytes, whileas writeVarUInt() writes from 1 to 9 bytes
+    // because it omits the tenth byte (which is not necessary to decode actually).
+    void writePbVarUInt(UInt64 value, WriteBuffer & buf)
     {
         while (value >= 0x80)
         {
@@ -19,67 +19,18 @@ namespace
         buf.write(static_cast<char>(value));
     }
 
-    void writeVariant(WriteBuffer & buf, Int32 value) { writeVariant(buf, static_cast<UInt32>(value)); }
-
-    void writeVariant(WriteBuffer & buf, UInt64 value)
+    void writePbVarInt(Int64 value, WriteBuffer & buf)
     {
-        while (value >= 0x80)
-        {
-            buf.write(static_cast<char>(value | 0x80));
-            value >>= 7;
-        }
-        buf.write(static_cast<char>(value));
+        writePbVarUInt((static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63), buf);
     }
 
-    void writeVariant(WriteBuffer & buf, Int64 value) { writeVariant(buf, static_cast<UInt64>(value)); }
-
-    void writeLittleEndian(WriteBuffer & buf, UInt32 value)
-    {
-        value = Poco::ByteOrder::toLittleEndian(value);
-        writeBytes(buf, &value, sizeof(value));
-    }
-
-    void writeLittleEndian(WriteBuffer & buf, Int32 value) { writeLittleEndian(buf, static_cast<UInt32>(value)); }
-
-    void writeLittleEndian(WriteBuffer & buf, float value)
-    {
-        union
-        {
-            Float32 f;
-            UInt32 i;
-        };
-        f = value;
-        writeLittleEndian(buf, i);
-    }
-
-    void writeLittleEndian(WriteBuffer & buf, UInt64 value)
-    {
-        value = Poco::ByteOrder::toLittleEndian(value);
-        writeBytes(buf, &value, sizeof(value));
-    }
-
-    void writeLittleEndian(WriteBuffer & buf, Int64 value) { writeLittleEndian(buf, static_cast<UInt64>(value)); }
-
-    void writeLittleEndian(WriteBuffer & buf, double value)
-    {
-        union
-        {
-            Float64 f;
-            UInt64 i;
-        };
-        f = value;
-        writeLittleEndian(buf, i);
-    }
-
-    UInt32 zigZag(Int32 value) { return (static_cast<UInt32>(value) << 1) ^ static_cast<UInt32>(value >> 31); }
-    UInt64 zigZag(Int64 value) { return (static_cast<UInt64>(value) << 1) ^ static_cast<UInt64>(value >> 63); }
-
+    void writePbVarIntNoZigZagEncoding(Int64 value, WriteBuffer & buf) { writePbVarUInt(static_cast<UInt64>(value), buf); }
 }
 
 
 enum ProtobufSimpleWriter::WireType : UInt32
 {
-    VARIANT = 0,
+    VARINT = 0,
     BITS64 = 1,
     LENGTH_DELIMITED = 2,
     BITS32 = 5
@@ -107,8 +58,8 @@ void ProtobufSimpleWriter::finishCurrentMessage()
     finishCurrentField();
     current_field_number = 0;
     StringRef str = message_buffer.stringRef();
-    writeVariant(out, str.size);
-    writeBytes(out, str.data, str.size);
+    writePbVarUInt(str.size, out);
+    out.write(str.data, str.size);
     message_buffer.restart();
 }
 
@@ -129,112 +80,112 @@ void ProtobufSimpleWriter::finishCurrentField()
         StringRef str = repeated_packing_buffer.stringRef();
         if (str.size)
         {
-            writeKey(message_buffer, LENGTH_DELIMITED);
-            writeVariant(message_buffer, str.size);
-            writeBytes(message_buffer, str.data, str.size);
+            writeKey(LENGTH_DELIMITED, message_buffer);
+            writePbVarUInt(str.size, message_buffer);
+            message_buffer.write(str.data, str.size);
             repeated_packing_buffer.restart();
         }
     }
 }
 
-void ProtobufSimpleWriter::writeKey(WriteBuffer & buf, WireType wire_type)
+void ProtobufSimpleWriter::writeKey(WireType wire_type, WriteBuffer & buf)
 {
-    writeVariant(buf, (current_field_number << 3) | wire_type);
+    writePbVarUInt((current_field_number << 3) | wire_type, buf);
 }
 
 void ProtobufSimpleWriter::writeInt32(Int32 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, VARIANT);
-    writeVariant(message_buffer, value);
+    writeKey(VARINT, message_buffer);
+    writePbVarIntNoZigZagEncoding(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeUInt32(UInt32 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, VARIANT);
-    writeVariant(message_buffer, value);
+    writeKey(VARINT, message_buffer);
+    writePbVarUInt(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeSInt32(Int32 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, VARIANT);
-    writeVariant(message_buffer, zigZag(value));
+    writeKey(VARINT, message_buffer);
+    writePbVarInt(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeInt64(Int64 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, VARIANT);
-    writeVariant(message_buffer, value);
+    writeKey(VARINT, message_buffer);
+    writePbVarIntNoZigZagEncoding(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeUInt64(UInt64 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, VARIANT);
-    writeVariant(message_buffer, value);
+    writeKey(VARINT, message_buffer);
+    writePbVarUInt(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeSInt64(Int64 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, VARIANT);
-    writeVariant(message_buffer, zigZag(value));
+    writeKey(VARINT, message_buffer);
+    writePbVarInt(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeFixed32(UInt32 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, BITS32);
-    writeLittleEndian(message_buffer, value);
+    writeKey(BITS32, message_buffer);
+    writePODBinary(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeSFixed32(Int32 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, BITS32);
-    writeLittleEndian(message_buffer, value);
+    writeKey(BITS32, message_buffer);
+    writePODBinary(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeFloat(float value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, BITS32);
-    writeLittleEndian(message_buffer, value);
+    writeKey(BITS32, message_buffer);
+    writePODBinary(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeFixed64(UInt64 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, BITS64);
-    writeLittleEndian(message_buffer, value);
+    writeKey(BITS64, message_buffer);
+    writePODBinary(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeSFixed64(Int64 value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, BITS64);
-    writeLittleEndian(message_buffer, value);
+    writeKey(BITS64, message_buffer);
+    writePODBinary(value, message_buffer);
     ++num_normal_values;
 }
 
 void ProtobufSimpleWriter::writeDouble(double value)
 {
     assert(current_field_number);
-    writeKey(message_buffer, BITS64);
-    writeLittleEndian(message_buffer, value);
+    writeKey(BITS64, message_buffer);
+    writePODBinary(value, message_buffer);
     ++num_normal_values;
 }
 
@@ -242,9 +193,9 @@ void ProtobufSimpleWriter::writeString(const StringRef & str)
 {
     assert(current_field_number);
     ++num_normal_values;
-    writeKey(message_buffer, LENGTH_DELIMITED);
-    writeVariant(message_buffer, str.size);
-    writeBytes(message_buffer, str.data, str.size);
+    writeKey(LENGTH_DELIMITED, message_buffer);
+    writePbVarUInt(str.size, message_buffer);
+    message_buffer.write(str.data, str.size);
 }
 
 void ProtobufSimpleWriter::writeInt32IfNonZero(Int32 value)
@@ -328,84 +279,84 @@ void ProtobufSimpleWriter::writeStringIfNotEmpty(const StringRef & str)
 void ProtobufSimpleWriter::packRepeatedInt32(Int32 value)
 {
     assert(current_field_number);
-    writeVariant(repeated_packing_buffer, value);
+    writePbVarIntNoZigZagEncoding(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedUInt32(UInt32 value)
 {
     assert(current_field_number);
-    writeVariant(repeated_packing_buffer, value);
+    writePbVarUInt(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedSInt32(Int32 value)
 {
     assert(current_field_number);
-    writeVariant(repeated_packing_buffer, zigZag(value));
+    writePbVarInt(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedInt64(Int64 value)
 {
     assert(current_field_number);
-    writeVariant(repeated_packing_buffer, value);
+    writePbVarIntNoZigZagEncoding(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedUInt64(UInt64 value)
 {
     assert(current_field_number);
-    writeVariant(repeated_packing_buffer, value);
+    writePbVarUInt(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedSInt64(Int64 value)
 {
     assert(current_field_number);
-    writeVariant(repeated_packing_buffer, zigZag(value));
+    writePbVarInt(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedFixed32(UInt32 value)
 {
     assert(current_field_number);
-    writeLittleEndian(repeated_packing_buffer, value);
+    writePODBinary(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedSFixed32(Int32 value)
 {
     assert(current_field_number);
-    writeLittleEndian(repeated_packing_buffer, value);
+    writePODBinary(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedFloat(float value)
 {
     assert(current_field_number);
-    writeLittleEndian(repeated_packing_buffer, value);
+    writePODBinary(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedFixed64(UInt64 value)
 {
     assert(current_field_number);
-    writeLittleEndian(repeated_packing_buffer, value);
+    writePODBinary(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedSFixed64(Int64 value)
 {
     assert(current_field_number);
-    writeLittleEndian(repeated_packing_buffer, value);
+    writePODBinary(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 
 void ProtobufSimpleWriter::packRepeatedDouble(double value)
 {
     assert(current_field_number);
-    writeLittleEndian(repeated_packing_buffer, value);
+    writePODBinary(value, repeated_packing_buffer);
     ++num_packed_values;
 }
 

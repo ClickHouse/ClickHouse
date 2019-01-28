@@ -1,9 +1,15 @@
-#include <Core/Block.h>
 #include <Formats/FormatFactory.h>
+
+#include <Common/config.h>
+#if USE_PROTOBUF
+
+#include "ProtobufBlockOutputStream.h"
+
+#include <Core/Block.h>
 #include <Formats/FormatSchemaInfo.h>
-#include <Formats/ProtobufBlockOutputStream.h>
 #include <Formats/ProtobufSchemas.h>
 #include <Interpreters/Context.h>
+#include <google/protobuf/descriptor.h>
 
 
 namespace DB
@@ -73,3 +79,13 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
 }
 
 }
+
+#else
+
+namespace DB
+{
+    class FormatFactory;
+    void registerOutputFormatProtobuf(FormatFactory &) {}
+}
+
+#endif
