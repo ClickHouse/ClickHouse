@@ -408,10 +408,15 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 431;
     extern const int UNKNOWN_CODEC = 432;
     extern const int ILLEGAL_CODEC_PARAMETER = 433;
-    extern const int DICTIONARY_ALREADY_EXISTS = 434;
-    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 435;
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 436;
-    extern const int UNKNOWN_DICTIONARY = 437;
+    extern const int CANNOT_PARSE_PROTOBUF_SCHEMA = 434;
+    extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD = 435;
+    extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE = 436;
+    extern const int PROTOBUF_FIELD_NOT_REPEATED = 437;
+    extern const int DATA_TYPE_CANNOT_BE_PROMOTED = 438;
+    extern const int DICTIONARY_ALREADY_EXISTS = 439;
+    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 440;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 441;
+    extern const int UNKNOWN_DICTIONARY = 442;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

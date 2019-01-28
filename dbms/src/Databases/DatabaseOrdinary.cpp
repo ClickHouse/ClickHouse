@@ -7,6 +7,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Common/typeid_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Stopwatch.h>

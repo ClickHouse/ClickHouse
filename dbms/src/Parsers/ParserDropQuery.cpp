@@ -4,8 +4,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDropQuery.h>
 
-#include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -123,12 +121,11 @@ bool ParserDropQuery::parseDropQuery(Pos & pos, ASTPtr & node, Expected & expect
     query->kind = ASTDropQuery::Kind::Drop;
     query->if_exists = if_exists;
     query->temporary = temporary;
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-    if (table)
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
-    if (dictionary)
-        query->dictionary = typeid_cast<ASTIdentifier &>(*dictionary).name;
+
+    getIdentifierName(database, query->database);
+    getIdentifierName(table, query->table);
+    getIdentifierName(dictionary, query->dictionary);
+
     query->cluster = cluster_str;
 
     return true;

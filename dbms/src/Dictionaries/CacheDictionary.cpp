@@ -81,11 +81,6 @@ CacheDictionary::CacheDictionary(
     createAttributes();
 }
 
-CacheDictionary::CacheDictionary(const CacheDictionary & other)
-    : CacheDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.size}
-{
-}
-
 
 void CacheDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {

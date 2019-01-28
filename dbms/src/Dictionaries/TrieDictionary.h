@@ -29,8 +29,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         bool require_nonempty);
 
-    TrieDictionary(const TrieDictionary & other);
-
     ~TrieDictionary() override;
 
     std::string getKeyDescription() const { return key_description; }
@@ -53,7 +51,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    LoadablePtr clone() const override { return std::make_shared<TrieDictionary>(*this); }
+    LoadablePtr clone() const override
+    {
+        return std::make_unique<TrieDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

@@ -124,7 +124,7 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
-    mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
+    mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
     mutable std::shared_ptr<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.

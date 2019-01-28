@@ -24,8 +24,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         bool require_nonempty);
 
-    RangeHashedDictionary(const RangeHashedDictionary & other);
-
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
     std::string getName() const override { return dictionary_name; }
@@ -44,7 +42,10 @@ public:
 
     bool isCached() const override { return false; }
 
-    LoadablePtr clone() const override { return std::make_shared<RangeHashedDictionary>(*this); }
+    LoadablePtr clone() const override
+    {
+        return std::make_unique<RangeHashedDictionary>(dictionary_name, dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

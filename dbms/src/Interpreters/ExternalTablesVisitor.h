@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 namespace DB
 {
@@ -33,9 +34,9 @@ public:
 private:
     static std::vector<ASTPtr *> visit(const ASTIdentifier & node, ASTPtr &, Data & data)
     {
-        if (node.special())
-            if (StoragePtr external_storage = data.context.tryGetExternalTable(node.name))
-                data.external_tables[node.name] = external_storage;
+        if (auto opt_name = IdentifierSemantic::getTableName(node))
+            if (StoragePtr external_storage = data.context.tryGetExternalTable(*opt_name))
+                data.external_tables[*opt_name] = external_storage;
         return {};
     }
 };
