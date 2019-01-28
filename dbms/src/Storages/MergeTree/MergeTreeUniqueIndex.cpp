@@ -55,6 +55,7 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
     if (!set->empty())
     {
         auto new_set = std::make_unique<Set>(SizeLimits{}, true);
+        new_set->setHeader(index.header);
         set.swap(new_set);
     }
 
@@ -212,7 +213,7 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
         throw Exception(
                 "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
 
-    if (granule->size() > index.max_rows)
+    if (index.max_rows && granule->size() > index.max_rows)
         return true;
 
     Block result = granule->getElementsBlock();
