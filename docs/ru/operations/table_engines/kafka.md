@@ -23,7 +23,7 @@ Kafka SETTINGS
   kafka_topic_list = 'topic1,topic2',
   kafka_group_name = 'group1',
   kafka_format = 'JSONEachRow',
-  kafka_row_delimiter = '\n'
+  kafka_row_delimiter = '\n',
   kafka_schema = '',
   kafka_num_consumers = 2
 ```
@@ -105,7 +105,7 @@ Kafka SETTINGS
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../settings/settings.md#settings-settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../settings/settings.md) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
+Для улучшения производительности полученные сообщения группируются в блоки размера [max_insert_block_size](../settings/settings.md#settings-max_insert_block_size). Если блок не удалось сформировать за [stream_flush_interval_ms](../settings/settings.md) миллисекунд, то данные будут сброшены в таблицу независимо от полноты блока.
 
 Чтобы остановить получение данных топика или изменить логику преобразования, отсоедините материализованное представление:
 
@@ -122,7 +122,7 @@ Kafka SETTINGS
 Аналогично GraphiteMergeTree, движок Kafka поддерживает расширенную конфигурацию с помощью конфигурационного файла ClickHouse. Существует два конфигурационных ключа, которые можно использовать - глобальный (`kafka`) и по топикам (`kafka_*`). Сначала применяется глобальная конфигурация, затем конфигурация по топикам (если она существует).
 
 ```xml
-  <!--  Global configuration options for all tables of Kafka engine type -->
+  <!-- Global configuration options for all tables of Kafka engine type -->
   <kafka>
     <debug>cgrp</debug>
     <auto_offset_reset>smallest</auto_offset_reset>

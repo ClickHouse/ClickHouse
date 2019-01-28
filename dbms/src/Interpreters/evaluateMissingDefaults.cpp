@@ -48,7 +48,7 @@ void evaluateMissingDefaults(Block & block,
 
     if (!save_unneeded_columns)
     {
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
+        auto syntax_result = SyntaxAnalyzer(context).analyze(default_expr_list, block.getNamesAndTypesList());
         ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(block);
         return;
     }
@@ -57,7 +57,7 @@ void evaluateMissingDefaults(Block & block,
       * we are going to operate on a copy instead of the original block */
     Block copy_block{block};
 
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(default_expr_list, block.getNamesAndTypesList());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(default_expr_list, block.getNamesAndTypesList());
     ExpressionAnalyzer{default_expr_list, syntax_result, context}.getActions(true)->execute(copy_block);
 
     /// move evaluated columns to the original block, materializing them at the same time
@@ -67,8 +67,7 @@ void evaluateMissingDefaults(Block & block,
         if (copy_block.has(col->name))
         {
             auto evaluated_col = copy_block.getByName(col->name);
-            if (ColumnPtr converted = evaluated_col.column->convertToFullColumnIfConst())
-                evaluated_col.column = converted;
+            evaluated_col.column = evaluated_col.column->convertToFullColumnIfConst();
 
             block.insert(pos, std::move(evaluated_col));
         }

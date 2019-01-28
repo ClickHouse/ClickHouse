@@ -853,8 +853,8 @@ ZooKeeper::ZooKeeper(
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
 
-    send_thread = std::thread([this] { sendThread(); });
-    receive_thread = std::thread([this] { receiveThread(); });
+    send_thread = ThreadFromGlobalPool([this] { sendThread(); });
+    receive_thread = ThreadFromGlobalPool([this] { receiveThread(); });
 
     ProfileEvents::increment(ProfileEvents::ZooKeeperInit);
 }
@@ -1039,8 +1039,8 @@ void ZooKeeper::sendThread()
             {
                 /// Wait for the next request in queue. No more than operation timeout. No more than until next heartbeat time.
                 UInt64 max_wait = std::min(
-                    std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count(),
-                    operation_timeout.totalMilliseconds());
+                    UInt64(std::chrono::duration_cast<std::chrono::milliseconds>(next_heartbeat_time - now).count()),
+                    UInt64(operation_timeout.totalMilliseconds()));
 
                 RequestInfo info;
                 if (requests_queue.tryPop(info, max_wait))
@@ -1181,9 +1181,9 @@ void ZooKeeper::receiveEvent()
         ProfileEvents::increment(ProfileEvents::ZooKeeperWatchResponse);
         response = std::make_shared<ZooKeeperWatchResponse>();
 
-        request_info.callback = [this](const Response & response)
+        request_info.callback = [this](const Response & response_)
         {
-            const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response);
+            const WatchResponse & watch_response = dynamic_cast<const WatchResponse &>(response_);
 
             std::lock_guard lock(watches_mutex);
 

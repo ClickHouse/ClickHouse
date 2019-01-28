@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Interpreters/Aggregator.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <condition_variable>
 
 
@@ -57,7 +57,7 @@ namespace DB
   *  data from sources can also be read in several threads (reading_threads)
   *  for optimal performance in the presence of a fast network or disks (from where these blocks are read).
   */
-class MergingAggregatedMemoryEfficientBlockInputStream final : public IProfilingBlockInputStream
+class MergingAggregatedMemoryEfficientBlockInputStream final : public IBlockInputStream
 {
 public:
     MergingAggregatedMemoryEfficientBlockInputStream(

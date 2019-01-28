@@ -1,5 +1,10 @@
-if (NOT ARCH_ARM)
+if (NOT ARCH_ARM AND NOT ARCH_32 AND NOT APPLE)
     option (ENABLE_RDKAFKA "Enable kafka" ON)
+endif ()
+
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cppkafka/CMakeLists.txt")
+   message (WARNING "submodule contrib/cppkafka is missing. to fix try run: \n git submodule update --init --recursive")
+   set (ENABLE_RDKAFKA 0)
 endif ()
 
 if (ENABLE_RDKAFKA)
@@ -20,11 +25,13 @@ if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
     if (USE_STATIC_LIBRARIES AND NOT OS_FREEBSD)
        find_library (SASL2_LIBRARY sasl2)
     endif ()
+    set (CPPKAFKA_LIBRARY cppkafka) # TODO: try to use unbundled version.
 endif ()
 
 if (RDKAFKA_LIB AND RDKAFKA_INCLUDE_DIR)
     set (USE_RDKAFKA 1)
     set (RDKAFKA_LIBRARY ${RDKAFKA_LIB} ${OPENSSL_LIBRARIES})
+    set (CPPKAFKA_LIBRARY cppkafka)
     if (SASL2_LIBRARY)
        list (APPEND RDKAFKA_LIBRARY ${SASL2_LIBRARY})
     endif ()
@@ -35,9 +42,10 @@ elseif (NOT MISSING_INTERNAL_RDKAFKA_LIBRARY AND NOT ARCH_ARM)
     set (USE_INTERNAL_RDKAFKA_LIBRARY 1)
     set (RDKAFKA_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
     set (RDKAFKA_LIBRARY rdkafka)
+    set (CPPKAFKA_LIBRARY cppkafka)
     set (USE_RDKAFKA 1)
 endif ()
 
 endif ()
 
-message (STATUS "Using librdkafka=${USE_RDKAFKA}: ${RDKAFKA_INCLUDE_DIR} : ${RDKAFKA_LIBRARY}")
+message (STATUS "Using librdkafka=${USE_RDKAFKA}: ${RDKAFKA_INCLUDE_DIR} : ${RDKAFKA_LIBRARY} ${CPPKAFKA_LIBRARY}")

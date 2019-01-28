@@ -6,6 +6,7 @@
 #include <thread>
 #include <vector>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ private:
     bool quit = false;
     std::mutex mutex;
     std::condition_variable cond;
-    std::thread thread{&MetricsTransmitter::run, this};
+    ThreadFromGlobalPool thread{&MetricsTransmitter::run, this};
 
     static constexpr auto profile_events_path_prefix = "ClickHouse.ProfileEvents.";
     static constexpr auto current_metrics_path_prefix = "ClickHouse.Metrics.";

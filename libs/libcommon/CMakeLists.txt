@@ -18,7 +18,6 @@ add_library (common ${LINK_MODE}
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
-    src/ThreadPool.cpp
     src/demangle.cpp
     src/SetTerminalEcho.cpp
 
@@ -31,18 +30,16 @@ add_library (common ${LINK_MODE}
     include/common/ErrorHandlers.h
     include/common/preciseExp10.h
     include/common/shift10.h
-    include/common/intExp.h
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
-    include/common/MultiVersion.h
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
-    include/common/ThreadPool.h
     include/common/demangle.h
     include/common/SetTerminalEcho.h
     include/common/find_symbols.h
+    include/common/constexpr_helpers.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h

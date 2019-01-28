@@ -28,7 +28,7 @@ static void replaceConstFunction(IAST & node, const Context & context, const Nam
         {
             NamesAndTypesList source_columns = all_columns;
             ASTPtr query = function->ptr();
-            auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, source_columns);
+            auto syntax_result = SyntaxAnalyzer(context).analyze(query, source_columns);
             auto result_block = KeyCondition::getBlockWithConstants(query, syntax_result, context);
             if (!result_block.has(child->getColumnName()))
                 return;
@@ -76,7 +76,7 @@ static bool isCompatible(const IAST & node)
         return true;
     }
 
-    if (typeid_cast<const ASTIdentifier *>(&node))
+    if (isIdentifier(&node))
         return true;
 
     return false;
@@ -92,7 +92,7 @@ String transformQueryForExternalDatabase(
     const Context & context)
 {
     auto clone_query = query.clone();
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(clone_query, available_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(clone_query, available_columns);
     ExpressionAnalyzer analyzer(clone_query, syntax_result, context);
     const Names & used_columns = analyzer.getRequiredSourceColumns();
 

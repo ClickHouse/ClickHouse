@@ -44,12 +44,6 @@ HashedDictionary::HashedDictionary(
     creation_time = std::chrono::system_clock::now();
 }
 
-HashedDictionary::HashedDictionary(const HashedDictionary & other)
-    : HashedDictionary{
-          other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
-{
-}
-
 
 void HashedDictionary::toParent(const PaddedPODArray<Key> & ids, PaddedPODArray<Key> & out) const
 {

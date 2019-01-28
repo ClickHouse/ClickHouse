@@ -34,6 +34,9 @@ inc="-I. \
 -I./contrib/poco/Foundation/include \
 -I./contrib/boost/libs/*/include \
 -I./contrib/boost \
+-I/usr/include/llvm-7 \
+-I/usr/include/llvm-6.0 \
+-I/usr/include/llvm-5.0 \
 -I./contrib/llvm/llvm/include \
 -I${BUILD_DIR}/contrib/llvm/llvm/include \
 -I./contrib/libbtrie/include \
@@ -49,6 +52,9 @@ inc="-I. \
 -I./libs/libdaemon/include \
 -I./libs/consistent-hashing \
 -I./libs/consistent-hashing-sumbur \
+-I./contrib/libhdfs3/include \
+-I./contrib/base64/include \
+-I./contrib/lz4/lib \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 

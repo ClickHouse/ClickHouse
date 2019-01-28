@@ -838,15 +838,9 @@ private:
                 null_map_data, nullptr);
         else
         {
-            /// If item_arg is tuple and have constants.
-            if (ColumnPtr materialized_tuple = item_arg.convertToFullColumnIfConst())
-                ArrayIndexGenericImpl<IndexConv, false>::vector(
-                    col_nested, col_array->getOffsets(), *materialized_tuple, col_res->getData(),
-                    null_map_data, null_map_item);
-            else
-                ArrayIndexGenericImpl<IndexConv, false>::vector(
-                    col_nested, col_array->getOffsets(), item_arg, col_res->getData(),
-                    null_map_data, null_map_item);
+            ArrayIndexGenericImpl<IndexConv, false>::vector(
+                col_nested, col_array->getOffsets(), *item_arg.convertToFullColumnIfConst(), col_res->getData(),
+                null_map_data, null_map_item);
         }
 
         block.getByPosition(result).column = std::move(col_res);
@@ -952,7 +946,9 @@ public:
 
                 auto & data = source_block.getByPosition(0);
                 data.column = ColumnArray::create(nested_col, col_array->getOffsetsPtr());
-                data.type = static_cast<const DataTypeNullable &>(*block.getByPosition(arguments[0]).type).getNestedType();
+                data.type = std::make_shared<DataTypeArray>(
+                    static_cast<const DataTypeNullable &>(
+                        *static_cast<const DataTypeArray &>(*block.getByPosition(arguments[0]).type).getNestedType()).getNestedType());
 
                 auto & null_map = source_block.getByPosition(2);
                 null_map.column = nullable_col.getNullMapColumnPtr();

@@ -9,7 +9,7 @@ using FunctionRand = FunctionRandom<UInt32, NameRand>;
 
 void registerFunctionRand(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionRand>();
+    factory.registerFunction<FunctionRand>(FunctionFactory::CaseInsensitive);
 }
 
 }

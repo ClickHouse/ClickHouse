@@ -67,7 +67,7 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
     void drop() override;
-    void truncate(const ASTPtr &) override;
+    void truncate(const ASTPtr &, const Context &) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -101,7 +101,7 @@ private:
     String table_name;
     String full_path;
 
-    Context & context;
+    Context global_context;
     BackgroundProcessingPool & background_pool;
 
     MergeTreeData data;
@@ -137,7 +137,7 @@ private:
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
 
-    bool backgroundTask();
+    BackgroundProcessingPoolTaskResult backgroundTask();
 
     Int64 getCurrentMutationVersion(
         const MergeTreeData::DataPartPtr & part,
