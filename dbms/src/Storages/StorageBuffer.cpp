@@ -420,7 +420,7 @@ void StorageBuffer::startup()
             << " Set apropriate system_profile to fix this.");
     }
 
-    flush_thread = std::thread(&StorageBuffer::flushThread, this);
+    flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
 }
 
 

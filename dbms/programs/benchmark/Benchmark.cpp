@@ -11,7 +11,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <AggregateFunctions/ReservoirSampler.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <boost/program_options.hpp>
