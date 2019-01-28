@@ -722,7 +722,7 @@ BlockIO InterpreterCreateQuery::execute()
     {
         return createDatabase(create);
     }
-    else if (create.dictionary.empty())
+    else if (!create.table.empty())
     {
         return createTable(create);
     }
