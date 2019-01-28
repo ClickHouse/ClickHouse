@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <boost/filesystem.hpp>
 #include "applySubstitutions.h"
+#include <iostream>
 
 namespace DB
 {
@@ -84,12 +85,20 @@ PerformanceTestInfo::PerformanceTestInfo(
     const std::string & profiles_file_)
     : profiles_file(profiles_file_)
 {
+    test_name = config->getString("name");
+    std::cerr << "In constructor\n";
     applySettings(config);
+    std::cerr << "Settings applied\n";
     extractQueries(config);
+    std::cerr << "Queries exctracted\n";
     processSubstitutions(config);
+    std::cerr << "Substituions parsed\n";
     getExecutionType(config);
+    std::cerr << "Execution type choosen\n";
     getStopConditions(config);
+    std::cerr << "Stop conditions are ok\n";
     getMetrics(config);
+    std::cerr << "Metrics are ok\n";
 }
 
 void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
@@ -221,8 +230,10 @@ void PerformanceTestInfo::getExecutionType(XMLConfigurationPtr config)
 void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
 {
     TestStopConditions stop_conditions_template;
+    std::cerr << "Checking stop conditions";
     if (config->has("stop_conditions"))
     {
+        std::cerr << "They are exists\n";
         ConfigurationPtr stop_conditions_config(config->createView("stop_conditions"));
         stop_conditions_template.loadFromConfig(stop_conditions_config);
     }
@@ -231,10 +242,11 @@ void PerformanceTestInfo::getStopConditions(XMLConfigurationPtr config)
         throw Exception("No termination conditions were found in config",
             ErrorCodes::BAD_ARGUMENTS);
 
+    times_to_run = config->getUInt("times_to_run", 1);
+
     for (size_t i = 0; i < times_to_run * queries.size(); ++i)
         stop_conditions_by_run.push_back(stop_conditions_template);
 
-    times_to_run = config->getUInt("times_to_run", 1);
 }
 
 

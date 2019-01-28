@@ -42,7 +42,8 @@ void executeQuery(
     const std::string & query,
     TestStats & statistics,
     TestStopConditions & stop_conditions,
-    InterruptListener & interrupt_listener)
+    InterruptListener & interrupt_listener,
+    Context & context)
 {
     statistics.watch_per_query.restart();
     statistics.last_query_was_cancelled = false;
@@ -50,8 +51,7 @@ void executeQuery(
     statistics.last_query_bytes_read = 0;
 
     Settings settings;
-    Context global_context = Context::createGlobal();
-    RemoteBlockInputStream stream(connection, query, {}, global_context, &settings);
+    RemoteBlockInputStream stream(connection, query, {}, context, &settings);
 
     stream.setProgressCallback(
         [&](const Progress & value)
