@@ -171,13 +171,16 @@ if (USE_INTERNAL_POCO_LIBRARY)
     endif ()
 endif ()
 
-if (USE_INTERNAL_GTEST_LIBRARY)
+if(USE_INTERNAL_GTEST_LIBRARY)
     # Google Test from sources
     add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     # avoid problems with <regexp.h>
     target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
     target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
-endif ()
+elseif(GTEST_SRC_DIR)
+    add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+endif()
 
 if (USE_INTERNAL_LLVM_LIBRARY)
     file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/empty.cpp CONTENT " ")
