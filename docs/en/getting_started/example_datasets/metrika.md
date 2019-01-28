@@ -1,8 +1,8 @@
-# Anonymized Yandex.Metrika Data
-Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrika. Each of the tables can be downloaded as a compressed `tsv.xz` file or as prepared partitions.
+# Anonymized Yandex.Metrica Data
+Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. Each of the tables can be downloaded as a compressed `tsv.xz` file or as prepared partitions.
 
-## Receiving tables from prepared partitions
-**Dowload and import hits:**
+## Obtaining Tables from Prepared Partitions
+**Download and import hits:**
 ```bash
 curl -O https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar
 tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
@@ -20,8 +20,8 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Receiving tables from compressed tsv-file
-**Dowload and import hits from compressed tsv-file**
+## Obtaining Tables from Compressed tsv-file
+**Download and import hits from compressed tsv-file**
 ```bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv 
 # now create table
@@ -34,7 +34,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-**Dowload and import visits from compressed tsv-file**
+**Download and import visits from compressed tsv-file**
 ```bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv 
 # now create table
