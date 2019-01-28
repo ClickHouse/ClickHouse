@@ -15,6 +15,7 @@ target_include_directories (hash_map SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_
 target_link_libraries (hash_map PRIVATE dbms clickhouse_compression)
 
 add_executable (hash_map3 hash_map3.cpp)
+target_include_directories(hash_map3 SYSTEM BEFORE PRIVATE ${METROHASH_INCLUDE_DIR})
 target_link_libraries (hash_map3 PRIVATE dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
 
 add_executable (hash_map_string hash_map_string.cpp)
@@ -25,6 +26,7 @@ add_executable (hash_map_string_2 hash_map_string_2.cpp)
 target_link_libraries (hash_map_string_2 PRIVATE dbms clickhouse_compression)
 
 add_executable (hash_map_string_3 hash_map_string_3.cpp)
+target_include_directories(hash_map_string_3 SYSTEM BEFORE PRIVATE ${METROHASH_INCLUDE_DIR})
 target_link_libraries (hash_map_string_3 PRIVATE dbms clickhouse_compression ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
 
 add_executable (hash_map_string_small hash_map_string_small.cpp)
