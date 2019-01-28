@@ -26,6 +26,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
@@ -150,7 +151,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
     ParserQuery parser(end, settings.enable_debug_queries);
     ASTPtr ast;
-    size_t query_size;
+    const char * query_end;
 
     /// Don't limit the size of internal queries.
     size_t max_query_size = 0;
@@ -162,10 +163,11 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// TODO Parser should fail early when max_query_size limit is reached.
         ast = parseQuery(parser, begin, end, "", max_query_size);
 
-        /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
-        if (!(begin <= ast->range.first && ast->range.second <= end))
-            throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
-        query_size = ast->range.second - begin;
+        const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(ast.get());
+        if (insert_query && insert_query->data)
+            query_end = insert_query->data;
+        else
+            query_end = end;
     }
     catch (...)
     {
@@ -180,7 +182,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    String query(begin, query_size);
+    /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
+    String query(begin, query_end);
     BlockIO res;
 
     try
@@ -495,6 +498,9 @@ void executeQuery(
             String format_name = ast_query_with_output && (ast_query_with_output->format != nullptr)
                 ? *getIdentifierName(ast_query_with_output->format)
                 : context.getDefaultFormat();
+
+            if (ast_query_with_output && ast_query_with_output->settings_ast)
+                InterpreterSetQuery(ast_query_with_output->settings_ast, context).executeForCurrentContext();
 
             BlockOutputStreamPtr out = context.getOutputFormat(format_name, *out_buf, streams.in->getHeader());
 

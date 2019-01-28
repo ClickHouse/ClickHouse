@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int LOGICAL_ERROR;
+    extern const int DATA_TYPE_CANNOT_BE_PROMOTED;
 }
 
 
@@ -51,6 +52,10 @@ ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
     return createColumnConst(size, getDefault());
 }
 
+DataTypePtr IDataType::promoteNumericType() const
+{
+    throw Exception("Data type " + getName() + " can't be promoted.", ErrorCodes::DATA_TYPE_CANNOT_BE_PROMOTED);
+}
 
 void IDataType::serializeBinaryBulk(const IColumn &, WriteBuffer &, size_t, size_t) const
 {
