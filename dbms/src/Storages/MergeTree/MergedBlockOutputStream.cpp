@@ -379,6 +379,13 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         checksums.write(out);
     }
 
+    if (new_part->min_ttl)
+    {
+        /// need comment
+        WriteBufferFromFile out(part_path + "min_ttl.txt", 4096);
+        writeIntText(new_part->min_ttl, out);
+    }
+
     new_part->rows_count = rows_count;
     new_part->marks_count = marks_count;
     new_part->modification_time = time(nullptr);

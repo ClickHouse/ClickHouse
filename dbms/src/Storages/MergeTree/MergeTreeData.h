@@ -591,6 +591,10 @@ public:
     Block primary_key_sample;
     DataTypes primary_key_data_types;
 
+    using TTLExpressionsByColumn = std::unordered_map<std::string, ExpressionActionsPtr>;
+    TTLExpressionsByColumn ttl_expressions_by_column;
+    NameToNameMap ttl_result_columns_by_name;
+
     String sampling_expr_column_name;
     Names columns_required_for_sampling;
 

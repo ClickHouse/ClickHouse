@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
+#include <Storages/MergeTree/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
@@ -176,6 +177,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
     const String * prev_partition_id = nullptr;
     const MergeTreeData::DataPartPtr * prev_part = nullptr;
+    bool has_part_with_expired_ttl = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
         const String & partition_id = part->info.partition_id;
@@ -191,6 +193,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
+        part_info.min_ttl = part->min_ttl;
+
+        if (part->min_ttl && part->min_ttl <= current_time)
+            has_part_with_expired_ttl = true;
 
         partitions.back().emplace_back(part_info);
 
@@ -211,7 +217,10 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         merge_settings.base = 1;
 
     /// NOTE Could allow selection of different merge strategy.
-    merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
+    if (has_part_with_expired_ttl)
+        merge_selector = std::make_unique<TTLMergeSelector>();
+    else
+        merge_selector = std::make_unique<SimpleMergeSelector>(merge_settings);
 
     IMergeSelector::PartsInPartition parts_to_merge = merge_selector->select(
         partitions,
@@ -621,6 +630,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     }
 
 
+    new_data_part->min_ttl = 0;
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
@@ -634,6 +644,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.sorting_key_expr)));
         else
             src_streams.emplace_back(std::move(input));
+
+        if (part->min_ttl && (!new_data_part->min_ttl || part->min_ttl < new_data_part->min_ttl))
+            new_data_part->min_ttl = part->min_ttl;
     }
 
     Names sort_columns = data.sorting_key_columns;
@@ -702,9 +715,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
     Block block;
+    bool need_remove_expired_values = (new_data_part->min_ttl != 0);
     while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
     {
         rows_written += block.rows();
+
+        if (need_remove_expired_values)
+            removeValuesWithExpiredTTL(new_data_part, block);
+
         to.write(block);
 
         merge_entry->rows_written = merged_stream->getProfileInfo().rows;
@@ -1082,6 +1100,40 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
 
     LOG_TRACE(log, "Merged " << parts.size() << " parts: from " << parts.front()->name << " to " << parts.back()->name);
     return new_data_part;
+}
+
+void MergeTreeDataMergerMutator::removeValuesWithExpiredTTL(
+    MergeTreeData::MutableDataPartPtr & new_data_part,
+    Block & block)
+{
+    time_t current_time = time(nullptr);
+    new_data_part->min_ttl = 0;
+    for (const auto & [name, ttl_expr] : data.ttl_expressions_by_column)
+    {
+        ttl_expr->execute(block);
+        auto & column_with_type = block.getByName(name);
+        const IColumn * values_column = column_with_type.column.get();
+        MutableColumnPtr result_column = values_column->cloneEmpty();
+        result_column->reserve(block.rows());
+
+        const auto & ttl_column = block.getByName(data.ttl_result_columns_by_name[name]);
+        const ColumnUInt32::Container & ttl_vec =
+            (typeid_cast<const ColumnUInt32 *>(ttl_column.column.get()))->getData();
+
+        for (size_t i = 0; i < block.rows(); ++i)
+        {
+            if (ttl_vec[i] <= current_time)
+                result_column->insertDefault();
+            else
+            {
+                if (!new_data_part->min_ttl || ttl_vec[i] < new_data_part->min_ttl)
+                    new_data_part->min_ttl = ttl_vec[i];
+
+                result_column->insertFrom(*values_column, i);
+            }
+        }
+        column_with_type.column = std::move(result_column);
+    }
 }
 
 

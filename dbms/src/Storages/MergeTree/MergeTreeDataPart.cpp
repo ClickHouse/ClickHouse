@@ -448,6 +448,7 @@ void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksu
     loadIndex();
     loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `marks_count`.
     loadPartitionAndMinMaxIndex();
+    loadMinTTLValue();
     if (check_consistency)
         checkConsistency(require_columns_checksums);
 }
@@ -601,6 +602,19 @@ void MergeTreeDataPart::loadRowsCount()
 
         throw Exception("Data part doesn't contain fixed size column (even Date column)", ErrorCodes::LOGICAL_ERROR);
     }
+}
+
+void MergeTreeDataPart::loadMinTTLValue()
+{
+    String path = getFullPath() + "min_ttl.txt";
+    if (Poco::File(path).exists())
+    {
+        ReadBufferFromFile file = openForReading(path);
+        readIntText(min_ttl, file);
+        assertEOF(file);
+    }
+    else
+        min_ttl = 0; /// need comment
 }
 
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

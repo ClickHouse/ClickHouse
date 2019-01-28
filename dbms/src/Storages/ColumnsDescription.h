@@ -12,6 +12,7 @@ namespace DB
 
 /// key-values column_name, column_comment. column_comment should be non empty.
 using ColumnComments = std::unordered_map<std::string, String>;
+using ColumnTTLs = std::unordered_map<std::string, ASTPtr>;
 
 struct ColumnsDescription
 {
@@ -21,6 +22,7 @@ struct ColumnsDescription
     ColumnDefaults defaults;
     ColumnComments comments;
     ColumnCodecs codecs;
+    ColumnTTLs ttl_expressions;
 
     ColumnsDescription() = default;
 
@@ -30,13 +32,15 @@ struct ColumnsDescription
         NamesAndTypesList aliases_,
         ColumnDefaults defaults_,
         ColumnComments comments_,
-        ColumnCodecs codecs_)
+        ColumnCodecs codecs_,
+        ColumnTTLs ttl_expressions_)
         : ordinary(std::move(ordinary_))
         , materialized(std::move(materialized_))
         , aliases(std::move(aliases_))
         , defaults(std::move(defaults_))
         , comments(std::move(comments_))
         , codecs(std::move(codecs_))
+        , ttl_expressions(std::move(ttl_expressions_))
     {}
 
     explicit ColumnsDescription(NamesAndTypesList ordinary_) : ordinary(std::move(ordinary_)) {}
@@ -48,7 +52,8 @@ struct ColumnsDescription
             && aliases == other.aliases
             && defaults == other.defaults
             && comments == other.comments
-            && codecs == other.codecs;
+            && codecs == other.codecs
+            && ttl_expressions == other.ttl_expressions;
     }
 
     bool operator!=(const ColumnsDescription & other) const { return !(*this == other); }

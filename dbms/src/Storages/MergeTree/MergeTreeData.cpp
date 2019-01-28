@@ -156,6 +156,23 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
+    for (const auto & [name, ast] : getColumns().ttl_expressions)
+    {
+        ASTPtr ttl_ast = ast;
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
+        auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+
+        const Names & input_columns = expr->getRequiredColumns();
+        NameSet input_columns_set = NameSet(input_columns.begin(), input_columns.end());
+        const Names & output_columns = expr->getSampleBlock().getNames();
+
+        for (const auto & column : output_columns)
+            if (!input_columns_set.count(column))
+                ttl_result_columns_by_name.emplace(name, column);
+
+        ttl_expressions_by_column.emplace(name, std::move(expr));
+    }
+
     auto path_exists = Poco::File(full_path).exists();
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();

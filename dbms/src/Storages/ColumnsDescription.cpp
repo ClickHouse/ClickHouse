@@ -119,6 +119,12 @@ String ColumnsDescription::toString() const
                 writeText(")", buf);
             }
 
+            const auto ttl_it = ttl_expressions.find(column.name);
+            if (ttl_it != ttl_expressions.end())
+            {
+                writeText("\tTTL\t", buf);
+                writeText(queryToString(ttl_it->second), buf);
+            }
             writeChar('\n', buf);
         }
     };
@@ -179,6 +185,17 @@ CompressionCodecPtr parseCodec(ReadBufferFromString& buf)
         return nullptr;
 }
 
+ASTPtr parseTTLExpression(ReadBufferFromString& buf)
+{
+    if (*buf.position() == '\n')
+        return {};
+
+    assertChar('\t', buf);
+    ParserExpression expression_parser;
+    String ttl_expr_str;
+    readText(ttl_expr_str, buf);
+    return parseQuery(expression_parser, ttl_expr_str, "ttl expression", 0);
+}
 
 void parseColumn(ReadBufferFromString & buf, ColumnsDescription & result, const DataTypeFactory & data_type_factory)
 {

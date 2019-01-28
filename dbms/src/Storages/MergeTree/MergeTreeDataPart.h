@@ -126,6 +126,9 @@ struct MergeTreeDataPart
         Deleting        /// not active data part with identity refcounter, it is deleting right now by a cleaner
     };
 
+    /// Minimal time, when we need to delete some data from this part
+    time_t min_ttl;
+
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     mutable State state{State::Temporary};
 
@@ -276,6 +279,9 @@ private:
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
+
+    /// need comment
+    void loadMinTTLValue();
 
     void loadPartitionAndMinMaxIndex();
 
