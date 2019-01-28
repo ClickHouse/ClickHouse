@@ -418,7 +418,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");
