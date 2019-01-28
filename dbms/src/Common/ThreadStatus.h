@@ -9,6 +9,8 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <functional>
+#include <boost/noncopyable.hpp>
 
 
 namespace Poco
@@ -23,7 +25,7 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
-using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
+using ThreadStatusPtr = ThreadStatus*;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RUsageCounters;
@@ -67,14 +69,20 @@ public:
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
 
+extern thread_local ThreadStatusPtr current_thread;
+
 /** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
-  * Used inside thread-local variable. See variables in CurrentThread.cpp
+  * The object must be created in thread function and destroyed in the same thread before the exit.
+  * It is accessed through thread-local pointer.
   *
   * This object should be used only via "CurrentThread", see CurrentThread.h
   */
-class ThreadStatus : public std::enable_shared_from_this<ThreadStatus>
+class ThreadStatus : public boost::noncopyable
 {
 public:
+    ThreadStatus();
+    ~ThreadStatus();
+
     /// Poco's thread number (the same number is used in logs)
     UInt32 thread_number = 0;
     /// Linux's PID (or TGID) (the same id is shown by ps util)
@@ -88,8 +96,8 @@ public:
     Progress progress_in;
     Progress progress_out;
 
-public:
-    static ThreadStatusPtr create();
+    using Deleter = std::function<void()>;
+    Deleter deleter;
 
     ThreadGroupStatusPtr getThreadGroup() const
     {
@@ -136,11 +144,7 @@ public:
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
-    ~ThreadStatus();
-
 protected:
-    ThreadStatus();
-
     void initPerformanceCounters();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
