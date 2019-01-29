@@ -197,9 +197,6 @@ UniqueCondition::UniqueCondition(
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
             expression_ast, index.header.getNamesAndTypesList());
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
-
-    Poco::Logger * log = &Poco::Logger::get("unique_idx");
-    LOG_DEBUG(log, "new unique index" << actions->dumpActions());
 }
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
