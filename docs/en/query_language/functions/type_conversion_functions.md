@@ -167,4 +167,18 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
+## parseDateTimeBestEffort
+
+Parse a number type argument to a Date or DateTime type.
+different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.
+For more information, see the link: [Complex Date Format](https://xkcd.com/1179/)
+
+## parseDateTimeBestEffortOrNull
+
+Same as for [parseDateTimeBestEffort](./type_conversion_functions.md#parseDateTimeBestEffort) except that it returns null when it encounters a date format that cannot be processed.
+
+## parseDateTimeBestEffortOrZero
+
+Same as for [parseDateTimeBestEffort](./type_conversion_functions.md#parseDateTimeBestEffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
