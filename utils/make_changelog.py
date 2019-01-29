@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # Note: should work with python 2 and 3
+from __future__ import print_function
 
 import requests
 import json
@@ -30,7 +31,7 @@ def http_get_json(url, token, max_retries, retry_timeout):
 
             if resp.status_code == 403:
                 try:
-                    if resp.json()['message'].startswith('API rate limit exceeded') and t < max_retries:
+                    if resp.json()['message'].startswith('API rate limit exceeded') and t + 1 < max_retries:
                         logging.warning(msg)
                         time.sleep(retry_timeout)
                         continue
@@ -60,7 +61,7 @@ def get_merge_base(first, second, project_root):
         check_sha(sha)
         return sha
     except:
-        logging.error('Cannot find merge base for {} and {}'.format(first, second))
+        logging.error('Cannot find merge base for %s and %s', first, second)
         raise
 
 
@@ -122,7 +123,7 @@ def find_pull_requests(commits, token, max_retries, retry_timeout):
 
     for i, commit in enumerate(commits):
         if (i + 1) % 10 == 0:
-            logging.info('Processed {} commits'.format(i + 1))
+            logging.info('Processed %d commits', i + 1)
         if not find_pull_request_for_commit(commit, pull_requests, token, max_retries, retry_timeout):
             not_found_commits.append(commit)
 
@@ -147,7 +148,7 @@ def get_users_info(pull_requests, commits_info, token, max_retries, retry_timeou
         if 'author' in commit_info and commit_info['author'] is not None:
             update_user(commit_info['committer']['login'])
         else:
-            logging.warning('Not found author for commit {}.'.format(commit_info['html_url']))
+            logging.warning('Not found author for commit %s.', commit_info['html_url'])
 
     return users
 
@@ -251,13 +252,13 @@ def load_state(state_file, base_sha, new_tag, prev_tag):
     if state_file:
         try:
             if os.path.exists(state_file):
-                logging.info('Reading state from {}'.format(state_file))
+                logging.info('Reading state from %', state_file)
                 with codecs.open(state_file, encoding='utf-8') as f:
                     state = json.loads(f.read())
             else:
                 logging.info('State file does not exist. Will create new one.')
         except Exception as e:
-            logging.warning('Cannot load state from {}. Reason: {}'.format(state_file, str(e)))
+            logging.warning('Cannot load state from %s. Reason: %s', state_file, str(e))
 
     if state:
         if 'base_sha' not in state or 'new_tag' not in state or 'prev_tag' not in state:
@@ -280,7 +281,7 @@ def save_state(state_file, state):
 def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_retries, retry_timeout):
 
     base_sha = get_merge_base(new_tag, prev_tag, repo_folder)
-    logging.info('Base sha: {}\n'.format(base_sha))
+    logging.info('Base sha: %s', base_sha)
 
     # Step 1. Get commits from merge_base to new_tag HEAD.
     # Result is a list of commits + map with commits info (author, message)
@@ -305,19 +306,19 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
     if state:
 
         if 'commits' in state and 'commits_info' in state:
-            logging.info('Loading commits from {}'.format(state_file))
+            logging.info('Loading commits from %s', state_file)
             commits_info = state['commits_info']
             commits = state['commits']
             is_commits_loaded = True
 
         if 'pull_requests' in state and 'unknown_commits' in state:
-            logging.info('Loading pull requests from {}'.format(state_file))
+            logging.info('Loading pull requests from %s', state_file)
             unknown_commits = state['unknown_commits']
             pull_requests = state['pull_requests']
             is_pull_requests_loaded = True
 
         if 'users' in state:
-            logging.info('Loading users requests from {}'.format(state_file))
+            logging.info('Loading users requests from %s', state_file)
             users = state['users']
             is_users_loaded = True
 
@@ -331,7 +332,7 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
         state['commits'] = commits
         state['commits_info'] = commits_info
 
-    logging.info('Found {} commits from {} to {}.\n'.format(len(commits), new_tag, base_sha))
+    logging.info('Found %d commits from %s to %s.\n', len(commits), new_tag, base_sha)
     save_state(state_file, state)
 
     if not is_pull_requests_loaded:
@@ -340,7 +341,7 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
         state['unknown_commits'] = unknown_commits
         state['pull_requests'] = pull_requests
 
-    logging.info('Found {} pull requests and {} unknown commits.\n'.format(len(pull_requests), len(unknown_commits)))
+    logging.info('Found %d pull requests and %d unknown commits.\n', len(pull_requests), len(unknown_commits))
     save_state(state_file, state)
 
     if not is_users_loaded:
@@ -348,7 +349,7 @@ def make_changelog(new_tag, prev_tag, repo, repo_folder, state_file, token, max_
         users = get_users_info(pull_requests, commits_info, token, max_retries, retry_timeout)
         state['users'] = users
 
-    logging.info('Found {} users.'.format(len(users)))
+    logging.info('Found %d users.', len(users))
     save_state(state_file, state)
 
     print(process_pull_requests(pull_requests, users, repo))
@@ -378,7 +379,7 @@ if __name__ == '__main__':
     max_retry = args.max_retry
     retry_timeout = args.retry_timeout
 
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
     repo_folder = os.path.expanduser(repo_folder)
 

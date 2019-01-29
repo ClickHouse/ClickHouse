@@ -200,11 +200,18 @@ target_link_libraries (clickhouse_common_io
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
     apple_rt
+        PUBLIC
+    Threads::Threads
+        PRIVATE
     ${CMAKE_DL_LIBS}
 )
 
-if (NOT ARCH_ARM AND CPUID_LIBRARY)
-    target_link_libraries (clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+if(CPUID_LIBRARY)
+    target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+endif()
+
+if(CPUINFO_LIBRARY)
+    target_link_libraries(clickhouse_common_io PRIVATE ${CPUINFO_LIBRARY})
 endif()
 
 target_link_libraries (dbms
@@ -225,6 +232,7 @@ target_link_libraries (dbms
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+    Threads::Threads
 )
 
 if (NOT USE_INTERNAL_RE2_LIBRARY)
