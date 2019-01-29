@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
@@ -232,11 +231,11 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
 void UniqueCondition::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node)) {
-        ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
+        auto * func = typeid_cast<ASTFunction *>(&*node);
         auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
-        for (size_t i = 0, size = args.size(); i < size; ++i)
-            traverseAST(args[i]);
+        for (auto & arg : args)
+            traverseAST(arg);
         return;
     }
 
@@ -252,10 +251,10 @@ bool UniqueCondition::atomFromAST(ASTPtr & node) const
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return true;
 
-    if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
+    if (const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
         return key_columns.count(identifier->getColumnName()) != 0;
 
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(node.get()))
+    if (auto * func = typeid_cast<ASTFunction *>(node.get()))
     {
         if (key_columns.count(func->getColumnName()))
         {
@@ -266,8 +265,8 @@ bool UniqueCondition::atomFromAST(ASTPtr & node) const
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
-        for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!atomFromAST(args[i]))
+        for (auto & arg : args)
+            if (!atomFromAST(arg))
                 return false;
 
         return true;
@@ -279,7 +278,7 @@ bool UniqueCondition::atomFromAST(ASTPtr & node) const
 bool UniqueCondition::operatorFromAST(ASTPtr & node) const
 {
     /// Functions AND, OR, NOT. Replace with bit*.
-    ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
+    auto * func = typeid_cast<ASTFunction *>(&*node);
     if (!func)
         return false;
 

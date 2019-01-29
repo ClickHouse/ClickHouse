@@ -74,7 +74,7 @@ public:
             const Block & header,
             size_t granularity,
             size_t _max_rows)
-            : MergeTreeIndex(name, expr, columns, data_types, header, granularity), max_rows(_max_rows) {}
+            : MergeTreeIndex(std::move(name), std::move(expr), columns, data_types, header, granularity), max_rows(_max_rows) {}
 
     ~MergeTreeUniqueIndex() override = default;
 
