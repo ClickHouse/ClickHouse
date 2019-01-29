@@ -241,7 +241,7 @@ CREATE TABLE table_name
     s String,
     ...
     INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
-    INDEX b (u64 * length(s)) TYPE minmax GRANULARITY 4
+    INDEX b (u64 * length(s), i32) TYPE unique GRANULARITY 4
 ) ENGINE = MergeTree()
 ...
 ```
@@ -254,12 +254,21 @@ SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 
 #### Доступные индексы
 
-* `minmax` Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска кусков аналогично первичному ключу.
+* `minmax`
+Хранит минимум и максимум выражения (если выражение - `tuple`, то для каждого элемента `tuple`), используя их для пропуска блоков аналогично первичному ключу.
 
-Пример
+* `unique(max_rows)`
+Хранит уникальные значения выражения на блоке в количестве не более `max_rows`, используя их для пропуска блоков, оценивая выполнимость `WHERE` выражения на хранимых данных.
+Если `max_rows=0`, то хранит значения выражения без ограничений. Если параметров не передано, то полагается `max_rows=0`.
+
+
+Примеры
 ```sql
 INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE minmax GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique(100) GRANULARITY 4
 ```
+
 
 ## Конкурентный доступ к данным
 
