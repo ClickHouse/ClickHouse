@@ -54,8 +54,6 @@ LIMIT 10
 └─────┴──────────────────────────┘
 ```
 
-## trunc, truncate
-
 ## roundToExp2(num)
 
 Accepts a number. If the number is less than one, it returns 0. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
