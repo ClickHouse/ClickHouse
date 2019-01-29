@@ -106,7 +106,7 @@ target_link_libraries (common
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
     ${MALLOC_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
+    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)
