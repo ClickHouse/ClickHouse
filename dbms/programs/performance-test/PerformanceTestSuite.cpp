@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <limits>
 #include <regex>
@@ -277,6 +278,7 @@ static std::vector<std::string> getInputFiles(const po::variables_map & options,
 
         input_files = std::move(collected_files);
     }
+    std::sort(input_files.begin(), input_files.end());
     return input_files;
 }
 
