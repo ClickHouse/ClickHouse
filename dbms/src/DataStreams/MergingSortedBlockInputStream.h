@@ -157,7 +157,7 @@ protected:
     using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
     QueueWithCollation queue_with_collation;
 
-    /// Used in Vertical merge algorithm to gather non-PK columns (on next step)
+    /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf;
 
