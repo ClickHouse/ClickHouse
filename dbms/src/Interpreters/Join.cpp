@@ -34,11 +34,11 @@ namespace ErrorCodes
 
 
 Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
-    ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool overwrite_)
+    ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
     : kind(kind_), strictness(strictness_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
-    overwrite(overwrite_),
+    any_take_last_row(any_take_last_row_),
     log(&Logger::get("Join")),
     limits(limits)
 {
@@ -504,7 +504,7 @@ bool Join::insertFromBlock(const Block & block)
 
 namespace
 {
-    template <bool pad_left, ASTTableJoin::Strictness STRICTNESS, typename Map>
+    template <bool fill_left, ASTTableJoin::Strictness STRICTNESS, typename Map>
     struct Adder;
 
     template <typename Map>
@@ -550,8 +550,8 @@ namespace
         }
     };
 
-    template <bool pad_left, typename Map>
-    struct Adder<pad_left, ASTTableJoin::Strictness::All, Map>
+    template <bool fill_left, typename Map>
+    struct Adder<fill_left, ASTTableJoin::Strictness::All, Map>
     {
         static void addFound(const typename Map::mapped_type & mapped, size_t num_columns_to_add, MutableColumns & added_columns,
             size_t i, IColumn::Filter * filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
@@ -577,7 +577,7 @@ namespace
         {
             (*filter)[i] = 0;
 
-            if (!pad_left)
+            if (!fill_left)
             {
                 (*offsets)[i] = current_offset;
             }
@@ -608,7 +608,7 @@ namespace
         {
             if (has_null_map && (*null_map)[i])
             {
-                Adder<Join::KindTrait<KIND>::pad_left, STRICTNESS, Map>::addNotFound(
+                Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addNotFound(
                     num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
             }
             else
@@ -619,11 +619,11 @@ namespace
                 {
                     auto & mapped = find_result.getMapped();
                     mapped.setUsed();
-                    Adder<Join::KindTrait<KIND>::pad_left, STRICTNESS, Map>::addFound(
+                    Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addFound(
                         mapped, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), right_indexes);
                 }
                 else
-                    Adder<Join::KindTrait<KIND>::pad_left, STRICTNESS, Map>::addNotFound(
+                    Adder<Join::KindTrait<KIND>::fill_left, STRICTNESS, Map>::addNotFound(
                         num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get());
             }
         }
@@ -913,7 +913,7 @@ void Join::joinGetImpl(Block & block, const String & column_name, const Maps & m
 
 
 // TODO: support composite key
-// TODO: return multible columns as named tuple
+// TODO: return multiple columns as named tuple
 // TODO: return array of values when strictness == ASTTableJoin::Strictness::All
 void Join::joinGet(Block & block, const String & column_name) const
 {
@@ -926,7 +926,7 @@ void Join::joinGet(Block & block, const String & column_name) const
 
     if (kind == ASTTableJoin::Kind::Left && strictness == ASTTableJoin::Strictness::Any)
     {
-        if (overwrite)
+        if (any_take_last_row)
             joinGetImpl(block, column_name, std::get<MapsAnyOverwrite>(maps));
         else
             joinGetImpl(block, column_name, std::get<MapsAny>(maps));

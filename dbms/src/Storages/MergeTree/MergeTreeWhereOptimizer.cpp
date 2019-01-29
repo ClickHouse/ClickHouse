@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
@@ -44,7 +46,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
-        prepared_sets(query_info.sets),
         log{log}
 {
     calculateColumnSizes(data, column_names);
@@ -333,8 +334,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const IAST * const ast) const
 
         if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
             (primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
-            (primary_key_columns.count(first_arg_name)
-                && (prepared_sets.count(args[1]->range) || typeid_cast<const ASTSubquery *>(args[1].get()))))
+            (primary_key_columns.count(first_arg_name) && functionIsInOrGlobalInOperator(func->name)))
             return true;
     }
 
@@ -381,7 +381,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
         if ("indexHint" == function_ptr->name)
             return true;
     }
-    else if (auto opt_name = getColumnIdentifierName(ptr))
+    else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (array_joined_names.count(*opt_name) ||

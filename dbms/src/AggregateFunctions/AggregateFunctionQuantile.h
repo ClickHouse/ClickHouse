@@ -100,7 +100,7 @@ public:
             return res;
     }
 
-    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         /// Out of range conversion may occur. This is Ok.
 
@@ -177,8 +177,11 @@ public:
     static void assertSecondArg(const DataTypes & argument_types)
     {
         if constexpr (has_second_arg)
-            /// TODO: check that second argument is of numerical type.
+        {
             assertBinary(Name::name, argument_types);
+            if (!isUnsignedInteger(argument_types[1]))
+                throw Exception("Second argument (weight) for function " + std::string(Name::name) + " must be unsigned integer, but it has type " + argument_types[1]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
         else
             assertUnary(Name::name, argument_types);
     }
