@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <regex>
 #include <sstream>
+#include <thread>
 
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getFQDNOrHostName.h>

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <unordered_map>
 #include <Poco/Util/XMLConfiguration.h>
 
 namespace DB
