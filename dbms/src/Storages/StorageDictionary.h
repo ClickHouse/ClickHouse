@@ -67,10 +67,11 @@ private:
 protected:
     StorageDictionary(
         const String & table_name_,
-        const String & database_name,
+        const String & database_name_,
         const ColumnsDescription & columns_,
-        const DictionaryStructure & dictionary_structure_,
-        const String & dictionary_name_);
+        std::optional<std::reference_wrapper<const DictionaryStructure>> dictionary_structure_,
+        const String & dictionary_name_,
+        bool attach_);
 };
 
 }

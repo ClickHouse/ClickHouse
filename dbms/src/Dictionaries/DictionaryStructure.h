@@ -97,6 +97,7 @@ struct DictionaryStructure final
     std::optional<DictionaryTypedSpecialAttribute> range_max;
     bool has_expressions = false;
 
+    DictionaryStructure() = default;
     DictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
     void validateKeyTypes(const DataTypes & key_types) const;

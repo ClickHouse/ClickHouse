@@ -1,5 +1,6 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DatabaseDictionary.h>
+#include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Storages/StorageDictionary.h>
@@ -116,7 +117,13 @@ Tables DatabaseDictionary::loadTables()
         {
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[dict_name] = StorageDictionary::create(dict_name, "", ColumnsDescription{columns}, dictionary_structure, dict_name);
+            tables[dict_name] = StorageDictionary::create(
+                dict_name,
+                name,
+                ColumnsDescription{columns},
+                std::cref(dictionary_structure),
+                dict_name,
+                false);
         }
     }
 
@@ -136,8 +143,6 @@ void DatabaseDictionary::loadDictionaries(Context & context, ThreadPool *, bool)
         /// For '.svn', '.gitignore' and similar
         if (filename.at(0) == '.')
             continue;
-
-        // TODO: нужно ли учитывать '.sql.bak' ?
 
         /// There are files .sql.tmp - delete.
         if (endsWith(filename, ".sql.tmp"))
@@ -212,7 +217,13 @@ StoragePtr DatabaseDictionary::tryGetTable(
             {
                 const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
                 auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-                return StorageDictionary::create(table_name, name, ColumnsDescription{columns}, dictionary_structure, table_name);
+                return StorageDictionary::create(
+                    table_name,
+                    name,
+                    ColumnsDescription{columns},
+                    std::cref(dictionary_structure),
+                    table_name,
+                    false);
             }
         }
     }

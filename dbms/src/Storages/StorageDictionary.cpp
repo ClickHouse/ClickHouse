@@ -27,15 +27,19 @@ StorageDictionary::StorageDictionary(
     const String & table_name_,
     const String & database_name_,
     const ColumnsDescription & columns_,
-    const DictionaryStructure & dictionary_structure_,
-    const String & dictionary_name_)
+    std::optional<std::reference_wrapper<const DictionaryStructure>> dictionary_structure_,
+    const String & dictionary_name_,
+    bool attach_)
     : IStorage{columns_}
     , table_name(table_name_)
     , database_name(database_name_)
     , dictionary_name(dictionary_name_)
     , logger(&Poco::Logger::get("StorageDictionary"))
 {
-    checkNamesAndTypesCompatibleWithDictionary(dictionary_structure_);
+    if (!attach_)
+    {
+        checkNamesAndTypesCompatibleWithDictionary(*dictionary_structure_);
+    }
 }
 
 BlockInputStreams StorageDictionary::read(
@@ -119,6 +123,13 @@ void registerStorageDictionary(StorageFactory & factory)
             dictionary_name = dictionary_name.substr(pos + 1);
         }
 
+        if (args.attach)
+        {
+            DictionaryStructure empty_structure;
+            return StorageDictionary::create(
+                    args.table_name, database_name, args.columns, std::cref(empty_structure), dictionary_name, true);
+        }
+
         DictionaryPtr dictionary;
         if (database_name.empty())
         {
@@ -137,7 +148,7 @@ void registerStorageDictionary(StorageFactory & factory)
 
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
         return StorageDictionary::create(
-            args.table_name, database_name, args.columns, dictionary_structure, dictionary_name);
+            args.table_name, database_name, args.columns, std::cref(dictionary_structure), dictionary_name, false);
     });
 }
 
