@@ -232,7 +232,8 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
 
 void UniqueCondition::traverseAST(ASTPtr & node) const
 {
-    if (operatorFromAST(node)) {
+    if (operatorFromAST(node))
+    {
         auto * func = typeid_cast<ASTFunction *>(&*node);
         auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
