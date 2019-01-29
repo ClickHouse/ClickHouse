@@ -224,7 +224,7 @@ class Join
 {
 public:
     Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
-         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool overwrite_ = false);
+         ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_ = false);
 
     bool empty() { return type == Type::EMPTY; }
 
@@ -381,18 +381,18 @@ public:
     struct KindTrait
     {
         // Affects the Adder trait so that when the right part is empty, adding a default value on the left
-        static constexpr bool pad_left = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
+        static constexpr bool fill_left = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
 
         // Affects the Map trait so that a `used` flag is attached to map slots in order to
         // generate default values on the right when the left part is empty
-        static constexpr bool pad_right = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
+        static constexpr bool fill_right = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
     };
 
-    template <bool pad_right, typename ASTTableJoin::Strictness, bool overwrite>
+    template <bool fill_right, typename ASTTableJoin::Strictness, bool overwrite>
     struct MapGetterImpl;
 
     template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness, bool overwrite>
-    using Map = typename MapGetterImpl<KindTrait<kind>::pad_right, strictness, overwrite>::Map;
+    using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness, overwrite>::Map;
 
     static constexpr std::array<ASTTableJoin::Strictness, 2> STRICTNESSES = {ASTTableJoin::Strictness::Any, ASTTableJoin::Strictness::All};
     static constexpr std::array<ASTTableJoin::Kind, 4> KINDS
@@ -403,7 +403,7 @@ public:
     template <typename Func>
     bool dispatch(Func && func)
     {
-        if (overwrite)
+        if (any_take_last_row)
         {
             return static_for<0, KINDS.size()>([&](auto i)
             {
@@ -465,7 +465,7 @@ private:
     bool use_nulls;
 
     /// Overwrite existing values when encountering the same key again
-    bool overwrite;
+    bool any_take_last_row;
 
     /** Blocks of "right" table.
       */
