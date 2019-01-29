@@ -4,7 +4,7 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
