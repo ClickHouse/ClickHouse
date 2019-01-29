@@ -10,6 +10,7 @@
 #    include <aerospike/aerospike_batch.h>
 #    include <aerospike/as_record.h>
 #    include <aerospike/as_scan.h>
+#    include <aerospike/as_val.h>
 #    include <aerospike/aerospike_scan.h>
 
 #    include <Columns/ColumnNullable.h>
@@ -113,10 +114,11 @@ namespace
                 case ValueType::Int64:
                     static_cast<ColumnVector<Int64>&>(column).getData().push_back(record->key.value.integer.value);
                     break;
-                case ValueType::String:
-                    static_cast<ColumnVector<String>&>(column).getData().push_back(
-                        std::string(record->key.value.string.value, record->key.value.string.len));
+                case ValueType::String: {
+                    String str{record->key.value.string.value, record->key.value.string.len};
+                    static_cast<ColumnString&>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
                     break;
+                }
                 case ValueType::Date:
                     static_cast<ColumnUInt16&>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
                         static_cast<Int64>(record->key.value.integer.value))});
@@ -139,96 +141,77 @@ namespace
             }
         }
 
-        /* void insertValue(IColumn & column, const ValueType type, const Poco::Aerospike::Element & value, const std::string & name)
-        {
-            switch (type)
-            {
+        template <typename T>
+        void insertNumberValue(IColumn & column, const as_record * record, const std::string & name) {
+            switch(as_val_type(&(record->bins.entries[0].value))) {
+                case AS_INTEGER:
+                    static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.integer.value);
+                    break;
+                case AS_DOUBLE:
+                    static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.dbl.value);
+                    break;
+                case AS_STRING:
+                    static_cast<ColumnVector<T>&>(column).getData().push_back(record->bins.entries[0].value.string.value);
+                    break;
+                default:
+                    throw Exception(
+                        "Type mismatch, expected a number, got type id = " + toString(record->bins.entries[0].value) + " for column " + name,
+                        ErrorCodes::TYPE_MISMATCH);
+            }
+        }
+
+        void insertValue(IColumn& column, const ValueType type, const as_val* value, const as_record * record, const std::string& name) {
+            switch (type) {
                 case ValueType::UInt8:
-                    insertNumber<UInt8>(column, value, name);
+                    insertNumberValue<UInt8>(column, record, name);
                     break;
                 case ValueType::UInt16:
-                    insertNumber<UInt16>(column, value, name);
+                    insertNumberValue<UInt16>(column, record, name);
                     break;
                 case ValueType::UInt32:
-                    insertNumber<UInt32>(column, value, name);
+                    insertNumberValue<UInt32>(column, record, name);
                     break;
                 case ValueType::UInt64:
-                    insertNumber<UInt64>(column, value, name);
+                    insertNumberValue<UInt64>(column, record, name);
                     break;
                 case ValueType::Int8:
-                    insertNumber<Int8>(column, value, name);
+                    insertNumberValue<Int8>(column, record, name);
                     break;
                 case ValueType::Int16:
-                    insertNumber<Int16>(column, value, name);
+                    insertNumberValue<Int16>(column, record, name);
                     break;
                 case ValueType::Int32:
-                    insertNumber<Int32>(column, value, name);
+                    insertNumberValue<Int32>(column, record, name);
                     break;
                 case ValueType::Int64:
-                    insertNumber<Int64>(column, value, name);
+                    insertNumberValue<Int64>(column, record, name);
                     break;
-                case ValueType::Float32:
-                    insertNumber<Float32>(column, value, name);
+                case ValueType::String: {
+                    String str{record->bins.entries[0].value.string.value, record->bins.entries[0].value.string.len};
+                    static_cast<ColumnString&>(column).insertDataWithTerminatingZero(str.data(), str.size() + 1);
                     break;
-                case ValueType::Float64:
-                    insertNumber<Float64>(column, value, name);
-                    break;
-
-                case ValueType::String:
-                {
-                    if (value.type() == Poco::Aerospike::ElementTraits<ObjectId::Ptr>::TypeId)
-                    {
-                        std::string string_id = value.toString();
-                        static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
-                        break;
-                    }
-                    else if (value.type() == Poco::Aerospike::ElementTraits<String>::TypeId)
-                    {
-                        String string = static_cast<const Poco::Aerospike::ConcreteElement<String> &>(value).value();
-                        static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
-                        break;
-                    }
-
-                    throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) + " for column " + name,
-                                    ErrorCodes::TYPE_MISMATCH};
                 }
-
                 case ValueType::Date:
-                {
-                    if (value.type() != Poco::Aerospike::ElementTraits<Poco::Timestamp>::TypeId)
-                        throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
-                                        ErrorCodes::TYPE_MISMATCH};
-
-                    static_cast<ColumnUInt16 &>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
-                        static_cast<const Poco::Aerospike::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime())});
+                    static_cast<ColumnUInt16&>(column).getData().push_back(UInt16{DateLUT::instance().toDayNum(
+                        static_cast<Int64>(record->bins.entries[0].value.integer.value))});
                     break;
-                }
-
                 case ValueType::DateTime:
-                {
-                    if (value.type() != Poco::Aerospike::ElementTraits<Poco::Timestamp>::TypeId)
-                        throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) + " for column " + name,
-                                        ErrorCodes::TYPE_MISMATCH};
-
-                    static_cast<ColumnUInt32 &>(column).getData().push_back(
-                        static_cast<const Poco::Aerospike::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
+                    static_cast<ColumnUInt32&>(column).getData().push_back(
+                        static_cast<Int64>(record->bins.entries[0].value.integer.value));
+                    break;
+                case ValueType::UUID: {
+                    String str{record->bins.entries[0].value.string.value, record->bins.entries[0].value.string.len};
+                    static_cast<ColumnUInt128&>(column).getData().push_back(parse<UUID>(str));
                     break;
                 }
-                case ValueType::UUID:
-                {
-                    if (value.type() == Poco::Aerospike::ElementTraits<String>::TypeId)
-                    {
-                        String string = static_cast<const Poco::Aerospike::ConcreteElement<String> &>(value).value();
-                        static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
-                    }
-                    else
-                        throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) + " for column "
-                                        + name,
-                                        ErrorCodes::TYPE_MISMATCH};
-                    break;
-                }
+                default:
+                    throw Exception{
+                        "Type mismatch, expected String (UUID), got type id = " + toString(value->type) +
+                        " for column "
+                        + name,
+                        ErrorCodes::TYPE_MISMATCH};
             }
-        } */
+        }
 
         void insertDefaultValue(IColumn& column, const IColumn& sample_column) {
             column.insertFrom(sample_column, 0);
