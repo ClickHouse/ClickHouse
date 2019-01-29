@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int STD_EXCEPTION;
     extern const int UNKNOWN_EXCEPTION;
     extern const int CANNOT_TRUNCATE_FILE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -77,6 +78,10 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
 
     try
     {
+        // Avoid terminate if called outside catch block. Should not happen.
+        if (!std::current_exception())
+            return "No exception.";
+
         throw;
     }
     catch (const Exception & e)
@@ -129,6 +134,10 @@ int getCurrentExceptionCode()
 {
     try
     {
+        // Avoid terminate if called outside catch block. Should not happen.
+        if (!std::current_exception())
+            return ErrorCodes::LOGICAL_ERROR;
+
         throw;
     }
     catch (const Exception & e)
