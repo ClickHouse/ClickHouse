@@ -9,12 +9,9 @@ CREATE TABLE test.minmax_idx
     s String,
     e Enum8('a' = 1, 'b' = 2, 'c' = 3),
     dt Date,
-    INDEX
-      idx_all (i32, i32 + f64, d, s, e, dt) TYPE minmax GRANULARITY 4,
-    INDEX
-      idx_all2 (i32, i32 + f64, d, s, e, dt) TYPE minmax GRANULARITY 2,
-    INDEX
-      idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
+    INDEX idx_all (i32, i32 + f64, d, s, e, dt) TYPE minmax GRANULARITY 4,
+    INDEX idx_all2 (i32, i32 + f64, d, s, e, dt) TYPE minmax GRANULARITY 2,
+    INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE minmax GRANULARITY 3
 ) ENGINE = MergeTree()
 ORDER BY u64
 SETTINGS index_granularity = 2;
