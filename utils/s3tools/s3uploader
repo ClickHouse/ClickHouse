@@ -73,7 +73,7 @@ examples:
 '''
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
     parser = argparse.ArgumentParser(
         description="Simple tool for uploading datasets to clickhouse S3",
