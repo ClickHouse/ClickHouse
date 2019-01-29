@@ -1,3 +1,5 @@
+#include "PerformanceTest.h"
+
 #include <Core/Types.h>
 #include <common/getMemoryAmount.h>
 #include <IO/ReadBufferFromFile.h>

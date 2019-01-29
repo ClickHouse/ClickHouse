@@ -28,10 +28,6 @@
 #include <Common/Exception.h>
 #include <Common/InterruptListener.h>
 
-#ifndef __clang__
-#pragma GCC optimize("-fno-var-tracking-assignments")
-#endif
-
 #include "TestStopConditions.h"
 #include "TestStats.h"
 #include "ConfigPreprocessor.h"
@@ -39,11 +35,6 @@
 #include "ReportBuilder.h"
 
 
-
-/** Tests launcher for ClickHouse.
-  * The tool walks through given or default folder in order to find files with
-  * tests' descriptions and launches it.
-  */
 namespace fs = boost::filesystem;
 namespace po = boost::program_options;
 
@@ -55,6 +46,10 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
+/** Tests launcher for ClickHouse.
+ * The tool walks through given or default folder in order to find files with
+ * tests' descriptions and launches it.
+ */
 class PerformanceTestSuite
 {
 public:
