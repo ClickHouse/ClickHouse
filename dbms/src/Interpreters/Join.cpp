@@ -494,7 +494,7 @@ bool Join::insertFromBlock(const Block & block)
     {
         dispatch([&](auto, auto strictness_, auto & map)
         {
-            insertFromBlockImpl<strictness_>(type, map, rows, key_columns, keys_size, key_sizes, stored_block, null_map, pool);
+            insertFromBlockImpl<strictness_>(type, map, rows, key_columns, key_sizes, stored_block, null_map, pool);
         });
     }
 
@@ -617,9 +617,10 @@ namespace
 
                 if (find_result.isFound())
                 {
-                    it->second.setUsed();
+                    auto & mapped = find_result.getMapped();
+                    mapped.setUsed();
                     Adder<Join::KindTrait<KIND>::pad_left, STRICTNESS, Map>::addFound(
-                        it, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), right_indexes);
+                        mapped, num_columns_to_add, added_columns, i, filter.get(), current_offset, offsets_to_replicate.get(), right_indexes);
                 }
                 else
                     Adder<Join::KindTrait<KIND>::pad_left, STRICTNESS, Map>::addNotFound(
@@ -746,7 +747,7 @@ void Join::joinBlockImpl(
     {
     #define M(TYPE) \
         case Join::Type::TYPE: \
-            joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps.TYPE)>>::Type>(\
+            joinBlockImplType<KIND, STRICTNESS, typename KeyGetterForType<Join::Type::TYPE, const std::remove_reference_t<decltype(*maps_.TYPE)>>::Type>(\
                 *maps_.TYPE, rows, key_columns, key_sizes, added_columns, null_map, \
                 filter, current_offset, offsets_to_replicate, right_indexes); \
             break;
