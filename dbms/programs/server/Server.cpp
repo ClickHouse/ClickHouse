@@ -27,6 +27,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -129,8 +130,9 @@ std::string Server::getDefaultCorePath() const
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
-
     UseSSL use_ssl;
+
+    ThreadStatus thread_status;
 
     registerFunctions();
     registerAggregateFunctions();
