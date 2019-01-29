@@ -16,7 +16,7 @@
 #include <Compression/CompressedReadBuffer.h>
 
 #include <Common/Stopwatch.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 
 using Key = UInt64;

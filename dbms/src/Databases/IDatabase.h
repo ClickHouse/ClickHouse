@@ -8,10 +8,8 @@
 #include <functional>
 #include <Poco/File.h>
 #include <Common/escapeForFileName.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
-
-
-class ThreadPool;
 
 
 namespace DB

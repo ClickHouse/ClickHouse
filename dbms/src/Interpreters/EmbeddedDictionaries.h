@@ -2,7 +2,8 @@
 
 #include <thread>
 #include <functional>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
 #include <Poco/Event.h>
 
 
@@ -41,7 +42,7 @@ private:
 
     mutable std::mutex mutex;
 
-    std::thread reloading_thread;
+    ThreadFromGlobalPool reloading_thread;
     Poco::Event destroy;
 
 
