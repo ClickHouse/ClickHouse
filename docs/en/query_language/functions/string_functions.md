@@ -70,7 +70,7 @@ Concatenates the strings listed in the arguments, without a separator.
 
 ## concatAssumeInjective(s1, s2, ...)
 
-Same as concat, the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY
+Same as [concat](./string_functions.md#concat-s1-s2), the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY
 
 ## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length)
 
@@ -99,19 +99,19 @@ Similar to base64Decode, but in case of error an empty string would be returned.
 
 ## endsWith(s, suffix)
 
-Returns whether to end with the specified suffix, If return 1, the string ends with the specified suffix, otherwise it returns 0.
+Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
 
 ## startsWith(s, prefix)
 
-Returns whether to end with the specified prefix, If return 1, the string ends with the specified prefix, otherwise it returns 0.
+Returns whether to end with the specified prefix. Returns 1 if the string ends with the specified prefix, otherwise it returns 0.
 
 ## trimLeft(s)
 
-Returns a string that removes the left margin character.
+Returns a string that removes the whitespace characters on left side.
 
 ## trimRight(s)
 
-Returns a string that removes the right margin character.
+Returns a string that removes the whitespace characters on right side.
 
 ## trimBoth(s)
 

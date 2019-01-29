@@ -256,7 +256,7 @@ Returns the sequence number of the data block where the row is located.
 
 ## rowNumberInBlock
 
-Returns the ordinal number of the row in the data block. Different data blocks are always recalculated
+Returns the ordinal number of the row in the data block. Different data blocks are always recalculated.
 
 ## rowNumberInAllBlocks()
 
@@ -301,7 +301,7 @@ FROM
 
 ## runningDifferenceStartingWithFirstValue
 
-Same as for runningDifference, the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
+Same as for [runningDifference](./other_functions.md#runningDifference), the difference is the value of the first row, returned the value of the first row, and each subsequent row returns the difference from the previous row.
 
 ## MACNumToString(num)
 
@@ -584,7 +584,7 @@ Returns the remaining space information of the disk, in bytes. This information 
 
 ## filesystemCapacity
 
-Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path
+Returns the capacity information of the disk, in bytes. This information is evaluated using the configured by path.
 
 ## finalizeAggregation
 
@@ -607,7 +607,5 @@ Accepts a model name and model arguments. Returns Float64.
 ## throwIf(x)
 
 Throw an exception if the argument is non zero.
-
-
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/other_functions/) <!--hide-->

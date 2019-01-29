@@ -127,9 +127,9 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 └────────────────────┘
 ```
 
-## cutIPV6(x, cutIPv6, cutIPV4)
+## cutIPv6(x, bitsToCutForIPv6, bitsToCutForIPv4)
 
-Accepts a FixedString(16) value containing the IPv6 address in binary format, Returns a string containing the address of the specified number of bits removed in text format. For example:
+Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing the address of the specified number of bits removed in text format. For example:
 
 ```sql
 WITH
