@@ -121,14 +121,12 @@ LibraryDictionarySource::LibraryDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block,
-    const Context & context)
+    Block & sample_block)
     : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
     , config_prefix{config_prefix}
     , path{config.getString(config_prefix + ".path", "")}
     , sample_block{sample_block}
-    , context(context)
 {
     if (!Poco::File(path).exists())
         throw Exception(
@@ -148,7 +146,6 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , config_prefix{other.config_prefix}
     , path{other.path}
     , sample_block{other.sample_block}
-    , context(other.context)
     , library{other.library}
     , description{other.description}
     , settings{other.settings}
@@ -284,8 +281,9 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context);
+                                 const Context &) -> DictionarySourcePtr
+    {
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block);
     };
     factory.registerSource("library", createTableSource);
 }
