@@ -946,7 +946,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// Checks if columns used in skipping indexes modified/
         for (const auto & col : in_header.getNames())
         {
-            for (const auto index : data.skip_indices)
+            for (const auto & index : data.skip_indices)
             {
                 const auto & index_cols = index->expr->getRequiredColumns();
                 auto it = find(cbegin(index_cols), cend(index_cols), col);
