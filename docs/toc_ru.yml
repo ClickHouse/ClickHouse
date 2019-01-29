@@ -16,6 +16,7 @@ nav:
     - 'WikiStat': 'getting_started/example_datasets/wikistat.md'
     - 'Терабайт логов кликов от Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Схема «Звезда»': 'getting_started/example_datasets/star_schema.md'
+    - 'Данные Яндекс.Метрики': 'getting_started/example_datasets/metrica.md'
 
 - 'Интерфейсы':
   - 'Введение': 'interfaces/index.md'

@@ -6,6 +6,7 @@
 #include <DataStreams/OwningBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Common/ShellCommand.h>
+#include <Common/ThreadPool.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
@@ -165,7 +166,7 @@ namespace
         BlockInputStreamPtr stream;
         std::unique_ptr<ShellCommand> command;
         std::packaged_task<void()> task;
-        std::thread thread;
+        ThreadFromGlobalPool thread;
         bool wait_called = false;
     };
 

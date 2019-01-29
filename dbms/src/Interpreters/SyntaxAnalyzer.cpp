@@ -18,6 +18,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
@@ -477,20 +478,18 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<TableBelonging(const ASTPtr &)> get_table_belonging;
     get_table_belonging = [&](const ASTPtr & ast) -> TableBelonging
     {
-        if (getColumnIdentifierName(ast))
+        if (IdentifierSemantic::getColumnName(ast))
         {
             auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
 
-            {
-                auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
-                auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
+            size_t left_match_degree = IdentifierSemantic::canReferColumnToTable(*identifier, left_source_names);
+            size_t right_match_degree = IdentifierSemantic::canReferColumnToTable(*identifier, right_source_names);
 
-                /// Assume that component from definite table if num_components is greater than for the other table.
-                if (left_num_components > right_num_components)
-                    return {identifier, nullptr};
-                if (left_num_components < right_num_components)
-                    return {nullptr, identifier};
-            }
+            if (left_match_degree > right_match_degree)
+                return {identifier, nullptr};
+            if (left_match_degree < right_match_degree)
+                return {nullptr, identifier};
+
             return {};
         }
 
@@ -516,19 +515,15 @@ void collectJoinedColumnsFromJoinOnExpr(AnalyzedJoin & analyzed_join, const ASTS
     std::function<void(ASTPtr &, const DatabaseAndTableWithAlias &, bool)> translate_qualified_names;
     translate_qualified_names = [&](ASTPtr & ast, const DatabaseAndTableWithAlias & source_names, bool right_table)
     {
-        if (getColumnIdentifierName(ast))
+        if (IdentifierSemantic::getColumnName(ast))
         {
-            auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
+            auto * identifier = typeid_cast<ASTIdentifier *>(ast.get());
 
-            {
-                auto num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, source_names);
-                stripIdentifier(ast, num_components);
+            size_t match = IdentifierSemantic::canReferColumnToTable(*identifier, source_names);
+            IdentifierSemantic::setColumnShortName(*identifier, match);
 
-                if (right_table && source_columns.count(ast->getColumnName()))
-                    source_names.makeQualifiedName(ast);
-
-            }
-            return;
+            if (right_table && source_columns.count(ast->getColumnName()))
+                IdentifierSemantic::setColumnQualifiedName(*identifier, source_names);
         }
 
         for (auto & child : ast->children)

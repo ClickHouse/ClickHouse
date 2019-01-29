@@ -3,6 +3,21 @@ cmake_minimum_required (VERSION 3.3)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
+option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+if(ENABLE_IPO)
+    cmake_policy(SET CMP0069 NEW)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
+    if(IPO_SUPPORTED)
+        message(STATUS "IPO/LTO is supported, enabling")
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    else()
+        message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+    endif()
+else()
+    message(STATUS "IPO/LTO not enabled.")
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
@@ -120,7 +135,9 @@ else()
     message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
 endif()
 
-include (cmake/test_cpu.cmake)
+if(NOT DISABLE_CPU_OPTIMIZE)
+    include(cmake/test_cpu.cmake)
+endif()
 
 if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
     option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
@@ -229,7 +246,10 @@ include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
-include (cmake/find_cpuid.cmake)
+include (cmake/find_cpuid.cmake) # Freebsd, bundled
+if (NOT USE_CPUID)
+    include (cmake/find_cpuinfo.cmake) # Debian
+endif()
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
 include (cmake/find_protobuf.cmake)
