@@ -198,7 +198,12 @@ UniqueCondition::UniqueCondition(
     if (!alwaysNotFalse)
         return*/
 
-    actions = ExpressionAnalyzer(expression_ast, query.syntax_analyzer_result, context).getActions(true);
+    auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
+            expression_ast, index.header.getNamesAndTypesList());
+    actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
+
+    Poco::Logger * log = &Poco::Logger::get("unique_idx");
+    LOG_DEBUG(log, "new unique index" << actions->dumpActions());
 }
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
@@ -229,39 +234,41 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     return false;
 }
 
-void UniqueCondition::traverseAST(ASTPtr & node, bool replace_all) const
+void UniqueCondition::traverseAST(ASTPtr & node) const
 {
     if (operatorFromAST(node)) {
         ASTFunction * func = typeid_cast<ASTFunction *>(&*node);
         auto & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            traverseAST(args[i], replace_all);
+            traverseAST(args[i]);
         return;
     }
 
-    if (!atomFromAST(node, replace_all))
-        *node = ASTLiteral(Field(3)); /// Unknown
+    if (!atomFromAST(node))
+        node = std::make_shared<ASTLiteral>(Field(3)); /// can_be_true=1 can_be_false=0
 }
 
-bool UniqueCondition::termFromAST(const ASTPtr & node, bool replace_all) const
+bool UniqueCondition::termFromAST(ASTPtr & node) const
 {
     /// Function, literal or column
 
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return true;
 
-    if (replace_all)
-        return false;
-
     if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
         return key_columns.count(identifier->getColumnName()) != 0;
 
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get())) {
+    if (ASTFunction * func = typeid_cast<ASTFunction *>(node.get()))
+    {
         if (key_columns.count(func->getColumnName()))
+        {
+            /// Function is already calculated.
+            node = std::make_shared<ASTIdentifier>(func->getColumnName());
             return true;
+        }
 
-        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+        ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
             if (!termFromAST(args[i]))
@@ -273,21 +280,18 @@ bool UniqueCondition::termFromAST(const ASTPtr & node, bool replace_all) const
     return false;
 }
 
-bool UniqueCondition::atomFromAST(const ASTPtr & node, bool replace_all) const
+bool UniqueCondition::atomFromAST(ASTPtr & node) const
 {
     /// Functions < > = != <= >= in `notIn`
-    if (termFromAST(node, replace_all))
+    if (termFromAST(node))
         return true;
 
-    if (replace_all)
-        return false;
-
-    if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
+    if (ASTFunction * func = typeid_cast<ASTFunction *>(node.get()))
     {
-        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+        ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!termFromAST(args[i], replace_all))
+            if (!termFromAST(args[i]))
                 return false;
 
         return true;
