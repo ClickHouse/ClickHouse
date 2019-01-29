@@ -10,6 +10,9 @@
 
 #include <Poco/Logger.h>
 
+#include <set>
+
+
 namespace DB
 {
 
@@ -160,7 +163,7 @@ UniqueCondition::UniqueCondition(
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query.query);
 
     /// Replace logical functions with bit functions.
-    /// Working with UInt8: last bit -- can be true, previous -- can be false.
+    /// Working with UInt8: last bit = can be true, previous = can be false.
     ASTPtr new_expression;
     if (select.where_expression && select.prewhere_expression)
         new_expression = makeASTFunction(
@@ -175,28 +178,17 @@ UniqueCondition::UniqueCondition(
         /// 11_2 -- can be true and false at the same time
         new_expression = std::make_shared<ASTLiteral>(Field(3));
 
+    useless = checkASTAlwaysUnknownOrTrue(new_expression);
+    /// Do not proceed if index is useless for this query.
+    if (useless)
+        return;
+
     expression_ast = makeASTFunction(
             "bitAnd",
             new_expression,
             std::make_shared<ASTLiteral>(Field(1)));
 
     traverseAST(expression_ast);
-
-
-    /// expression for alwaysUnknownOrTrue() checking
-    /*auto check_expression = expression_ast->clone();
-    traverseAST(check_expression,  replace_all =  true);
-
-    Block result
-    {
-        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
-    };
-
-    const auto check_expr = ExpressionAnalyzer(check_expression, query.syntax_analyzer_result, context).getActions(true);
-    check_expr->execute(result);
-    alwaysNotFalse = result.getByName(check_expression->getColumnName()).column->getBool(0);
-    if (!alwaysNotFalse)
-        return*/
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
             expression_ast, index.header.getNamesAndTypesList());
@@ -208,7 +200,7 @@ UniqueCondition::UniqueCondition(
 
 bool UniqueCondition::alwaysUnknownOrTrue() const
 {
-    return false;
+    return useless;
 }
 
 bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
@@ -217,6 +209,9 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     if (!granule)
         throw Exception(
                 "Unique index condition got wrong granule", ErrorCodes::LOGICAL_ERROR);
+
+    if (useless)
+        return true;
 
     if (index.max_rows && granule->size() > index.max_rows)
         return true;
@@ -249,8 +244,9 @@ void UniqueCondition::traverseAST(ASTPtr & node) const
         node = std::make_shared<ASTLiteral>(Field(3)); /// can_be_true=1 can_be_false=0
 }
 
-bool UniqueCondition::termFromAST(ASTPtr & node) const
+bool UniqueCondition::atomFromAST(ASTPtr & node) const
 {
+    /// Functions < > = != <= >= in `notIn`
     /// Function, literal or column
 
     if (typeid_cast<const ASTLiteral *>(node.get()))
@@ -271,27 +267,7 @@ bool UniqueCondition::termFromAST(ASTPtr & node) const
         ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
         for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!termFromAST(args[i]))
-                return false;
-
-        return true;
-    }
-
-    return false;
-}
-
-bool UniqueCondition::atomFromAST(ASTPtr & node) const
-{
-    /// Functions < > = != <= >= in `notIn`
-    if (termFromAST(node))
-        return true;
-
-    if (ASTFunction * func = typeid_cast<ASTFunction *>(node.get()))
-    {
-        ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
-
-        for (size_t i = 0, size = args.size(); i < size; ++i)
-            if (!termFromAST(args[i]))
+            if (!atomFromAST(args[i]))
                 return false;
 
         return true;
@@ -337,11 +313,56 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
     else if (func->name == "and" || func->name == "indexHint")
         func->name = "bitAnd";
     else if (func->name == "or")
-        func->name = "bitOR";
+        func->name = "bitOr";
     else
         return false;
 
     return true;
+}
+
+bool checkAtomName(const String & name)
+{
+    static std::set<String> atoms = {
+            "notEquals",
+            "equals",
+            "less",
+            "greater",
+            "lessOrEquals",
+            "greaterOrEquals",
+            "in",
+            "notIn",
+            "like"
+            };
+    return atoms.find(name) != atoms.end();
+}
+
+bool UniqueCondition::checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atomic) const
+{
+    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
+    {
+        if (key_columns.count(func->getColumnName()))
+            return false;
+
+        const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+
+        if (func->name == "and" || func->name == "indexHint")
+            return checkASTAlwaysUnknownOrTrue(args[0], atomic) && checkASTAlwaysUnknownOrTrue(args[1], atomic);
+        else if (func->name == "or")
+            return checkASTAlwaysUnknownOrTrue(args[0], atomic) || checkASTAlwaysUnknownOrTrue(args[1], atomic);
+        else if (func->name == "not")
+            return checkASTAlwaysUnknownOrTrue(args[0], atomic);
+        else if (!atomic && checkAtomName(func->name))
+            return checkASTAlwaysUnknownOrTrue(node, true);
+        else
+            return std::any_of(args.begin(), args.end(),
+                    [this, &atomic](const auto & arg) { return checkASTAlwaysUnknownOrTrue(arg, atomic); });
+    }
+    else if (const auto * literal = typeid_cast<const ASTLiteral *>(node.get()))
+        return !atomic && literal->value.get<bool>();
+    else if (const auto * identifier = typeid_cast<const ASTIdentifier *>(node.get()))
+        return key_columns.find(identifier->getColumnName()) == key_columns.end();
+    else
+        return true;
 }
 
 

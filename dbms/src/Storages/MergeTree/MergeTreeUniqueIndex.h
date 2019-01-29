@@ -50,11 +50,13 @@ public:
 private:
     void traverseAST(ASTPtr & node) const;
     bool atomFromAST(ASTPtr & node) const;
-    bool termFromAST(ASTPtr & node) const;
     bool operatorFromAST(ASTPtr & node) const;
+
+    bool checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atomic = false) const;
 
     const MergeTreeUniqueIndex & index;
 
+    bool useless;
     std::map<String, size_t> key_columns;
     ASTPtr expression_ast;
     ExpressionActionsPtr actions;
