@@ -5,8 +5,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Poco/File.h>
 
 
@@ -85,6 +85,14 @@ void MergeTreeDataPartChecksums::checkSizes(const String & path) const
         const String & name = it.first;
         it.second.checkSize(path + name);
     }
+}
+
+UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
+{
+    UInt64 res = 0;
+    for (const auto & it : files)
+        res += it.second.file_size;
+    return res;
 }
 
 bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
@@ -193,7 +201,7 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 {
     writeString("checksums format version: 4\n", to);
 
-    CompressedWriteBuffer out{to, CompressionSettings(CompressionMethod::LZ4), 1 << 16};
+    CompressedWriteBuffer out{to, CompressionCodecFactory::instance().getDefaultCodec(), 1 << 16};
 
     writeVarUInt(files.size(), out);
 
@@ -304,7 +312,11 @@ String MergeTreeDataPartChecksums::getTotalChecksumHex() const
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
 {
     writeString("checksums format version: 5\n", to);
+    serializeWithoutHeader(to);
+}
 
+void MinimalisticDataPartChecksums::serializeWithoutHeader(WriteBuffer & to) const
+{
     writeVarUInt(num_compressed_files, to);
     writeVarUInt(num_uncompressed_files, to);
 
@@ -329,29 +341,34 @@ bool MinimalisticDataPartChecksums::deserialize(ReadBuffer & in)
 
     if (format_version < MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS)
     {
-        auto full_checksums_ptr = std::make_unique<MergeTreeDataPartChecksums>();
-        if (!full_checksums_ptr->read(in, format_version))
+        MergeTreeDataPartChecksums new_full_checksums;
+        if (!new_full_checksums.read(in, format_version))
             return false;
 
-        computeTotalChecksums(*full_checksums_ptr);
-        full_checksums = std::move(full_checksums_ptr);
+        computeTotalChecksums(new_full_checksums);
+        full_checksums = std::move(new_full_checksums);
         return true;
     }
 
     if (format_version > MINIMAL_VERSION_WITH_MINIMALISTIC_CHECKSUMS)
         throw Exception("Unknown checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
 
+    deserializeWithoutHeader(in);
+
+    return true;
+}
+
+void MinimalisticDataPartChecksums::deserializeWithoutHeader(ReadBuffer & in)
+{
     readVarUInt(num_compressed_files, in);
     readVarUInt(num_uncompressed_files, in);
 
     readPODBinary(hash_of_all_files, in);
     readPODBinary(hash_of_uncompressed_files, in);
     readPODBinary(uncompressed_hash_of_compressed_files, in);
-
-    return true;
 }
 
-void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums)
+void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPartChecksums & full_checksums_)
 {
     num_compressed_files = 0;
     num_uncompressed_files = 0;
@@ -360,7 +377,7 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
     SipHash hash_of_uncompressed_files_;
     SipHash uncompressed_hash_of_compressed_files_;
 
-    for (const auto & elem : full_checksums.files)
+    for (const auto & elem : full_checksums_.files)
     {
         const String & name = elem.first;
         const auto & checksum = elem.second;
@@ -402,7 +419,7 @@ String MinimalisticDataPartChecksums::getSerializedString(const MergeTreeDataPar
     return checksums.getSerializedString();
 }
 
-void MinimalisticDataPartChecksums::checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files)
+void MinimalisticDataPartChecksums::checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const
 {
     if (full_checksums && rhs.full_checksums)
         full_checksums->checkEqual(*rhs.full_checksums, check_uncompressed_hash_in_compressed_files);
@@ -411,7 +428,7 @@ void MinimalisticDataPartChecksums::checkEqual(const MinimalisticDataPartChecksu
     checkEqualImpl(rhs, check_uncompressed_hash_in_compressed_files);
 }
 
-void MinimalisticDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files)
+void MinimalisticDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const
 {
     if (full_checksums)
         full_checksums->checkEqual(rhs, check_uncompressed_hash_in_compressed_files);
@@ -422,7 +439,7 @@ void MinimalisticDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums 
     checkEqualImpl(rhs_minimalistic, check_uncompressed_hash_in_compressed_files);
 }
 
-void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files)
+void MinimalisticDataPartChecksums::checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const
 {
     if (num_compressed_files != rhs.num_compressed_files || num_uncompressed_files != rhs.num_uncompressed_files)
     {

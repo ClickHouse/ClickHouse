@@ -3,7 +3,7 @@
 #include <Poco/Timespan.h>
 #include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
-#include <IO/CompressedStream.h>
+#include <Compression/CompressionInfo.h>
 #include <Core/Types.h>
 
 
@@ -281,30 +281,6 @@ struct SettingOverflowMode
     void write(WriteBuffer & buf) const;
 };
 
-
-struct SettingCompressionMethod
-{
-    CompressionMethod value;
-    bool changed = false;
-
-    SettingCompressionMethod(CompressionMethod x = CompressionMethod::LZ4) : value(x) {}
-
-    operator CompressionMethod() const { return value; }
-    SettingCompressionMethod & operator= (CompressionMethod x) { set(x); return *this; }
-
-    static CompressionMethod getCompressionMethod(const String & s);
-
-    String toString() const;
-
-    void set(CompressionMethod x);
-    void set(const Field & x);
-    void set(const String & x);
-    void set(ReadBuffer & buf);
-
-    void write(WriteBuffer & buf) const;
-};
-
-
 /// The setting for executing distributed subqueries inside IN or JOIN sections.
 enum class DistributedProductMode
 {
@@ -403,5 +379,26 @@ struct SettingDateTimeInputFormat
     void set(ReadBuffer & buf);
     void write(WriteBuffer & buf) const;
 };
+
+
+class SettingLogsLevel
+{
+public:
+
+    String value;
+    bool changed = false;
+    static const std::vector<String> log_levels;
+
+    SettingLogsLevel(const String & level);
+    operator String() const { return value; }
+    void set(const String & level);
+    void set(const Field & level);
+    void set(ReadBuffer & buf);
+
+    String toString() const;
+    void write(WriteBuffer & buf) const;
+};
+
+
 
 }

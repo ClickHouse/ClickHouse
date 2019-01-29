@@ -35,7 +35,7 @@ bool ParserNestedTable::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     auto func = std::make_shared<ASTFunction>();
-    func->name = typeid_cast<ASTIdentifier &>(*name).name;
+    getIdentifierName(name, func->name);
     func->arguments = columns;
     func->children.push_back(columns);
     node = func;
@@ -70,7 +70,7 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     if (non_parametric.parse(pos, ident, expected))
     {
         auto func = std::make_shared<ASTFunction>();
-        func->name = typeid_cast<ASTIdentifier &>(*ident).name;
+        getIdentifierName(ident, func->name);
         node = func;
         return true;
     }
@@ -96,6 +96,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_engine("ENGINE");
     ParserToken s_eq(TokenType::Equals);
     ParserKeyword s_partition_by("PARTITION BY");
+    ParserKeyword s_primary_key("PRIMARY KEY");
     ParserKeyword s_order_by("ORDER BY");
     ParserKeyword s_sample_by("SAMPLE BY");
     ParserKeyword s_settings("SETTINGS");
@@ -106,6 +107,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     ASTPtr engine;
     ASTPtr partition_by;
+    ASTPtr primary_key;
     ASTPtr order_by;
     ASTPtr sample_by;
     ASTPtr settings;
@@ -123,6 +125,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!partition_by && s_partition_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, partition_by, expected))
+                continue;
+            else
+                return false;
+        }
+
+        if (!primary_key && s_primary_key.ignore(pos, expected))
+        {
+            if (expression_p.parse(pos, primary_key, expected))
                 continue;
             else
                 return false;
@@ -156,6 +166,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto storage = std::make_shared<ASTStorage>();
     storage->set(storage->engine, engine);
     storage->set(storage->partition_by, partition_by);
+    storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);
     storage->set(storage->sample_by, sample_by);
     storage->set(storage->settings, settings);
@@ -246,10 +257,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             query->if_not_exists = if_not_exists;
             query->cluster = cluster_str;
 
-            if (database)
-                query->database = typeid_cast<ASTIdentifier &>(*database).name;
-            if (table)
-                query->table = typeid_cast<ASTIdentifier &>(*table).name;
+            getIdentifierName(database, query->database);
+            getIdentifierName(table, query->table);
 
             return true;
         }
@@ -287,7 +296,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 }
 
                 /// Optional - ENGINE can be specified.
-                storage_p.parse(pos, storage, expected);
+                if (!storage)
+                    storage_p.parse(pos, storage, expected);
             }
         }
     }
@@ -393,23 +403,18 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->is_populate = is_populate;
     query->temporary = is_temporary;
 
-    if (database)
-        query->database = typeid_cast<ASTIdentifier &>(*database).name;
-    if (table)
-        query->table = typeid_cast<ASTIdentifier &>(*table).name;
+    getIdentifierName(database, query->database);
+    getIdentifierName(table, query->table);
     query->cluster = cluster_str;
 
-    if (to_database)
-        query->to_database = typeid_cast<ASTIdentifier &>(*to_database).name;
-    if (to_table)
-        query->to_table = typeid_cast<ASTIdentifier &>(*to_table).name;
+    getIdentifierName(to_database, query->to_database);
+    getIdentifierName(to_table, query->to_table);
 
     query->set(query->columns, columns);
     query->set(query->storage, storage);
-    if (as_database)
-        query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
-    if (as_table)
-        query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
+
+    getIdentifierName(as_database, query->as_database);
+    getIdentifierName(as_table, query->as_table);
     query->set(query->select, select);
 
     return true;

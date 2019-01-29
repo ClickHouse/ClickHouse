@@ -3,7 +3,7 @@
 #include <boost/filesystem.hpp>
 
 #include <Storages/StorageCatBoostPool.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 namespace
 {
-class CatBoostDatasetBlockInputStream : public IProfilingBlockInputStream
+class CatBoostDatasetBlockInputStream : public IBlockInputStream
 {
 public:
 
@@ -198,7 +198,7 @@ void StorageCatBoostPool::parseColumnDescription()
         }
 
         if (num_id >= columns_description.size())
-            throw Exception("Invalid index at row  " + str_line_num + ": " + str_id
+            throw Exception("Invalid index at row " + str_line_num + ": " + str_id
                             + ", expected in range [0, " + std::to_string(columns_description.size()) + ")",
                             ErrorCodes::CANNOT_PARSE_TEXT);
 

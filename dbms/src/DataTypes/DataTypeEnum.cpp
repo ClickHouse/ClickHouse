@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
@@ -103,7 +104,7 @@ DataTypeEnum<Type>::DataTypeEnum(const Values & values_) : values{values_}
 template <typename Type>
 void DataTypeEnum<Type>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
+    const FieldType x = get<NearestFieldType<FieldType>>(field);
     writeBinary(x, ostr);
 }
 
@@ -220,6 +221,13 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
     x.resize(initial_size + limit);
     const auto size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
+}
+
+template <typename Type>
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf) const
+{
+    protobuf.prepareEnumMapping(values);
+    protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
 }
 
 template <typename Type>
@@ -347,7 +355,7 @@ static DataTypePtr create(const ASTPtr & arguments)
                 ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
         const String & field_name = name_literal->value.get<String>();
-        const auto value = value_literal->value.get<typename NearestFieldType<FieldType>::Type>();
+        const auto value = value_literal->value.get<NearestFieldType<FieldType>>();
 
         if (value > std::numeric_limits<FieldType>::max() || value < std::numeric_limits<FieldType>::min())
             throw Exception{"Value " + toString(value) + " for element '" + field_name + "' exceeds range of " + EnumName<FieldType>::value,

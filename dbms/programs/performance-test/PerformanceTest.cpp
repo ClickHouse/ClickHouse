@@ -23,14 +23,16 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
 #include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
+#include <Poco/Util/Application.h>
 #include <Common/InterruptListener.h>
+#include <Common/Config/configReadClient.h>
 
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
@@ -44,15 +46,17 @@
 namespace fs = boost::filesystem;
 using String = std::string;
 const String FOUR_SPACES = "    ";
+const std::regex QUOTE_REGEX{"\""};
+const std::regex NEW_LINE{"\n"};
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 static String pad(size_t padding)
@@ -78,7 +82,7 @@ public:
 
         bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
         if (!reserved && wrap)
-            value = '"' + value + '"';
+            value = '"' + std::regex_replace(value, NEW_LINE, "\\n") + '"';
 
         content[key] = value;
     }
@@ -110,7 +114,8 @@ public:
     {
         return asString(padding);
     }
-    String asString(size_t padding) const
+
+    String asString(size_t cur_padding) const
     {
         String repr = "{";
 
@@ -119,10 +124,10 @@ public:
             if (it != content.begin())
                 repr += ',';
             /// construct "key": "value" string with padding
-            repr += "\n" + pad(padding) + '"' + it->first + '"' + ": " + it->second;
+            repr += "\n" + pad(cur_padding) + '"' + it->first + '"' + ": " + it->second;
         }
 
-        repr += "\n" + pad(padding - 1) + '}';
+        repr += "\n" + pad(cur_padding - 1) + '}';
         return repr;
     }
 };
@@ -156,7 +161,7 @@ struct StopConditionsSet
             else if (key == "average_speed_not_changing_for_ms")
                 average_speed_not_changing_for_ms.value = stop_conditions_view->getUInt64(key);
             else
-                throw DB::Exception("Met unkown stop condition: " + key);
+                throw DB::Exception("Met unkown stop condition: " + key, DB::ErrorCodes::LOGICAL_ERROR);
 
             ++initialized_count;
         }
@@ -487,17 +492,18 @@ struct Stats
 double Stats::avg_rows_speed_precision = 0.001;
 double Stats::avg_bytes_speed_precision = 0.001;
 
-class PerformanceTest
+class PerformanceTest : public Poco::Util::Application
 {
 public:
     using Strings = std::vector<String>;
 
     PerformanceTest(const String & host_,
         const UInt16 port_,
+        const bool secure_,
         const String & default_database_,
         const String & user_,
         const String & password_,
-        const bool & lite_output_,
+        const bool lite_output_,
         const String & profiles_file_,
         Strings && input_files_,
         Strings && tests_tags_,
@@ -507,7 +513,7 @@ public:
         Strings && tests_names_regexp_,
         Strings && skip_names_regexp_,
         const ConnectionTimeouts & timeouts)
-        : connection(host_, port_, default_database_, user_, password_, timeouts),
+        : connection(host_, port_, default_database_, user_, password_, timeouts, "performance-test", Protocol::Compression::Enable, secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable),
           gotSIGINT(false),
           lite_output(lite_output_),
           profiles_file(profiles_file_),
@@ -521,9 +527,21 @@ public:
     {
         if (input_files.size() < 1)
         {
-            throw DB::Exception("No tests were specified", 0);
+            throw DB::Exception("No tests were specified", DB::ErrorCodes::BAD_ARGUMENTS);
         }
+    }
 
+    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    {
+        std::string home_path;
+        const char * home_path_cstr = getenv("HOME");
+        if (home_path_cstr)
+            home_path = home_path_cstr;
+        configReadClient(Poco::Util::Application::instance().config(), home_path);
+    }
+
+    int main(const std::vector < std::string > & /* args */)
+    {
         std::string name;
         UInt64 version_major;
         UInt64 version_minor;
@@ -536,6 +554,8 @@ public:
         server_version = ss.str();
 
         processTestsConfigurations(input_files);
+
+        return 0;
     }
 
 private:
@@ -561,7 +581,8 @@ private:
 
     using Paths = std::vector<String>;
     using StringToVector = std::map<String, std::vector<String>>;
-    StringToVector substitutions;
+    using StringToMap = std::map<String, StringToVector>;
+    StringToMap substitutions;
 
     using StringKeyValue = std::map<String, String>;
     std::vector<StringKeyValue> substitutions_maps;
@@ -694,7 +715,7 @@ private:
                 size_t ram_size_needed = config->getUInt64("preconditions.ram_size");
                 size_t actual_ram = getMemoryAmount();
                 if (!actual_ram)
-                    throw DB::Exception("ram_size precondition not available on this platform", ErrorCodes::NOT_IMPLEMENTED);
+                    throw DB::Exception("ram_size precondition not available on this platform", DB::ErrorCodes::NOT_IMPLEMENTED);
 
                 if (ram_size_needed > actual_ram)
                 {
@@ -745,13 +766,13 @@ private:
         return true;
     }
 
-    void processTestsConfigurations(const Paths & input_files)
+    void processTestsConfigurations(const Paths & paths)
     {
-        tests_configurations.resize(input_files.size());
+        tests_configurations.resize(paths.size());
 
-        for (size_t i = 0; i != input_files.size(); ++i)
+        for (size_t i = 0; i != paths.size(); ++i)
         {
-            const String path = input_files[i];
+            const String path = paths[i];
             tests_configurations[i] = XMLConfigurationPtr(new XMLConfiguration(path));
         }
 
@@ -864,16 +885,14 @@ private:
             }
         }
 
-        Query query;
-
         if (!test_config->has("query") && !test_config->has("query_file"))
         {
-            throw DB::Exception("Missing query fields in test's config: " + test_name);
+            throw DB::Exception("Missing query fields in test's config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("query") && test_config->has("query_file"))
         {
-            throw DB::Exception("Found both query and query_file fields. Choose only one");
+            throw DB::Exception("Found both query and query_file fields. Choose only one", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("query"))
@@ -885,11 +904,12 @@ private:
         {
             const String filename = test_config->getString("query_file");
             if (filename.empty())
-                throw DB::Exception("Empty file name");
+                throw DB::Exception("Empty file name", DB::ErrorCodes::BAD_ARGUMENTS);
 
             bool tsv = fs::path(filename).extension().string() == ".tsv";
 
             ReadBufferFromFile query_file(filename);
+            Query query;
 
             if (tsv)
             {
@@ -909,27 +929,27 @@ private:
 
         if (queries.empty())
         {
-            throw DB::Exception("Did not find any query to execute: " + test_name);
+            throw DB::Exception("Did not find any query to execute: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (test_config->has("substitutions"))
         {
             /// Make "subconfig" of inner xml block
             ConfigurationPtr substitutions_view(test_config->createView("substitutions"));
-            constructSubstitutions(substitutions_view, substitutions);
+            constructSubstitutions(substitutions_view, substitutions[test_name]);
 
             auto queries_pre_format = queries;
             queries.clear();
             for (const auto & query : queries_pre_format)
             {
-                auto formatted = formatQueries(query, substitutions);
+                auto formatted = formatQueries(query, substitutions[test_name]);
                 queries.insert(queries.end(), formatted.begin(), formatted.end());
             }
         }
 
         if (!test_config->has("type"))
         {
-            throw DB::Exception("Missing type property in config: " + test_name);
+            throw DB::Exception("Missing type property in config: " + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         String config_exec_type = test_config->getString("type");
@@ -938,7 +958,7 @@ private:
         else if (config_exec_type == "once")
             exec_type = ExecutionType::Once;
         else
-            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name);
+            throw DB::Exception("Unknown type " + config_exec_type + " in :" + test_name, DB::ErrorCodes::BAD_ARGUMENTS);
 
         times_to_run = test_config->getUInt("times_to_run", 1);
 
@@ -951,7 +971,7 @@ private:
         }
 
         if (stop_conditions_template.empty())
-            throw DB::Exception("No termination conditions were found in config");
+            throw DB::Exception("No termination conditions were found in config", DB::ErrorCodes::BAD_ARGUMENTS);
 
         for (size_t i = 0; i < times_to_run * queries.size(); ++i)
             stop_conditions_by_run.push_back(stop_conditions_template);
@@ -977,8 +997,11 @@ private:
         }
         else
         {
+            if (metrics.empty())
+                throw DB::Exception("You shoud specify at least one metric", DB::ErrorCodes::BAD_ARGUMENTS);
+            main_metric = metrics[0];
             if (lite_output)
-                throw DB::Exception("Specify main_metric for lite output");
+                throw DB::Exception("Specify main_metric for lite output", DB::ErrorCodes::BAD_ARGUMENTS);
         }
 
         if (metrics.size() > 0)
@@ -1007,7 +1030,7 @@ private:
         }
 
         if (lite_output)
-            return minOutput(main_metric);
+            return minOutput();
         else
             return constructTotalInfo(metrics);
     }
@@ -1023,32 +1046,21 @@ private:
         if (exec_type == ExecutionType::Loop)
         {
             for (const String & metric : metrics)
-            {
                 if (std::find(non_loop_metrics.begin(), non_loop_metrics.end(), metric) != non_loop_metrics.end())
-                {
-                    throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")");
-                }
-            }
+                   throw DB::Exception("Wrong type of metric for loop execution type (" + metric + ")", DB::ErrorCodes::BAD_ARGUMENTS);
         }
         else
         {
             for (const String & metric : metrics)
-            {
                 if (std::find(loop_metrics.begin(), loop_metrics.end(), metric) != loop_metrics.end())
-                {
-                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")");
-                }
-            }
+                    throw DB::Exception("Wrong type of metric for non-loop execution type (" + metric + ")", DB::ErrorCodes::BAD_ARGUMENTS);
         }
     }
 
     void runQueries(const QueriesWithIndexes & queries_with_indexes)
     {
-        for (const std::pair<Query, const size_t> & query_and_index : queries_with_indexes)
+        for (const auto & [query, run_index] : queries_with_indexes)
         {
-            Query query = query_and_index.first;
-            const size_t run_index = query_and_index.second;
-
             TestStopConditions & stop_conditions = stop_conditions_by_run[run_index];
             Stats & statistics = statistics_by_run[run_index];
 
@@ -1130,7 +1142,7 @@ private:
         }
     }
 
-    void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVector & substitutions)
+    void constructSubstitutions(ConfigurationPtr & substitutions_view, StringToVector & out_substitutions)
     {
         Keys xml_substitutions;
         substitutions_view->keys(xml_substitutions);
@@ -1148,21 +1160,16 @@ private:
 
             for (size_t j = 0; j != xml_values.size(); ++j)
             {
-                substitutions[name].push_back(xml_substitution->getString("values.value[" + std::to_string(j) + "]"));
+                out_substitutions[name].push_back(xml_substitution->getString("values.value[" + std::to_string(j) + "]"));
             }
         }
     }
 
-    std::vector<String> formatQueries(const String & query, StringToVector substitutions)
+    std::vector<String> formatQueries(const String & query, StringToVector substitutions_to_generate)
     {
-        std::vector<String> queries;
-
-        StringToVector::iterator substitutions_first = substitutions.begin();
-        StringToVector::iterator substitutions_last = substitutions.end();
-
-        runThroughAllOptionsAndPush(substitutions_first, substitutions_last, query, queries);
-
-        return queries;
+        std::vector<String> queries_res;
+        runThroughAllOptionsAndPush(substitutions_to_generate.begin(), substitutions_to_generate.end(), query, queries_res);
+        return queries_res;
     }
 
     /// Recursive method which goes through all substitution blocks in xml
@@ -1170,11 +1177,11 @@ private:
     void runThroughAllOptionsAndPush(StringToVector::iterator substitutions_left,
         StringToVector::iterator substitutions_right,
         const String & template_query,
-        std::vector<String> & queries)
+        std::vector<String> & out_queries)
     {
         if (substitutions_left == substitutions_right)
         {
-            queries.push_back(template_query); /// completely substituted query
+            out_queries.push_back(template_query); /// completely substituted query
             return;
         }
 
@@ -1182,7 +1189,7 @@ private:
 
         if (template_query.find(substitution_mask) == String::npos) /// nothing to substitute here
         {
-            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, template_query, queries);
+            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, template_query, out_queries);
             return;
         }
 
@@ -1200,7 +1207,7 @@ private:
                     query.replace(substr_pos, substitution_mask.length(), value);
             }
 
-            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, query, queries);
+            runThroughAllOptionsAndPush(std::next(substitutions_left), substitutions_right, query, out_queries);
         }
     }
 
@@ -1218,11 +1225,11 @@ public:
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 
-        if (substitutions.size())
+        if (substitutions[test_name].size())
         {
             JSONString json_parameters(2); /// here, 2 is the size of \t padding
 
-            for (auto it = substitutions.begin(); it != substitutions.end(); ++it)
+            for (auto it = substitutions[test_name].begin(); it != substitutions[test_name].end(); ++it)
             {
                 String parameter = it->first;
                 std::vector<String> values = it->second;
@@ -1230,7 +1237,7 @@ public:
                 String array_string = "[";
                 for (size_t i = 0; i != values.size(); ++i)
                 {
-                    array_string += '"' + values[i] + '"';
+                    array_string += '"' + std::regex_replace(values[i], QUOTE_REGEX, "\\\"") + '"';
                     if (i != values.size() - 1)
                     {
                         array_string += ", ";
@@ -1256,7 +1263,7 @@ public:
 
                 JSONString runJSON;
 
-                runJSON.set("query", queries[query_index]);
+                runJSON.set("query", std::regex_replace(queries[query_index], QUOTE_REGEX, "\\\""));
                 if (!statistics.exception.empty())
                     runJSON.set("exception", statistics.exception);
 
@@ -1334,7 +1341,7 @@ public:
         return json_output.asString();
     }
 
-    String minOutput(const String & main_metric)
+    String minOutput()
     {
         String output;
 
@@ -1391,21 +1398,28 @@ try
     using Strings = std::vector<String>;
 
     boost::program_options::options_description desc("Allowed options");
-    desc.add_options()("help", "produce help message")("lite", "use lite version of output")(
-        "profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")(
-        "host,h", value<String>()->default_value("localhost"), "")("port", value<UInt16>()->default_value(9000), "")(
-        "database", value<String>()->default_value("default"), "")("user", value<String>()->default_value("default"), "")(
-        "password", value<String>()->default_value(""), "")("tags", value<Strings>()->multitoken(), "Run only tests with tag")(
-        "skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")("names",
-        value<Strings>()->multitoken(),
-        "Run tests with specific name")("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")(
-        "names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")("skip-names-regexp",
-        value<Strings>()->multitoken(),
-        "Do not run tests with names matching regexp")("recursive,r", "Recurse in directories to find all xml's");
+    desc.add_options()
+        ("help", "produce help message")
+        ("lite", "use lite version of output")
+        ("profiles-file", value<String>()->default_value(""), "Specify a file with global profiles")
+        ("host,h", value<String>()->default_value("localhost"), "")
+        ("port", value<UInt16>()->default_value(9000), "")
+        ("secure,s", "Use TLS connection")
+        ("database", value<String>()->default_value("default"), "")
+        ("user", value<String>()->default_value("default"), "")
+        ("password", value<String>()->default_value(""), "")
+        ("tags", value<Strings>()->multitoken(), "Run only tests with tag")
+        ("skip-tags", value<Strings>()->multitoken(), "Do not run tests with tag")
+        ("names", value<Strings>()->multitoken(), "Run tests with specific name")
+        ("skip-names", value<Strings>()->multitoken(), "Do not run tests with name")
+        ("names-regexp", value<Strings>()->multitoken(), "Run tests with names matching regexp")
+        ("skip-names-regexp", value<Strings>()->multitoken(), "Do not run tests with names matching regexp")
+        ("recursive,r", "Recurse in directories to find all xml's");
 
     /// These options will not be displayed in --help
     boost::program_options::options_description hidden("Hidden options");
-    hidden.add_options()("input-files", value<std::vector<String>>(), "");
+    hidden.add_options()
+        ("input-files", value<std::vector<String>>(), "");
 
     /// But they will be legit, though. And they must be given without name
     boost::program_options::positional_options_description positional;
@@ -1439,7 +1453,7 @@ try
         if (input_files.empty())
         {
             std::cerr << std::endl;
-            throw DB::Exception("Did not find any xml files");
+            throw DB::Exception("Did not find any xml files", DB::ErrorCodes::BAD_ARGUMENTS);
         }
         else
             std::cerr << " found " << input_files.size() << " files." << std::endl;
@@ -1449,12 +1463,12 @@ try
         input_files = options["input-files"].as<Strings>();
         Strings collected_files;
 
-        for (const String filename : input_files)
+        for (const String & filename : input_files)
         {
             fs::path file(filename);
 
             if (!fs::exists(file))
-                throw DB::Exception("File '" + filename + "' does not exist");
+                throw DB::Exception("File '" + filename + "' does not exist", DB::ErrorCodes::FILE_DOESNT_EXIST);
 
             if (fs::is_directory(file))
             {
@@ -1463,7 +1477,7 @@ try
             else
             {
                 if (file.extension().string() != ".xml")
-                    throw DB::Exception("File '" + filename + "' does not have .xml extension");
+                    throw DB::Exception("File '" + filename + "' does not have .xml extension", DB::ErrorCodes::BAD_ARGUMENTS);
                 collected_files.push_back(filename);
             }
         }
@@ -1482,8 +1496,10 @@ try
 
     DB::UseSSL use_ssl;
 
-    DB::PerformanceTest performanceTest(options["host"].as<String>(),
+    DB::PerformanceTest performance_test(
+        options["host"].as<String>(),
         options["port"].as<UInt16>(),
+        options.count("secure"),
         options["database"].as<String>(),
         options["user"].as<String>(),
         options["password"].as<String>(),
@@ -1497,8 +1513,7 @@ try
         std::move(tests_names_regexp),
         std::move(skip_names_regexp),
         timeouts);
-
-    return 0;
+    return performance_test.run();
 }
 catch (...)
 {

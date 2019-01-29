@@ -26,7 +26,7 @@ MultiplexedConnections::MultiplexedConnections(Connection & connection, const Se
 
 MultiplexedConnections::MultiplexedConnections(
         std::vector<IConnectionPool::Entry> && connections,
-        const Settings & settings_, const ThrottlerPtr & throttler, bool append_extra_info)
+        const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_)
 {
     /// If we didn't get any connections from pool and getMany() did not throw exceptions, this means that
@@ -48,14 +48,11 @@ MultiplexedConnections::MultiplexedConnections(
     }
 
     active_connection_count = connections.size();
-
-    if (append_extra_info)
-        block_extra_info = std::make_unique<BlockExtraInfo>();
 }
 
 void MultiplexedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
 
     if (!sent_query)
         throw Exception("Cannot send external tables data: query not yet sent.", ErrorCodes::LOGICAL_ERROR);
@@ -82,7 +79,7 @@ void MultiplexedConnections::sendQuery(
     const ClientInfo * client_info,
     bool with_pending_data)
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
 
     if (sent_query)
         throw Exception("Query already sent.", ErrorCodes::LOGICAL_ERROR);
@@ -124,29 +121,14 @@ void MultiplexedConnections::sendQuery(
 
 Connection::Packet MultiplexedConnections::receivePacket()
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
     Connection::Packet packet = receivePacketUnlocked();
-    if (block_extra_info)
-    {
-        if (packet.type == Protocol::Server::Data)
-            current_connection->fillBlockExtraInfo(*block_extra_info);
-        else
-            block_extra_info->is_valid = false;
-    }
     return packet;
-}
-
-BlockExtraInfo MultiplexedConnections::getBlockExtraInfo() const
-{
-    if (!block_extra_info)
-        throw Exception("MultiplexedConnections object not configured for block extra info support",
-            ErrorCodes::LOGICAL_ERROR);
-    return *block_extra_info;
 }
 
 void MultiplexedConnections::disconnect()
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
 
     for (ReplicaState & state : replica_states)
     {
@@ -161,7 +143,7 @@ void MultiplexedConnections::disconnect()
 
 void MultiplexedConnections::sendCancel()
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
 
     if (!sent_query || cancelled)
         throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
@@ -178,7 +160,7 @@ void MultiplexedConnections::sendCancel()
 
 Connection::Packet MultiplexedConnections::drain()
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
 
     if (!cancelled)
         throw Exception("Cannot drain connections: cancel first.", ErrorCodes::LOGICAL_ERROR);
@@ -213,7 +195,7 @@ Connection::Packet MultiplexedConnections::drain()
 
 std::string MultiplexedConnections::dumpAddresses() const
 {
-    std::lock_guard<std::mutex> lock(cancel_mutex);
+    std::lock_guard lock(cancel_mutex);
     return dumpAddressesUnlocked();
 }
 

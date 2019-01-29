@@ -10,7 +10,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 
 namespace DB
 {

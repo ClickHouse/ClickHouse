@@ -19,8 +19,8 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
@@ -31,7 +31,7 @@
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
@@ -270,7 +270,6 @@ void HTTPHandler::processQuery(
     std::string query_id = params.get("query_id", "");
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
-    CurrentThread::attachQueryContext(context);
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -648,6 +647,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     setThreadName("HTTPHandler");
+    ThreadStatus thread_status;
 
     Output used_output;
 

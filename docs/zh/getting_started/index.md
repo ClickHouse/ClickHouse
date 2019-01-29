@@ -2,7 +2,7 @@
 
 ## 系统要求
 
-如果从官方仓库安装，需要确保您使用的是x86_64处理器构架的Linux并且支持SSE 4.2指令集
+如果从官方仓库安装，需要确保您使用的是x86\_64处理器构架的Linux并且支持SSE 4.2指令集
 
 检查是否支持SSE 4.2：
 
@@ -14,11 +14,9 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 基于rpm的系统,你可以使用第三方的安装包：https://packagecloud.io/altinity/clickhouse 或者直接安装debian安装包。
 
-ClickHouse还可以在FreeBSD与Mac OS X上工作。同时它可以在不支持SSE 4.2的x86_64构架和AArch64 CPUs上编译。
+ClickHouse还可以在FreeBSD与Mac OS X上工作。同时它可以在不支持SSE 4.2的x86\_64构架和AArch64 CPUs上编译。
 
 ## 安装
-
-为了测试和开发，系统可以安装在单个服务器或普通PC机上。
 
 ### 为Debian/Ubuntu安装
 

@@ -2,7 +2,6 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -61,14 +60,21 @@ std::optional<PartitionCommand> PartitionCommand::parse(const ASTAlterCommand * 
     else if (command_ast->type == ASTAlterCommand::DROP_COLUMN && command_ast->partition)
     {
         if (!command_ast->clear_column)
-            throw Exception("Can't DROP COLUMN from partition. It is possible only CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Can't DROP COLUMN from partition. It is possible only to CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
 
         PartitionCommand res;
         res.type = CLEAR_COLUMN;
         res.partition = command_ast->partition;
-        const Field & column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
+        const Field & column_name = *getIdentifierName(command_ast->column);
         res.column_name = column_name;
         return res;
+    }
+    else if (command_ast->type == ASTAlterCommand::FREEZE_ALL)
+    {
+        PartitionCommand command;
+        command.type = PartitionCommand::FREEZE_ALL_PARTITIONS;
+        command.with_name = command_ast->with_name;
+        return command;
     }
     else
         return {};

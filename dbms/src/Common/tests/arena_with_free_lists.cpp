@@ -20,10 +20,18 @@
 #include <Core/Field.h>
 #include <Common/Stopwatch.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadHelpers.h>
 
 using namespace DB;
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int SYSTEM_ERROR;
+    }
+}
 
 
 /// Implementation of ArenaWithFreeLists, which contains a bug. Used to reproduce the bug.
@@ -237,7 +245,7 @@ int main(int argc, char ** argv)
 
         rusage resource_usage;
         if (0 != getrusage(RUSAGE_SELF, &resource_usage))
-            throwFromErrno("Cannot getrusage");
+            throwFromErrno("Cannot getrusage", ErrorCodes::SYSTEM_ERROR);
 
         size_t allocated_bytes = resource_usage.ru_maxrss * 1024;
         std::cerr << "Current memory usage: " << allocated_bytes << " bytes.\n";

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/UInt128.h>
@@ -15,7 +15,7 @@ namespace DB
   * the query SELECT Num FROM T LIMIT 2 BY Num
   *    will give you the following result: (Num: 1 1 3 3 4 4 5 7 7).
   */
-class LimitByBlockInputStream : public IProfilingBlockInputStream
+class LimitByBlockInputStream : public IBlockInputStream
 {
 public:
     LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns);

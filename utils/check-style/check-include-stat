@@ -16,10 +16,12 @@ sh ${CUR_DIR}check-include > $RESULT_FILE 2>&1
 
 echo Results:
 echo Top by memory:
-cat $RESULT_FILE | sort -rk4 | head -n20
+cat $RESULT_FILE | sort -nrk4 | head -n20
 
 echo Top by time:
-cat $RESULT_FILE | sort -rk3 | head -n20
+cat $RESULT_FILE | sort -nrk3 | head -n20
 
 echo Top by includes:
-cat $RESULT_FILE | sort -rk2 | head -n20
+cat $RESULT_FILE | sort -nrk2 | head -n20
+
+trap "" EXIT

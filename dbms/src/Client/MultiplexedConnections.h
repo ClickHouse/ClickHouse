@@ -21,12 +21,10 @@ public:
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
 
-    /** Accepts a vector of connections to replicas of one shard already taken from pool.
-      * If the append_extra_info flag is set, additional information appended to each received block.
-      */
+    /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
-            std::vector<IConnectionPool::Entry> && connections,
-            const Settings & settings_, const ThrottlerPtr & throttler_, bool append_extra_info);
+        std::vector<IConnectionPool::Entry> && connections,
+        const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Send all content of external tables to replicas.
     void sendExternalTablesData(std::vector<ExternalTablesData> & data);
@@ -41,9 +39,6 @@ public:
 
     /// Get packet from any replica.
     Connection::Packet receivePacket();
-
-    /// Get information about the last received packet.
-    BlockExtraInfo getBlockExtraInfo() const;
 
     /// Break all active connections.
     void disconnect();
@@ -99,11 +94,8 @@ private:
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;
-    /// Information about the last received block, if supported.
-    std::unique_ptr<BlockExtraInfo> block_extra_info;
 
     bool sent_query = false;
-
     bool cancelled = false;
 
     /// A mutex for the sendCancel function to execute safely

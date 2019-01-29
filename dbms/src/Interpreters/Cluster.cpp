@@ -48,12 +48,15 @@ inline bool isLocal(const Cluster::Address & address, const Poco::Net::SocketAdd
 
 /// Implementation of Cluster::Address class
 
-Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     UInt16 clickhouse_port = static_cast<UInt16>(config.getInt("tcp_port", 0));
 
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
+    if (config.has(config_prefix + ".user"))
+        user_specified = true;
+
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
@@ -64,12 +67,13 @@ Cluster::Address::Address(Poco::Util::AbstractConfiguration & config, const Stri
 }
 
 
-Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port)
+Cluster::Address::Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_)
     : user(user_), password(password_)
 {
     auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
+    secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
     initially_resolved_address = DNSResolver::instance().resolveAddress(parsed_host_port.first, parsed_host_port.second);
     is_local = isLocal(*this, initially_resolved_address, clickhouse_port);
@@ -100,18 +104,17 @@ String Cluster::Address::readableString() const
     return res;
 }
 
-void Cluster::Address::fromString(const String & host_port_string, String & host_name, UInt16 & port)
+std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_string)
 {
     auto pos = host_port_string.find_last_of(':');
     if (pos == std::string::npos)
         throw Exception("Incorrect <host>:<port> format " + host_port_string, ErrorCodes::SYNTAX_ERROR);
 
-    host_name = unescapeForFileName(host_port_string.substr(0, pos));
-    port = parse<UInt16>(host_port_string.substr(pos + 1));
+    return {unescapeForFileName(host_port_string.substr(0, pos)), parse<UInt16>(host_port_string.substr(pos + 1))};
 }
 
 
-String Cluster::Address::toStringFull() const
+String Cluster::Address::toFullString() const
 {
     return
         escapeForFileName(user) +
@@ -122,10 +125,46 @@ String Cluster::Address::toStringFull() const
         + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
 }
 
+Cluster::Address Cluster::Address::fromFullString(const String & full_string)
+{
+    const char * address_begin = full_string.data();
+    const char * address_end = address_begin + full_string.size();
+
+    Protocol::Secure secure = Protocol::Secure::Disable;
+    const char * secure_tag = "+secure";
+    if (endsWith(full_string, secure_tag))
+    {
+        address_end -= strlen(secure_tag);
+        secure = Protocol::Secure::Enable;
+    }
+
+    const char * user_pw_end = strchr(full_string.data(), '@');
+    const char * colon = strchr(full_string.data(), ':');
+    if (!user_pw_end || !colon)
+        throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
+
+    const bool has_pw = colon < user_pw_end;
+    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+    if (!host_end)
+        throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
+
+    const char * has_db = strchr(full_string.data(), '#');
+    const char * port_end = has_db ? has_db : address_end;
+
+    Address address;
+    address.secure = secure;
+    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
+    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+    return address;
+}
+
 
 /// Implementation of Clusters class
 
-Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+Clusters::Clusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
     updateClusters(config, settings, config_name);
 }
@@ -147,7 +186,7 @@ void Clusters::setCluster(const String & cluster_name, const std::shared_ptr<Clu
 }
 
 
-void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
+void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_name, config_keys);
@@ -174,7 +213,7 @@ Clusters::Impl Clusters::getContainer() const
 
 /// Implementation of `Cluster` class
 
-Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
+Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & cluster_name)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(cluster_name, config_keys);
@@ -198,7 +237,6 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             const auto weight = config.getInt(prefix + ".weight", default_weight);
 
             addresses.emplace_back(config, prefix);
-            addresses.back().replica_num = 1;
             const auto & address = addresses.back();
 
             ShardInfo info;
@@ -253,14 +291,13 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 if (startsWith(replica_key, "replica"))
                 {
                     replica_addresses.emplace_back(config, partial_prefix + replica_key);
-                    replica_addresses.back().replica_num = current_replica_num;
                     ++current_replica_num;
 
                     if (!replica_addresses.back().is_local)
                     {
                         if (internal_replication)
                         {
-                            auto dir_name = replica_addresses.back().toStringFull();
+                            auto dir_name = replica_addresses.back().toFullString();
                             if (first)
                                 dir_name_for_internal_replication = dir_name;
                             else
@@ -316,7 +353,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
 
 Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote)
+                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote, bool secure)
 {
     UInt32 current_shard_num = 1;
 
@@ -324,7 +361,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port);
+            current.emplace_back(replica, username, password, clickhouse_port, secure);
 
         addresses_with_failover.emplace_back(current);
 
@@ -397,14 +434,24 @@ void Cluster::initMisc()
 
 std::unique_ptr<Cluster> Cluster::getClusterWithSingleShard(size_t index) const
 {
-    return std::unique_ptr<Cluster>{ new Cluster(*this, index) };
+    return std::unique_ptr<Cluster>{ new Cluster(*this, {index}) };
 }
 
-Cluster::Cluster(const Cluster & from, size_t index)
-    : shards_info{from.shards_info[index]}
+std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector<size_t> & indices) const
 {
-    if (!from.addresses_with_failover.empty())
-        addresses_with_failover.emplace_back(from.addresses_with_failover[index]);
+    return std::unique_ptr<Cluster>{ new Cluster(*this, indices) };
+}
+
+Cluster::Cluster(const Cluster & from, const std::vector<size_t> & indices)
+    : shards_info{}
+{
+    for (size_t index : indices)
+    {
+        shards_info.emplace_back(from.shards_info.at(index));
+
+        if (!from.addresses_with_failover.empty())
+            addresses_with_failover.emplace_back(from.addresses_with_failover.at(index));
+    }
 
     initMisc();
 }

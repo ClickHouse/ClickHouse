@@ -25,9 +25,6 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         case Type::NAME: NAME = std::make_unique<typename decltype(NAME)::element_type>(); break;
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 }
 
@@ -42,10 +39,9 @@ size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
         case Type::NAME: return NAME->data.size();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
+
+    __builtin_unreachable();
 }
 
 template <typename Variant>
@@ -59,10 +55,9 @@ size_t SetVariantsTemplate<Variant>::getTotalByteCount() const
         case Type::NAME: return NAME->data.getBufferSizeInBytes();
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
-
-        default:
-            throw Exception("Unknown Set variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
+
+    __builtin_unreachable();
 }
 
 template <typename Variant>
@@ -137,7 +132,7 @@ typename SetVariantsTemplate<Variant>::Type SetVariantsTemplate<Variant>::choose
     }
 
     /// If there is one numeric key that fits into 64 bits
-    if (keys_size == 1 && nested_key_columns[0]->isNumeric())
+    if (keys_size == 1 && nested_key_columns[0]->isNumeric() && !nested_key_columns[0]->lowCardinality())
     {
         size_t size_of_field = nested_key_columns[0]->sizeOfValueIfFixed();
         if (size_of_field == 1)

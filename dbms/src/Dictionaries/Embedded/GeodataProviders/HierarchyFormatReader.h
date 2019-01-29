@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Dictionaries/Embedded/GeodataProviders/IHierarchiesProvider.h>
-
 #include <IO/ReadBuffer.h>
+#include "IHierarchiesProvider.h"
 
 
 // Reads regions hierarchy in geoexport format
@@ -12,10 +11,7 @@ private:
     DB::ReadBufferPtr input;
 
 public:
-    RegionsHierarchyFormatReader(DB::ReadBufferPtr input_)
-        : input(std::move(input_))
-    {}
+    RegionsHierarchyFormatReader(DB::ReadBufferPtr input_) : input(std::move(input_)) {}
 
     bool readNext(RegionEntry & entry) override;
 };
-

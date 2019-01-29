@@ -14,7 +14,7 @@
 
 #include <Core/Types.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Common/HashTable/TwoLevelHashTable.h>
 #include <Common/HashTable/HashMap.h>
 

@@ -105,7 +105,7 @@ bool Settings::tryGet(const String & name, String & value) const
 /** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
     * The profile can also be set using the `set` functions, like the `profile` setting.
     */
-void Settings::setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config)
+void Settings::setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config)
 {
     String elem = "profiles." + profile_name;
 
@@ -202,7 +202,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     if (column_names)
     {
         auto & offsets = column_names->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+        offsets.push_back(offsets.back() + size);
     }
 
     /// Nested columns case
@@ -211,7 +211,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     if (column_values && !the_same_offsets)
     {
         auto & offsets = column_values->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+        offsets.push_back(offsets.back() + size);
     }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Parsers/StringRange.h>
+#include <Parsers/IAST.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ExpressionActions.h>
 
 
@@ -9,14 +10,6 @@ namespace DB
 
 class Context;
 class ASTFunction;
-struct ProjectionManipulatorBase;
-
-
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-/// Will compare sets by their position in query string. It's possible because IAST::clone() doesn't chane IAST::range.
-/// It should be taken into account when we want to change AST part which contains sets.
-using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 class Join;
 using JoinPtr = std::shared_ptr<Join>;
@@ -44,9 +37,10 @@ struct SubqueryForSet
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
 
-/// The case of an explicit enumeration of values.
-void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-                     const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
+ /// The case of an explicit enumeration of values.
+SetPtr makeExplicitSet(
+    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const Context & context, const SizeLimits & limits, PreparedSets & prepared_sets);
 
 
 /** For ActionsVisitor
@@ -89,7 +83,7 @@ struct ScopeStack
 class ActionsVisitor
 {
 public:
-    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, bool is_conditional_tree, size_t subquery_depth_,
+    ActionsVisitor(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                    const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
                    PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
                    bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_ = nullptr);
@@ -111,9 +105,8 @@ private:
     mutable size_t visit_depth;
     std::ostream * ostr;
     ScopeStack actions_stack;
-    std::shared_ptr<ProjectionManipulatorBase> projection_manipulator;
 
-    void makeSet(const ASTFunction * node, const Block & sample_block);
+    SetPtr makeSet(const ASTFunction * node, const Block & sample_block);
 };
 
 }
