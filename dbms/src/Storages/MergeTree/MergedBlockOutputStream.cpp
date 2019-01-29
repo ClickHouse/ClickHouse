@@ -449,7 +449,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     auto primary_key_column_names = storage.primary_key_columns;
     Names skip_indexes_column_names;
-    for (const auto index : storage.skip_indices)
+    for (const auto & index : storage.skip_indices)
         std::copy(index->columns.cbegin(), index->columns.cend(), std::back_inserter(skip_indexes_column_names));
 
     /// Here we will add the columns related to the Primary Key, then write the index.
