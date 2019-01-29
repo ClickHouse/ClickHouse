@@ -6,6 +6,7 @@
 #include <Interpreters/Set.h>
 
 #include <memory>
+#include <set>
 
 
 namespace DB
@@ -57,7 +58,7 @@ private:
     const MergeTreeUniqueIndex & index;
 
     bool useless;
-    std::map<String, size_t> key_columns;
+    std::set<String> key_columns;
     ASTPtr expression_ast;
     ExpressionActionsPtr actions;
 };

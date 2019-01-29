@@ -10,8 +10,6 @@
 
 #include <Poco/Logger.h>
 
-#include <set>
-
 
 namespace DB
 {
@@ -39,6 +37,13 @@ void MergeTreeUniqueGranule::serializeBinary(WriteBuffer & ostr) const
     const auto & columns = set->getSetElements();
 
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
+
+    if (index.max_rows && size() > index.max_rows)
+    {
+        size_type->serializeBinary(0, ostr);
+        return;
+    }
+
     size_type->serializeBinary(size(), ostr);
 
     for (size_t i = 0; i < index.columns.size(); ++i)
@@ -156,7 +161,7 @@ UniqueCondition::UniqueCondition(
     {
         std::string name = index.columns[i];
         if (!key_columns.count(name))
-            key_columns[name] = i;
+            key_columns.insert(name);
     }
 
     const ASTSelectQuery & select = typeid_cast<const ASTSelectQuery &>(*query.query);
@@ -240,12 +245,11 @@ void UniqueCondition::traverseAST(ASTPtr & node) const
     }
 
     if (!atomFromAST(node))
-        node = std::make_shared<ASTLiteral>(Field(3)); /// can_be_true=1 can_be_false=0
+        node = std::make_shared<ASTLiteral>(Field(3)); /// can_be_true=1 can_be_false=1
 }
 
 bool UniqueCondition::atomFromAST(ASTPtr & node) const
 {
-    /// Functions < > = != <= >= in `notIn`
     /// Function, literal or column
 
     if (typeid_cast<const ASTLiteral *>(node.get()))
@@ -289,8 +293,8 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
         if (args.size() != 1)
             return false;
 
-        auto one = std::make_shared<ASTLiteral>(Field(1));
-        auto two = std::make_shared<ASTLiteral>(Field(2));
+        const auto one = std::make_shared<ASTLiteral>(Field(1));
+        const auto two = std::make_shared<ASTLiteral>(Field(2));
 
         node = makeASTFunction(
                 "bitOr",
