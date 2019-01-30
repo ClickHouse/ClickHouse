@@ -116,14 +116,14 @@ void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t li
     LOG_DEBUG(log, "updated rows_read: " << rows_read);
 
     *pos += rows_read;
-};
+}
 
 
 MinMaxCondition::MinMaxCondition(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeMinMaxIndex &index)
-    : IndexCondition(), index(index), condition(query, context, index.columns, index.expr) {};
+    : IndexCondition(), index(index), condition(query, context, index.columns, index.expr) {}
 
 bool MinMaxCondition::alwaysUnknownOrTrue() const
 {
@@ -188,7 +188,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     }
 
     return std::make_unique<MergeTreeMinMaxIndex>(
-            node->name, std::move(minmax_expr), columns, data_types, node->granularity.get<size_t>());;
+            node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity.get<size_t>());;
 }
 
 }
