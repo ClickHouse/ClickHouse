@@ -92,10 +92,10 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
     node1.query("INSERT INTO {}(id, name, money) select number, concat('name_', toString(number)), 3 from numbers(100) ".format(table_name))
 
-    # actually, I don't know, what wrong with that connection string, but libmyodbc always falls into segfault
-    node1.query("SELECT * FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name), ignore_error=True)
+    assert node1.query("SELECT count(*) FROM odbc('DSN={}', '{}')".format(mysql_setup["DSN"], table_name)) == '100\n'
 
-    # server still works after segfault
+    # previously this test fails with segfault
+    # just to be sure :)
     assert node1.query("select 1") == "1\n"
 
     conn.close()
