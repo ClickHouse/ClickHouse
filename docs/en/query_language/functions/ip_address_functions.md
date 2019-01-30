@@ -113,5 +113,38 @@ LIMIT 10
 The reverse function of IPv6NumToString. If the IPv6 address has an invalid format, it returns a string of null bytes.
 HEX can be uppercase or lowercase.
 
+## IPv4ToIPv6(x)
+
+Takes a UInt32 number. Interprets it as an IPv4 address in big endian. Returns a FixedString(16) value containing the IPv6 address in binary format. Examples:
+
+``` sql
+SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
+```
+
+```
+┌─addr───────────────┐
+│ ::ffff:192.168.0.1 │
+└────────────────────┘
+```
+
+## cutIPv6(x, bitsToCutForIPv6, bitsToCutForIPv4)
+
+Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing the address of the specified number of bits removed in text format. For example:
+
+```sql
+WITH
+    IPv6StringToNum('2001:0DB8:AC10:FE01:FEED:BABE:CAFE:F00D') AS ipv6,
+    IPv4ToIPv6(IPv4StringToNum('192.168.0.1')) AS ipv4
+SELECT
+    cutIPv6(ipv6, 2, 0),
+    cutIPv6(ipv4, 0, 2)
+
+```
+
+```
+┌─cutIPv6(ipv6, 2, 0)─────────────────┬─cutIPv6(ipv4, 0, 2)─┐
+│ 2001:db8:ac10:fe01:feed:babe:cafe:0 │ ::ffff:192.168.0.0  │
+└─────────────────────────────────────┴─────────────────────┘
+```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/ip_address_functions/) <!--hide-->
