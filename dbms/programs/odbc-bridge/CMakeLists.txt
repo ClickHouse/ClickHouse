@@ -35,8 +35,9 @@ endif ()
 
 # clickhouse-odbc-bridge is always a separate binary.
 # Reason: it must not export symbols from SSL, mariadb-client, etc. to not break ABI compatibility with ODBC drivers.
-# For this reason, we also do "-s" (strip).
+# For this reason, we disabling -rdynamic linker flag. But we do it in strange way:
+SET(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
 
 add_executable (clickhouse-odbc-bridge odbc-bridge.cpp)
-target_link_libraries (clickhouse-odbc-bridge PRIVATE clickhouse-odbc-bridge-lib -s)
+target_link_libraries (clickhouse-odbc-bridge PRIVATE clickhouse-odbc-bridge-lib)
 install (TARGETS clickhouse-odbc-bridge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
