@@ -422,7 +422,7 @@ void MergedBlockOutputStream::init()
         index_stream = std::make_unique<HashingWriteBuffer>(*index_file_stream);
     }
 
-    for (const auto index : storage.skip_indices)
+    for (const auto & index : storage.skip_indices)
     {
         String stream_name = index->getFileName();
         skip_indices_streams.emplace_back(

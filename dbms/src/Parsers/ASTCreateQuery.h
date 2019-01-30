@@ -149,7 +149,7 @@ public:
         ASTExpressionList list;
 
         if (columns)
-            for (const auto &column : columns->children)
+            for (const auto & column : columns->children)
             {
                 auto elem = std::make_shared<ASTColumnsElement>();
                 elem->prefix = "";
@@ -157,7 +157,7 @@ public:
                 list.children.push_back(elem);
             }
         if (indices)
-            for (const auto &index : indices->children)
+            for (const auto & index : indices->children)
             {
                 auto elem = std::make_shared<ASTColumnsElement>();
                 elem->prefix = "INDEX";

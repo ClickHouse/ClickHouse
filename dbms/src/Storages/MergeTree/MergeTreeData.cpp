@@ -1075,7 +1075,7 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
             columns_alter_forbidden.insert(col);
     }
 
-    for (auto index : skip_indices)
+    for (const auto & index : skip_indices)
     {
         for (const String & col : index->expr->getRequiredColumns())
             columns_alter_forbidden.insert(col);
