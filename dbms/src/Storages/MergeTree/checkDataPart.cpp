@@ -242,10 +242,9 @@ MergeTreeData::DataPart::Checksums checkDataPart(
         rows = count;
     }
 
-    /// Read and check skip indices
-    for (const auto index : indices)
+    /// Read and check skip indices.
+    for (const auto & index : indices)
     {
-        LOG_DEBUG(log, "Checking index " << index->name << " in " << path);
         Stream stream(path, index->getFileName(), ".idx");
         size_t mark_num = 0;
 

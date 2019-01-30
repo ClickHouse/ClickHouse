@@ -26,17 +26,10 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
     if (empty())
         throw Exception(
                 "Attempt to write empty minmax index `" + index.name + "`", ErrorCodes::LOGICAL_ERROR);
-    Poco::Logger * log = &Poco::Logger::get("minmax_idx");
-
-    LOG_DEBUG(log, "serializeBinary Granule");
 
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const DataTypePtr & type = index.data_types[i];
-
-        LOG_DEBUG(log, "parallel " << i << " :: "
-            << applyVisitor(FieldVisitorToString(), parallelogram[i].left) << " "
-            << applyVisitor(FieldVisitorToString(), parallelogram[i].right));
 
         type->serializeBinary(parallelogram[i].left, ostr);
         type->serializeBinary(parallelogram[i].right, ostr);
@@ -45,9 +38,6 @@ void MergeTreeMinMaxGranule::serializeBinary(WriteBuffer & ostr) const
 
 void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
 {
-    Poco::Logger * log = &Poco::Logger::get("minmax_idx");
-
-    LOG_DEBUG(log, "deserializeBinary Granule");
     parallelogram.clear();
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
@@ -58,17 +48,13 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
         Field max_val;
         type->deserializeBinary(max_val, istr);
 
-        LOG_DEBUG(log, "parallel " << i << " :: "
-            << applyVisitor(FieldVisitorToString(), min_val) << " "
-            << applyVisitor(FieldVisitorToString(), max_val));
-
         parallelogram.emplace_back(min_val, true, max_val, true);
     }
 }
 
 String MergeTreeMinMaxGranule::toString() const
 {
-    String res = "minmax granule: ";
+    String res = "";
 
     for (size_t i = 0; i < parallelogram.size(); ++i)
     {
@@ -82,18 +68,10 @@ String MergeTreeMinMaxGranule::toString() const
 
 void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
 {
-    /// TODO: remove logs
-    Poco::Logger * log = &Poco::Logger::get("minmax_idx");
-
-    LOG_DEBUG(log, "update Granule " << parallelogram.size()
-    << " pos: "<< *pos << " limit: " << limit << " rows: " << block.rows());
-
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
-        LOG_DEBUG(log, "granule column: " << index.columns[i]);
-
         const auto & column = block.getByName(index.columns[i]).column;
 
         Field field_min, field_max;
@@ -108,12 +86,7 @@ void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t li
             parallelogram[i].left = std::min(parallelogram[i].left, field_min);
             parallelogram[i].right = std::max(parallelogram[i].right, field_max);
         }
-
-        LOG_DEBUG(log, "res:: ["
-            << applyVisitor(FieldVisitorToString(), parallelogram[i].left) << ", "
-            << applyVisitor(FieldVisitorToString(), parallelogram[i].right) << "]");
     }
-    LOG_DEBUG(log, "updated rows_read: " << rows_read);
 
     *pos += rows_read;
 }
@@ -176,15 +149,12 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     Names columns;
     DataTypes data_types;
 
-    Poco::Logger * log = &Poco::Logger::get("minmax_idx");
-    LOG_DEBUG(log, "new minmax index" << node->name);
     for (size_t i = 0; i < expr_list->children.size(); ++i)
     {
         const auto & column = sample.getByPosition(i);
 
         columns.emplace_back(column.name);
         data_types.emplace_back(column.type);
-        LOG_DEBUG(log, ">" << column.name << " " << column.type->getName());
     }
 
     return std::make_unique<MergeTreeMinMaxIndex>(

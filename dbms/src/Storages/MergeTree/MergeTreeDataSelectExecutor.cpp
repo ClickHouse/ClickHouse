@@ -534,7 +534,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
 
         /// It can be done in multiple threads (one thread for each part).
         /// Maybe it should be moved to BlockInputStream, but it can cause some problems.
-        for (auto index : data.skip_indices)
+        for (const auto & index : data.skip_indices)
         {
             auto condition = index->createIndexCondition(query_info, context);
             if (!condition->alwaysUnknownOrTrue())
@@ -965,9 +965,14 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const Settings & settings) const
 {
     if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists())
+    {
+        LOG_DEBUG(log, "File for index `" << index->name << "` does not exist. Skipping it.");
         return ranges;
+    }
 
     const size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+
+    size_t granules_dropped = 0;
 
     MergeTreeIndexReader reader(
             index, part,
@@ -997,15 +1002,10 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             MarkRange data_range(
                     std::max(range.begin, index_mark * index->granularity),
                     std::min(range.end, (index_mark + 1) * index->granularity));
-            LOG_DEBUG(log, "drop out:: " <<  " data_range [" <<
-                data_range.begin << ", " << data_range.end << ") index_mark = " << index_mark <<
-                " granule data: ");
-
-            LOG_DEBUG(log, granule->toString());
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
-                LOG_DEBUG(log, "DROP");
+                ++granules_dropped;
                 continue;
             }
 
@@ -1017,6 +1017,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
 
         last_index_mark = index_range.end - 1;
     }
+
+    LOG_DEBUG(log, "Index `" << index->name << "` has dropped " << granules_dropped << " granules.");
+
     return res;
 }
 
