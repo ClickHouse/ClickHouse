@@ -10,7 +10,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 
 
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
+
 Запрос `CREATE TABLE` может иметь несколько форм.
 
 ``` sql
