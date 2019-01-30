@@ -66,8 +66,8 @@ For a description of request parameters, see [request description](../../query_l
     If a sampling expression is used, the primary key must contain it. Example:  
     `SAMPLE BY intHash32(UserID) ORDER BY (CounterID, EventDate, intHash32(UserID))`.
 
-- `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
-    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
+- `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`. Fot example: 
+    - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192. For more parameters, see [MergeTreeSettings.h](https://github.com/yandex/ClickHouse/blob/master/dbms/src/Storages/MergeTree/MergeTreeSettings.h).
 
 **Example of sections setting**
 
