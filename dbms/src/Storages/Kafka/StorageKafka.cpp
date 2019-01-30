@@ -177,6 +177,9 @@ cppkafka::Configuration StorageKafka::createConsumerConfiguration()
 
     conf.set("client.id", VERSION_FULL);
 
+    // If no offset stored for this group, read all messages from the start
+    conf.set("auto.offset.reset", "smallest");
+
     // We manually commit offsets after a stream successfully finished
     conf.set("enable.auto.commit", "false");
 
