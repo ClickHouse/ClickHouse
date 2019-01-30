@@ -152,12 +152,12 @@ Converts a Number type argument to a Interval type (duration).
 The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
 
 ```sql
-WITH
-    toDate('2019-01-01') AS date,
-    toIntervalWeek(1) AS interval_week,
+WITH 
+    toDate('2019-01-01') AS date, 
+    INTERVAL 1 WEEK AS interval_week, 
     toIntervalWeek(1) AS interval_to_week
-SELECT
-    date + interval_week,
+SELECT 
+    date + interval_week, 
     date + interval_to_week
 ```
 
