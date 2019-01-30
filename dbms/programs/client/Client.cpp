@@ -56,6 +56,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
@@ -219,6 +220,9 @@ private:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
+        /// Set path for format schema files
+        if (config().has("format_schema_path"))
+            context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
     }
 
 
@@ -860,7 +864,7 @@ private:
     }
 
 
-    /// Process the query that doesn't require transfering data blocks to the server.
+    /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
         connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -869,7 +873,7 @@ private:
     }
 
 
-    /// Process the query that requires transfering data blocks to the server.
+    /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
@@ -1136,7 +1140,7 @@ private:
     }
 
 
-    /// Process Log packets, exit when recieve Exception or EndOfStream
+    /// Process Log packets, exit when receive Exception or EndOfStream
     bool receiveEndOfQuery()
     {
         while (true)
@@ -1205,6 +1209,10 @@ private:
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
                     current_format = id.name;
+                }
+                if (query_with_output->settings_ast)
+                {
+                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
                 }
             }
 

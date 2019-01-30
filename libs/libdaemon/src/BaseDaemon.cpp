@@ -7,8 +7,8 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/fcntl.h>
 #include <sys/time.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
@@ -788,23 +788,25 @@ void BaseDaemon::closeFDs()
 #endif
     if (proc_path.isDirectory()) /// Hooray, proc exists
     {
-        Poco::DirectoryIterator itr(proc_path), end;
-        for (; itr != end; ++itr)
+        std::vector<std::string> fds;
+        /// in /proc/self/fd directory filenames are numeric file descriptors
+        proc_path.list(fds);
+        for (const auto & fd_str : fds)
         {
-            long fd = DB::parse<long>(itr.name());
+            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
         }
     }
     else
     {
-        long max_fd = -1;
+        int max_fd = -1;
 #ifdef _SC_OPEN_MAX
         max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
-        for (long fd = 3; fd < max_fd; ++fd)
+        for (int fd = 3; fd < max_fd; ++fd)
             if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
     }
@@ -998,8 +1000,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     initializeTerminationAndSignalProcessing();
-
-    DB::CurrentThread::get();   /// TODO Why do we need this?
     logRevision();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))

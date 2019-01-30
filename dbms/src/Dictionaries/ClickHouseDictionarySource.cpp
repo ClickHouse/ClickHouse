@@ -70,7 +70,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block}
     , context(context)
-    , is_local{isLocalAddress({host, port}, config.getInt("tcp_port", 0))}
+    , is_local{isLocalAddress({host, port}, context.getTCPPort())}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)}
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
@@ -183,7 +183,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     if (is_local)
     {
         auto input_block = executeQuery(request, context, true).in;
-        return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream &>((*input_block)));
+        return readInvalidateQuery(*input_block);
     }
     else
     {

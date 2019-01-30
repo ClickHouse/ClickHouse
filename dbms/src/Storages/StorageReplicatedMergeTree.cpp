@@ -45,7 +45,7 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -1592,7 +1592,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         MergeTreePartInfo new_part_info;
         String checksum_hex;
 
-        /// Part which will be comitted
+        /// Part which will be committed
         MergeTreeData::MutableDataPartPtr res_part;
 
         /// We could find a covering part
@@ -1624,7 +1624,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             data.format_version));
     }
 
-    /// What parts we should add? Or we have already added all required parts (we an replica-intializer)
+    /// What parts we should add? Or we have already added all required parts (we an replica-initializer)
     {
         auto data_parts_lock = data.lockParts();
 
@@ -3427,7 +3427,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 
     --right;
 
-    /// Artificial high level is choosen, to make this part "covering" all parts inside.
+    /// Artificial high level is chosen, to make this part "covering" all parts inside.
     part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
     return true;
 }
@@ -3692,7 +3692,7 @@ std::optional<EphemeralLockInZooKeeper>
 StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path)
 {
-    /// Lets check for duplicates in advance, to avoid superflous block numbers allocation
+    /// Lets check for duplicates in advance, to avoid superfluous block numbers allocation
     Coordination::Requests deduplication_check_ops;
     if (!zookeeper_block_id_path.empty())
     {
@@ -4742,7 +4742,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     for (size_t i = 0; i < src_all_parts.size(); ++i)
     {
         /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
-        /// Assume that merges in the partiton are quite rare
+        /// Assume that merges in the partition are quite rare
         /// Save deduplication block ids with special prefix replace_partition
 
         auto & src_part = src_all_parts[i];

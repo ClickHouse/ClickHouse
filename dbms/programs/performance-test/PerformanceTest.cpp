@@ -23,7 +23,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Exception.h>
@@ -46,6 +46,8 @@
 namespace fs = boost::filesystem;
 using String = std::string;
 const String FOUR_SPACES = "    ";
+const std::regex QUOTE_REGEX{"\""};
+const std::regex NEW_LINE{"\n"};
 
 namespace DB
 {
@@ -80,7 +82,7 @@ public:
 
         bool reserved = (value[0] == '[' || value[0] == '{' || value == "null");
         if (!reserved && wrap)
-            value = '"' + value + '"';
+            value = '"' + std::regex_replace(value, NEW_LINE, "\\n") + '"';
 
         content[key] = value;
     }
@@ -579,7 +581,8 @@ private:
 
     using Paths = std::vector<String>;
     using StringToVector = std::map<String, std::vector<String>>;
-    StringToVector substitutions;
+    using StringToMap = std::map<String, StringToVector>;
+    StringToMap substitutions;
 
     using StringKeyValue = std::map<String, String>;
     std::vector<StringKeyValue> substitutions_maps;
@@ -933,13 +936,13 @@ private:
         {
             /// Make "subconfig" of inner xml block
             ConfigurationPtr substitutions_view(test_config->createView("substitutions"));
-            constructSubstitutions(substitutions_view, substitutions);
+            constructSubstitutions(substitutions_view, substitutions[test_name]);
 
             auto queries_pre_format = queries;
             queries.clear();
             for (const auto & query : queries_pre_format)
             {
-                auto formatted = formatQueries(query, substitutions);
+                auto formatted = formatQueries(query, substitutions[test_name]);
                 queries.insert(queries.end(), formatted.begin(), formatted.end());
             }
         }
@@ -994,6 +997,9 @@ private:
         }
         else
         {
+            if (metrics.empty())
+                throw DB::Exception("You shoud specify at least one metric", DB::ErrorCodes::BAD_ARGUMENTS);
+            main_metric = metrics[0];
             if (lite_output)
                 throw DB::Exception("Specify main_metric for lite output", DB::ErrorCodes::BAD_ARGUMENTS);
         }
@@ -1219,11 +1225,11 @@ public:
         json_output.set("test_name", test_name);
         json_output.set("main_metric", main_metric);
 
-        if (substitutions.size())
+        if (substitutions[test_name].size())
         {
             JSONString json_parameters(2); /// here, 2 is the size of \t padding
 
-            for (auto it = substitutions.begin(); it != substitutions.end(); ++it)
+            for (auto it = substitutions[test_name].begin(); it != substitutions[test_name].end(); ++it)
             {
                 String parameter = it->first;
                 std::vector<String> values = it->second;
@@ -1231,7 +1237,7 @@ public:
                 String array_string = "[";
                 for (size_t i = 0; i != values.size(); ++i)
                 {
-                    array_string += '"' + values[i] + '"';
+                    array_string += '"' + std::regex_replace(values[i], QUOTE_REGEX, "\\\"") + '"';
                     if (i != values.size() - 1)
                     {
                         array_string += ", ";
@@ -1257,7 +1263,7 @@ public:
 
                 JSONString runJSON;
 
-                runJSON.set("query", queries[query_index]);
+                runJSON.set("query", std::regex_replace(queries[query_index], QUOTE_REGEX, "\\\""));
                 if (!statistics.exception.empty())
                     runJSON.set("exception", statistics.exception);
 

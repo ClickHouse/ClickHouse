@@ -4,7 +4,7 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/EmbeddedDictionaries.h>
@@ -53,7 +53,7 @@ ExecutionStatus getOverallExecutionStatusOfCommands()
     return ExecutionStatus(0);
 }
 
-/// Consequently tries to execute all commands and genreates final exception message for failed commands
+/// Consequently tries to execute all commands and generates final exception message for failed commands
 template <typename Callable, typename ... Callables>
 ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
 {

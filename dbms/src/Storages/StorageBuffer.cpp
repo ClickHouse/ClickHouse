@@ -6,7 +6,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <DataStreams/AddingMissedBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
@@ -80,7 +80,7 @@ StorageBuffer::~StorageBuffer()
 
 
 /// Reads from one buffer (from one block) under its mutex.
-class BufferBlockInputStream : public IProfilingBlockInputStream
+class BufferBlockInputStream : public IBlockInputStream
 {
 public:
     BufferBlockInputStream(const Names & column_names_, StorageBuffer::Buffer & buffer_, const StorageBuffer & storage_)
@@ -420,7 +420,7 @@ void StorageBuffer::startup()
             << " Set apropriate system_profile to fix this.");
     }
 
-    flush_thread = std::thread(&StorageBuffer::flushThread, this);
+    flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
 }
 
 
