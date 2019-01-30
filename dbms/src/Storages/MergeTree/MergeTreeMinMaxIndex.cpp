@@ -155,7 +155,6 @@ return std::make_shared<MinMaxCondition>(query, context, *this);
 
 
 std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
-    const MergeTreeData &,
     const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context)

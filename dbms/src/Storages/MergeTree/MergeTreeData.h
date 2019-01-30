@@ -736,8 +736,6 @@ private:
                                         const ColumnsDescription &new_columns,
                                         const IndicesDescription &indices_description, bool only_check = false);
 
-    void setSkipIndices(const IndicesDescription & indices_description, bool only_check = false);
-
     void initPartitionKey();
 
     /// Expression for column type conversion.

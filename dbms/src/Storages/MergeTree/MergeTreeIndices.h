@@ -102,13 +102,11 @@ class MergeTreeIndexFactory : public ext::singleton<MergeTreeIndexFactory>
 public:
     using Creator = std::function<
             std::unique_ptr<MergeTreeIndex>(
-                    const MergeTreeData & data,
                     const NamesAndTypesList & columns,
                     std::shared_ptr<ASTIndexDeclaration> node,
                     const Context & context)>;
 
     std::unique_ptr<MergeTreeIndex> get(
-        const MergeTreeData & data,
         const NamesAndTypesList & columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context) const;

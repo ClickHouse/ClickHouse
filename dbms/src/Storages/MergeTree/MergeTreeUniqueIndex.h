@@ -88,6 +88,6 @@ public:
 };
 
 std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
-        const MergeTreeData & data, const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
+    const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }
