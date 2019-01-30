@@ -1,4 +1,5 @@
 #include <Interpreters/ColumnNamesContext.h>
+#include <Interpreters/IdentifierSemantic.h>
 #include <DataTypes/NestedUtils.h>
 
 namespace DB
@@ -31,7 +32,7 @@ bool ColumnNamesContext::addColumnAliasIfAny(const IAST & ast, bool is_public)
 
 void ColumnNamesContext::addColumnIdentifier(const ASTIdentifier & node, bool is_public)
 {
-    if (!getColumnIdentifierName(node))
+    if (!IdentifierSemantic::getColumnName(node))
         return;
 
     required_names.insert(node.name);

@@ -2,7 +2,7 @@
 #include <thread>
 #include <future>
 
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/FileStream.h>
