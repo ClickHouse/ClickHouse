@@ -244,8 +244,7 @@ void StorageMergeTree::alter(
     context.getDatabase(current_database_name)->alterTable(context, current_table_name, new_columns, new_indices, storage_modifier);
 
     /// Reinitialize primary key because primary key column types might have changed.
-    data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndices(new_indices);
+    data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 
     for (auto & transaction : transactions)
         transaction->commit();

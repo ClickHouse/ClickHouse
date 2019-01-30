@@ -512,6 +512,7 @@ public:
 
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
     bool hasPrimaryKey() const { return !primary_key_columns.empty(); }
+    bool hasSkipIndices() const { return !skip_indices.empty(); }
 
     ASTPtr getSortingKeyAST() const { return sorting_key_expr_ast; }
     ASTPtr getPrimaryKeyAST() const { return primary_key_expr_ast; }
@@ -587,7 +588,9 @@ public:
 
     /// Secondary (data skipping) indices for MergeTree
     MergeTreeIndices skip_indices;
-    ExpressionActionsPtr skip_indices_expr;
+
+    ExpressionActionsPtr primary_key_and_skip_indices_expr;
+    ExpressionActionsPtr sorting_key_and_skip_indices_expr;
 
     /// Names of columns for primary key + secondary sorting columns.
     Names sorting_key_columns;
@@ -729,9 +732,11 @@ private:
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
 
-    void setPrimaryKeyAndColumns(const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check = false);
+    void setPrimaryKeyIndicesAndColumns(const ASTPtr &new_order_by_ast, ASTPtr new_primary_key_ast,
+                                        const ColumnsDescription &new_columns,
+                                        const IndicesDescription &indices_description, bool only_check = false);
 
-    void setSkipIndices(const IndicesDescription & indices, bool only_check = false);
+    void setSkipIndices(const IndicesDescription & indices_description, bool only_check = false);
 
     void initPartitionKey();
 

@@ -28,6 +28,7 @@ void MergeTreeIndexFactory::registerIndex(const std::string &name, Creator creat
 
 std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
     const MergeTreeData & data,
+    const NamesAndTypesList & columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context) const
 {
@@ -51,7 +52,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeIndexFactory::get(
                                 return lft + ", " + rht.first;
                         }),
                 ErrorCodes::INCORRECT_QUERY);
-    return it->second(data, node, context);
+    return it->second(data, columns, node, context);
 }
 
 }

@@ -380,7 +380,8 @@ IndexConditionPtr MergeTreeUniqueIndex::createIndexCondition(
 
 
 std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
-        const MergeTreeData & data,
+        const MergeTreeData &,
+        const NamesAndTypesList & new_columns,
         std::shared_ptr<ASTIndexDeclaration> node,
         const Context & context)
 {
@@ -400,7 +401,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
     auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, data.getColumns().getAllPhysical());
+            expr_list, new_columns);
     auto unique_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)
