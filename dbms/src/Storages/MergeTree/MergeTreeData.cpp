@@ -115,8 +115,7 @@ MergeTreeData::MergeTreeData(
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
-    setPrimaryKeyAndColumns(order_by_ast_, primary_key_ast_, columns_);
-    setSkipIndices(indices_);
+    setPrimaryKeyIndicesAndColumns(order_by_ast_, primary_key_ast_, columns_, indices_);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(getColumns().getAllPhysical());
@@ -222,8 +221,9 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 }
 
 
-void MergeTreeData::setPrimaryKeyAndColumns(
-    const ASTPtr & new_order_by_ast, ASTPtr new_primary_key_ast, const ColumnsDescription & new_columns, bool only_check)
+void MergeTreeData::setPrimaryKeyIndicesAndColumns(
+        const ASTPtr &new_order_by_ast, ASTPtr new_primary_key_ast,
+        const ColumnsDescription &new_columns, const IndicesDescription &indices_description, bool only_check)
 {
     if (!new_order_by_ast)
         throw Exception("ORDER BY cannot be empty", ErrorCodes::BAD_ARGUMENTS);
@@ -330,6 +330,51 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         new_primary_key_data_types.push_back(elem.type);
     }
 
+    ASTPtr skip_indices_with_primary_key_expr_list = new_primary_key_expr_list->clone();
+    ASTPtr skip_indices_with_sorting_key_expr_list = new_sorting_key_expr_list->clone();
+
+    MergeTreeIndices new_indices;
+
+    if (!indices_description.indices.empty())
+    {
+        std::set<String> indices_names;
+
+        for (const auto & index_ast : indices_description.indices)
+        {
+            const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
+
+            new_indices.push_back(
+                    MergeTreeIndexFactory::instance().get(
+                            *this,
+                            all_columns,
+                            std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
+                            global_context));
+
+            if (indices_names.find(new_indices.back()->name) != indices_names.end())
+                throw Exception(
+                        "Index with name `" + new_indices.back()->name + "` already exsists",
+                        ErrorCodes::LOGICAL_ERROR);
+
+            ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
+            for (const auto & expr : expr_list->children)
+            {
+                skip_indices_with_primary_key_expr_list->children.push_back(expr->clone());
+                skip_indices_with_sorting_key_expr_list->children.push_back(expr->clone());
+            }
+
+            indices_names.insert(new_indices.back()->name);
+        }
+    }
+    auto syntax_primary = SyntaxAnalyzer(global_context, {}).analyze(
+            skip_indices_with_primary_key_expr_list, all_columns);
+    auto new_indices_with_primary_key_expr = ExpressionAnalyzer(
+            skip_indices_with_primary_key_expr_list, syntax_primary, global_context).getActions(false);
+
+    auto syntax_sorting = SyntaxAnalyzer(global_context, {}).analyze(
+            skip_indices_with_sorting_key_expr_list, all_columns);
+    auto new_indices_with_sorting_key_expr = ExpressionAnalyzer(
+            skip_indices_with_sorting_key_expr_list, syntax_sorting, global_context).getActions(false);
+
     if (!only_check)
     {
         setColumns(new_columns);
@@ -345,18 +390,24 @@ void MergeTreeData::setPrimaryKeyAndColumns(
         primary_key_expr = std::move(new_primary_key_expr);
         primary_key_sample = std::move(new_primary_key_sample);
         primary_key_data_types = std::move(new_primary_key_data_types);
+
+        setIndicesDescription(indices_description);
+        skip_indices = std::move(new_indices);
+
+        primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
+        sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
     }
 }
 
 
-void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only_check)
+void MergeTreeData::setSkipIndices(const IndicesDescription & indices_description, bool only_check)
 {
-    if (indices.indices.empty())
+    if (indices_description.indices.empty())
     {
         if (!only_check)
         {
-            setIndicesDescription(indices);
-            skip_indices_expr = nullptr;
+            setIndicesDescription(indices_description);
+          //  skip_indices_expr = nullptr;
             skip_indices.clear();
         }
         return;
@@ -366,15 +417,16 @@ void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only
     std::set<String> names;
     ASTPtr indices_expr_list = std::make_shared<ASTExpressionList>();
 
-    for (const auto & index_ast : indices.indices)
+    for (const auto & index_ast : indices_description.indices)
     {
         const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
 
-        new_indices.push_back(
+        /*new_indices.push_back(
                 MergeTreeIndexFactory::instance().get(
                         *this,
+                        d
                         std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                        global_context));
+                        global_context));*/
 
         if (names.find(new_indices.back()->name) != names.end())
             throw Exception(
@@ -395,8 +447,8 @@ void MergeTreeData::setSkipIndices(const IndicesDescription & indices, bool only
 
     if (!only_check)
     {
-        setIndicesDescription(indices);
-        skip_indices_expr = new_skip_indices_expr;
+        setIndicesDescription(indices_description);
+       // skip_indices_expr = new_skip_indices_expr;
         skip_indices = std::move(new_indices);
     }
 }
@@ -1139,8 +1191,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         }
     }
 
-    setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, /* only_check = */ true);
-    setSkipIndices(new_indices, /* only_check = */ true);
+    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, /* only_check = */
+                                   true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;

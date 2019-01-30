@@ -73,6 +73,6 @@ public:
 };
 
 std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
-    const MergeTreeData & data, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
+    const MergeTreeData & data, const NamesAndTypesList & columns, std::shared_ptr<ASTIndexDeclaration> node, const Context & context);
 
 }

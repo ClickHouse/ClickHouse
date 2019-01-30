@@ -180,8 +180,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     dir.createDirectories();
 
     /// If we need to calculate some columns to sort.
-    if (data.hasSortingKey())
-        data.sorting_key_expr->execute(block);
+    if (data.hasSortingKey() || data.hasSkipIndices())
+        data.sorting_key_and_skip_indices_expr->execute(block);
 
     Names sort_columns = data.sorting_key_columns;
     SortDescription sort_description;
@@ -213,9 +213,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_codec);
-
-    if (data.skip_indices_expr)
-        data.skip_indices_expr->execute(block);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

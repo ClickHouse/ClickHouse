@@ -155,7 +155,8 @@ return std::make_shared<MinMaxCondition>(query, context, *this);
 
 
 std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
-    const MergeTreeData & data,
+    const MergeTreeData &,
+    const NamesAndTypesList & new_columns,
     std::shared_ptr<ASTIndexDeclaration> node,
     const Context & context)
 {
@@ -167,7 +168,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
     auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, data.getColumns().getAllPhysical());
+            expr_list, new_columns);
     auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

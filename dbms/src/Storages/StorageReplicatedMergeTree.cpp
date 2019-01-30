@@ -467,8 +467,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
-    data.setPrimaryKeyAndColumns(new_order_by_ast, new_primary_key_ast, new_columns);
-    data.setSkipIndices(new_indices);
+    data.setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices);
 }
 
 

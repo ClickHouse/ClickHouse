@@ -637,13 +637,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
 
         BlockInputStreamPtr stream = std::move(input);
-        if (data.skip_indices_expr)
+        if (data.hasPrimaryKey() || data.hasSkipIndices())
             stream = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(stream, data.skip_indices_expr));
-
-        if (data.hasPrimaryKey())
-            stream = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_expr));
+                    std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_and_skip_indices_expr));
 
         src_streams.emplace_back(stream);
     }
@@ -909,14 +905,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (in_header.columns() == all_columns.size())
     {
         /// All columns are modified, proceed to write a new part from scratch.
-
-        if (data.skip_indices_expr)
+        if (data.hasPrimaryKey() || data.hasSkipIndices())
             in = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(in, data.skip_indices_expr));
-
-        if (data.hasPrimaryKey())
-            in = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
+                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
