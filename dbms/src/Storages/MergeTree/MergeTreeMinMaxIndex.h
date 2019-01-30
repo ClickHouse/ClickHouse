@@ -12,6 +12,7 @@ namespace DB
 
 class MergeTreeMinMaxIndex;
 
+
 struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
 {
     explicit MergeTreeMinMaxGranule(const MergeTreeMinMaxIndex & index);
@@ -29,6 +30,7 @@ struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
     const MergeTreeMinMaxIndex & index;
     std::vector<Range> parallelogram;
 };
+
 
 class MinMaxCondition : public IndexCondition
 {
@@ -57,8 +59,9 @@ public:
         ExpressionActionsPtr expr,
         const Names & columns,
         const DataTypes & data_types,
+        const Block & header,
         size_t granularity)
-        : MergeTreeIndex(name, expr, columns, data_types, granularity) {}
+        : MergeTreeIndex(name, expr, columns, data_types, header, granularity) {}
 
     ~MergeTreeMinMaxIndex() override = default;
 
