@@ -11,7 +11,7 @@ SET enable_optimize_predicate_expression = 1;
 SELECT '-------ENABLE OPTIMIZE PREDICATE-------';
 SELECT * FROM (SELECT * FROM test.test FINAL) WHERE id = 1;
 SELECT * FROM (SELECT * FROM test.test LIMIT 1) WHERE id = 1;
-SELECT * FROM (SELECT id FROM test.test GROUP BY id LIMIT 1 BY id) WHERE id = 1;
+SELECT * FROM (SELECT * FROM test.test GROUP BY id LIMIT 1 BY id) WHERE id = 1;
 
 SET force_primary_key = 1;
 
