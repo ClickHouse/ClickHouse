@@ -191,7 +191,9 @@ void PerformanceTest::runQueries(
         }
         catch (const Exception & e)
         {
-            statistics.exception = e.what() + std::string(", ") + e.displayText();
+            statistics.exception = "Code: " + std::to_string(e.code()) + ", e.displayText() = " + e.displayText();
+            LOG_WARNING(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
+                << ", Stack trace:\n\n" << e.getStackTrace().toString());
         }
 
         if (!statistics.got_SIGINT)
