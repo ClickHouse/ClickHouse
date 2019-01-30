@@ -78,6 +78,8 @@ private:
 
     bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
 
+    bool allowPushDown(const ASTSelectQuery * subquery);
+
     bool canPushDownOuterPredicate(const std::vector<ProjectionWithAlias> & subquery_projection_columns,
                                    const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
                                    OptimizeKind & optimize_kind);
