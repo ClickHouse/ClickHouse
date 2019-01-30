@@ -240,7 +240,7 @@ public:
     /** Join data from the map (that was previously built by calls to insertFromBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
-    void joinBlock(Block & block, const Names & key_names_left, const NameSet & needed_key_names_right) const;
+    void joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const;
 
     /// Infer the return type for joinGet function
     DataTypePtr joinGetReturnType(const String & column_name) const;

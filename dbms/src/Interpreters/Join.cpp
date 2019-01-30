@@ -32,6 +32,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+static NameSet requiredRightKeys(const Names & key_names, const NamesAndTypesList & columns_added_by_join)
+{
+    NameSet required;
+
+    NameSet right_keys;
+    for (const auto & name : key_names)
+        right_keys.insert(name);
+
+    for (const auto & column : columns_added_by_join)
+    {
+        if (right_keys.count(column.name))
+            required.insert(column.name);
+    }
+
+    return required;
+}
+
 
 Join::Join(const Names & key_names_right_, bool use_nulls_, const SizeLimits & limits,
     ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_, bool any_take_last_row_)
@@ -959,9 +976,11 @@ void Join::joinGet(Block & block, const String & column_name) const
 }
 
 
-void Join::joinBlock(Block & block, const Names & key_names_left, const NameSet & needed_key_names_right) const
+void Join::joinBlock(Block & block, const Names & key_names_left, const NamesAndTypesList & columns_added_by_join) const
 {
 //    std::cerr << "joinBlock: " << block.dumpStructure() << "\n";
+
+    NameSet needed_key_names_right = requiredRightKeys(key_names_right, columns_added_by_join);
 
     std::shared_lock lock(rwlock);
 
