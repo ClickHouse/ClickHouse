@@ -19,6 +19,7 @@ public:
     BinaryRowOutputStream(WriteBuffer & ostr_);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writePrefix() override;
 
     void flush() override;
 
@@ -26,6 +27,9 @@ public:
 
 protected:
     WriteBuffer & ostr;
+    bool with_names;
+    bool with_types;
+    const Block sample;
 };
 
 }

@@ -9,9 +9,35 @@
 namespace DB
 {
 
-BinaryRowOutputStream::BinaryRowOutputStream(WriteBuffer & ostr_)
-    : ostr(ostr_)
+BinaryRowOutputStream::BinaryRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_)
+    : ostr(ostr_), with_names(with_names_), with_types(with_types_), sample(sample_)
 {
+}
+
+void BinaryRowOutputStream::writePrefix()
+{
+    size_t columns = sample.columns();
+
+    if (with_names || with_types)
+    {
+        writeVarUInt(columns)
+    }
+
+    if (with_names)
+    {
+        for (size_t i = 0; i < columns; ++i)
+        {
+            writeBinary(sample.safeGetByPosition(i).name, ostr);
+        }
+    }
+
+    if (with_types)
+    {
+        for (size_t i = 0; i < columns; ++i)
+        {
+            writeBinary(sample.safeGetByPosition(i).type->getName(), ostr);
+        }
+    }
 }
 
 void BinaryRowOutputStream::flush()
@@ -33,7 +59,17 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         const FormatSettings &)
     {
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(
-            std::make_shared<BinaryRowOutputStream>(buf), sample);
+            std::make_shared<BinaryRowOutputStream>(buf, sample, false, false), sample);
+    });
+
+    factory.registerOutputFormat("RowBinaryWithNamesAndTypes", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const Context &,
+        const FormatSettings &)
+    {
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(
+            std::make_shared<BinaryRowOutputStream>(buf, sample, true, true), sample);
     });
 }
 
