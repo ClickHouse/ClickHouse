@@ -325,8 +325,6 @@ Unlike the JSON format, there is no substitution of invalid UTF-8 sequences. Any
 
 For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults, but it can be turned on by option `insert_sample_with_metadata=1`. Whitespace between elements is ignored. If a comma is placed after the objects, it is ignored. Objects don't necessarily have to be separated by new lines.
 
-Turn on calculation of columns with default expressions for omitted values in inserting data is possible by option `insert_sample_with_metadata=1`.
-
 ## Native {#native}
 
 The most efficient format. Data is written and read by blocks in binary format. For each block, the number of rows, number of columns, column names and types, and parts of columns in this block are recorded one after another. In other words, this format is "columnar" – it doesn't convert columns to rows. This is the format used in the native interface for interaction between servers, for using the command-line client, and for C++ clients.
