@@ -5,4 +5,5 @@ target_include_directories (clickhouse-performance-test-lib SYSTEM PRIVATE ${PCG
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-performance-test clickhouse-performance-test.cpp)
     target_link_libraries (clickhouse-performance-test PRIVATE clickhouse-performance-test-lib)
+    install (TARGETS clickhouse-performance-test ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()
