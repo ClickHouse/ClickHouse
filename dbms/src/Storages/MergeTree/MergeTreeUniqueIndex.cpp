@@ -162,7 +162,7 @@ UniqueCondition::UniqueCondition(
     else if (select.prewhere_expression)
         new_expression = select.prewhere_expression->clone();
     else
-        /// 11_2 -- can be true and false at the same time
+        /// 0b11 -- can be true and false at the same time
         new_expression = std::make_shared<ASTLiteral>(Field(3));
 
     useless = checkASTAlwaysUnknownOrTrue(new_expression);
