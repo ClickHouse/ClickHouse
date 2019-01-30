@@ -487,6 +487,9 @@ public:
         const NamesAndTypesList & new_columns,
         bool skip_sanity_checks);
 
+    /// need comment
+    void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
+
     /// Freezes all parts.
     void freezeAll(const String & with_name, const Context & context);
 

@@ -468,6 +468,7 @@ bool StorageMergeTree::merge(
             future_part, *merge_entry, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
+        data.removeEmptyColumnsFromPart(new_part);
 
         write_part_log({});
     }

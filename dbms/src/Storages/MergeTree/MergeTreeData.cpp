@@ -1249,13 +1249,18 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
     const NamesAndTypesList & new_columns,
     bool skip_sanity_checks)
 {
+    LOG_DEBUG(log, "alterDataPart called");
     ExpressionActionsPtr expression;
     AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(part)); /// Blocks changes to the part.
     bool force_update_metadata;
+    LOG_DEBUG(log, "old columns: " + part->columns.toString());
+    LOG_DEBUG(log, "new columns: " + new_columns.toString());
     createConvertExpression(part, part->columns, new_columns, expression, transaction->rename_map, force_update_metadata);
 
     size_t num_files_to_modify = transaction->rename_map.size();
     size_t num_files_to_remove = 0;
+
+    LOG_DEBUG(log, "num_files_to_modify: " + std::to_string(num_files_to_modify));
 
     for (const auto & from_to : transaction->rename_map)
         if (from_to.second.empty())
@@ -1372,7 +1377,24 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         transaction->rename_map["columns.txt.tmp"] = "columns.txt";
     }
 
+    LOG_DEBUG(log, "transaction: " + std::to_string(!!transaction));
+
     return transaction;
+}
+
+void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
+{
+    if (!data_part->empty_columns.empty())
+    {
+        NamesAndTypesList new_columns;
+        for (const auto & [name, type] : data_part->columns)
+            if (!data_part->empty_columns.count(name))
+                new_columns.emplace_back(name, type);
+
+        if (auto transaction = alterDataPart(data_part, new_columns, false))
+            transaction->commit();
+        data_part->empty_columns.clear();
+    }
 }
 
 void MergeTreeData::freezeAll(const String & with_name, const Context & context)

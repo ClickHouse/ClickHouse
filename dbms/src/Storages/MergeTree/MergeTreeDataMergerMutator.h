@@ -103,8 +103,6 @@ public:
         const MergeTreeData::DataPartsVector & parts,
         MergeTreeData::Transaction * out_transaction = nullptr);
 
-    /// need comment
-    void removeValuesWithExpiredTTL(MergeTreeData::MutableDataPartPtr & new_data_part, Block & block);
 
     /// The approximate amount of disk space needed for merge or mutation. With a surplus.
     static size_t estimateNeededDiskSpace(const MergeTreeData::DataPartsVector & source_parts);
@@ -113,6 +111,11 @@ private:
     /** Select all parts belonging to the same partition.
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
+
+     /// need comment
+    void removeValuesWithExpiredTTL(
+        MergeTreeData::MutableDataPartPtr & new_data_part,
+        Block & block, NameSet & empty_columns);
 
 public:
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

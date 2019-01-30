@@ -213,18 +213,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     new_data_part->min_ttl = 0;
     if (!data.ttl_expressions_by_column.empty())
     {
-        for (const auto & elem : data.ttl_expressions_by_column)
-            elem.second->execute(block);
-
-        for (const auto & elem : data.ttl_result_columns_by_name)
+        for (const auto & [input_column, output_column] : data.ttl_result_columns_by_name)
         {
-            const auto & current = block.getByName(elem.second);
+            auto & expr = data.ttl_expressions_by_column[input_column];
+            expr->execute(block);
+
+            const auto & current = block.getByName(output_column);
             const ColumnUInt32 * column = typeid_cast<const ColumnUInt32 *>(current.column.get());
             const ColumnUInt32::Container & vec = column->getData();
 
             for (auto val : vec)
                 if (!new_data_part->min_ttl || val < new_data_part->min_ttl)
                     new_data_part->min_ttl = val;
+
+            block.erase(output_column);
         }
     }
 

@@ -215,6 +215,9 @@ struct MergeTreeDataPart
     /// Columns description.
     NamesAndTypesList columns;
 
+    /// need comment
+    NameSet empty_columns;
+
     using ColumnToSize = std::map<std::string, UInt64>;
 
     /** It is blocked for writing when changing columns, checksums or any part files.
