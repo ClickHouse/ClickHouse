@@ -223,6 +223,8 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
                 else
                 {
                     tryLogException(exception, log, "Cannot update " + object_name + " '" + name + "', leaving old version");
+                    if (throw_on_error)
+                        std::rethrow_exception(exception);
                 }
             }
         }
