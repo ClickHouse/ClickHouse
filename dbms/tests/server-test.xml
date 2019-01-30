@@ -110,7 +110,7 @@
         <table>query_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_log>
-    <dictionaries_config>*_dictionary.xml</dictionaries_config>
+    <dictionaries_config>dictionaries/dictionary_*.xml</dictionaries_config>
     <compression incl="clickhouse_compression">
     </compression>
     <distributed_ddl>

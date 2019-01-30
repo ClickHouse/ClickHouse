@@ -237,12 +237,18 @@ void Join::setSampleBlock(const Block & block)
 
     size_t keys_size = key_names_right.size();
     ColumnRawPtrs key_columns(keys_size);
-    Columns materialized_columns(keys_size);
+    Columns materialized_columns;
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns[i] = recursiveRemoveLowCardinality(block.getByName(key_names_right[i]).column);
-        key_columns[i] = materialized_columns[i].get();
+        auto & column = block.getByName(key_names_right[i]).column;
+        key_columns[i] = column.get();
+        auto column_no_lc = recursiveRemoveLowCardinality(column);
+        if (column.get() != column_no_lc.get())
+        {
+            materialized_columns.emplace_back(std::move(column_no_lc));
+            key_columns[i] = materialized_columns[i].get();
+        }
 
         /// We will join only keys, where all components are not NULL.
         if (key_columns[i]->isColumnNullable())
