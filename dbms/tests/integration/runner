@@ -52,6 +52,11 @@ if __name__ == "__main__":
         help="Path to clickhouse binary")
 
     parser.add_argument(
+        "--bridge-binary",
+        default=os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH", "/usr/bin/clickhouse-odbc-bridge"),
+        help="Path to clickhouse-odbc-bridge binary")
+
+    parser.add_argument(
         "--configs-dir",
         default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", os.path.join(DEFAULT_CLICKHOUSE_ROOT, "dbms/programs/server")),
         help="Path to clickhouse configs directory")
@@ -77,10 +82,11 @@ if __name__ == "__main__":
     if not args.disable_net_host:
         net = "--net=host"
 
-    cmd = "docker run {net} --name {name} --user={user} --privileged --volume={bin}:/clickhouse \
+    cmd = "docker run {net} --name {name} --user={user} --privileged --volume={bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={cfg}:/clickhouse-config --volume={pth}:/ClickHouse -e PYTEST_OPTS='{opts}' {img} ".format(
         net=net,
         bin=args.binary,
+        bridge_bin=args.bridge_binary,
         cfg=args.configs_dir,
         pth=args.clickhouse_root,
         opts=' '.join(args.pytest_args),
