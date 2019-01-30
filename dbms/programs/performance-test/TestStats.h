@@ -9,6 +9,7 @@ namespace DB
 {
 struct TestStats
 {
+    TestStats();
     Stopwatch watch;
     Stopwatch watch_per_query;
     Stopwatch min_time_watch;
@@ -80,7 +81,7 @@ struct TestStats
         total_time = watch.elapsedSeconds();
     }
 
-    void clear();
+    void startWatches();
 };
 
 }

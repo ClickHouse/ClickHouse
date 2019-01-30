@@ -138,39 +138,28 @@ void TestStats::updateQueryInfo()
     update_min_time(watch_per_query.elapsed() / (1000 * 1000)); /// ns to ms
 }
 
-void TestStats::clear()
+
+TestStats::TestStats()
 {
-    watch.restart();
-    watch_per_query.restart();
-    min_time_watch.restart();
-    max_rows_speed_watch.restart();
-    max_bytes_speed_watch.restart();
-    avg_rows_speed_watch.restart();
-    avg_bytes_speed_watch.restart();
+    watch.reset();
+    watch_per_query.reset();
+    min_time_watch.reset();
+    max_rows_speed_watch.reset();
+    max_bytes_speed_watch.reset();
+    avg_rows_speed_watch.reset();
+    avg_bytes_speed_watch.reset();
+}
 
-    last_query_was_cancelled = false;
 
-    sampler.clear();
-
-    queries = 0;
-    total_rows_read = 0;
-    total_bytes_read = 0;
-    last_query_rows_read = 0;
-    last_query_bytes_read = 0;
-    got_SIGINT = false;
-
-    min_time = std::numeric_limits<UInt64>::max();
-    total_time = 0;
-    max_rows_speed = 0;
-    max_bytes_speed = 0;
-    avg_rows_speed_value = 0;
-    avg_bytes_speed_value = 0;
-    avg_rows_speed_first = 0;
-    avg_bytes_speed_first = 0;
-    avg_rows_speed_precision = 0.001;
-    avg_bytes_speed_precision = 0.001;
-    number_of_rows_speed_info_batches = 0;
-    number_of_bytes_speed_info_batches = 0;
+void TestStats::startWatches()
+{
+    watch.start();
+    watch_per_query.start();
+    min_time_watch.start();
+    max_rows_speed_watch.start();
+    max_bytes_speed_watch.start();
+    avg_rows_speed_watch.start();
+    avg_bytes_speed_watch.start();
 }
 
 }
