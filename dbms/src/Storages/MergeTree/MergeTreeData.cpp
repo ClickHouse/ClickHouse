@@ -1077,7 +1077,6 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
 
     for (auto index : skip_indices)
     {
-        /// TODO: some special error telling about "drop index"
         for (const String & col : index->expr->getRequiredColumns())
             columns_alter_forbidden.insert(col);
     }
@@ -1136,8 +1135,8 @@ void MergeTreeData::checkAlter(const AlterCommands & commands)
         }
     }
 
-    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast, new_columns, new_indices, /* only_check = */
-                                   true);
+    setPrimaryKeyIndicesAndColumns(new_order_by_ast, new_primary_key_ast,
+            new_columns, new_indices, /* only_check = */ true);
 
     /// Check that type conversions are possible.
     ExpressionActionsPtr unused_expression;
