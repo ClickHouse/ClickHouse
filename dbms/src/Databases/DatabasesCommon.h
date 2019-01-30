@@ -91,6 +91,10 @@ public:
         const Context & context,
         const String & dictionary_name) const override;
 
+    DictionaryPtr getDictionary(
+        const Context & context,
+        const String & dictionary_name) const override;
+
     void createDictionary(
         Context & context,
         const String & dictionary_name,

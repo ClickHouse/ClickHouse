@@ -12,7 +12,7 @@
 
 namespace DB
 {
-struct IDictionaryBase;
+class IDictionaryBase;
 using DictionaryPtr = std::shared_ptr<IDictionaryBase>;
 
 struct DictionaryStructure;
@@ -22,8 +22,9 @@ class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 
-struct IDictionaryBase : public IExternalLoadable
+class IDictionaryBase : public IExternalLoadable
 {
+public:
     using Key = UInt64;
 
     virtual std::string getTypeName() const = 0;

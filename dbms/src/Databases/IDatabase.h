@@ -96,6 +96,10 @@ public:
         const Context & context,
         const String & dictionary_name) const = 0;
 
+    virtual DictionaryPtr getDictionary(
+        const Context & context,
+        const String & dictionary_name) const = 0;
+
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
     virtual DatabaseIteratorPtr getIterator(const Context & context) = 0;

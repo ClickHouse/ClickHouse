@@ -86,6 +86,10 @@ public:
         const Context & context,
         const String & dictionary_name) const override;
 
+    DictionaryPtr getDictionary(
+        const Context & context,
+        const String & dictionary_name) const override;
+
     DatabaseIteratorPtr getIterator(const Context & context) override;
 
     DatabaseIteratorPtr getDictionaryIterator(const Context & context) override;

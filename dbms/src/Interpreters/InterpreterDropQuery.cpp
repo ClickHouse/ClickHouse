@@ -15,11 +15,11 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int TABLE_WAS_NOT_DROPPED;
     extern const int DATABASE_NOT_EMPTY;
     extern const int UNKNOWN_DATABASE;
     extern const int READONLY;
-    extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DICTIONARY;
@@ -200,13 +200,17 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
 }
 
 
-BlockIO InterpreterDropQuery::executeToDictionary(String & database_name, String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists)
+BlockIO InterpreterDropQuery::executeToDictionary(
+    String & database_name, String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists)
 {
-    if (kind == ASTDropQuery::Kind::Drop)
-        return {};
+    if (kind != ASTDropQuery::Kind::Drop)
+        throw Exception("Dictionary could be only dropped", ErrorCodes::BAD_ARGUMENTS);
 
-    if (!database_name.empty())
-        return {};
+    if (database_name.empty())
+        throw Exception("Can't execute drop query: database_name is empty", ErrorCodes::BAD_ARGUMENTS);
+
+    if (dictionary_name.empty())
+        throw Exception("Can't execute drop query: dictionary_name is empty", ErrorCodes::BAD_ARGUMENTS);
 
     auto ddl_guard = context.getDDLGuard(database_name, dictionary_name);
     auto [database, dictionary] = tryGetDatabaseAndDictionary(database_name, dictionary_name, if_exists);
@@ -219,7 +223,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(String & database_name, String
 }
 
 
-DatabasePtr InterpreterDropQuery::tryGetDatabase(String & database_name, bool if_exists)
+DatabasePtr InterpreterDropQuery::tryGetDatabase(const String & database_name, bool if_exists)
 {
     return if_exists ? context.tryGetDatabase(database_name) : context.getDatabase(database_name);
 }
@@ -241,6 +245,13 @@ DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_
     return {};
 }
 
+DictionaryPtr InterpreterDropQuery::tryGetDictionary(const DatabasePtr & database_ptr, const String & dictionary_name, bool if_exists)
+{
+    return if_exists ?
+           database_ptr->tryGetDictionary(context, dictionary_name) :
+           database_ptr->getDictionary(context, dictionary_name);
+}
+
 
 DatabaseAndDictionary InterpreterDropQuery::tryGetDatabaseAndDictionary(
         String & database_name,
@@ -248,17 +259,15 @@ DatabaseAndDictionary InterpreterDropQuery::tryGetDatabaseAndDictionary(
         bool if_exists)
 {
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
-    if (database)
-    {
-        DictionaryPtr dictionary = database->tryGetDictionary(context, dictionary_name);
-        if (!dictionary && !if_exists)
-            throw Exception("Dictionary " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(dictionary_name) + " doesn't exist.",
-                            ErrorCodes::UNKNOWN_DICTIONARY);
+    if (!database)
+        return {};
 
-        return {std::move(database), std::move(dictionary)};
-    }
+    // DictionaryPtr dictionary = database->tryGetDictionary(context, dictionary_name);
+    DictionaryPtr dictionary = tryGetDictionary(database, dictionary_name, if_exists);
+    if (!dictionary)
+        return {};
 
-    return {};
+    return {std::move(database), std::move(dictionary)};
 }
 
 

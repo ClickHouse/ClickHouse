@@ -245,6 +245,20 @@ DictionaryPtr DatabaseDictionary::tryGetDictionary(const Context & context, cons
 }
 
 
+DictionaryPtr DatabaseDictionary::getDictionary(
+    const Context & context,
+    const String & dictionary_name) const
+{
+    {
+        std::lock_guard lock(mutex);
+        auto it = dictionaries.find(dictionary_name);
+        if (it != dictionaries.end())
+            return it->second;
+    }
+
+    return context.getExternalDictionaries().getDictionary(dictionary_name);
+}
+
 DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & /*context*/)
 {
     std::lock_guard lock(mutex);

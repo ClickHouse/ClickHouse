@@ -23,7 +23,7 @@ class InterpreterDropQuery : public IInterpreter
 public:
     InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_);
 
-    /// Drop table or database.
+    /// Drop table, database, or dictionary.
     BlockIO execute() override;
 
 private:
@@ -37,7 +37,9 @@ private:
 
     BlockIO executeToDictionary(String & database_name, String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists);
 
-    DatabasePtr tryGetDatabase(String & database_name, bool exists);
+    DatabasePtr tryGetDatabase(const String & database_name, bool exists);
+
+    DictionaryPtr tryGetDictionary(const DatabasePtr & database_ptr, const String & dictionary_name, bool if_exists);
 
     DatabaseAndTable tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists);
 

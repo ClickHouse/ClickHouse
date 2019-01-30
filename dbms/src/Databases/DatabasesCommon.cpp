@@ -157,6 +157,14 @@ DictionaryPtr DatabaseWithOwnTablesBase::tryGetDictionary(const Context & contex
 }
 
 
+DictionaryPtr DatabaseWithOwnTablesBase::getDictionary(
+    const Context & context,
+    const String &) const
+{
+    throw Exception(context.getDatabase(name)->getEngineName() + ": getDictionary() isn't supported.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 void DatabaseWithOwnTablesBase::loadDictionaries(Context &, ThreadPool *, bool)
 {
 }
