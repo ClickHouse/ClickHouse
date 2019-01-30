@@ -168,7 +168,7 @@ void PerformanceTest::runQueries(
         LOG_INFO(log, "[" << run_index<< "] Run query '" << query << "'");
         TestStopConditions & stop_conditions = test_info.stop_conditions_by_run[run_index];
         TestStats & statistics = statistics_by_run[run_index];
-        statistics.clear(); // to flash watches, because they start in constructor
+        statistics.startWatches();
         try
         {
             executeQuery(connection, query, statistics, stop_conditions, interrupt_listener, context);
