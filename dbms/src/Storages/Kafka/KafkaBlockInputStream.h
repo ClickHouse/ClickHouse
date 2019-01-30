@@ -3,11 +3,11 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <IO/DelimitedReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
+
+#include <Storages/Kafka/StorageKafka.h>
 
 namespace DB
 {
-class StorageKafka;
 
 class KafkaBlockInputStream : public IBlockInputStream
 {
@@ -15,9 +15,10 @@ public:
     KafkaBlockInputStream(StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_);
     ~KafkaBlockInputStream() override;
 
-    String getName() const override;
-    Block readImpl() override;
-    Block getHeader() const override;
+    String getName() const override { return storage.getName(); }
+    Block readImpl() override { return children.back()->read(); }
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     void readPrefixImpl() override;
     void readSuffixImpl() override;
 
@@ -28,10 +29,7 @@ private:
 
     ConsumerPtr consumer;
     std::unique_ptr<DelimitedReadBuffer> buffer;
-    bool finalized = false;
-
-    // Return true if consumer has been claimed by the stream
-    bool hasClaimed() { return consumer != nullptr; }
+    bool broken = true, claimed = false;
 };
 
 } // namespace DB
