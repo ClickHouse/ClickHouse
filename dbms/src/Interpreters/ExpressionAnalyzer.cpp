@@ -83,7 +83,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
     const NamesAndTypesList & additional_source_columns,
-    const Names & required_result_columns_,
+    const NameSet & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
     const SubqueriesForSets & subqueries_for_sets_)
@@ -504,13 +504,12 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
         columns_added_by_join_list.push_back(joined_column.name_and_type);
 
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left,
-                columns_added_by_join_list, columns_added_by_join_from_right_keys));
+        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left, columns_added_by_join_list));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
                 actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzedJoin().key_names_left,
-                        columns_added_by_join_list, columns_added_by_join_from_right_keys));
+                                                            columns_added_by_join_list));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -851,8 +850,7 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     for (size_t i = 0; i < asts.size(); ++i)
     {
         String result_name = asts[i]->getAliasOrColumnName();
-        if (required_result_columns.empty()
-            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) != required_result_columns.end())
+        if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
             result_columns.emplace_back(asts[i]->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);
@@ -1003,10 +1001,6 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & name : source_columns)
             avaliable_columns.insert(name.name);
 
-        NameSet right_keys;
-        for (const auto & right_key_name : analyzed_join.key_names_right)
-            right_keys.insert(right_key_name);
-
         /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
         * (Do not assume that they are required for reading from the "left" table).
         */
@@ -1018,10 +1012,6 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
-
-                /// Some columns from right join key may be used in query. This columns will be appended to block during join.
-                if (right_keys.count(name))
-                    columns_added_by_join_from_right_keys.insert(name);
             }
         }
 
@@ -1057,8 +1047,6 @@ void ExpressionAnalyzer::collectUsedColumns()
                         if (cropped_name == name)
                         {
                             columns_added_by_join.push_back(joined_column);
-                            if (right_keys.count(name))
-                                columns_added_by_join_from_right_keys.insert(name);
                             collated = true;
                             break;
                         }
@@ -1072,9 +1060,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             required.swap(fixed_required);
         }
 
-        /// @note required_columns_from_joined_table is output
-        joined_block_actions = analyzed_join.createJoinedBlockActions(
-            columns_added_by_join, select_query, context, required_columns_from_joined_table);
+        joined_block_actions = analyzed_join.createJoinedBlockActions(columns_added_by_join, select_query, context);
+        required_columns_from_joined_table = analyzed_join.getRequiredColumnsFromJoinedTable(columns_added_by_join, joined_block_actions);
     }
 
     if (columns_context.has_array_join)
