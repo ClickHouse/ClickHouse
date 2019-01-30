@@ -65,8 +65,6 @@ private:
         PUSH_TO_HAVING,
     };
 
-    bool isAggregateFunction(const ASTPtr & node);
-
     bool isArrayJoinFunction(const ASTPtr & node);
 
     std::vector<ASTPtr> splitConjunctionPredicate(ASTPtr & predicate_expression);
