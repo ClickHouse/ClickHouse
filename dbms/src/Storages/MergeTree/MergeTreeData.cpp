@@ -345,7 +345,6 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
             new_indices.push_back(
                     MergeTreeIndexFactory::instance().get(
-                            *this,
                             all_columns,
                             std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
                             global_context));
@@ -396,60 +395,6 @@ void MergeTreeData::setPrimaryKeyIndicesAndColumns(
 
         primary_key_and_skip_indices_expr = new_indices_with_primary_key_expr;
         sorting_key_and_skip_indices_expr = new_indices_with_sorting_key_expr;
-    }
-}
-
-
-void MergeTreeData::setSkipIndices(const IndicesDescription & indices_description, bool only_check)
-{
-    if (indices_description.indices.empty())
-    {
-        if (!only_check)
-        {
-            setIndicesDescription(indices_description);
-          //  skip_indices_expr = nullptr;
-            skip_indices.clear();
-        }
-        return;
-    }
-
-    MergeTreeIndices new_indices;
-    std::set<String> names;
-    ASTPtr indices_expr_list = std::make_shared<ASTExpressionList>();
-
-    for (const auto & index_ast : indices_description.indices)
-    {
-        const auto & index_decl = std::dynamic_pointer_cast<ASTIndexDeclaration>(index_ast);
-
-        /*new_indices.push_back(
-                MergeTreeIndexFactory::instance().get(
-                        *this,
-                        d
-                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index_decl->clone()),
-                        global_context));*/
-
-        if (names.find(new_indices.back()->name) != names.end())
-            throw Exception(
-                    "Index with name `" + new_indices.back()->name + "` already exsists",
-                    ErrorCodes::LOGICAL_ERROR);
-
-        ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(index_decl->expr->clone());
-        for (auto expr : expr_list->children)
-            indices_expr_list->children.push_back(expr->clone());
-
-        names.insert(new_indices.back()->name);
-    }
-
-    auto syntax = SyntaxAnalyzer(global_context, {}).analyze(
-            indices_expr_list, getColumns().getAllPhysical());
-    auto new_skip_indices_expr = ExpressionAnalyzer(indices_expr_list, syntax, global_context)
-            .getActions(false);
-
-    if (!only_check)
-    {
-        setIndicesDescription(indices_description);
-       // skip_indices_expr = new_skip_indices_expr;
-        skip_indices = std::move(new_indices);
     }
 }
 
