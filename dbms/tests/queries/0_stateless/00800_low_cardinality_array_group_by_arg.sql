@@ -19,15 +19,17 @@ arr Array(LowCardinality(String))
 ) ENGINE = MergeTree PARTITION BY toMonday(dt)
 ORDER BY (dt, id) SETTINGS index_granularity = 8192;
 
-insert into test.table1 (dt, id, arr) values ('2019-01-14', 1, ['aaa']);
-insert into test.table2 (dt, id, arr) values ('2019-01-14', 1, ['aaa','bbb','ccc']);
+INSERT INTO test.table1 (dt, id, arr) VALUES ('2019-01-14', 1, ['aaa']);
+INSERT INTO test.table2 (dt, id, arr) VALUES ('2019-01-14', 1, ['aaa','bbb','ccc']);
 
-select dt, id, groupArrayArray(arr)
-from (
-	select dt, id, arr from test.table1
-	where dt = '2019-01-14' and id = 1
+SET max_threads = 1;
+
+SELECT dt, id, groupArrayArray(arr)
+FROM (
+	SELECT dt, id, arr FROM test.table1
+	WHERE dt = '2019-01-14' AND id = 1
 	UNION ALL
-	select dt, id, arr from test.table2
-	where dt = '2019-01-14' and id = 1
+	SELECT dt, id, arr FROM test.table2
+	WHERE dt = '2019-01-14' AND id = 1
 )
-group by dt, id;
+GROUP BY dt, id;
