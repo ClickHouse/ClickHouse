@@ -20,14 +20,14 @@ void BinaryRowOutputStream::writePrefix()
 
     if (with_names || with_types)
     {
-        writeVarUInt(columns)
+        writeVarUInt(columns, ostr)
     }
 
     if (with_names)
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            writeBinary(sample.safeGetByPosition(i).name, ostr);
+            writeStringBinary(sample.safeGetByPosition(i).name, ostr);
         }
     }
 
@@ -35,7 +35,7 @@ void BinaryRowOutputStream::writePrefix()
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            writeBinary(sample.safeGetByPosition(i).type->getName(), ostr);
+            writeStringBinary(sample.safeGetByPosition(i).type->getName(), ostr);
         }
     }
 }
