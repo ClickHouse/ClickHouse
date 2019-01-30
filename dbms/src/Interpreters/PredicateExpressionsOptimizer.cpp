@@ -260,21 +260,6 @@ bool PredicateExpressionsOptimizer::isArrayJoinFunction(const ASTPtr & node)
     return false;
 }
 
-bool PredicateExpressionsOptimizer::isAggregateFunction(const ASTPtr & node)
-{
-    if (auto function = typeid_cast<const ASTFunction *>(node.get()))
-    {
-        if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
-            return true;
-    }
-
-    for (const auto & child : node->children)
-        if (isAggregateFunction(child))
-            return true;
-
-    return false;
-}
-
 bool PredicateExpressionsOptimizer::optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery)
 {
     ASTPtr new_subquery_expression = subquery_expression;
