@@ -21,10 +21,8 @@ SELECT n, z, changed FROM (
 ) WHERE changed = 0;
 
 SET force_primary_key = 1;
-
 SELECT * FROM (SELECT * FROM test.test FINAL) WHERE id = 1; -- { serverError 277 }
 SELECT * FROM (SELECT * FROM test.test LIMIT 1) WHERE id = 1; -- { serverError 277 }
-SELECT * FROM (SELECT * FROM test.test ORDER BY id) WHERE id = 1; -- { serverError 277 }
 SELECT * FROM (SELECT id FROM test.test GROUP BY id LIMIT 1 BY id) WHERE id = 1; -- { serverError 277 }
 
 DROP TABLE IF EXISTS test.test;
