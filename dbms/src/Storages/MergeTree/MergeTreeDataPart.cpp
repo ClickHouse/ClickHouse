@@ -65,9 +65,9 @@ void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Stri
     initialized = true;
 }
 
-void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const String & part_path, Checksums & out_checksums) const
+void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & data, const String & part_path, Checksums & out_checksums) const
 {
-    store(storage.minmax_idx_columns, storage.minmax_idx_column_types, part_path, out_checksums);
+    store(data.minmax_idx_columns, data.minmax_idx_column_types, part_path, out_checksums);
 }
 
 void MergeTreeDataPart::MinMaxIndex::store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & out_checksums) const
