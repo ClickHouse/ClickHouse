@@ -1,4 +1,4 @@
-#include <Interpreters/FindSelectExpressionListVisitor.h>
+#include <Interpreters/ExtractFunctionDataVisitor.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 

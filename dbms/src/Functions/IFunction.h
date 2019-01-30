@@ -327,6 +327,9 @@ class IFunction : public std::enable_shared_from_this<IFunction>,
 {
 public:
     String getName() const override = 0;
+
+    bool isStateful() const override { return false; }
+
     /// TODO: make const
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override = 0;
 
@@ -483,6 +486,7 @@ public:
     }
 
     String getName() const override { return function->getName(); }
+    bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 

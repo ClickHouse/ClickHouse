@@ -22,7 +22,7 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/FindIdentifierBestTableVisitor.h>
-#include <Interpreters/FindSelectExpressionListVisitor.h>
+#include <Interpreters/ExtractFunctionDataVisitor.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -113,7 +113,7 @@ bool PredicateExpressionsOptimizer::allowPushDown(const ASTSelectQuery * subquer
 {
     if (subquery && !subquery->final() && !subquery->limit_by_expression_list && !subquery->limit_length && !subquery->with_expression_list)
     {
-        ASTPtr expr_list = subquery->select_expression_list;
+        ASTPtr expr_list = ast_select->select_expression_list;
         ExtractFunctionVisitor::Data extract_data;
         ExtractFunctionVisitor(extract_data).visit(expr_list);
 
