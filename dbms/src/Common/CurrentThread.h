@@ -32,7 +32,7 @@ class CurrentThread
 {
 public:
     /// Handler to current thread
-    static ThreadStatusPtr get();
+    static ThreadStatus & get();
 
     /// Group to which belongs current thread
     static ThreadGroupStatusPtr getGroup();
@@ -84,25 +84,6 @@ public:
         void logPeakMemoryUsage();
         bool log_peak_memory_usage_in_destructor = true;
     };
-
-    /// Implicitly finalizes current thread in the destructor
-    class ThreadScope
-    {
-    public:
-        void (*deleter)() = nullptr;
-
-        ThreadScope() = default;
-        ~ThreadScope()
-        {
-            if (deleter)
-                deleter();
-
-            /// std::terminate on exception: this is Ok.
-        }
-    };
-
-    using ThreadScopePtr = std::shared_ptr<ThreadScope>;
-    static ThreadScopePtr getScope();
 
 private:
     static void defaultThreadDeleter();

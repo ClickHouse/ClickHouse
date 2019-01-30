@@ -12,7 +12,7 @@
 #include <Formats/FormatFactory.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 
 
@@ -41,7 +41,7 @@ StorageHDFS::StorageHDFS(const String & uri_,
 namespace
 {
 
-class HDFSBlockInputStream : public IProfilingBlockInputStream
+class HDFSBlockInputStream : public IBlockInputStream
 {
 public:
     HDFSBlockInputStream(const String & uri,

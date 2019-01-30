@@ -55,6 +55,7 @@ namespace ErrorCodes
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);
@@ -485,53 +486,44 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::sendProfileInfo()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
-    {
-        writeVarUInt(Protocol::Server::ProfileInfo, *out);
-        input->getProfileInfo().write(*out);
-        out->next();
-    }
+    writeVarUInt(Protocol::Server::ProfileInfo, *out);
+    state.io.in->getProfileInfo().write(*out);
+    out->next();
 }
 
 
 void TCPHandler::sendTotals()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    const Block & totals = state.io.in->getTotals();
+
+    if (totals)
     {
-        const Block & totals = input->getTotals();
+        initBlockOutput(totals);
 
-        if (totals)
-        {
-            initBlockOutput(totals);
+        writeVarUInt(Protocol::Server::Totals, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Totals, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(totals);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(totals);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
 
 void TCPHandler::sendExtremes()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    Block extremes = state.io.in->getExtremes();
+
+    if (extremes)
     {
-        Block extremes = input->getExtremes();
+        initBlockOutput(extremes);
 
-        if (extremes)
-        {
-            initBlockOutput(extremes);
+        writeVarUInt(Protocol::Server::Extremes, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Extremes, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(extremes);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(extremes);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
