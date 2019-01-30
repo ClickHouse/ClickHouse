@@ -274,25 +274,7 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
         if (args.size() != 1)
             return false;
 
-        const auto one = std::make_shared<ASTLiteral>(Field(1));
-        const auto two = std::make_shared<ASTLiteral>(Field(2));
-
-        node = makeASTFunction(
-                "bitOr",
-                makeASTFunction(
-                        "bitShiftLeft",
-                        makeASTFunction(
-                                "bitAnd",
-                                node->clone(),
-                                one->clone()),
-                        one->clone()),
-                makeASTFunction(
-                        "bitShiftRight",
-                        makeASTFunction(
-                                "bitAnd",
-                                node->clone(),
-                                two->clone()),
-                        one->clone()));
+        func->name = "__bitSwapLastTwo";
     }
     else if (func->name == "and" || func->name == "indexHint")
         func->name = "bitAnd";
