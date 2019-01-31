@@ -28,6 +28,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (fill-factor)
     add_subdirectory (check-marks)
     add_subdirectory (test-data-generator)
+    add_subdirectory (convert-month-partitioned-parts)
 endif ()
 
 if (ENABLE_CODE_QUALITY)
