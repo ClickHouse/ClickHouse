@@ -233,7 +233,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         return false;
     }
 
-    /// need comment
+    /// Allow to "merge" part with itself if we need remove some values with expired ttl
     if (parts_to_merge.size() == 1 && !has_part_with_expired_ttl)
         throw Exception("Logical error: merge selector returned only one part to merge", ErrorCodes::LOGICAL_ERROR);
 
@@ -719,7 +719,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
     NameSet empty_columns;
-    for (const auto elem : data.ttl_expressions_by_column)
+    for (const auto & elem : data.ttl_expressions_by_column)
         empty_columns.emplace(elem.first);
 
     Block block;
