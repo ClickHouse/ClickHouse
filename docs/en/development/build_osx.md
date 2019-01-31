@@ -12,7 +12,7 @@ With appropriate changes, it should also work on any other Linux distribution.
 ## Install Required Compilers, Tools, and Libraries
 
 ```bash
-brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext readline
+brew install cmake ninja gcc icu4c openssl libtool gettext readline
 ```
 
 ## Checkout ClickHouse Sources
