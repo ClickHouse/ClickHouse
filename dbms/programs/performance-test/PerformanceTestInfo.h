@@ -29,6 +29,7 @@ public:
     PerformanceTestInfo(XMLConfigurationPtr config, const std::string & profiles_file_);
 
     std::string test_name;
+    std::string path;
     std::string main_metric;
 
     Strings queries;

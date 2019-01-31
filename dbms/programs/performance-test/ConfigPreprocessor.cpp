@@ -1,5 +1,6 @@
 #include "ConfigPreprocessor.h"
 #include <Core/Types.h>
+#include <Poco/Path.h>
 #include <regex>
 namespace DB
 {
@@ -14,7 +15,11 @@ std::vector<XMLConfigurationPtr> ConfigPreprocessor::processConfig(
 
     std::vector<XMLConfigurationPtr> result;
     for (const auto & path : paths)
+    {
         result.emplace_back(new XMLConfiguration(path));
+        result.back()->setString("path", Poco::Path(path).absolute().toString());
+    }
+
     /// Leave tests:
     removeConfigurationsIf(result, FilterType::Tag, tests_tags, true);
     removeConfigurationsIf(result, FilterType::Name, tests_names, true);
