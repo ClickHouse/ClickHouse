@@ -259,15 +259,14 @@ Useful for breaking away from a specific network interface.
 <interserver_http_host>example.yandex.ru</interserver_http_host>
 ```
 
-
 ## keep_alive_timeout
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
 
 **Example**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 
