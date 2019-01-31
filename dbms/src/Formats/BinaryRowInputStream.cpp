@@ -1,5 +1,6 @@
 #include <Core/Block.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
 #include <Formats/BinaryRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
@@ -34,7 +35,7 @@ void BinaryRowInputStream::readPrefix()
 
     if (with_names || with_types)
     {
-        readVarUInt(columns, istr)
+        readVarUInt(columns, istr);
     }
 
     if (with_names)
@@ -70,10 +71,11 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     });
 
     factory.registerInputFormat("RowBinaryWithNamesAndTypes", [](
-        WriteBuffer & buf,
+        ReadBuffer & buf,
         const Block & sample,
         const Context &,
-        const FormatSettings &)
+        size_t max_block_size,
+        const FormatSettings & settings)
     {
         return std::make_shared<BlockInputStreamFromRowInputStream>(
             std::make_shared<BinaryRowInputStream>(buf, sample, true, true),
