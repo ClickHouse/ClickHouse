@@ -1,7 +1,6 @@
 # How to Build ClickHouse on Mac OS X
 
-Build should work on Mac OS X 10.12. If you're using earlier version, you can try to build ClickHouse using Gentoo Prefix and clang sl in this instruction.
-With appropriate changes, it should also work on any other Linux distribution.
+Build should work on Mac OS X 10.12.
 
 ## Install Homebrew
 
