@@ -501,6 +501,7 @@ bool StorageMergeTree::merge(
 
             part_log_elem.database_name = database_name;
             part_log_elem.table_name = table_name;
+            part_log_elem.partition_id = future_part.part_info.partition_id;
             part_log_elem.part_name = future_part.name;
 
             if (new_part)
@@ -621,6 +622,7 @@ bool StorageMergeTree::tryMutatePart()
 
             part_log_elem.database_name = database_name;
             part_log_elem.table_name = table_name;
+            part_log_elem.partition_id = future_part.part_info.partition_id;
             part_log_elem.part_name = future_part.name;
 
             part_log_elem.rows_read = (*merge_entry)->rows_read;

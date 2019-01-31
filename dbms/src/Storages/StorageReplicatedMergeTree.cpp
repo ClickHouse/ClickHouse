@@ -986,6 +986,7 @@ void StorageReplicatedMergeTree::writePartLog(
 
         part_log_elem.database_name = database_name;
         part_log_elem.table_name = table_name;
+        part_log_elem.partition_id = MergeTreePartInfo::fromPartName(new_part_name, data.format_version).partition_id;
         part_log_elem.part_name = new_part_name;
 
         if (result_part)
