@@ -114,7 +114,7 @@ cd build
 export CC=gcc-7 CXX=g++-7
 cmake ..
 ```
-Переменная CC отвечает за компилятор C (сокращение от слов C Compiler), переменная CXX отвечает за выбор компилятора C++ (символ X - это как плюс, но положенный набок, ради того, чтобы превратиться в букву).
+Переменная CC отвечает за компилятор C (сокращение от слов C Compiler), переменная CXX отвечает за выбор компилятора C++ (символ X - это как плюс, но положенный набок, ради того, чтобы превратить его в букву).
 
 Для более быстрой сборки, можно использовать debug вариант - сборку без оптимизаций. Для этого, укажите параметр `-D CMAKE_BUILD_TYPE=Debug`:
 ```
@@ -166,6 +166,19 @@ ls -l dbms/programs/clickhouse
 
 Для подключения к ClickHouse с помощью clickhouse-client, в соседнем терминале, зайдите в директорию `ClickHouse/build/dbms/programs/` и выполните `clickhouse client`.
 
+Вы можете заменить собранным вами ClickHouse продакшен версию, установленную в системе. Для этого, установите ClickHouse на свою машину по инструкции с официального сайта. Затем выполните:
+```
+sudo service clickhouse-server stop
+sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+sudo service clickhouse-server start
+```
+
+Также вы можете запустить собранный вами ClickHouse с конфигурационным файлом системного ClickHouse:
+```
+sudo service clickhouse-server stop
+sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
 
 # Среда разработки
 
@@ -174,3 +187,12 @@ ls -l dbms/programs/clickhouse
 Также в качестве среды разработки, вы можете использовать KDevelop или QTCreator. KDevelop - очень удобная, но нестабильная среда разработки. Если KDevelop вылетает через небольшое время после открытия проекта, вам следует нажать на кнопку "Stop All" как только он открыл список файлов проекта. После этого, KDevelop можно будет использовать.
 
 В качестве простых редакторов кода можно использовать Sublime Text или Visual Studio Code или Kate (все варианты доступны под Linux).
+
+На всякий случай заметим, что CLion самостоятельно создаёт свою build директорию, самостоятельно выбирает тип сборки debug по-умолчанию, для конфигурации использует встроенную в CLion версию CMake вместо установленного вами, а для запуска задач использует make вместо ninja. Это нормально, просто имейте это ввиду, чтобы не возникало путаницы.
+
+
+# Написание кода
+
+Описание архитектуры ClickHouse: https://clickhouse.yandex/docs/ru/development/architecture/
+
+Стиль кода: https://clickhouse.yandex/docs/ru/development/style/
