@@ -1,4 +1,5 @@
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/BinaryRowOutputStream.h>
@@ -20,7 +21,7 @@ void BinaryRowOutputStream::writePrefix()
 
     if (with_names || with_types)
     {
-        writeVarUInt(columns, ostr)
+        writeVarUInt(columns, ostr);
     }
 
     if (with_names)
