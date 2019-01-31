@@ -135,7 +135,11 @@ LibraryDictionarySource::LibraryDictionarySource(
             "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
     description.init(sample_block);
-    library = std::make_shared<SharedLibrary>(path, RTLD_LAZY | RTLD_DEEPBIND);
+    library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
+#if defined(RTLD_DEEPBIND) // Does not exists in freebsd
+        | RTLD_DEEPBIND
+#endif
+    );
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
     if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
             "ClickHouseDictionary_v3_libNew"))
