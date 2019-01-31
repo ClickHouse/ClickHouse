@@ -7,7 +7,7 @@ endif ()
 
 if (RE2_LIBRARY AND RE2_INCLUDE_DIR)
     set (RE2_ST_LIBRARY ${RE2_LIBRARY})
-elseif ()
+else ()
     set (USE_INTERNAL_RE2_LIBRARY 1)
     set (RE2_LIBRARY re2)
     set (RE2_ST_LIBRARY re2_st)
