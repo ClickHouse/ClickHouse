@@ -83,6 +83,7 @@ PerformanceTestInfo::PerformanceTestInfo(
     : profiles_file(profiles_file_)
 {
     test_name = config->getString("name");
+    path = config->getString("path");
     applySettings(config);
     extractQueries(config);
     processSubstitutions(config);
