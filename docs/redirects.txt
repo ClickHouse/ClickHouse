@@ -86,6 +86,7 @@ functions/arithmetic_functions.md query_language/functions/arithmetic_functions.
 functions/array_functions.md query_language/functions/array_functions.md
 functions/array_join.md query_language/functions/array_join.md
 functions/bit_functions.md query_language/functions/bit_functions.md
+functions/bitmap_functions.md query_language/functions/bitmap_functions.md
 functions/comparison_functions.md query_language/functions/comparison_functions.md
 functions/conditional_functions.md query_language/functions/conditional_functions.md
 functions/date_time_functions.md query_language/functions/date_time_functions.md
