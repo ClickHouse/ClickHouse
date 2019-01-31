@@ -11,40 +11,61 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
     const Partitions & partitions,
     const size_t max_total_size_to_merge)
 {
+    using Iterator = IMergeSelector::PartsInPartition::const_iterator;
+    Iterator best_begin;
     ssize_t partition_to_merge_index = -1;
-    time_t partition_to_merge_ttl = 0;
+    time_t partition_to_merge_min_ttl = 0;
+
     for (size_t i = 0; i < partitions.size(); ++i)
     {
-        time_t min_ttl = 0;
-        for (const auto & part : partitions[i])
-            if (part.min_ttl && (!min_ttl || part.min_ttl < min_ttl))
-                min_ttl = part.min_ttl;
-
-        if (partition_to_merge_index == -1 || min_ttl < partition_to_merge_ttl)
+        time_t cur_min_ttl = 0;
+        Iterator cur_best_begin;
+        for (auto it = partitions[i].begin(); it != partitions[i].end(); ++it)
         {
-            partition_to_merge_ttl = min_ttl;
+            if (it->min_ttl && (!cur_min_ttl || it->min_ttl < cur_min_ttl))
+            {
+                cur_min_ttl = it->min_ttl;
+                cur_best_begin = it;
+            }
+        }
+
+        if (cur_min_ttl && (partition_to_merge_index == -1 || cur_min_ttl < partition_to_merge_min_ttl))
+        {
+            partition_to_merge_min_ttl = cur_min_ttl;
             partition_to_merge_index = i;
+            best_begin = cur_best_begin;
         }
     }
+    
     time_t current_time = time(nullptr);
-    if (partition_to_merge_index == -1 || partition_to_merge_ttl > current_time)
+    if (partition_to_merge_index == -1 || partition_to_merge_min_ttl > current_time)
         return {};
 
-    size_t total_size = 0;
-    PartsInPartition parts_to_merge;
-    for (const auto & part : partitions[partition_to_merge_index])
-    {
-        if (part.min_ttl && part.min_ttl < current_time)
-        {
-            parts_to_merge.emplace_back(part);
-            total_size += part.size;
-        }
+    const auto & best_partition = partitions[partition_to_merge_index];
+    Iterator best_end = best_begin;
+    size_t total_size;
 
-        if (max_total_size_to_merge && total_size > max_total_size_to_merge)
+    while (best_begin != best_partition.begin())
+    {
+        if (!best_begin->min_ttl || best_begin->min_ttl > current_time
+            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
+        {
+            ++best_begin;
             break;
+        }
+        --best_begin;
     }
 
-    return parts_to_merge;
+    while (best_end != best_partition.end())
+    {
+        if (!best_end->min_ttl || best_end->min_ttl > current_time
+            || (max_total_size_to_merge && total_size > max_total_size_to_merge))
+            break;
+
+        ++best_end;
+    }
+
+    return PartsInPartition(best_begin, best_end);
 }
 
 }

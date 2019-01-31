@@ -1068,6 +1068,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
             future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
+        data.removeEmptyColumnsFromPart(part);
 
         try
         {
