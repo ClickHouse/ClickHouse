@@ -40,7 +40,7 @@ public:
         /// Opaque pointer to avoid dependencies (it is not possible to do forward declaration of typedef).
         const void * data;
 
-        /// need comment
+        /// Minimal time, when we need to delete some data from this part
         time_t min_ttl;
     };
 

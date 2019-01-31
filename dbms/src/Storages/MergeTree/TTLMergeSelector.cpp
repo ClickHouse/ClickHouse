@@ -36,14 +36,14 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
             best_begin = cur_best_begin;
         }
     }
-    
+
     time_t current_time = time(nullptr);
     if (partition_to_merge_index == -1 || partition_to_merge_min_ttl > current_time)
         return {};
 
     const auto & best_partition = partitions[partition_to_merge_index];
     Iterator best_end = best_begin;
-    size_t total_size;
+    size_t total_size = 0;
 
     while (best_begin != best_partition.begin())
     {
@@ -53,6 +53,8 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
             ++best_begin;
             break;
         }
+
+        total_size += best_begin->size;
         --best_begin;
     }
 
@@ -62,6 +64,8 @@ IMergeSelector::PartsInPartition TTLMergeSelector::select(
             || (max_total_size_to_merge && total_size > max_total_size_to_merge))
             break;
 
+
+        total_size += best_end->size;
         ++best_end;
     }
 

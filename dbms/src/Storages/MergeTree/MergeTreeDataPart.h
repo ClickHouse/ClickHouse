@@ -215,7 +215,7 @@ struct MergeTreeDataPart
     /// Columns description.
     NamesAndTypesList columns;
 
-    /// need comment
+    /// Columns with values, that all have been zeroed by expired ttl
     NameSet empty_columns;
 
     using ColumnToSize = std::map<std::string, UInt64>;

@@ -487,7 +487,7 @@ public:
         const NamesAndTypesList & new_columns,
         bool skip_sanity_checks);
 
-    /// need comment
+    /// Remove columns, that have been markedd as empty after zeroing values with expired ttl
     void removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part);
 
     /// Freezes all parts.

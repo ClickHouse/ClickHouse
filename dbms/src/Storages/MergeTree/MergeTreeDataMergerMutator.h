@@ -112,7 +112,7 @@ private:
       */
     MergeTreeData::DataPartsVector selectAllPartsFromPartition(const String & partition_id);
 
-     /// need comment
+    /// Removes values with expired ttl and computes new min_ttl for part
     void removeValuesWithExpiredTTL(
         MergeTreeData::MutableDataPartPtr & new_data_part,
         Block & block, NameSet & empty_columns);
