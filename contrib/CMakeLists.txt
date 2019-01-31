@@ -44,6 +44,7 @@ if (USE_INTERNAL_METROHASH_LIBRARY)
 endif ()
 
 add_subdirectory (murmurhash)
+add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
