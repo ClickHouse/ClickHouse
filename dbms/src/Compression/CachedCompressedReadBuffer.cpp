@@ -20,7 +20,7 @@ void CachedCompressedReadBuffer::initInput()
     if (!file_in)
     {
         file_in = createReadBufferFromFileBase(path, estimated_size, aio_threshold, buf_size);
-        compressed_in = &*file_in;
+        compressed_in = file_in.get();
 
         if (profile_callback)
             file_in->setProfileCallback(profile_callback, clock_type);
@@ -30,18 +30,18 @@ void CachedCompressedReadBuffer::initInput()
 
 bool CachedCompressedReadBuffer::nextImpl()
 {
+
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.
     UInt128 key = cache->hash(path, file_pos);
     owned_cell = cache->get(key);
 
-    if (!owned_cell)
+    if (!owned_cell || !codec)
     {
         /// If not, read it from the file.
         initInput();
         file_in->seek(file_pos);
 
         owned_cell = std::make_shared<UncompressedCacheCell>();
-
 
         size_t size_decompressed;
         size_t size_compressed_without_checksum;
@@ -50,7 +50,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         if (owned_cell->compressed_size)
         {
             owned_cell->data.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
-            decompress(owned_cell->data.data(), size_decompressed, owned_cell->compressed_size);
+            decompress(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
 
             /// Put data into cache.
             cache->set(key, owned_cell);
