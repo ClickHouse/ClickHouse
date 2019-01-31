@@ -22,17 +22,17 @@ select s.*, j.* from (select * from X) as s left join (select * from Y) as j on 
 select 'left expr';
 select X.*, Y.* from X left join Y on (X.id + 1) = (Y.id + 1);
 
---select 'right';
---select X.*, Y.* from X right join Y on X.id = Y.id order by id;
---select 'right subs';
---select s.*, j.* from (select * from X) as s right join (select * from Y) as j on s.id = j.id order by id;
+select 'right';
+select X.*, Y.* from X right join Y on X.id = Y.id order by id;
+select 'right subs';
+select s.*, j.* from (select * from X) as s right join (select * from Y) as j on s.id = j.id order by id;
 --select 'right expr';
 --select X.*, Y.* from X right join Y on (X.id + 1) = (Y.id + 1) order by id;
 
---select 'full';
---select X.*, Y.* from X full join Y on X.id = Y.id order by id;
---select 'full subs';
---select s.*, j.* from (select * from X) as s full join (select * from Y) as j on s.id = j.id order by id;
+select 'full';
+select X.*, Y.* from X full join Y on X.id = Y.id order by id;
+select 'full subs';
+select s.*, j.* from (select * from X) as s full join (select * from Y) as j on s.id = j.id order by id;
 --select 'full expr';
 --select X.*, Y.* from X full join Y on (X.id + 1) = (Y.id + 1) order by id;
 

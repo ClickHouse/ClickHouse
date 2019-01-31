@@ -18,15 +18,15 @@ select X.*, Y.* from X left join Y using id;
 select 'left subs';
 select s.*, j.* from (select * from X) as s left join (select * from Y) as j using id;
 
---select 'right';
---select X.*, Y.* from X right join Y using id order by id;
---select 'right subs';
---select s.*, j.* from (select * from X) as s right join (select * from Y) as j using id order by id;
+select 'right';
+select X.*, Y.* from X right join Y using id order by id;
+select 'right subs';
+select s.*, j.* from (select * from X) as s right join (select * from Y) as j using id order by id;
 
---select 'full';
---select X.*, Y.* from X full join Y using id order by id;
---select 'full subs';
---select s.*, j.* from (select * from X) as s full join (select * from Y) as j using id order by id;
+select 'full';
+select X.*, Y.* from X full join Y using id order by id;
+select 'full subs';
+select s.*, j.* from (select * from X) as s full join (select * from Y) as j using id order by id;
 
 drop table X;
 drop table Y;
