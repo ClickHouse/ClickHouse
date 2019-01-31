@@ -64,9 +64,11 @@ struct AnalyzedJoin
     ExpressionActionsPtr createJoinedBlockActions(
         const JoinedColumnsList & columns_added_by_join, /// Subset of available_joined_columns.
         const ASTSelectQuery * select_query_with_join,
-        const Context & context,
-        NameSet & required_columns_from_joined_table /// Columns which will be used in query from joined table.
-    ) const;
+        const Context & context) const;
+
+    /// Columns which will be used in query from joined table.
+    NameSet getRequiredColumnsFromJoinedTable(const JoinedColumnsList & columns_added_by_join,
+                                              const ExpressionActionsPtr & joined_block_actions) const;
 
     const JoinedColumnsList & getColumnsFromJoinedTable(const NameSet & source_columns,
                                                         const Context & context,
