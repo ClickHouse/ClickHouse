@@ -889,16 +889,15 @@ void BaseDaemon::initialize(Application & self)
     reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
+    mode_t umask_num = 0027;
     if (config().has("umask"))
     {
         std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
         std::stringstream stream;
         stream << umask_str;
         stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
+    umask(umask_num);
 
     DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
