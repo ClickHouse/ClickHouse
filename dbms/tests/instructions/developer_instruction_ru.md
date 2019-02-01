@@ -50,6 +50,22 @@ git submodule update
 ```
 Проверить наличие submodules можно с помощью команды `git submodule status`.
 
+Если вы получили сообщение об ошибке:
+```
+Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+```
+Как правило это означает, что отсутствуют ssh ключи для соединения с GitHub. Ключи расположены в директории `~/.ssh`. В интерфейсе GitHub, в настройках, необходимо загрузить публичные ключи, чтобы он их понимал.
+
+Вы также можете клонировать репозиторий по протоколу https:
+```
+git clone https://github.com/yandex/ClickHouse.git
+```
+Этот вариант не подходит для отправки изменений на сервер. Вы можете временно его использовать, а затем добавить ssh ключи и заменить адрес репозитория с помощью команды `git remote`.
+
 
 # Система сборки
 
@@ -69,6 +85,8 @@ Ninja - система запуска сборочных задач.
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 brew install cmake ninja
 ```
+
+Проверьте версию CMake: `cmake --version`. Если версия меньше 3.3, то установите новую версию с сайта https://cmake.org/download/
 
 
 # Необязательные внешние библиотеки
@@ -121,7 +139,6 @@ cmake ..
 cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 Вы можете изменить вариант сборки, выполнив эту команду в директории build.
-
 
 Запустите ninja для сборки:
 ```
