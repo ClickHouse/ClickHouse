@@ -236,6 +236,8 @@ public:
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
 
+    void killCurrentQuery();
+
     void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
     const std::pair<String, String> & getInsertionTable() const { return insertion_table; }
 
