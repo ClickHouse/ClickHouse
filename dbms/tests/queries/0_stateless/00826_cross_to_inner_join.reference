@@ -6,6 +6,8 @@ cross nullable
 cross nullable vs not nullable
 1	1	1	1
 Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t2.a\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 3)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableExpression (children 1)\n       Identifier t2\n      TableJoin\n    Function equals (children 1)\n     ExpressionList (children 2)\n      Identifier t1.a\n      Identifier t2.a\n
+Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function equals (children 1)\n        ExpressionList (children 2)\n         Identifier t1.a\n         Identifier t2.a\n      TableExpression (children 1)\n       Identifier t2\n
 Explain ParsedAST (children 1)\n SelectWithUnionQuery (children 1)\n  ExpressionList (children 1)\n   SelectQuery (children 2)\n    ExpressionList (children 1)\n     Asterisk\n    TablesInSelectQuery (children 2)\n     TablesInSelectQueryElement (children 1)\n      TableExpression (children 1)\n       Identifier t1\n     TablesInSelectQueryElement (children 2)\n      TableJoin (children 1)\n       Function equals (children 1)\n        ExpressionList (children 2)\n         Identifier t1.a\n         Identifier t2.a\n      TableExpression (children 1)\n       Identifier t2\n
 cross
 1	1	1	1
@@ -13,4 +15,9 @@ cross
 cross nullable
 1	1	1	1
 cross nullable vs not nullable
+1	1	1	1
+comma
+1	1	1	1
+2	2	2	\N
+comma nullable
 1	1	1	1

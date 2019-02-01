@@ -19,10 +19,12 @@ SELECT * FROM t1 cross join t2 where t1.a = t2.b;
 
 SET enable_debug_queries = 1;
 AST SELECT * FROM t1 cross join t2 where t1.a = t2.a;
+AST SELECT * FROM t1, t2 where t1.a = t2.a;
 
 SET allow_experimental_cross_to_join_conversion = 1;
 
 AST SELECT * FROM t1 cross join t2 where t1.a = t2.a;
+AST SELECT * FROM t1, t2 where t1.a = t2.a;
 
 SELECT 'cross';
 SELECT * FROM t1 cross join t2 where t1.a = t2.a;
@@ -30,6 +32,11 @@ SELECT 'cross nullable';
 SELECT * FROM t1 cross join t2 where t1.b = t2.b;
 SELECT 'cross nullable vs not nullable';
 SELECT * FROM t1 cross join t2 where t1.a = t2.b;
+
+SELECT 'comma';
+SELECT * FROM t1, t2 where t1.a = t2.a;
+SELECT 'comma nullable';
+SELECT * FROM t1, t2 where t1.b = t2.b;
 
 DROP TABLE t1;
 DROP TABLE t2;
