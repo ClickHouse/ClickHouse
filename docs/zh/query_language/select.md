@@ -566,7 +566,7 @@ GROUP BY子句会为遇到的每一个不同的key计算一组聚合函数的值
 
 你可以在子查询，包含子查询的JOIN子句中使用WITH TOTALS（在这种情况下，它们各自的总值会被组合在一起）。
 
-#### GROUP BY 使用外部存储设备
+#### GROUP BY 使用外部存储设备 {#select-group-by-in-external-memory}
 
 你可以在GROUP BY中允许将临时数据转存到磁盘上，以限制对内存的使用。
 `max_bytes_before_external_group_by`这个配置确定了在GROUP BY中启动将临时数据转存到磁盘上的内存阈值。如果你将它设置为0（这是默认值），这项功能将被禁用。

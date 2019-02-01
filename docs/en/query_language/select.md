@@ -566,7 +566,7 @@ If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all
 
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause (in this case, the respective total values are combined).
 
-#### GROUP BY in External Memory
+#### GROUP BY in External Memory {#select-group-by-in-external-memory}
 
 You can enable dumping temporary data to the disk to restrict memory usage during GROUP BY.
 The `max_bytes_before_external_group_by` setting determines the threshold RAM consumption for dumping GROUP BY temporary data to the file system. If set to 0 (the default), it is disabled.
