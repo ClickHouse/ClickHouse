@@ -202,10 +202,17 @@ private:
 
         current.checkPreconditions();
         LOG_INFO(log, "Preconditions for test '" << info.test_name << "' are fullfilled");
-
+        LOG_INFO(log, "Preparing for run, have " << info.create_queries.size()
+            << " create queries and " << info.fill_queries.size() << " fill queries");
+        current.prepare();
+        LOG_INFO(log, "Prepared");
         LOG_INFO(log, "Running test '" << info.test_name << "'");
         auto result = current.execute();
         LOG_INFO(log, "Test '" << info.test_name << "' finished");
+
+        LOG_INFO(log, "Running post run queries");
+        current.finish();
+        LOG_INFO(log, "Postqueries finished");
 
         if (lite_output)
             return {report_builder->buildCompactReport(info, result), current.checkSIGINT()};
