@@ -453,7 +453,7 @@ struct HashMethodKeysFixed
     size_t keys_size;
 
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, const HashMethodContextPtr &)
-        : key_sizes(std::move(key_sizes)), keys_size(key_columns.size())
+        : Base(key_columns), key_sizes(std::move(key_sizes)), keys_size(key_columns.size())
     {
         if constexpr (has_low_cardinality)
         {
@@ -472,13 +472,11 @@ struct HashMethodKeysFixed
                     low_cardinality_keys.nested_columns[i] = key_columns[i];
             }
         }
-
-        Base::init(key_columns);
     }
 
     ALWAYS_INLINE Key getKey(size_t row, Arena &) const
     {
-        if (has_nullable_keys)
+        if constexpr (has_nullable_keys)
         {
             auto bitmap = Base::createBitmap(row);
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes, bitmap);
@@ -537,9 +535,9 @@ struct HashMethodHashed
     HashMethodHashed(ColumnRawPtrs key_columns, const Sizes &, const HashMethodContextPtr &)
         : key_columns(std::move(key_columns)) {}
 
-    UInt128 getKey(size_t row, Arena &) const { return hash128(row, key_columns.size(), key_columns); }
+    ALWAYS_INLINE Key getKey(size_t row, Arena &) const { return hash128(row, key_columns.size(), key_columns); }
 
-    static StringRef getValueRef(const Value & value)
+    static ALWAYS_INLINE StringRef getValueRef(const Value & value)
     {
         return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }

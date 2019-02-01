@@ -110,7 +110,8 @@ public:
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
     {
-        return emplaceKeyImpl(static_cast<Derived &>(*this).getKey(row, pool), data, pool);
+        auto key = static_cast<Derived &>(*this).getKey(row, pool);
+        return emplaceKeyImpl(key, data, pool);
     }
 
     template <typename Data>
@@ -257,7 +258,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, true>
 {
 protected:
-    void init(const ColumnRawPtrs & key_columns)
+    BaseStateKeysFixed(const ColumnRawPtrs & key_columns)
     {
         null_maps.reserve(key_columns.size());
         actual_columns.reserve(key_columns.size());
@@ -319,7 +320,7 @@ template <typename Key>
 class BaseStateKeysFixed<Key, false>
 {
 protected:
-    void init(const ColumnRawPtrs & columns) { actual_columns = columns; }
+    BaseStateKeysFixed(const ColumnRawPtrs & columns) : actual_columns(columns) {}
 
     const ColumnRawPtrs & getActualColumns() const { return actual_columns; }
 
