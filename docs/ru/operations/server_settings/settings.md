@@ -268,7 +268,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 **Пример**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 

@@ -5,7 +5,7 @@
 Replaces the first occurrence, if it exists, of the 'pattern' substring in 'haystack' with the 'replacement' substring.
 Hereafter, 'pattern' and 'replacement' must be constants.
 
-## replaceAll(haystack, pattern, replacement)
+## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement)
 
 Replaces all occurrences of the 'pattern' substring in 'haystack' with the 'replacement' substring.
 
@@ -76,6 +76,14 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 │ here: Hello, World! │
 └─────────────────────┘
 ```
+
+
+## regexpQuoteMeta(s)
+
+The function adds a backslash before some predefined characters in the string.
+Predefined characters: '0', '\\', '|', '(', ')', '^', '$', '.', '[', ']', '?', '*', '+', '{', ':', '-'.
+This implementation slightly differs from re2::RE2::QuoteMeta. It escapes zero byte as \0 instead of \x00 and it escapes only required characters.
+For more information, see the link: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_replace_functions/) <!--hide-->

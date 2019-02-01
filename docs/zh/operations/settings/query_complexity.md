@@ -152,7 +152,7 @@ At this time, it isn't checked during parsing, but only after parsing the query.
 ## max_ast_elements
 
 Maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
-In the same way as the previous setting, it is checked only after parsing the query. By default, 10,000.
+In the same way as the previous setting, it is checked only after parsing the query. By default, 50,000.
 
 ## max_rows_in_set
 
