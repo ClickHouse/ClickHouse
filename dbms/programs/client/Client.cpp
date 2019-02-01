@@ -1058,7 +1058,9 @@ private:
                     if (interrupt_listener.check())
                     {
                         cancelQuery();
-                    } else {
+                    }
+                    else
+                    {
                         double elapsed = watch.elapsedSeconds();
                         if (elapsed > receive_timeout.totalSeconds())
                         {
