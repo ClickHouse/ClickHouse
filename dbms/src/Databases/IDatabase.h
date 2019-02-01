@@ -130,7 +130,6 @@ public:
         const Context & context,
         const String & name) = 0;
 
-    /// TODO: проверить позже описание здесь.
     /// Delete the dictionary from the database. Delete the metadata.
     virtual void removeDictionary(
         Context & context,

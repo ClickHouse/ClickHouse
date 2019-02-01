@@ -67,8 +67,7 @@ namespace
                 s, database_name, context, "in file " + dictionary_metadata_path.toString());
             database.attachDictionary(dictionary_name, dictionary_ptr);
 
-            // TODO: тут лучше передавать database_name.dictionary_name
-            context.getExternalDictionaries().addObjectFromDDL(dictionary_name, dictionary_ptr);
+            context.getExternalDictionaries().addObjectFromDatabase(database_name, dictionary_name, dictionary_ptr);
         }
         catch (const Exception & e)
         {
@@ -340,7 +339,7 @@ void DatabaseDictionary::createDictionary(Context & context,
                 /* exception_ptr */ {},
             };
 
-            context.getExternalDictionaries().addObjectFromDDL(dictionary_name, dict_ptr);
+            context.getExternalDictionaries().addObjectFromDatabase(name, dictionary_name, dict_ptr);
         }
 
         Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path);
@@ -377,8 +376,10 @@ void DatabaseDictionary::removeDictionary(Context & context, const String & dict
     if (dictionaries.count(dictionary_name) == 0)
         return; // TODO: maybe throw an exception would be better
 
-    context.getExternalDictionaries().removeObject(dictionary_name);
+    auto dictionary_path = getDictionaryMetadataPath(dictionary_name);
+    Poco::File(dictionary_path).remove();
     dictionaries.erase(dictionary_name);
+    context.getExternalDictionaries().removeObject(name, dictionary_name);
 }
 
 

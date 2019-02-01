@@ -17,6 +17,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS;
+extern const int EXTERNAL_LOADABLE_IS_MISSING;
 }
 
 
@@ -110,43 +111,38 @@ ExternalLoader::~ExternalLoader()
 }
 
 
-void ExternalLoader::addObjectFromDDL(
+void ExternalLoader::addObjectFromDatabase(
+    const std::string & database_name,
     const std::string & object_name,
     std::shared_ptr<IExternalLoadable> loadable_object)
 {
-    LOG_DEBUG(log, "ADD OBJECT " + object_name);
-    if (consistLoadableObject(object_name))
-        throw Exception("Can't add loadable object. " + object_name + " already exists.", ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
+    std::string name = database_name + '.' + object_name;
+    LOG_DEBUG(log, "ADD OBJECT " + name);
 
-    std::lock_guard all_lock{all_mutex};
-    std::lock_guard insert_lock{insert_mutex};
-    auto info = LoadableInfo{std::move(loadable_object), ConfigurationSourceType::DDL, object_name, {}};
-    objects_from_ddl_to_insert.emplace(object_name, info);
-    update_times[object_name] = getNextUpdateTime(info.loadable);
+    std::lock_guard map_lock{database_objects_map_mutex};
+    if (loadable_objects_from_databases.find(name) != std::end(loadable_objects_from_databases))
+        throw Exception("Can't add loadable object. " + name + " already exists.", ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
+
+    auto info = LoadableInfo{std::move(loadable_object), ConfigurationSourceType::DDL, name, {}};
+    loadable_objects_from_databases.emplace(name, info);
+    update_times[name] = getNextUpdateTime(info.loadable);
 }
 
 
-void ExternalLoader::removeObject(const std::string & name)
+void ExternalLoader::removeObject(const std::string & database_name, const std::string & object_name)
 {
-    std::lock_guard all_lock{all_mutex};
-    objects_names_from_ddl_to_remove.insert(name);
-}
+    std::string name = database_name + "." + object_name;
+    std::lock_guard map_lock{database_objects_map_mutex};
+    if (loadable_objects_from_databases.find(name) == std::end(loadable_objects_from_databases))
+        throw Exception("Can't remove object. " + name + " is missing.", ErrorCodes::EXTERNAL_LOADABLE_IS_MISSING);
 
-
-bool ExternalLoader::consistLoadableObject(const std::string &object_name) const
-{
-    std::lock_guard lock{map_mutex};
-    if (auto it1 = loadable_objects.find(object_name); it1 != loadable_objects.end())
-        return true;
-
-    return false;
+    loadable_objects_from_databases.erase(name);
 }
 
 
 void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 {
     reloadFromConfigFiles(throw_on_error);
-    reloadFromDDL(throw_on_error);
 
     /// list of recreated loadable objects to perform delayed removal from unordered_map
     std::list<std::string> recreated_failed_loadable_objects;
@@ -180,8 +176,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
             {
                 std::lock_guard lock{map_mutex};
                 update_times[name] = getNextUpdateTime(loadable_ptr);
-                const auto dict_it = loadable_objects.find(name);
-                dict_it->second.loadable.reset();
+                const auto dict_it = loadable_objects_from_filesystem.find(name);
                 dict_it->second.loadable = std::move(loadable_ptr);
 
                 /// clear stored exception on success
@@ -202,7 +197,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
     for (const auto & name : recreated_failed_loadable_objects)
         failed_loadable_objects.erase(name);
 
-    update(throw_on_error);
+    updateAll(throw_on_error);
 }
 
 
@@ -234,14 +229,16 @@ bool ExternalLoader::checkLoadableObjectToUpdate(LoadableInfo object)
 }
 
 
-void ExternalLoader::update(bool throw_on_error)
+void ExternalLoader::updateObjects(
+    ObjectsMap & loadable_objects,
+    std::mutex & mutex,
+    bool throw_on_error)
 {
-    /// periodic update
     std::vector<std::pair<String, LoadablePtr>> objects_to_update;
 
     /// Collect objects that needs to be updated under lock. Then create new versions without lock and assign under lock.
     {
-        std::lock_guard lock{map_mutex};
+        std::lock_guard lock{mutex};
         for (auto & [name, object] : loadable_objects)
         {
             LOG_DEBUG(log, "CHECK OBJECT " + name);
@@ -266,8 +263,7 @@ void ExternalLoader::update(bool throw_on_error)
             exception = std::current_exception();
         }
 
-        std::lock_guard lock{map_mutex};
-        // TODO: maybe rewrite it
+        std::lock_guard map_lock{mutex};
         auto it = loadable_objects.find(name);
         if (it == loadable_objects.end())
             continue;
@@ -281,12 +277,18 @@ void ExternalLoader::update(bool throw_on_error)
         }
         else
         {
-            // TODO: figure out why it throws while updating file.tsv
-            //tryLogCurrentException(log, "Cannot update " + object_name + " '" + name + "', leaving old version");
+            tryLogCurrentException(log, "Cannot update " + object_name + " '" + name + "', leaving old version");
             if (throw_on_error)
                 throw;
         }
     }
+}
+
+
+void ExternalLoader::updateAll(bool throw_on_error)
+{
+    updateObjects(loadable_objects_from_filesystem, map_mutex, throw_on_error);
+    updateObjects(loadable_objects_from_databases, database_objects_map_mutex, throw_on_error);
 }
 
 
@@ -311,26 +313,17 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
     std::lock_guard lock{map_mutex};
 
     std::list<std::string> removed_loadable_objects_names;
-    for (auto & object_name : objects_names_from_ddl_to_remove)
+    for (const auto & loadable : loadable_objects_from_filesystem)
     {
-        auto it = loadable_objects.find(object_name);
-        if (it != std::end(loadable_objects))
-            loadable_objects.erase(object_name);
-    }
-
-    for (const auto & loadable : loadable_objects)
-    {
-        if (loadable.second.source_type == ConfigurationSourceType::Filesystem)
-        {
-            const auto & current_config = loadable_objects_defined_in_config[loadable.second.origin];
-            if (current_config.find(loadable.first) == std::end(current_config))
-                removed_loadable_objects_names.emplace_back(loadable.first);
-        }
+        const auto & current_config = loadable_objects_defined_in_config[loadable.second.origin];
+        if (current_config.find(loadable.first) == std::end(current_config))
+            removed_loadable_objects_names.emplace_back(loadable.first);
     }
 
     for (const auto & name : removed_loadable_objects_names)
-        loadable_objects.erase(name);
+        loadable_objects_from_filesystem.erase(name);
 }
+
 
 void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
                                           const bool force_reload, const std::string & loadable_name)
@@ -365,7 +358,6 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
     Poco::Util::AbstractConfiguration::Keys keys;
     loaded_config->keys(keys);
 
-    // TODO: fix comment below
     /// for each loadable object defined in xml config
     for (const auto & key : keys)
     {
@@ -391,19 +383,26 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
             if (!loadable_name.empty() && name != loadable_name)
                 continue;
 
-            decltype(loadable_objects.begin()) object_it;
+            decltype(loadable_objects_from_filesystem.begin()) object_it;
             {
                 std::lock_guard lock{map_mutex};
-                object_it = loadable_objects.find(name);
+                object_it = loadable_objects_from_filesystem.find(name);
 
                 /// Object with the same name was declared in other config file.
-                if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
+                if (object_it != std::end(loadable_objects_from_filesystem) &&
+                    object_it->second.source_type == ConfigurationSourceType::DDL)
+                {
+                    throw Exception(object_name + " '" + name + "' from file " + config_path + " already declared in ddl.",
+                                    ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
+                }
+
+                if (object_it != std::end(loadable_objects_from_filesystem) && object_it->second.origin != config_path)
                     throw Exception(object_name + " '" + name + "' from file " + config_path
                                     + " already declared in file " + object_it->second.origin,
                                     ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
+
             }
 
-            // TODO: here doesn't create new copy of dictionary for DDL
             auto object_ptr = create(name, *loaded_config, key);
 
             /// If the object could not be loaded.
@@ -426,8 +425,10 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
             std::lock_guard lock{map_mutex};
 
+            // TODO: кажется, что этот object_it может инвалидироваться
             /// add new loadable object or update an existing version
-            if (object_it == std::end(loadable_objects))
+            object_it = loadable_objects_from_filesystem.find(name);
+            if (object_it == std::end(loadable_objects_from_filesystem))
             {
                 auto info = LoadableInfo{
                     std::move(object_ptr),
@@ -435,11 +436,12 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                     config_path,
                     /*exception_ptr*/ {},
                 };
-                loadable_objects.emplace(name, std::move(info));
+                loadable_objects_from_filesystem.emplace(name, std::move(info));
             }
             else
             {
-                object_it->second.loadable.reset();
+                // TODO: check it
+                // object_it->second.loadable.reset();
                 object_it->second.loadable = std::move(object_ptr);
 
                 /// erase stored exception on success
@@ -456,8 +458,8 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 
                 std::lock_guard lock{map_mutex};
                 const auto exception_ptr = std::current_exception();
-                const auto loadable_it = loadable_objects.find(name);
-                if (loadable_it == std::end(loadable_objects))
+                const auto loadable_it = loadable_objects_from_filesystem.find(name);
+                if (loadable_it == std::end(loadable_objects_from_filesystem))
                 {
                     auto info = LoadableInfo{
                         nullptr,
@@ -465,7 +467,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         config_path,
                         exception_ptr,
                     };
-                    loadable_objects.emplace(name, std::move(info));
+                    loadable_objects_from_filesystem.emplace(name, std::move(info));
                 }
                 else
                     loadable_it->second.exception = exception_ptr;
@@ -481,101 +483,6 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
 }
 
 
-void ExternalLoader::reloadFromDDL(bool throw_on_error)
-{
-    std::lock_guard all_lock{all_mutex};
-    std::lock_guard insert_lock{insert_mutex};
-    std::lock_guard remove_lock{remove_mutex};
-    for (const auto & name : objects_names_from_ddl_to_remove)
-    {
-        if (auto it = objects_from_ddl_to_insert.find(name); it != objects_from_ddl_to_insert.end())
-        {
-            objects_from_ddl_to_insert.erase(it);
-            continue;
-        }
-
-        if (auto it = loadable_objects.find(name); it != loadable_objects.end())
-        {
-            if (it->second.source_type != ConfigurationSourceType::DDL)
-                continue;
-
-            // TODO: think about should we do it->second->loadable.reset() ?
-            loadable_objects.erase(it);
-        }
-    }
-
-    for (auto & [name, object] : objects_from_ddl_to_insert)
-    {
-        LOG_DEBUG(log, "RELOAD " + name);
-        try
-        {
-            decltype(loadable_objects.begin()) object_it; // TODO: bad name
-            {
-                std::lock_guard map_lock{map_mutex};
-                object_it = loadable_objects.find(name);
-                if (object_it != std::end(loadable_objects)) //TODO: maybe we need here additional checks
-                    throw Exception("External object" + name + " already exists.", ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
-            }
-
-            auto object_ptr = object.loadable->clone();
-            if (const auto exception_ptr = object_ptr->getCreationException())
-            {
-                LOG_DEBUG(log, "EXCEPTION WHILE CREATION " + name);
-                std::chrono::seconds delay(update_settings.backoff_initial_sec);
-                const auto failed_dict_it = failed_loadable_objects.find(name);
-                FailedLoadableInfo info{std::move(object_ptr), std::chrono::system_clock::now() + delay, 0};
-                if (failed_dict_it == std::end(failed_loadable_objects))
-                    failed_loadable_objects.emplace(name, std::move(info));
-                else
-                    (*failed_dict_it).second = std::move(info);
-
-                std::rethrow_exception(exception_ptr);
-            }
-            else if (object_ptr->supportUpdates())
-                update_times[name] = getNextUpdateTime(object_ptr);
-
-            std::lock_guard map_lock{map_mutex};
-            auto loadable_info = LoadableInfo{
-                std::move(object_ptr),
-                ConfigurationSourceType::DDL,
-                name,
-                /*exception_ptr*/ {},
-            };
-            if (loadable_objects.find(name) == std::end(loadable_objects))
-            {
-                LOG_DEBUG(log, "EMPLACE " + name);
-                loadable_objects.emplace(name, std::move(loadable_info));
-            }
-            else
-            {
-                LOG_DEBUG(log, "RESET " + name);
-                // TODO: incorrect. we should not enter here
-                // TODO: think about reset() of shared_ptr
-                object_it->second.loadable.reset();
-            }
-        }
-        catch(...)
-        {
-            LOG_DEBUG(log, "CATCH " + name);
-            tryLogCurrentException(log, "Cannot create " + object_name + " '"
-                                        + name + "' from ddl");
-
-            if (throw_on_error)
-                throw;
-        }
-    }
-
-    objects_from_ddl_to_insert.clear();
-    /*
-    std::lock_guard map_lock{map_mutex};
-    for (const auto & [name, object] : loadable_objects)
-    {
-        LOG_DEBUG(log, "PRINT " + name);
-    }
-    */
-}
-
-
 void ExternalLoader::reload()
 {
     reloadFromConfigFiles(true, true);
@@ -584,11 +491,12 @@ void ExternalLoader::reload()
 
 void ExternalLoader::reload(const std::string & name)
 {
+    // TODO: некорретно работает, если вызвать из reloadDictionary
     reloadFromConfigFiles(true, true, name);
 
     /// Check that specified object was loaded
     std::lock_guard lock{map_mutex};
-    if (!loadable_objects.count(name))
+    if (!loadable_objects_from_filesystem.count(name))
         throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
 }
 
@@ -598,8 +506,8 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & 
     std::lock_guard lock{map_mutex};
 
     // TODO: maybe carry out in separate method
-    auto it = loadable_objects.find(name);
-    if (it == std::end(loadable_objects))
+    auto it = loadable_objects_from_filesystem.find(name);
+    if (it == std::end(loadable_objects_from_filesystem))
     {
         if (throw_on_error)
             throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
@@ -632,7 +540,7 @@ ExternalLoader::LoadablePtr ExternalLoader::tryGetLoadable(const std::string & n
 
 ExternalLoader::LockedObjectsMap ExternalLoader::getObjectsMap() const
 {
-    return LockedObjectsMap(map_mutex, loadable_objects);
+    return LockedObjectsMap(map_mutex, loadable_objects_from_filesystem);
 }
 
 

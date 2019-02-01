@@ -215,9 +215,6 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     auto ddl_guard = context.getDDLGuard(database_name, dictionary_name);
     auto [database, dictionary] = tryGetDatabaseAndDictionary(database_name, dictionary_name, if_exists);
 
-    // TODO: нужен ли мне shutdown() ?
-    // TODO: нужен ли мне lockForAlter() ?
-
     database->removeDictionary(context, dictionary_name);
     return {};
 }
@@ -262,7 +259,6 @@ DatabaseAndDictionary InterpreterDropQuery::tryGetDatabaseAndDictionary(
     if (!database)
         return {};
 
-    // DictionaryPtr dictionary = database->tryGetDictionary(context, dictionary_name);
     DictionaryPtr dictionary = tryGetDictionary(database, dictionary_name, if_exists);
     if (!dictionary)
         return {};

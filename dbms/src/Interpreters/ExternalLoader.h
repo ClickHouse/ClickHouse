@@ -71,6 +71,7 @@ public:
     using LoadablePtr = IExternalLoadable::LoadablePtr;
     using Configuration = Poco::Util::AbstractConfiguration;
 
+    // TODO: кажется, это теперь не нужно
     enum class ConfigurationSourceType
     {
         DDL,
@@ -105,12 +106,12 @@ public:
 
     virtual ~ExternalLoader();
 
-    void addObjectFromDDL(
-        const std::string & object_name,
-        std::shared_ptr<IExternalLoadable> loadable_object);
+    void addObjectFromDatabase(
+            const std::string & database_name,
+            const std::string & object_name,
+            std::shared_ptr<IExternalLoadable> loadable_object);
 
-    // TODO: for start supports only DDL objects
-    void removeObject(const std::string & name);
+    void removeObject(const std::string & database_name, const std::string & name);
 
     /// Forcibly reloads all loadable objects.
     void reload();
@@ -122,7 +123,6 @@ public:
     LoadablePtr tryGetLoadable(const std::string & name) const;
 
 protected:
-    //  TODO: maybe change config_prefix to something else
     virtual std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
                                                       const std::string & config_prefix) = 0;
 
@@ -146,26 +146,24 @@ private:
 
     bool is_initialized = false;
 
+    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
+    mutable std::mutex all_mutex;
+
+    // TODO: fix this later
     /// Protects only objects map.
     /** Reading and assignment of "loadable" should be done under mutex.
       * Creating new versions of "loadable" should not be done under mutex.
       */
     mutable std::mutex map_mutex;
 
-    /// Protects all data, currently used to avoid races between updating thread and SYSTEM queries
-    mutable std::mutex all_mutex;
-
-    // TODO: describe it later
-    mutable std::mutex insert_mutex;
-
-    // TODO: describe it later
-    mutable std::mutex remove_mutex;
-
     /// name -> loadable.
-    ObjectsMap loadable_objects;
-    ObjectsMap objects_from_ddl_to_insert;
-    std::unordered_set<std::string> objects_names_from_ddl_to_remove;
+    ObjectsMap loadable_objects_from_filesystem;
 
+    // TODO: describe this later
+    mutable std::mutex database_objects_map_mutex;
+
+    // TODO: написать, что эти объекты гарантированно не пересекаются с объектами из файловой системы
+    ObjectsMap loadable_objects_from_databases; // This objects created by ddl queries like `CREATE DICTIONARY`
 
     // TODO: fix this description
     /// Here are loadable objects, that has been never loaded successfully.
@@ -176,7 +174,6 @@ private:
     using TimePoint = std::chrono::system_clock::time_point;
     std::unordered_map<std::string, TimePoint> update_times;
 
-    // TODO: not the best name.
     std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
 
     pcg64 rnd_engine{randomSeed()};
@@ -200,20 +197,21 @@ private:
     /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
     /// If loadable_name is not empty, load only loadable object with name loadable_name
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
+
     void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
                                 const bool force_reload, const std::string & loadable_name);
-
-    void reloadFromDDL(bool throw_on_error);
 
     /// Check config files and update expired loadable objects
     void reloadAndUpdate(bool throw_on_error = false);
 
     /// Update expired loadable object
-    void update(bool throw_on_error = false);
+    void updateAll(bool throw_on_error = false);
+
+    void updateObjects(ObjectsMap & loadable_objects,
+                       std::mutex & mutex,
+                       bool throw_on_error);
 
     void reloadPeriodically();
-
-    bool consistLoadableObject(const std::string &object_name) const;
 
     bool checkLoadableObjectToUpdate(LoadableInfo object);
 
