@@ -334,7 +334,7 @@ The query can only specify a single ARRAY JOIN clause.
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
 
-### JOIN Clause
+### JOIN Clause {#select-join}
 
 Joins the data in the usual [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) sense.
 
@@ -469,7 +469,7 @@ A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE pr
 
 If the 'optimize_move_to_prewhere' setting is set to 1 and PREWHERE is omitted, the system uses heuristics to automatically move parts of expressions from WHERE to PREWHERE.
 
-### GROUP BY Clause
+### GROUP BY Clause {#select-group-by-clause}
 
 This is one of the most important parts of a column-oriented DBMS.
 
@@ -682,7 +682,7 @@ More specifically, expressions are analyzed that are above the aggregate functio
 The aggregate functions and everything below them are calculated during aggregation (GROUP BY).
 These expressions work as if they are applied to separate rows in the result.
 
-### DISTINCT Clause
+### DISTINCT Clause {#select-distinct}
 
 If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
 The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:

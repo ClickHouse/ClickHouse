@@ -1,28 +1,28 @@
 # Troubleshooting
 
-Known problems:
+Known issues:
 
 - [Installation errors](#troubleshooting-installation-errors).
 - [The server does not accept the connections](#troubleshooting-accepts-no-connections).
 - [ClickHouse does not process queries](#troubleshooting-does-not-process-queries).
 - [ClickHouse processes queries too slow](#troubleshooting-too-slow).
 
-## Installation errors {#troubleshooting-installation-errors}
+## Installation Errors {#troubleshooting-installation-errors}
 
-### You can not get deb-packages from ClickHouse repository with apt-get
+### You Can Not Get Deb-packages from ClickHouse Repository With apt-get
 
 - Check firewall settings.
 - If you can not access the repository by any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually with `sudo dpkg -i <packages>` command. Also, you need `tzdata` package.
 
 
-## The server does not accept the connections {#troubleshooting-accepts-no-connections}
+## Server Does Not Accept the Connections {#troubleshooting-accepts-no-connections}
 
 Possible reasons:
 
 - The server is not running.
 - Unexpected or wrong configuration parameters.
 
-### The server is not running
+### Server Is Not Running
 
 **Check if server is runnnig**
 
@@ -38,9 +38,9 @@ If the server is not running, start it with the command:
 sudo service clickhouse-server start
 ```
 
-**See logs**
+**Check logs**
 
-The main log of `clickhouse-server` is in `/var/log/clickhouse-server.log`.
+The main log of `clickhouse-server` is in `/var/log/clickhouse-server.log` by default.
 
 In case of successful start you should see the strings:
 
@@ -91,13 +91,13 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 
 This command starts the server as an interactive app with standard parameters of autostart script. In this mode `clickhouse-server` prints all the event messages into the console.
 
-### Configuration parameters
+### Configuration Parameters
 
 Check:
 
 - Docker settings.
 
-    If you run ClickHouse in Docker in IPv6 network, check that `network=host` is set.
+    If you run ClickHouse in Docker in IPv6 network, make sure that `network=host` is set.
 
 - Endpoint settings.
 
@@ -111,17 +111,22 @@ Check:
 
 - Secure connection settings.
 
-    Check setting `tcp_port_secure` for secure connection. Use proper parameters while connecting. For example, use parameter `port_secure` with `clickhouse_client`. Check also settings for ssl-sertificates.
+    Check:
+
+    - `tcp_port_secure` setting.
+    - Settings for SSL sertificates.
+
+     Use proper parameters while connecting. For example, use parameter `port_secure` with `clickhouse_client`.
 
 - User settings
 
     You may use the wrong user name or password for it.
 
-## ClickHouse does not process queries {#troubleshooting-does-not-process-queries}
+## ClickHouse Does Not Process Queries {#troubleshooting-does-not-process-queries}
 
 If ClickHouse can not process the query, it sends the description of an error to the client. In the `clickhouse-client` you get a description of an error in console. If you use HTTP interface, ClickHouse sends error description in response body. For example,
 
-```
+```bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there is no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
@@ -130,7 +135,7 @@ If you start `clickhouse-client` with `stack-trace` parameter, ClickHouse return
 
 It is possible that you see the message of connection broken. In this case, you can repeat query. If connection brakes any time you perform the query you should check the server logs for errors.
 
-## ClickHouse processes queries too slow {#troubleshooting-too-slow}
+## ClickHouse Processes Queries Not Fast Enough {#troubleshooting-too-slow}
 
 If you see that ClickHouse works too slow, you need to profile the load of the server resources and network for your queries.
 
