@@ -9,6 +9,22 @@ namespace DB
 namespace ColumnsHashing
 {
 
+/// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
+/// Is used for caching.
+class HashMethodContext
+{
+public:
+    virtual ~HashMethodContext() = default;
+
+    struct Settings
+    {
+        size_t max_threads;
+    };
+};
+
+using HashMethodContextPtr = std::shared_ptr<HashMethodContext>;
+
+
 namespace columns_hashing_impl
 {
 
@@ -80,13 +96,40 @@ public:
     bool isFound() const { return found; }
 };
 
-template <typename Value, typename Mapped, bool consecutive_keys_optimization>
-struct HashMethodBase
+template <typename Derived, typename Value, typename Mapped, bool consecutive_keys_optimization>
+class HashMethodBase
 {
+public:
     using EmplaceResult = EmplaceResultImpl<Mapped>;
     using FindResult = FindResultImpl<Mapped>;
     static constexpr bool has_mapped = !std::is_same<Mapped, void>::value;
     using Cache = LastElementCache<Value, consecutive_keys_optimization>;
+
+    static HashMethodContextPtr createContext(const HashMethodContext::Settings &) { return nullptr; }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        return emplaceKeyImpl(static_cast<Derived &>(*this).getKey(row, pool), data, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        auto key = static_cast<Derived &>(*this).getKey(row, pool);
+        auto res = findKeyImpl(key, data);
+        static_cast<Derived &>(*this).onExistingKey(key, pool);
+        return res;
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE size_t getHash(const Data & data, size_t row, Arena & pool)
+    {
+        auto key = static_cast<Derived &>(*this).getKey(row, pool);
+        auto res = data.hash(key);
+        static_cast<Derived &>(*this).onExistingKey(key, pool);
+        return res;
+    }
 
 protected:
     Cache cache;
@@ -102,13 +145,20 @@ protected:
         }
     }
 
+    template <typename Key>
+    static ALWAYS_INLINE void onNewKey(Key & /*key*/, Arena & /*pool*/) {}
+    template <typename Key>
+    static ALWAYS_INLINE void onExistingKey(Key & /*key*/, Arena & /*pool*/) {}
+
     template <typename Data, typename Key>
-    ALWAYS_INLINE EmplaceResult emplaceKeyImpl(Key key, Data & data, typename Data::iterator & it)
+    ALWAYS_INLINE EmplaceResult emplaceKeyImpl(Key key, Data & data, Arena & pool)
     {
         if constexpr (Cache::consecutive_keys_optimization)
         {
             if (cache.found && cache.check(key))
             {
+                static_cast<Derived &>(*this).onExistingKey(key, pool);
+
                 if constexpr (has_mapped)
                     return EmplaceResult(cache.value.second, cache.value.second, false);
                 else
@@ -116,9 +166,23 @@ protected:
             }
         }
 
+        typename Data::iterator it;
         bool inserted = false;
         data.emplace(key, it, inserted);
-        Mapped * cached = &it->second;
+
+        Mapped * cached = nullptr;
+        if (has_mapped)
+            cached = &it->second;
+
+        if (inserted)
+        {
+            if constexpr (has_mapped)
+                static_cast<Derived &>(*this).onNewKey(it->first, pool);
+            else
+                static_cast<Derived &>(*this).onNewKey(*it, pool);
+        }
+        else
+            static_cast<Derived &>(*this).onExistingKey(key, pool);
 
         if constexpr (consecutive_keys_optimization)
         {
