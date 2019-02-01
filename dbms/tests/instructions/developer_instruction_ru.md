@@ -188,6 +188,11 @@ ls -l dbms/programs/clickhouse
 
 Для подключения к ClickHouse с помощью clickhouse-client, в соседнем терминале, зайдите в директорию `ClickHouse/build/dbms/programs/` и выполните `clickhouse client`.
 
+Если вы получили сообщение `Connection refused` на Mac OS X или FreeBSD, то укажите для клиента 127.0.0.1 в качестве имени хоста:
+```
+clickhouse client --host 127.0.0.1
+```
+
 Вы можете заменить собранным вами ClickHouse продакшен версию, установленную в системе. Для этого, установите ClickHouse на свою машину по инструкции с официального сайта. Затем выполните:
 ```
 sudo service clickhouse-server stop
