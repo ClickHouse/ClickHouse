@@ -262,12 +262,12 @@ Useful for breaking away from a specific network interface.
 
 ## keep_alive_timeout
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
 
 **Example**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 
@@ -326,8 +326,7 @@ Keys:
 - user_syslog — Required setting if you want to write to the syslog.
 - address — The host[:порт] of syslogd. If omitted, the local daemon is used.
 - hostname — Optional. The name of the host that logs are sent from.
-- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility)
-in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
+- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
 Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
 - format – Message format. Possible values: ``bsd`` and ``syslog.``
 

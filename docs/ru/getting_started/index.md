@@ -73,7 +73,7 @@ Server: dbms/programs/clickhouse-server
 Для запуска сервера в качестве демона, выполните:
 
 ``` bash
-% sudo service clickhouse-server start
+$ sudo service clickhouse-server start
 ```
 
 Смотрите логи в директории `/var/log/clickhouse-server/`.
