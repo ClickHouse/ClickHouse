@@ -200,6 +200,8 @@ sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
 sudo service clickhouse-server start
 ```
 
+Обратите внимание, что `clickhouse-client`, `clickhouse-server` и другие, являеются симлинками на общий бинарник `clickhouse`.
+
 Также вы можете запустить собранный вами ClickHouse с конфигурационным файлом системного ClickHouse:
 ```
 sudo service clickhouse-server stop
