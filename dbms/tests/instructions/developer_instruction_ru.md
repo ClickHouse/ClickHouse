@@ -62,6 +62,8 @@ Ninja - система запуска сборочных задач.
 
 Для установки на CentOS, RedHat, выполните `sudo yum install cmake ninja-build`.
 
+Проверьте версию cmake: `cmake --version`. CMake поддерживается начиная с версии 3.9.0 . 
+
 Если у вас Arch или Gentoo, то вы сами знаете, как установить CMake.
 
 Для установки CMake и Ninja на Mac OS X, сначала установите Homebrew, а затем, с помощью него, установите всё остальное.
