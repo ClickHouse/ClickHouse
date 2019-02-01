@@ -413,12 +413,13 @@ namespace ErrorCodes
     extern const int CANNOT_CONVERT_TO_PROTOBUF_TYPE = 436;
     extern const int PROTOBUF_FIELD_NOT_REPEATED = 437;
     extern const int DATA_TYPE_CANNOT_BE_PROMOTED = 438;
-    extern const int DICTIONARY_ALREADY_EXISTS = 439;
-    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 440;
-    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 441;
-    extern const int UNKNOWN_DICTIONARY = 442;
-    extern const int STORAGE_IS_NOT_READY = 443;
-    extern const int EXTERNAL_LOADABLE_IS_MISSING = 444;
+    extern const int CANNOT_SCHEDULE_TASK = 439;
+    extern const int DICTIONARY_ALREADY_EXISTS = 440;
+    extern const int CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST = 441;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA = 442;
+    extern const int UNKNOWN_DICTIONARY = 443;
+    extern const int STORAGE_IS_NOT_READY = 444;
+    extern const int EXTERNAL_LOADABLE_IS_MISSING = 445;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

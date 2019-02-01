@@ -2,12 +2,12 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/ThreadPool.h>
 
-
-class ThreadPool;
 
 namespace DB
 {
+
 class Context;
 class ASTCreateQuery;
 class ASTExpressionList;

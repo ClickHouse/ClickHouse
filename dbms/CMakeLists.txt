@@ -200,11 +200,20 @@ target_link_libraries (clickhouse_common_io
     ${Boost_SYSTEM_LIBRARY}
         PRIVATE
     apple_rt
+        PUBLIC
+    Threads::Threads
+        PRIVATE
     ${CMAKE_DL_LIBS}
 )
 
-if (NOT ARCH_ARM AND CPUID_LIBRARY)
-    target_link_libraries (clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
+
+if(CPUID_LIBRARY)
+    target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
+endif()
+
+if(CPUINFO_LIBRARY)
+    target_link_libraries(clickhouse_common_io PRIVATE ${CPUINFO_LIBRARY})
 endif()
 
 target_link_libraries (dbms
@@ -225,11 +234,9 @@ target_link_libraries (dbms
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+    Threads::Threads
 )
 
-if (NOT USE_INTERNAL_RE2_LIBRARY)
-    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RE2_INCLUDE_DIR})
-endif ()
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
@@ -249,7 +256,6 @@ if (USE_POCO_SQLODBC)
     endif()
 endif()
 
-#if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
 if (Poco_Data_FOUND)
     target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
     target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
