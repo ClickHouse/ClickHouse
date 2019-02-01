@@ -71,7 +71,8 @@ static ASTPtr getCrossJoin(ASTSelectQuery & select, std::vector<DatabaseAndTable
 
     if (auto join = typeid_cast<const ASTTableJoin *>(right->table_join.get()))
     {
-        if (join->kind == ASTTableJoin::Kind::Cross)
+        if (join->kind == ASTTableJoin::Kind::Cross ||
+            join->kind == ASTTableJoin::Kind::Comma)
         {
             if (!join->children.empty())
                 throw Exception("Logical error: CROSS JOIN has expressions", ErrorCodes::LOGICAL_ERROR);
