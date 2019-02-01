@@ -16,7 +16,7 @@ class Logger;
 namespace DB
 {
 struct DictionaryStructure;
-struct IDictionaryBase;
+class IDictionaryBase;
 class ExternalDictionaries;
 
 class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage

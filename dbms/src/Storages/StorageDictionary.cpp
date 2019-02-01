@@ -61,7 +61,7 @@ BlockInputStreams StorageDictionary::read(
         if (db->getEngineName() != "Dictionary")
             throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
 
-        dictionary = db->tryGetDictionary(context, dictionary_name);
+        dictionary = db->getDictionary(context, dictionary_name);
     }
 
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};

@@ -240,7 +240,7 @@ DictionaryPtr DatabaseDictionary::tryGetDictionary(const Context & context, cons
             return it->second;
     }
 
-    return context.getExternalDictionaries().tryGetDictionary(dictionary_name);
+    return context.getExternalDictionaries().tryGetDictionary(name, dictionary_name);
 }
 
 
@@ -248,14 +248,18 @@ DictionaryPtr DatabaseDictionary::getDictionary(
     const Context & context,
     const String & dictionary_name) const
 {
+    (void)context;
+
     {
         std::lock_guard lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it != dictionaries.end())
             return it->second;
+
+        throw Exception("No such dictionary " + name + "." + dictionary_name, ErrorCodes::BAD_ARGUMENTS);
     }
 
-    return context.getExternalDictionaries().getDictionary(dictionary_name);
+    // return context.getExternalDictionaries().getDictionary(name, dictionary_name);
 }
 
 DatabaseIteratorPtr DatabaseDictionary::getIterator(const Context & /*context*/)

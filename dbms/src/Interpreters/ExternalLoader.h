@@ -121,7 +121,9 @@ public:
     void reload(const std::string & name);
 
     LoadablePtr getLoadable(const std::string & name) const;
+    LoadablePtr getLoadable(const std::string & database_name, const std::string & name) const;
     LoadablePtr tryGetLoadable(const std::string & name) const;
+    LoadablePtr tryGetLoadable(const std::string & database_name, const std::string & name) const;
 
 protected:
     virtual std::shared_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
@@ -219,6 +221,7 @@ private:
     TimePoint getNextUpdateTime(const LoadablePtr & loadable);
 
     LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
+    LoadablePtr getLoadableFromDatabasesImpl(const std::string & name, bool throw_on_error) const;
 };
 
 }

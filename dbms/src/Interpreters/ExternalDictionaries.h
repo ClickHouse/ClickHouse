@@ -35,9 +35,19 @@ public:
         return std::static_pointer_cast<IDictionaryBase>(getLoadable(name));
     }
 
+    DictionaryPtr getDictionary(const std::string & database_name, const std::string & dictionary_name) const
+    {
+        return std::static_pointer_cast<IDictionaryBase>(getLoadable(database_name, dictionary_name));
+    }
+
     DictionaryPtr tryGetDictionary(const std::string & name) const
     {
         return std::static_pointer_cast<IDictionaryBase>(tryGetLoadable(name));
+    }
+
+    DictionaryPtr tryGetDictionary(const std::string & database_name, const std::string & name) const
+    {
+        return std::static_pointer_cast<IDictionaryBase>(tryGetLoadable(database_name, name));
     }
 
 protected:

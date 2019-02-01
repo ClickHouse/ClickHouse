@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS;
 extern const int EXTERNAL_LOADABLE_IS_MISSING;
@@ -526,15 +527,57 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & 
 }
 
 
+ExternalLoader::LoadablePtr ExternalLoader::getLoadableFromDatabasesImpl(const std::string & name, bool throw_on_error) const
+{
+    std::lock_guard lock{database_objects_map_mutex};
+
+    auto it = loadable_objects_from_databases.find(name);
+    if (it == std::end(loadable_objects_from_databases))
+    {
+        if (throw_on_error)
+            throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+        return nullptr;
+    }
+
+    if (!it->second.loadable && throw_on_error)
+    {
+        if (it->second.exception)
+            std::rethrow_exception(it->second.exception);
+        else
+            throw Exception(object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    return it->second.loadable;
+}
+
+
+
 ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name) const
 {
     return getLoadableImpl(name, true);
 }
 
 
+ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & database_name, const std::string & name) const
+{
+    if (database_name.empty() || name.empty())
+        return {};
+
+    return getLoadableFromDatabasesImpl(database_name + '.' + name, false);
+}
+
+
 ExternalLoader::LoadablePtr ExternalLoader::tryGetLoadable(const std::string & name) const
 {
     return getLoadableImpl(name, false);
+}
+
+ExternalLoader::LoadablePtr ExternalLoader::tryGetLoadable(const std::string & database_name, const std::string & name) const
+{
+    if (database_name.empty() || name.empty())
+        return {};
+
+    return getLoadableFromDatabasesImpl(database_name + '.' + name, false);
 }
 
 
