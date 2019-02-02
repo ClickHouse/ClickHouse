@@ -598,7 +598,10 @@ void BaseDaemon::reloadConfiguration()
 
 
 /// For creating and destroying unique_ptr of incomplete type.
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+{
+    check_required_instructions();
+}
 
 
 BaseDaemon::~BaseDaemon()
@@ -606,6 +609,69 @@ BaseDaemon::~BaseDaemon()
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     signal_pipe.close();
+}
+
+
+enum class InstructionFail {
+    NONE = 0,
+    FAIL = 1,
+};
+
+
+static sigjmp_buf jmpbuf;
+
+
+static void sig_handler(int sig, siginfo_t * info, void * context)
+{
+    siglongjmp(jmpbuf, 1);
+}
+
+
+static void check_required_instructions(volatile InstructionFail * fail) {
+    std::cerr << "KEK\n";
+    *fail = InstructionFail::FAIL;
+    raise(SIGILL);
+}
+
+
+void BaseDaemon::check_required_instructions()
+{
+    struct sigaction sa, sa_old;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = sig_handler;
+    sa.sa_flags = SA_SIGINFO;
+    auto signal = SIGILL;
+    if (sigemptyset(&sa.sa_mask)) {
+        std::cerr << ":(\n";
+        exit(1);
+    }
+    if (sigaddset(&sa.sa_mask, signal)) {
+        std::cerr << ":(\n";
+        exit(1);
+    }
+    if (sigaction(signal, &sa, &sa_old)) {
+        std::cerr << ":(\n";
+        exit(1);
+    }
+
+    volatile InstructionFail fail = InstructionFail::NONE;
+
+    if (sigsetjmp(jmpbuf, 1)) {
+        std::cerr << ":(\n";
+        exit(1);
+    }
+
+    if (fail != InstructionFail::NONE) {
+        std::cerr << ":(\n";
+        exit(1);
+    }
+
+    ::check_required_instructions(&fail);
+
+    if (sigaction(signal, &sa_old, nullptr)) {
+        std::cerr << ":(\n";
+        exit(1);
+    }
 }
 
 
