@@ -11,6 +11,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -56,6 +57,8 @@
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
+#include <Poco/Util/HelpFormatter.h>
+
 #endif
 
 namespace CurrentMetrics
@@ -116,6 +119,18 @@ void Server::uninitialize()
     BaseDaemon::uninitialize();
 }
 
+int Server::run()
+{
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        helpFormatter.setHeader("clickhouse-server");
+        helpFormatter.format(std::cout);
+        return 0;
+    }
+    return Application::run();
+}
+
 void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
@@ -125,6 +140,16 @@ void Server::initialize(Poco::Util::Application & self)
 std::string Server::getDefaultCorePath() const
 {
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
+}
+
+void Server::defineOptions(Poco::Util::OptionSet & _options)
+{
+    _options.addOption(
+        Poco::Util::Option("help", "h", "show help and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("help"));
+    BaseDaemon::defineOptions(_options);
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
