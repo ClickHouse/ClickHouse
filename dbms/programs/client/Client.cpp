@@ -1520,7 +1520,14 @@ public:
             else
             {
                 in_external_group = false;
-                common_arguments.emplace_back(arg);
+                if (0 != strcmp(arg, "-C"))
+                {
+                    common_arguments.emplace_back(arg);
+                }
+                else
+                {
+                    common_arguments.emplace_back("-c");
+                }
             }
         }
 
