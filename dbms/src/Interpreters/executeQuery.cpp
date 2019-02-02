@@ -444,7 +444,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &)> set_content_type)
+    std::function<void(const String &)> set_content_type,
+    std::function<void(const String &)> set_query_id)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -526,6 +527,9 @@ void executeQuery(
 
             if (set_content_type)
                 set_content_type(out->getContentType());
+
+            if (set_query_id)
+                set_query_id(context.getClientInfo().current_query_id);
 
             copyData(*streams.in, *out);
         }
