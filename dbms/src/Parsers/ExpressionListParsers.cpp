@@ -231,7 +231,7 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     /// For the expression (subject BETWEEN left AND right)
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
-    ParserKeyword s_not{"NOT"};
+    ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
     ParserKeyword s_and("AND");
 
