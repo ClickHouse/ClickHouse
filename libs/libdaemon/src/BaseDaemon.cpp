@@ -596,7 +596,6 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-/// For creating and destroying unique_ptr of incomplete type.
 BaseDaemon::BaseDaemon()
 {
     check_required_instructions();
@@ -657,54 +656,54 @@ static void sig_ill_check_handler(int sig, siginfo_t * info, void * context)
 
 /// Check if necessary sse extensions are available by trying to execute some sse instructions.
 /// If instruction is unavailable, SIGILL will be sent by kernel.
-static void check_required_instructions(volatile InstructionFail * fail)
+static void check_required_instructions(volatile InstructionFail & fail)
 {
 #if __SSE3__
-    *fail = InstructionFail::SSE3;
+    fail = InstructionFail::SSE3;
     __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
 #endif
 
 #if __SSSE3__
-    *fail = InstructionFail::SSSE3;
+    fail = InstructionFail::SSSE3;
     __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
 
 #endif
 
 #if __SSE4_1__
-    *fail = InstructionFail::SSE4_1;
+    fail = InstructionFail::SSE4_1;
     __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
 #endif
 
 #if __SSE4_2__
-    *fail = InstructionFail::SSE4_2;
+    fail = InstructionFail::SSE4_2;
     __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
 #endif
 
 #if __AVX__
-    *fail = InstructionFail::AVX;
+    fail = InstructionFail::AVX;
     __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
 
 #if __AVX2__
-    *fail = InstructionFail::AVX2;
+    fail = InstructionFail::AVX2;
     __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
 
 #if __AVX512__
-    *fail = InstructionFail::AVX512;
+    fail = InstructionFail::AVX512;
     __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
 #endif
 
-    *fail = InstructionFail::NONE;
+    fail = InstructionFail::NONE;
 }
 
 
 void BaseDaemon::check_required_instructions()
 {
-    struct sigaction sa, sa_old;
-    memset(&sa, 0, sizeof(sa));
+    struct sigaction sa{};
+    struct sigaction sa_old;
     sa.sa_sigaction = sig_ill_check_handler;
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
@@ -728,7 +727,7 @@ void BaseDaemon::check_required_instructions()
         exit(1);
     }
 
-    ::check_required_instructions(&fail);
+    ::check_required_instructions(fail);
 
     if (sigaction(signal, &sa_old, nullptr)) {
         std::cerr << "Can not set signal handler\n";
