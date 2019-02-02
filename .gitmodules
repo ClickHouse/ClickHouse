@@ -64,3 +64,6 @@
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
 	url = https://github.com/mfontanini/cppkafka.git
+[submodule "contrib/brotli"]
+	path = contrib/brotli
+	url = https://github.com/google/brotli.git
