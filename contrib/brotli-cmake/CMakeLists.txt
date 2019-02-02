@@ -1,5 +1,5 @@
-set(BROTLI_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/brotli)
-set(BROTLI_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/brotli)
+set(BROTLI_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/brotli/c)
+set(BROTLI_BINARY_DIR ${CMAKE_BINARY_DIR}/contrib/brotli/c)
 
 set(SRCS
     ${BROTLI_SOURCE_DIR}/dec/bit_reader.c
@@ -27,6 +27,7 @@ set(SRCS
     ${BROTLI_SOURCE_DIR}/common/dictionary.c
     ${BROTLI_SOURCE_DIR}/common/transform.c
 )
-add_library(libbrotli STATIC ${SRCS})
 
-target_include_directories(libbrotli PUBLIC ${BROTLI_SOURCE_DIR}/c/include)
+add_library(brotli STATIC ${SRCS})
+
+target_include_directories(brotli PUBLIC ${BROTLI_SOURCE_DIR}/include)
