@@ -1,5 +1,11 @@
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 
+if(OS_FREEBSD AND SANITIZE STREQUAL "address")
+    # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
+    set(MISSING_INTERNAL_PROTOBUF_LIBRARY 1)
+    set(USE_INTERNAL_PROTOBUF_LIBRARY 0)
+endif()
+
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/protobuf/cmake/CMakeLists.txt")
    if(USE_INTERNAL_PROTOBUF_LIBRARY)
        message(WARNING "submodule contrib/protobuf is missing. to fix try run: \n git submodule update --init --recursive")
