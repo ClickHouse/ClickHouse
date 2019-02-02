@@ -61,7 +61,8 @@ struct ConnectionParameters
         {
             password = config.getString("password", "");
             /// if the value of --password is omitted, the password will be set implicitly to "\n"
-            if (password == "\n") password_prompt = true;
+            if (password == "\n")
+                password_prompt = true;
         }
         if (password_prompt)
         {
