@@ -563,7 +563,8 @@ void HTTPHandler::processQuery(
         context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type) { response.setContentType(content_type); });
+        [&response] (const String & content_type) { response.setContentType(content_type); },
+        [&response] (const String & current_query_id) { response.add("Query-Id", current_query_id); });
 
     if (used_output.hasDelayed())
     {
