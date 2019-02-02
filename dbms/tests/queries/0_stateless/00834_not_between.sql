@@ -1,1 +1,2 @@
 SELECT 2 NOT BETWEEN 2 + 1 AND 4 - 1;
+SELECT number FROM ( SELECT number FROM system.numbers LIMIT 10 ) WHERE number NOT BETWEEN 2 AND 4;
