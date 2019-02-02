@@ -1146,14 +1146,14 @@ public:
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
-        WhichDataType which_left {left_type};
+        WhichDataType which_left{left_type};
         WhichDataType which_right{right_type};
 
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
 
         bool date_and_datetime = (left_type != right_type) &&
-                which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
+            which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
 
         if (left_is_num && right_is_num && !date_and_datetime)
         {
