@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/ColumnDefault.h>
 
 
@@ -14,7 +14,7 @@ namespace DB
   * 3. Columns that materialized from other columns (materialized columns)
   * All three types of columns are materialized (not constants).
   */
-class AddingMissedBlockInputStream : public IProfilingBlockInputStream
+class AddingMissedBlockInputStream : public IBlockInputStream
 {
 public:
     AddingMissedBlockInputStream(
