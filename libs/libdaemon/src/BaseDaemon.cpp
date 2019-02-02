@@ -68,7 +68,6 @@
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
-
 /** For transferring information from signal handler to a separate thread.
   * If you need to do something serious in case of a signal (example: write a message to the log),
   *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
@@ -614,8 +613,38 @@ BaseDaemon::~BaseDaemon()
 
 enum class InstructionFail {
     NONE = 0,
-    FAIL = 1,
+    SSE3 = 1,
+    SSSE3 = 2,
+    SSE4_1 = 3,
+    SSE4_2 = 4,
+    AVX = 5,
+    AVX2 = 6,
+    AVX512 = 7
 };
+
+DB::String instruction_fail_to_string(InstructionFail fail)
+{
+    switch(fail)
+    {
+        case InstructionFail::NONE:
+            return "NONE";
+        case InstructionFail::SSE3:
+            return "SSE3";
+        case InstructionFail::SSSE3:
+            return "SSSE3";
+        case InstructionFail::SSE4_1:
+            return "SSE4.1";
+        case InstructionFail::SSE4_2:
+            return "SSE4.2";
+        case InstructionFail::AVX:
+            return "AVX";
+        case InstructionFail::AVX2:
+            return "AVX2";
+        case InstructionFail::AVX512:
+            return "AVX512";
+    }
+    return "UNKNOWN";
+}
 
 
 static sigjmp_buf jmpbuf;
@@ -626,11 +655,49 @@ static void sig_ill_check_handler(int sig, siginfo_t * info, void * context)
     siglongjmp(jmpbuf, 1);
 }
 
+/// Check if necessary sse extensions are available by trying to execute some sse instructions.
+/// If instruction is unavailable, SIGILL will be sent by kernel.
+static void check_required_instructions(volatile InstructionFail * fail)
+{
+#if __SSE3__
+    *fail = InstructionFail::SSE3;
+    __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
+#endif
 
-static void check_required_instructions(volatile InstructionFail * fail) {
-    std::cerr << "KEK\n";
-    *fail = InstructionFail::FAIL;
-    raise(SIGILL);
+#if __SSSE3__
+    *fail = InstructionFail::SSSE3;
+    __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
+
+#endif
+
+#if __SSE4_1__
+    *fail = InstructionFail::SSE4_1;
+    __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSE4_2__
+    *fail = InstructionFail::SSE4_2;
+    __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __AVX__
+    *fail = InstructionFail::AVX;
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+
+#if __AVX2__
+    *fail = InstructionFail::AVX2;
+    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+
+#if __AVX512__
+    *fail = InstructionFail::AVX512;
+    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
+#endif
+
+    *fail = InstructionFail::NONE;
 }
 
 
@@ -657,17 +724,7 @@ void BaseDaemon::check_required_instructions()
     volatile InstructionFail fail = InstructionFail::NONE;
 
     if (sigsetjmp(jmpbuf, 1)) {
-        std::cerr << "Instruction check fail ";
-        switch (fail)
-        {
-            case InstructionFail::FAIL:
-                std::cerr << "FAIL";
-                break;
-            default:
-                std::cerr << "Unknown";
-                break;
-        }
-        std::cerr << "\n";
+        std::cerr << "Instruction check fail " << instruction_fail_to_string(fail) << "\n";
         exit(1);
     }
 
