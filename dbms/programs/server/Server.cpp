@@ -122,7 +122,6 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter helpFormatter(Server::options());
-        helpFormatter.setHeader("clickhouse-server");
         helpFormatter.format(std::cout);
         return 0;
     }
