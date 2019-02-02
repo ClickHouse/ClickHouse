@@ -122,6 +122,10 @@ int Server::run()
     if (config().hasOption("help"))
     {
         Poco::Util::HelpFormatter helpFormatter(Server::options());
+        std::stringstream header;
+        header << commandName() << " [OPTION] [-- [ARG]...]\n";
+        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
+        helpFormatter.setHeader(header.str());
         helpFormatter.format(std::cout);
         return 0;
     }
