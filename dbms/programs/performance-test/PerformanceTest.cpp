@@ -128,6 +128,32 @@ UInt64 PerformanceTest::calculateMaxExecTime() const
     return result;
 }
 
+
+void PerformanceTest::prepare() const
+{
+    for (const auto & query : test_info.create_queries)
+    {
+        LOG_INFO(log, "Executing create query '" << query << "'");
+        connection.sendQuery(query);
+    }
+
+    for (const auto & query : test_info.fill_queries)
+    {
+        LOG_INFO(log, "Executing fill query '" << query << "'");
+        connection.sendQuery(query);
+    }
+
+}
+
+void PerformanceTest::finish() const
+{
+    for (const auto & query : test_info.drop_queries)
+    {
+        LOG_INFO(log, "Executing drop query '" << query << "'");
+        connection.sendQuery(query);
+    }
+}
+
 std::vector<TestStats> PerformanceTest::execute()
 {
     std::vector<TestStats> statistics_by_run;
