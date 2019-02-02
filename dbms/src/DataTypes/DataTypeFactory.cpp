@@ -7,7 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
 #include <Common/StringUtils/StringUtils.h>
-
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -87,7 +87,11 @@ DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr 
             return it->second(parameters);
     }
 
-    throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
+    auto hints = this->getHints(family_name);
+    if (!hints.empty())
+        throw Exception("Unknown data type family: " + family_name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_TYPE);
+    else
+        throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
 
