@@ -2,7 +2,7 @@
 
 #include <string>
 #include <Core/Block.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <mysqlxx/PoolWithFailover.h>
 #include <mysqlxx/Query.h>
 #include "ExternalResultDescription.h"
@@ -11,7 +11,7 @@
 namespace DB
 {
 /// Allows processing results of a MySQL query as a sequence of Blocks, simplifies chaining
-class MySQLBlockInputStream final : public IProfilingBlockInputStream
+class MySQLBlockInputStream final : public IBlockInputStream
 {
 public:
     MySQLBlockInputStream(

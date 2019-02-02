@@ -2,6 +2,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/ProtobufWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
@@ -134,9 +135,24 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
 
 
 template <typename T>
+void DataTypeDecimal<T>::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    protobuf.writeDecimal(static_cast<const ColumnType &>(column).getData()[row_num], scale);
+}
+
+
+template <typename T>
 Field DataTypeDecimal<T>::getDefault() const
 {
     return DecimalField(T(0), scale);
+}
+
+
+template <typename T>
+DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
+{
+    using PromotedType = DataTypeDecimal<Decimal128>;
+    return std::make_shared<PromotedType>(PromotedType::maxPrecision(), scale);
 }
 
 

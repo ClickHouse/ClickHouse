@@ -1,0 +1,47 @@
+syntax = "proto2";
+
+message Syntax2Person {
+  enum Gender {
+    female = 0;
+    male = 1;
+  };
+
+  enum ZodiacSign {
+    aries = 0;
+    taurus = 1;
+    gemini = 2;
+    cancer = 3;
+    leo = 4;
+    virgo = 5;
+    libra = 6;
+    scorpius = 7;
+    sagittarius = 8;
+    capricorn = 9;
+    aquarius = 10;
+    pisces = 11;
+  };
+
+  required string uuid = 1;
+  required string name = 2;
+  required string surname = 3;
+  required Gender gender = 4;
+  required uint32 birthDate = 5;
+  optional bytes photo = 6;
+  optional string phoneNumber = 7;
+  optional bool isOnline = 8;
+  optional fixed32 visitTime = 9;
+  optional uint32 age = 10;
+  optional ZodiacSign zodiacSign = 11;
+  repeated string songs = 12;
+  repeated uint32 color = 13;
+  optional string hometown = 14 [default='Moscow'];
+  repeated float location = 15 [packed=true];
+  optional double pi = 16;
+  optional double lotteryWin = 17;
+  optional float someRatio = 18;
+  optional float temperature = 19;
+  optional sint64 randomBigNumber = 20;
+  optional string newFieldStr = 21 [default='abc'];
+  optional int32 newFieldInt = 22 [default=-11];
+  optional bool newBool = 23 [default=true];
+};

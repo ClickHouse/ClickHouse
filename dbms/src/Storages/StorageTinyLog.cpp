@@ -20,7 +20,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Columns/ColumnArray.h>
@@ -53,7 +53,7 @@ namespace ErrorCodes
 }
 
 
-class TinyLogBlockInputStream final : public IProfilingBlockInputStream
+class TinyLogBlockInputStream final : public IBlockInputStream
 {
 public:
     TinyLogBlockInputStream(size_t block_size_, const NamesAndTypesList & columns_, StorageTinyLog & storage_, size_t max_read_buffer_size_)
