@@ -598,7 +598,7 @@ void BaseDaemon::reloadConfiguration()
 
 BaseDaemon::BaseDaemon()
 {
-    check_required_instructions();
+    checkRequiredInstructions();
 }
 
 
@@ -642,21 +642,21 @@ DB::String instruction_fail_to_string(InstructionFail fail)
         case InstructionFail::AVX512:
             return "AVX512";
     }
-    return "UNKNOWN";
+    __builtin_unreachable();
 }
 
 
 static sigjmp_buf jmpbuf;
 
 
-static void sig_ill_check_handler(int sig, siginfo_t * info, void * context)
+static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
 {
     siglongjmp(jmpbuf, 1);
 }
 
 /// Check if necessary sse extensions are available by trying to execute some sse instructions.
 /// If instruction is unavailable, SIGILL will be sent by kernel.
-static void check_required_instructions(volatile InstructionFail & fail)
+static void checkRequiredInstructions(volatile InstructionFail & fail)
 {
 #if __SSE3__
     fail = InstructionFail::SSE3;
@@ -684,12 +684,10 @@ static void check_required_instructions(volatile InstructionFail & fail)
     __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
-
 #if __AVX2__
     fail = InstructionFail::AVX2;
     __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
 #endif
-
 
 #if __AVX512__
     fail = InstructionFail::AVX512;
@@ -700,11 +698,11 @@ static void check_required_instructions(volatile InstructionFail & fail)
 }
 
 
-void BaseDaemon::check_required_instructions()
+void BaseDaemon::checkRequiredInstructions()
 {
     struct sigaction sa{};
-    struct sigaction sa_old;
-    sa.sa_sigaction = sig_ill_check_handler;
+    struct sigaction sa_old{};
+    sa.sa_sigaction = sigIllCheckHandler;
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
     if (sigemptyset(&sa.sa_mask)) {
@@ -723,11 +721,11 @@ void BaseDaemon::check_required_instructions()
     volatile InstructionFail fail = InstructionFail::NONE;
 
     if (sigsetjmp(jmpbuf, 1)) {
-        std::cerr << "Instruction check fail " << instruction_fail_to_string(fail) << "\n";
+        std::cerr << "Instruction check fail. There is no " << instruction_fail_to_string(fail) << " instruction set\n";
         exit(1);
     }
 
-    ::check_required_instructions(fail);
+    ::checkRequiredInstructions(fail);
 
     if (sigaction(signal, &sa_old, nullptr)) {
         std::cerr << "Can not set signal handler\n";
