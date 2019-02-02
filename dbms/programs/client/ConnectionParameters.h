@@ -49,7 +49,6 @@ struct ConnectionParameters
 
         default_database = config.getString("database", "");
         user = config.getString("user", "");
-
         if (config.getBool("ask-password", false))
         {
             if (config.has("password"))
@@ -67,6 +66,18 @@ struct ConnectionParameters
         else
         {
             password = config.getString("password", "");
+            if (password == "")
+            {
+                // std::cout << "--password was used but set to empty string, switching to password prompt.";
+                std::cout << "Password for user " << user << ": ";
+                SetTerminalEcho(false);
+
+                SCOPE_EXIT({
+                    SetTerminalEcho(true);
+                });
+                std::getline(std::cin, password);
+                std::cout << std::endl;
+            }
         }
 
         compression = config.getBool("compression", true)

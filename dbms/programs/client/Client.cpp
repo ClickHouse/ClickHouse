@@ -1539,7 +1539,7 @@ public:
             ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
-            ("password", po::value<std::string>(), "password")
+            ("password", po::value<std::string>()->implicit_value(""), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1577,13 +1577,11 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
-
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
-
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
