@@ -228,7 +228,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// For the expression (subject BETWEEN left AND right)
+    /// For the expression (subject [NOT] BETWEEN left AND right)
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
     ParserKeyword s_not("NOT");
@@ -255,40 +255,46 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (!elem_parser.parse(pos, right, expected))
             return false;
 
-        bool is_not = false;
-        if (s_not.ignore(pos, expected))
-            is_not = true;
-
-        /// AND function
         auto f_combined_expression = std::make_shared<ASTFunction>();
         auto args_combined_expression = std::make_shared<ASTExpressionList>();
 
-        /// >=
-        auto f_ge = std::make_shared<ASTFunction>();
-        auto args_ge = std::make_shared<ASTExpressionList>();
+        /// [NOT] BETWEEN left AND right
+        auto f_left_expr = std::make_shared<ASTFunction>();
+        auto args_left_expr = std::make_shared<ASTExpressionList>();
 
-        /// <=
-        auto f_le = std::make_shared<ASTFunction>();
-        auto args_le = std::make_shared<ASTExpressionList>();
+        auto f_right_expr = std::make_shared<ASTFunction>();
+        auto args_right_expr = std::make_shared<ASTExpressionList>();
 
-        args_ge->children.emplace_back(subject);
-        args_ge->children.emplace_back(left);
+        args_left_expr->children.emplace_back(subject);
+        args_left_expr->children.emplace_back(left);
 
-        args_le->children.emplace_back(subject);
-        args_le->children.emplace_back(right);
+        args_right_expr->children.emplace_back(subject);
+        args_right_expr->children.emplace_back(right);
 
-        f_ge->name = is_not ? "less" : "greaterOrEquals";
-        f_ge->arguments = args_ge;
-        f_ge->children.emplace_back(f_ge->arguments);
+        // NOT BETWEEN
+        if (s_not.ignore(pos, expected))
+        {
+            f_left_expr->name = "less";
+            f_right_expr->name = "greater";
+            f_combined_expression->name = "or";
+        }
+        // BETWEEN
+        else
+        {
+            f_left_expr->name = "greaterOrEquals";
+            f_right_expr->name = "lessOrEquals";
+            f_combined_expression->name = "and";
+        }
 
-        f_le->name = is_not ? "greater" : "lessOrEquals";
-        f_le->arguments = args_le;
-        f_le->children.emplace_back(f_le->arguments);
+        f_left_expr->arguments = args_left_expr;
+        f_left_expr->children.emplace_back(f_left_expr->arguments);
 
-        args_combined_expression->children.emplace_back(f_ge);
-        args_combined_expression->children.emplace_back(f_le);
+        f_right_expr->arguments = args_right_expr;
+        f_right_expr->children.emplace_back(f_right_expr->arguments);
 
-        f_combined_expression->name = is_not ? "or" : "and";
+        args_combined_expression->children.emplace_back(f_left_expr);
+        args_combined_expression->children.emplace_back(f_right_expr);
+
         f_combined_expression->arguments = args_combined_expression;
         f_combined_expression->children.emplace_back(f_combined_expression->arguments);
 
