@@ -48,13 +48,14 @@ struct ConnectionParameters
                 is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
         default_database = config.getString("database", "");
-        user = config.getString("user", "");
+        /// changed the default value to "default" to fix the issue when the user in the prompt is blank
+        user = config.getString("user", "default");
         if (config.getBool("ask-password", false))
         {
             if (config.has("password"))
                 throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
 
-            std::cout << "Password for user " << user << ": ";
+            std::cout << "Password for user (" << user << "): ";
             SetTerminalEcho(false);
 
             SCOPE_EXIT({
@@ -66,10 +67,10 @@ struct ConnectionParameters
         else
         {
             password = config.getString("password", "");
-            if (password == "")
+            /// if the value of --password is omitted, the password will set implicitly to "\n"
+            if (password == "\n")
             {
-                // std::cout << "--password was used but set to empty string, switching to password prompt.";
-                std::cout << "Password for user " << user << ": ";
+                std::cout << "Password for user (" << user << "): ";
                 SetTerminalEcho(false);
 
                 SCOPE_EXIT({
