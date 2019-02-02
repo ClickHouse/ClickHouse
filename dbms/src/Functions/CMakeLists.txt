@@ -36,6 +36,7 @@ endif ()
 
 if (USE_ICU)
     target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
+    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
 endif ()
 
 if (USE_VECTORCLASS)
