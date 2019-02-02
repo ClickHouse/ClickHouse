@@ -9,15 +9,16 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/brotli/c/include/brotli/decode.
 endif ()
 
 if (NOT USE_INTERNAL_BROTLI_LIBRARY)
-    find_library (BROTLI_LIBRARY libbrotli)
+    find_library (BROTLI_LIBRARY brotli)
     find_path (BROTLI_INCLUDE_DIR NAMES decode.h encode.h port.h types.h PATHS ${BROTLI_INCLUDE_PATHS})
 endif ()
 
 if (BROTLI_LIBRARY AND BROTLI_INCLUDE_DIR)
 elseif (NOT MISSING_INTERNAL_BROTLI_LIBRARY)
-    set (BROTLI_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libbrotli/c/include)
+    set (BROTLI_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/brotli/c/include)
     set (USE_INTERNAL_BROTLI_LIBRARY 1)
-    set (BROTLI_LIBRARY libbrotli)
+    set (BROTLI_LIBRARY brotli)
+    set (USE_BROTLI 1)
 endif ()
 
 message (STATUS "Using brotli: ${BROTLI_INCLUDE_DIR} : ${BROTLI_LIBRARY}")
