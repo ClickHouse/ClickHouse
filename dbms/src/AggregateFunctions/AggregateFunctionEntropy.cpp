@@ -7,7 +7,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -26,23 +25,27 @@ AggregateFunctionPtr createAggregateFunctionEntropy(const std::string & name, co
     {
         if (which.isUInt64())
         {
-            return std::make_shared<AggregateFunctionEntropy<UInt64, UInt64>>();
+            return std::make_shared<AggregateFunctionEntropy<UInt64>>();
         }
         else if (which.isInt64())
         {
-            return std::make_shared<AggregateFunctionEntropy<Int64, Int64>>();
+            return std::make_shared<AggregateFunctionEntropy<Int64>>();
         }
         else if (which.isInt32())
         {
-            return std::make_shared<AggregateFunctionEntropy<Int32, Int32>>();
+            return std::make_shared<AggregateFunctionEntropy<Int32>>();
         }
         else if (which.isUInt32())
         {
-            return std::make_shared<AggregateFunctionEntropy<UInt32, UInt32>>();
+            return std::make_shared<AggregateFunctionEntropy<UInt32>>();
+        }
+        else if (which.isUInt128())
+        {
+            return std::make_shared<AggregateFunctionEntropy<UInt128, true>>();
         }
     }
 
-    return std::make_shared<AggregateFunctionEntropy<UInt128, String>>();
+    return std::make_shared<AggregateFunctionEntropy<UInt128>>();
 }
 
 }
