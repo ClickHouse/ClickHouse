@@ -128,7 +128,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
-    throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    auto hints = this->getHints(name);
+    if (!hints.empty())
+        throw Exception("Unknown aggregate function " + name + ". Maybe you meant: " + toString(hints), ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+    else
+        throw Exception("Unknown aggregate function " + name, ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 }
 
 
