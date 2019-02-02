@@ -50,11 +50,21 @@ struct ConnectionParameters
         default_database = config.getString("database", "");
         /// changed the default value to "default" to fix the issue when the user in the prompt is blank
         user = config.getString("user", "default");
+        bool password_prompt = false;
         if (config.getBool("ask-password", false))
         {
             if (config.has("password"))
                 throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
-
+            password_prompt = true;
+        }
+        else
+        {
+            password = config.getString("password", "");
+            /// if the value of --password is omitted, the password will be set implicitly to "\n"
+            if (password == "\n") password_prompt = true;
+        }
+        if (password_prompt)
+        {
             std::cout << "Password for user (" << user << "): ";
             SetTerminalEcho(false);
 
@@ -64,23 +74,6 @@ struct ConnectionParameters
             std::getline(std::cin, password);
             std::cout << std::endl;
         }
-        else
-        {
-            password = config.getString("password", "");
-            /// if the value of --password is omitted, the password will set implicitly to "\n"
-            if (password == "\n")
-            {
-                std::cout << "Password for user (" << user << "): ";
-                SetTerminalEcho(false);
-
-                SCOPE_EXIT({
-                    SetTerminalEcho(true);
-                });
-                std::getline(std::cin, password);
-                std::cout << std::endl;
-            }
-        }
-
         compression = config.getBool("compression", true)
             ? Protocol::Compression::Enable
             : Protocol::Compression::Disable;
