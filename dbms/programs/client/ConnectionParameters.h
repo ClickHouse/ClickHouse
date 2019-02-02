@@ -66,7 +66,7 @@ struct ConnectionParameters
         if (password_prompt)
         {
             std::cout << "Password for user (" << user << "): ";
-            SetTerminalEcho(false);
+            setTerminalEcho(false);
 
             SCOPE_EXIT({
                 setTerminalEcho(true);
