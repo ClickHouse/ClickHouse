@@ -3,6 +3,7 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/File.h>
+#include <iostream>
 #include "ConfigProcessor.h"
 
 namespace DB
@@ -22,7 +23,13 @@ bool configReadClient(Poco::Util::LayeredConfiguration & config, const std::stri
     if (!config_path.empty())
     {
         ConfigProcessor config_processor(config_path);
-        auto loaded_config = config_processor.loadConfig();
+        ConfigProcessor::LoadedConfig loaded_config;
+        try {
+            loaded_config = config_processor.loadConfig();
+        } catch (const Poco::Exception& ex) {
+            std::cerr << "problem with file: " << config_path << std::endl;
+            ex.rethrow();
+        }
         config.add(loaded_config.configuration);
         return true;
     }
