@@ -1717,11 +1717,11 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-    DB::Client client;
-
     try
     {
+        DB::Client client;
         client.init(argc, argv);
+        return client.run();
     }
     catch (const boost::program_options::error & e)
     {
@@ -1733,6 +1733,4 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
-
-    return client.run();
 }
