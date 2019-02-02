@@ -621,7 +621,7 @@ enum class InstructionFail {
 static sigjmp_buf jmpbuf;
 
 
-static void sig_handler(int sig, siginfo_t * info, void * context)
+static void sig_ill_check_handler(int sig, siginfo_t * info, void * context)
 {
     siglongjmp(jmpbuf, 1);
 }
@@ -638,38 +638,43 @@ void BaseDaemon::check_required_instructions()
 {
     struct sigaction sa, sa_old;
     memset(&sa, 0, sizeof(sa));
-    sa.sa_sigaction = sig_handler;
+    sa.sa_sigaction = sig_ill_check_handler;
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
     if (sigemptyset(&sa.sa_mask)) {
-        std::cerr << ":(\n";
+        std::cerr << "Can not set signal handler\n";
         exit(1);
     }
     if (sigaddset(&sa.sa_mask, signal)) {
-        std::cerr << ":(\n";
+        std::cerr << "Can not set signal handler\n";
         exit(1);
     }
     if (sigaction(signal, &sa, &sa_old)) {
-        std::cerr << ":(\n";
+        std::cerr << "Can not set signal handler\n";
         exit(1);
     }
 
     volatile InstructionFail fail = InstructionFail::NONE;
 
     if (sigsetjmp(jmpbuf, 1)) {
-        std::cerr << ":(\n";
-        exit(1);
-    }
-
-    if (fail != InstructionFail::NONE) {
-        std::cerr << ":(\n";
+        std::cerr << "Instruction check fail ";
+        switch (fail)
+        {
+            case InstructionFail::FAIL:
+                std::cerr << "FAIL";
+                break;
+            default:
+                std::cerr << "Unknown";
+                break;
+        }
+        std::cerr << "\n";
         exit(1);
     }
 
     ::check_required_instructions(&fail);
 
     if (sigaction(signal, &sa_old, nullptr)) {
-        std::cerr << ":(\n";
+        std::cerr << "Can not set signal handler\n";
         exit(1);
     }
 }
