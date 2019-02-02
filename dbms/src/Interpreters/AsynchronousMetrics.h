@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <unordered_map>
 #include <string>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -43,7 +44,7 @@ private:
     Container container;
     mutable std::mutex container_mutex;
 
-    std::thread thread;
+    ThreadFromGlobalPool thread;
 
     void run();
     void update();

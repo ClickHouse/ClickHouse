@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -20,7 +20,7 @@ namespace DB
   *  throw if they are const in result and non const in source,
   *   or if they are const and have different values.
   */
-class ConvertingBlockInputStream : public IProfilingBlockInputStream
+class ConvertingBlockInputStream : public IBlockInputStream
 {
 public:
     enum class MatchColumnsMode
