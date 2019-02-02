@@ -234,7 +234,7 @@ private:
 
     /// Check SSE and others instructions availability
     /// Calls exit on fail
-    void check_required_instructions();
+    void checkRequiredInstructions();
 };
 
 
