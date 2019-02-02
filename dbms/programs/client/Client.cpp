@@ -1539,7 +1539,7 @@ public:
             ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
-            ("password", po::value<std::string>()->implicit_value(""), "password")
+            ("password", po::value<std::string>()->implicit_value("\n"), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1582,6 +1582,7 @@ public:
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
+        std::cout << "count optinos" << options.count("password") << std::endl;
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
