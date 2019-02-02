@@ -260,8 +260,8 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
             is_not = true;
 
         /// AND function
-        auto f_and = std::make_shared<ASTFunction>();
-        auto args_and = std::make_shared<ASTExpressionList>();
+        auto f_combined_expression = std::make_shared<ASTFunction>();
+        auto args_combined_expression = std::make_shared<ASTExpressionList>();
 
         /// >=
         auto f_ge = std::make_shared<ASTFunction>();
@@ -285,14 +285,14 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         f_le->arguments = args_le;
         f_le->children.emplace_back(f_le->arguments);
 
-        args_and->children.emplace_back(f_ge);
-        args_and->children.emplace_back(f_le);
+        args_combined_expression->children.emplace_back(f_ge);
+        args_combined_expression->children.emplace_back(f_le);
 
-        f_and->name = "and";
-        f_and->arguments = args_and;
-        f_and->children.emplace_back(f_and->arguments);
+        f_combined_expression->name = is_not ? "or" : "and";
+        f_combined_expression->arguments = args_combined_expression;
+        f_combined_expression->children.emplace_back(f_combined_expression->arguments);
 
-        node = f_and;
+        node = args_combined_expression;
     }
 
     return true;
