@@ -28,6 +28,10 @@ void registerFunctionArrayEnumerateUniq(FunctionFactory &);
 void registerFunctionArrayEnumerateDense(FunctionFactory &);
 void registerFunctionArrayUniq(FunctionFactory &);
 void registerFunctionArrayDistinct(FunctionFactory &);
+/// my code
+void registerFunctionArrayInterpolationLinear(FunctionFactory &);
+/// my code
+
 
 void registerFunctionsArray(FunctionFactory & factory)
 {
@@ -56,6 +60,10 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArrayEnumerateDense(factory);
     registerFunctionArrayUniq(factory);
     registerFunctionArrayDistinct(factory);
+/// my code
+    registerFunctionArrayInterpolationLinear(factory);
+/// my code	
+
 }
 
 }
