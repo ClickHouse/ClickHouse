@@ -231,6 +231,7 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     /// For the expression (subject BETWEEN left AND right)
     ///  create an AST the same as for (subject> = left AND subject <= right).
 
+    ParserKeyword s_not{"NOT"};
     ParserKeyword s_between("BETWEEN");
     ParserKeyword s_and("AND");
 
@@ -254,6 +255,10 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         if (!elem_parser.parse(pos, right, expected))
             return false;
 
+        bool is_not = false;
+        if (s_not.ignore(pos, expected))
+            is_not = true;
+
         /// AND function
         auto f_and = std::make_shared<ASTFunction>();
         auto args_and = std::make_shared<ASTExpressionList>();
@@ -272,11 +277,11 @@ bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         args_le->children.emplace_back(subject);
         args_le->children.emplace_back(right);
 
-        f_ge->name = "greaterOrEquals";
+        f_ge->name = is_not ? "less" : "greaterOrEquals";
         f_ge->arguments = args_ge;
         f_ge->children.emplace_back(f_ge->arguments);
 
-        f_le->name = "lessOrEquals";
+        f_le->name = is_not ? "greater" : "lessOrEquals";
         f_le->arguments = args_le;
         f_le->children.emplace_back(f_le->arguments);
 
