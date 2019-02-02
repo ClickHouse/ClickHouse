@@ -1596,7 +1596,6 @@ public:
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
-        std::cout << "count optinos" << options.count("password") << std::endl;
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
