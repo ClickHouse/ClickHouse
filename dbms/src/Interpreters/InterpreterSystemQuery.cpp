@@ -185,7 +185,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::STOP_REPLICATED_SENDS:
             startStopAction(context, query, ActionLocks::PartsSend, false);
             break;
-        case Type::START_REPLICATEDS_SENDS:
+        case Type::START_REPLICATED_SENDS:
             startStopAction(context, query, ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
