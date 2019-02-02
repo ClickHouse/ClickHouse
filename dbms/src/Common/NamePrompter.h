@@ -2,14 +2,13 @@
 
 #include <Core/Types.h>
 
-#include <cctype>
 #include <algorithm>
+#include <cctype>
 #include <queue>
 #include <utility>
 
 namespace DB
 {
-
 template <size_t MistakeFactor, size_t MaxNumHints>
 class NamePrompter
 {
@@ -26,7 +25,6 @@ public:
     }
 
 private:
-
     static size_t levenshteinDistance(const String & lhs, const String & rhs)
     {
         size_t n = lhs.size();
@@ -58,7 +56,8 @@ private:
         if (prompting_strings[ind].size() <= name.size() + MistakeFactor && prompting_strings[ind].size() + MistakeFactor >= name.size())
         {
             size_t distance = levenshteinDistance(prompting_strings[ind], name);
-            if (distance <= MistakeFactor) {
+            if (distance <= MistakeFactor)
+            {
                 queue.emplace(distance, ind);
                 if (queue.size() > MaxNumHints)
                     queue.pop();
@@ -79,7 +78,6 @@ private:
         std::reverse(ans.begin(), ans.end());
         return ans;
     }
-
 };
 
 }
