@@ -166,3 +166,20 @@ template <> constexpr bool IsDecimalNumber<Decimal64> = true;
 template <> constexpr bool IsDecimalNumber<Decimal128> = true;
 
 }
+
+/// Specialization of `std::hash` for the Decimal<T> types.
+namespace std
+{
+    template <typename T>
+    struct hash<DB::Decimal<T>> { size_t operator()(const DB::Decimal<T> & x) const { return hash<T>()(x.value); } };
+
+    template <>
+    struct hash<DB::Decimal128>
+    {
+        size_t operator()(const DB::Decimal128 & x) const
+        {
+            return std::hash<DB::Int64>()(x.value >> 64)
+                ^ std::hash<DB::Int64>()(x.value & std::numeric_limits<DB::UInt64>::max());
+        }
+    };
+}

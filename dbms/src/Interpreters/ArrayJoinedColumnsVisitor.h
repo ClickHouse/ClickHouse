@@ -10,6 +10,8 @@
 
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Aliases.h>
 
 
 namespace DB
@@ -28,8 +30,6 @@ class ArrayJoinedColumnsMatcher
 public:
     struct Data
     {
-        using Aliases = std::unordered_map<String, ASTPtr>;
-
         const Aliases & aliases;
         NameToNameMap & array_join_name_to_alias;
         NameToNameMap & array_join_alias_to_name;
@@ -96,7 +96,7 @@ private:
         NameToNameMap & array_join_alias_to_name = data.array_join_alias_to_name;
         NameToNameMap & array_join_result_to_source = data.array_join_result_to_source;
 
-        if (!getColumnIdentifierName(node))
+        if (!IdentifierSemantic::getColumnName(node))
             return;
 
         auto splitted = Nested::splitName(node.name);  /// ParsedParams, Key1

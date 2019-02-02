@@ -1,5 +1,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
+#include <Formats/ProtobufWriter.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
@@ -220,6 +221,13 @@ void DataTypeEnum<Type>::deserializeBinaryBulk(
     x.resize(initial_size + limit);
     const auto size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
     x.resize(initial_size + size / sizeof(FieldType));
+}
+
+template <typename Type>
+void DataTypeEnum<Type>::serializeProtobuf(const IColumn & column, size_t row_num,  ProtobufWriter & protobuf) const
+{
+    protobuf.prepareEnumMapping(values);
+    protobuf.writeEnum(static_cast<const ColumnType &>(column).getData()[row_num]);
 }
 
 template <typename Type>

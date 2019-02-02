@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <common/SetTerminalEcho.h>
+#include <common/setTerminalEcho.h>
 #include <ext/scope_guard.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -69,7 +69,7 @@ struct ConnectionParameters
             SetTerminalEcho(false);
 
             SCOPE_EXIT({
-                SetTerminalEcho(true);
+                setTerminalEcho(true);
             });
             std::getline(std::cin, password);
             std::cout << std::endl;
