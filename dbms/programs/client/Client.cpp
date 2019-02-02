@@ -1651,7 +1651,7 @@ public:
 #undef EXTRACT_SETTING
 
         if (options.count("config-file") && options.count("config"))
-            throw Exception("Two o more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
 
         /// Save received data into the internal config.
         if (options.count("config-file"))
