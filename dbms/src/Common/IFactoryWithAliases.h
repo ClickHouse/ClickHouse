@@ -108,8 +108,8 @@ public:
 
     std::vector<String> getHints(const String & name) const
     {
-        static const auto registeredNames = getAllRegisteredNames();
-        return prompter.getHints(name, registeredNames);
+        static const auto registered_names = getAllRegisteredNames();
+        return prompter.getHints(name, registered_names);
     }
 
     virtual ~IFactoryWithAliases() {}
