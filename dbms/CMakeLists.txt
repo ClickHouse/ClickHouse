@@ -206,6 +206,8 @@ target_link_libraries (clickhouse_common_io
     ${CMAKE_DL_LIBS}
 )
 
+target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
+
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 
 if(CPUID_LIBRARY)
