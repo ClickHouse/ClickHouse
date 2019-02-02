@@ -610,7 +610,8 @@ BaseDaemon::~BaseDaemon()
 }
 
 
-enum class InstructionFail {
+enum class InstructionFail
+{
     NONE = 0,
     SSE3 = 1,
     SSSE3 = 2,
@@ -621,7 +622,7 @@ enum class InstructionFail {
     AVX512 = 7
 };
 
-DB::String instruction_fail_to_string(InstructionFail fail)
+static std::string instructionFailToString(InstructionFail fail)
 {
     switch(fail)
     {
@@ -647,7 +648,6 @@ DB::String instruction_fail_to_string(InstructionFail fail)
 
 
 static sigjmp_buf jmpbuf;
-
 
 static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
 {
@@ -705,29 +705,26 @@ void BaseDaemon::checkRequiredInstructions()
     sa.sa_sigaction = sigIllCheckHandler;
     sa.sa_flags = SA_SIGINFO;
     auto signal = SIGILL;
-    if (sigemptyset(&sa.sa_mask)) {
-        std::cerr << "Can not set signal handler\n";
-        exit(1);
-    }
-    if (sigaddset(&sa.sa_mask, signal)) {
-        std::cerr << "Can not set signal handler\n";
-        exit(1);
-    }
-    if (sigaction(signal, &sa, &sa_old)) {
+    if (sigemptyset(&sa.sa_mask) != 0
+        || sigaddset(&sa.sa_mask, signal) != 0
+        || sigaction(signal, &sa, &sa_old) != 0)
+    {
         std::cerr << "Can not set signal handler\n";
         exit(1);
     }
 
     volatile InstructionFail fail = InstructionFail::NONE;
 
-    if (sigsetjmp(jmpbuf, 1)) {
-        std::cerr << "Instruction check fail. There is no " << instruction_fail_to_string(fail) << " instruction set\n";
+    if (sigsetjmp(jmpbuf, 1))
+    {
+        std::cerr << "Instruction check fail. There is no " << instructionFailToString(fail) << " instruction set\n";
         exit(1);
     }
 
     ::checkRequiredInstructions(fail);
 
-    if (sigaction(signal, &sa_old, nullptr)) {
+    if (sigaction(signal, &sa_old, nullptr))
+    {
         std::cerr << "Can not set signal handler\n";
         exit(1);
     }
