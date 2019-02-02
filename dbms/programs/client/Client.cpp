@@ -1651,12 +1651,10 @@ public:
 #undef EXTRACT_SETTING
 
         /// Save received data into the internal config.
-        if (options.count("config-file")) {
+        if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
-        }
-        if (options.count("Config-file")) {
+        if (options.count("Config-file"))
             config().setString("config-file", options["Config-file"].as<std::string>());
-        }
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
         if (options.count("query_id"))
