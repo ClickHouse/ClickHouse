@@ -1146,32 +1146,14 @@ public:
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
-        WhichDataType wich_left {left_type};
-        WhichDataType wich_right{right_type};
-//
-//        const auto left_type_id = left_type->getTypeId();
-//        const auto right_type_id = left_type->getTypeId();
-//
-//        if (left_type_id == TypeIndex::Date && right_type_id == TypeIndex::DateTime)
-//        {
-//            ColumnUInt32 tmp(block.)
-//        } else if (left_type_id == TypeIndex::DateTime && right_type_id == TypeIndex::Date)
-//        {
-//
-//        }
+        WhichDataType which_left {left_type};
+        WhichDataType which_right{right_type};
 
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
 
         bool date_and_datetime = (left_type != right_type) &&
-                wich_left.isDateOrDateTime() && wich_right.isDateOrDateTime();
-
-//        if ((left_type != right_type) && wich_left.isDateOrDateTime() && wich_right.isDateOrDateTime())
-//        {
-//            auto tmp_column = DataTypeUInt32().createColumnConst(col_with_type_and_name_right.column->size(),
-//                    col_with_type_and_name_right.column->getName());
-//            col_right_untyped = tmp_column.get();
-//        }
+                which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
 
         if (left_is_num && right_is_num && !date_and_datetime)
         {
