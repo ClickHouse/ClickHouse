@@ -73,6 +73,21 @@ select k, sum(c), topKMerge(2)(x) from test.summing_merge_tree_aggregate_functio
 
 drop table test.summing_merge_tree_aggregate_function;
 
+---- sum + topKWeighed
+create table test.summing_merge_tree_aggregate_function (d materialized today(), k UInt64, c UInt64, x AggregateFunction(topKWeighed(2), UInt8, UInt8)) engine=SummingMergeTree(d, k, 8192);
+
+insert into test.summing_merge_tree_aggregate_function select 1, 1, topKWeighedState(2)(1, 1);
+insert into test.summing_merge_tree_aggregate_function select 1, 1, topKWeighedState(2)(1, 1);
+insert into test.summing_merge_tree_aggregate_function select 1, 1, topKWeighedState(2)(1, 1);
+insert into test.summing_merge_tree_aggregate_function select 1, 1, topKWeighedState(2)(2, 2);
+insert into test.summing_merge_tree_aggregate_function select 1, 1, topKWeighedState(2)(2, 2);
+insert into test.summing_merge_tree_aggregate_function select 1, 1, topKWeighedState(2)(3, 5);
+select k, sum(c), topKWeighedMerge(2)(x) from test.summing_merge_tree_aggregate_function group by k;
+optimize table test.summing_merge_tree_aggregate_function;
+select k, sum(c), topKWeighedMerge(2)(x) from test.summing_merge_tree_aggregate_function group by k;
+
+drop table test.summing_merge_tree_aggregate_function;
+
 ---- avg
 create table test.summing_merge_tree_aggregate_function (d materialized today(), k UInt64, x AggregateFunction(avg, Float64)) engine=SummingMergeTree(d, k, 8192);
 

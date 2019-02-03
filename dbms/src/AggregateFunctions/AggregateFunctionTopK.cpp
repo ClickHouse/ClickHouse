@@ -48,16 +48,21 @@ static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_ty
         return new AggregateFunctionTopKGeneric<false>(threshold, argument_type);
 }
 
+template<bool weighed>
 AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    assertUnary(name, argument_types);
+    if (!weighed)
+        assertUnary(name, argument_types);
+    else
+        assertBinary(name, argument_types);
 
     UInt64 threshold = 10;  /// default value
 
     if (!params.empty())
     {
         if (params.size() != 1)
-            throw Exception("Aggregate function " + name + " requires one parameter or less.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception("Aggregate function " + name + " requires one parameter or less.",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
@@ -72,7 +77,12 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         threshold = k;
     }
 
-    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK>(*argument_types[0], threshold));
+    AggregateFunctionPtr res;
+
+    if (!weighed)
+        res = AggregateFunctionPtr(createWithNumericType<AggregateFunctionTopK>(*argument_types[0], threshold));
+    else
+        res = AggregateFunctionPtr(createWithNumericType<AggregateFunctionTopKWeighed>(*argument_types[0], threshold));
 
     if (!res)
         res = AggregateFunctionPtr(createWithExtraTypes(argument_types[0], threshold));
@@ -88,7 +98,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
 void registerAggregateFunctionTopK(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("topK", createAggregateFunctionTopK);
+    factory.registerFunction("topK", createAggregateFunctionTopK<false>);
+    factory.registerFunction("topKWeighed", createAggregateFunctionTopK<true>);
 }
 
 }
