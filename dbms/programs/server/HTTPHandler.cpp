@@ -584,13 +584,16 @@ void HTTPHandler::processQuery(
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more.
             /// True for read-only queries.
-            try {
+            try
+            {
                 char b;
                 int status = socket.receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK);
                 if (status == 0)
                     context.killCurrentQuery();
             }
-            catch (Poco::TimeoutException &) {}
+            catch (Poco::TimeoutException &)
+            {
+            }
             catch (...)
             {
                 context.killCurrentQuery();
