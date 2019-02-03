@@ -18,6 +18,8 @@
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <IO/CompressionSettings.h>
+#include <Poco/Runnable.h>
+#include <Poco/Thread.h>
 
 
 namespace Poco

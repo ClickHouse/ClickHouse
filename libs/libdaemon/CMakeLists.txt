@@ -13,7 +13,8 @@ add_library (daemon ${LINK_MODE}
     include/daemon/OwnPatternFormatter.h
     include/daemon/OwnFormattingChannel.h
     include/daemon/OwnSplitChannel.h
-    include/daemon/Backtrace.h)
+    include/daemon/Backtrace.h
+    include/daemon/Pipe.h)
 
 if (USE_UNWIND)
     target_compile_definitions (daemon PRIVATE USE_UNWIND=1)

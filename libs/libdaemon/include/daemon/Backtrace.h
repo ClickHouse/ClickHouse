@@ -1,3 +1,5 @@
+#pragma once
+
 #include <daemon/BaseDaemon.h>
 #include <daemon/OwnFormattingChannel.h>
 #include <daemon/OwnPatternFormatter.h>
