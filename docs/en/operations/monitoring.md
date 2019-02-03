@@ -5,7 +5,7 @@ You can monitor:
 - Hardware resources utilization.
 - ClickHouse server metrics.
 
-## Hardware resources utilization
+## Resources Utilization
 
 ClickHouse does not monitor the state of hardware resources by itself.
 
@@ -17,7 +17,7 @@ It is highly recommended to set up monitoring for:
 
 - Utilization of storage system, RAM and network.
 
-## ClickHouse server metrics
+## ClickHouse Server Metrics
 
 ClickHouse server has embedded instruments for self-state monitoring.
 
