@@ -41,6 +41,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
+#include <Interpreters/TraceLog.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
@@ -269,14 +270,15 @@ struct ContextShared
         }
     }
 
+    void initializeTraceCollector(TraceLog * trace_log) {
+        trace_collector.reset(new TraceCollector(trace_log));
+        trace_collector_thread.start(*trace_collector);
+    }
+
 private:
     void initialize()
     {
         security_manager = runtime_components_factory->createSecurityManager();
-
-        /// Set up trace collector for query profiler
-        trace_collector.reset(new TraceCollector());
-        trace_collector_thread.start(*trace_collector);
     }
 };
 
@@ -1552,6 +1554,11 @@ void Context::initializeSystemLogs()
     system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
 }
 
+void Context::initializeTraceCollector()
+{
+    shared->initializeTraceCollector(getTraceLog());
+}
+
 
 QueryLog * Context::getQueryLog()
 {
@@ -1590,6 +1597,16 @@ PartLog * Context::getPartLog(const String & part_database)
         return nullptr;
 
     return system_logs->part_log.get();
+}
+
+TraceLog * Context::getTraceLog()
+{
+    auto lock = getLock();
+
+    if (!system_logs || !system_logs->trace_log)
+        return nullptr;
+
+    return system_logs->trace_log.get();
 }
 
 

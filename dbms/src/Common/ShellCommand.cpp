@@ -16,48 +16,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-//    extern const int CANNOT_DLSYM;
-//    extern const int CANNOT_FORK;
-//    extern const int CANNOT_WAITPID;
-//    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
-//    extern const int CANNOT_CREATE_CHILD_PROCESS;
-
-    struct Pipe
-    {
-        int fds_rw[2];
-
-        Pipe()
-        {
-            #ifndef __APPLE__
-            if (0 != pipe2(fds_rw, O_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            #else
-            if (0 != pipe(fds_rw))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds_rw[0], F_SETFD, FD_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            if (0 != fcntl(fds_rw[1], F_SETFD, FD_CLOEXEC))
-                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
-            #endif
-        }
-
-        ~Pipe()
-        {
-            if (fds_rw[0] >= 0)
-                close(fds_rw[0]);
-            if (fds_rw[1] >= 0)
-                close(fds_rw[1]);
-        }
-    };
-
-    /// By these return codes from the child process, we learn (for sure) about errors when creating it.
-    enum class ReturnCodes : int
-    {
-        CANNOT_DUP_STDIN    = 0x55555555,   /// The value is not important, but it is chosen so that it's rare to conflict with the program return code.
-        CANNOT_DUP_STDOUT   = 0x55555556,
-        CANNOT_DUP_STDERR   = 0x55555557,
-        CANNOT_EXEC         = 0x55555558,
-    };
+    extern const int CANNOT_DLSYM;
+    extern const int CANNOT_FORK;
+    extern const int CANNOT_WAITPID;
+    extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
+    extern const int CANNOT_CREATE_CHILD_PROCESS;
 }
 
 /// By these return codes from the child process, we learn (for sure) about errors when creating it.
@@ -118,15 +81,15 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         /// And there is a lot of garbage (including, for example, mutex is blocked). And this can not be done after `vfork` - deadlock happens.
 
         /// Replace the file descriptors with the ends of our pipes.
-        if (STDIN_FILENO != dup2(pipe_stdin.fds_rw[0], STDIN_FILENO))
+        if (STDIN_FILENO != dup2(pipe_stdin.read_fd, STDIN_FILENO))
             _exit(int(ReturnCodes::CANNOT_DUP_STDIN));
 
         if (!pipe_stdin_only)
         {
-            if (STDOUT_FILENO != dup2(pipe_stdout.fds_rw[1], STDOUT_FILENO))
+            if (STDOUT_FILENO != dup2(pipe_stdout.write_fd, STDOUT_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDOUT));
 
-            if (STDERR_FILENO != dup2(pipe_stderr.fds_rw[1], STDERR_FILENO))
+            if (STDERR_FILENO != dup2(pipe_stderr.write_fd, STDERR_FILENO))
                 _exit(int(ReturnCodes::CANNOT_DUP_STDERR));
         }
 
@@ -136,12 +99,12 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(const char * filename, c
         _exit(int(ReturnCodes::CANNOT_EXEC));
     }
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.fds_rw[1], pipe_stdout.fds_rw[0], pipe_stderr.fds_rw[0], terminate_in_destructor));
+    std::unique_ptr<ShellCommand> res(new ShellCommand(pid, pipe_stdin.write_fd, pipe_stdout.read_fd, pipe_stderr.read_fd, terminate_in_destructor));
 
     /// Now the ownership of the file descriptors is passed to the result.
-    pipe_stdin.fds_rw[1] = -1;
-    pipe_stdout.fds_rw[0] = -1;
-    pipe_stderr.fds_rw[0] = -1;
+    pipe_stdin.write_fd = -1;
+    pipe_stdout.read_fd = -1;
+    pipe_stderr.read_fd = -1;
 
     return res;
 }

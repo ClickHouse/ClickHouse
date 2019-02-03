@@ -130,16 +130,14 @@ void ThreadStatus::finalizePerformanceCounters()
 }
 
 namespace {
-    void queryProfilerTimerHandler(int sig, siginfo_t * /* info */, void * /* context */) {
-        LOG_INFO(&Logger::get("laplab"), "Hello from handler!");
+    void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * context) {
+        DB::WriteBufferFromFileDescriptor out(TracePipe::instance().write_fd);
 
-        char buffer[TraceCollector::buf_size];
-        DB::WriteBufferFromFileDescriptor out(PipeSingleton::instance().write_fd, TraceCollector::buf_size, buffer);
+        std::string queryID = CurrentThread::getCurrentQueryID();
 
-        DB::writeBinary(sig, out);
+        DB::writePODBinary(*reinterpret_cast<const ucontext_t *>(context), out);
+        DB::writeStringBinary(queryID, out);
         out.next();
-
-        ::sleep(10);
     }
 }
 
@@ -149,9 +147,11 @@ void ThreadStatus::initQueryProfiler() {
         return;
     }
 
+    const auto pause_signal = SIGALRM;
+
     struct sigevent sev;
     sev.sigev_notify = SIGEV_THREAD_ID;
-    sev.sigev_signo = SIGALRM;
+    sev.sigev_signo = pause_signal;
     sev._sigev_un._tid = os_thread_id;
     // TODO(laplab): get clock type from settings
     if (timer_create(CLOCK_REALTIME, &sev, &query_profiler_timer_id)) {
@@ -174,11 +174,11 @@ void ThreadStatus::initQueryProfiler() {
         throw Poco::Exception("Failed to clean signal mask for query profiler");
     }
 
-    if (sigaddset(&sa.sa_mask, SIGALRM)) {
+    if (sigaddset(&sa.sa_mask, pause_signal)) {
         throw Poco::Exception("Failed to add signal to mask for query profiler");
     }
 
-    if (sigaction(SIGALRM, &sa, nullptr)) {
+    if (sigaction(pause_signal, &sa, nullptr)) {
         throw Poco::Exception("Failed to setup signal handler for query profiler");
     }
 

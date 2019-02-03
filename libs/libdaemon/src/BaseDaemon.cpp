@@ -1,5 +1,5 @@
+#include <common/Backtrace.h>
 #include <daemon/BaseDaemon.h>
-#include <daemon/Backtrace.h>
 #include <daemon/Pipe.h>
 #include <daemon/OwnFormattingChannel.h>
 #include <daemon/OwnPatternFormatter.h>
@@ -17,11 +17,6 @@
 #include <cxxabi.h>
 #include <execinfo.h>
 #include <unistd.h>
-
-#if USE_UNWIND
-    #define UNW_LOCAL_ONLY
-    #include <libunwind.h>
-#endif
 
 #ifdef __APPLE__
 // ucontext is not available without _XOPEN_SOURCE
@@ -133,33 +128,6 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 
     call_default_signal_handler(sig);
 }
-
-
-#if USE_UNWIND
-size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
-{
-    unw_cursor_t cursor;
-
-    if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
-        return 0;
-
-    size_t i = 0;
-    for (; i < max_frames; ++i)
-    {
-        unw_word_t ip;
-        unw_get_reg(&cursor, UNW_REG_IP, &ip);
-        out_frames[i] = reinterpret_cast<void*>(ip);
-
-        /// NOTE This triggers "AddressSanitizer: stack-buffer-overflow". Looks like false positive.
-        /// It's Ok, because we use this method if the program is crashed nevertheless.
-        if (!unw_step(&cursor))
-            break;
-    }
-
-    return i;
-}
-#endif
-
 
 /** The thread that read info about signal or std::terminate from pipe.
   * On HUP / USR1, close log files (for new files to be opened later).

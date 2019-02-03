@@ -11,6 +11,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
 endif ()
 
 add_library (common ${LINK_MODE}
+    src/Backtrace.cpp
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
@@ -21,6 +22,7 @@ add_library (common ${LINK_MODE}
     src/demangle.cpp
     src/setTerminalEcho.cpp
 
+    include/common/Backtrace.h
     include/common/Types.h
     include/common/DayNum.h
     include/common/DateLUT.h
@@ -55,6 +57,12 @@ add_library (common ${LINK_MODE}
 
     ${CONFIG_COMMON}
 )
+
+if (USE_UNWIND)
+    target_compile_definitions (common PRIVATE USE_UNWIND=1)
+    target_include_directories (common BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
+    target_link_libraries (common PRIVATE ${UNWIND_LIBRARY})
+endif ()
 
 # When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 

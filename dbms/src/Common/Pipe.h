@@ -13,6 +13,10 @@
 #include <csignal>
 
 namespace DB {
+    namespace ErrorCodes
+    {
+        extern const int CANNOT_PIPE;
+    }
 
     struct Pipe
     {
@@ -31,8 +35,17 @@ namespace DB {
             read_fd = -1;
             write_fd = -1;
 
+#ifndef __APPLE__
+            if (0 != pipe2(fds, O_CLOEXEC))
+                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+#else
             if (0 != pipe(fds))
-                DB::throwFromErrno("Cannot create pipe", 0);
+                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+            if (0 != fcntl(read_fd, F_SETFD, FD_CLOEXEC))
+                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+            if (0 != fcntl(write_fd, F_SETFD, FD_CLOEXEC))
+                DB::throwFromErrno("Cannot create pipe", DB::ErrorCodes::CANNOT_PIPE);
+#endif
         }
 
         void close()
@@ -48,8 +61,6 @@ namespace DB {
                 ::close(write_fd);
                 write_fd = -1;
             }
-
-            LOG_INFO(&Logger::get("TraceCollector"), "Pipe is closed");
         }
 
         ~Pipe()
@@ -57,9 +68,4 @@ namespace DB {
             close();
         }
     };
-
-    class PipeSingleton : public ext::singleton<Pipe>
-    {
-    };
-
 }
