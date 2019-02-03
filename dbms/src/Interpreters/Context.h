@@ -10,8 +10,9 @@
 #include <optional>
 
 #include <Common/config.h>
-#include <common/MultiVersion.h>
+#include <Common/MultiVersion.h>
 #include <Common/LRUCache.h>
+#include <Common/ThreadPool.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Block.h>
@@ -82,6 +83,7 @@ using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
+class ICompressionCodec;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -154,6 +156,7 @@ public:
     static Context createGlobal();
 
     Context(const Context &) = default;
+    Context & operator=(const Context &) = default;
     ~Context();
 
     String getPath() const;
@@ -330,10 +333,10 @@ public:
 
 
     void setProgressCallback(ProgressCallback callback);
-    /// Used in InterpreterSelectQuery to pass it to the IProfilingBlockInputStream.
+    /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
     ProgressCallback getProgressCallback() const;
 
-    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(QueryStatus * elem);
@@ -402,14 +405,14 @@ public:
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
-    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size);
+    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const;
 
     /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxPartitionSizeToDrop(size_t max_size);
-    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size);
+    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const;
 
-    /// Lets you select the compression settings according to the conditions described in the configuration file.
-    CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
+    /// Lets you select the compression codec according to the conditions described in the configuration file.
+    std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
 
     /// Get the server uptime in seconds.
     time_t getUptimeSeconds() const;
@@ -473,7 +476,7 @@ private:
     /// Session will be closed after specified timeout.
     void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
 
-    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop);
+    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const;
 };
 
 
@@ -522,7 +525,7 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     std::atomic<bool> quit{false};
-    std::thread thread{&SessionCleaner::run, this};
+    ThreadFromGlobalPool thread{&SessionCleaner::run, this};
 };
 
 }

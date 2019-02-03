@@ -2,8 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Common/escapeForFileName.h>
 #include <Common/MemoryTracker.h>
-#include <IO/CachedCompressedReadBuffer.h>
-#include <IO/CompressedReadBufferFromFile.h>
+#include <Compression/CachedCompressedReadBuffer.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReader.h>
@@ -50,7 +49,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
             throw Exception("Part " + path + " is missing", ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
 
         for (const NameAndTypePair & column : columns)
-            addStreams(column.name, *column.type, all_mark_ranges, profile_callback, clock_type);
+            addStreams(column.name, *column.type, profile_callback, clock_type);
     }
     catch (...)
     {
@@ -262,34 +261,34 @@ const MarkInCompressedFile & MergeTreeReader::Stream::getMark(size_t index)
 
 void MergeTreeReader::Stream::loadMarks()
 {
-    std::string path = path_prefix + ".mrk";
+    std::string mrk_path = path_prefix + ".mrk";
 
     auto load = [&]() -> MarkCache::MappedPtr
     {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
         auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
-        size_t file_size = Poco::File(path).getSize();
+        size_t file_size = Poco::File(mrk_path).getSize();
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
         if (expected_file_size != file_size)
             throw Exception(
-                "bad size of marks file `" + path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
+                "bad size of marks file `" + mrk_path + "':" + std::to_string(file_size) + ", must be: " + std::to_string(expected_file_size),
                 ErrorCodes::CORRUPTED_DATA);
 
         auto res = std::make_shared<MarksInCompressedFile>(marks_count);
 
         /// Read directly to marks.
-        ReadBufferFromFile buffer(path, file_size, -1, reinterpret_cast<char *>(res->data()));
+        ReadBufferFromFile buffer(mrk_path, file_size, -1, reinterpret_cast<char *>(res->data()));
 
         if (buffer.eof() || buffer.buffer().size() != file_size)
-            throw Exception("Cannot read all marks from file " + path, ErrorCodes::CANNOT_READ_ALL_DATA);
+            throw Exception("Cannot read all marks from file " + mrk_path, ErrorCodes::CANNOT_READ_ALL_DATA);
 
         return res;
     };
 
     if (mark_cache)
     {
-        auto key = mark_cache->hash(path);
+        auto key = mark_cache->hash(mrk_path);
         if (save_marks_in_cache)
         {
             marks = mark_cache->getOrSet(key, load);
@@ -305,7 +304,7 @@ void MergeTreeReader::Stream::loadMarks()
         marks = load();
 
     if (!marks)
-        throw Exception("Failed to load marks: " + path, ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Failed to load marks: " + mrk_path, ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -354,7 +353,7 @@ void MergeTreeReader::Stream::seekToStart()
 }
 
 
-void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
+void MergeTreeReader::addStreams(const String & name, const IDataType & type,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
@@ -378,8 +377,8 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
     };
 
-    IDataType::SubstreamPath path;
-    type.enumerateStreams(callback, path);
+    IDataType::SubstreamPath substream_path;
+    type.enumerateStreams(callback, substream_path);
 }
 
 
@@ -390,13 +389,13 @@ void MergeTreeReader::readData(
 {
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
-        return [&, stream_for_prefix](const IDataType::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix](const IDataType::SubstreamPath & substream_path) -> ReadBuffer *
         {
             /// If offsets for arrays have already been read.
-            if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
+            if (!with_offsets && substream_path.size() == 1 && substream_path[0].type == IDataType::Substream::ArraySizes)
                 return nullptr;
 
-            String stream_name = IDataType::getFileNameForStream(name, path);
+            String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
             auto it = streams.find(stream_name);
             if (it == streams.end())
@@ -514,8 +513,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
                 {
                     ColumnPtr offsets_column = offset_columns[offsets_name];
                     DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*column_to_add.type).getNestedType();
-                    size_t nested_rows = offsets_column->empty() ? 0
-                        : typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
+                    size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
                     ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(nested_rows)->convertToFullColumnIfConst();
 
@@ -567,7 +565,7 @@ void MergeTreeReader::evaluateMissingDefaults(Block & res)
 {
     try
     {
-        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.global_context);
     }
     catch (Exception & e)
     {

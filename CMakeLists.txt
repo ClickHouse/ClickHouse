@@ -3,6 +3,21 @@ cmake_minimum_required (VERSION 3.3)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
+option(ENABLE_IPO "Enable inter-procedural optimization (aka LTO)" OFF) # need cmake 3.9+
+if(ENABLE_IPO)
+    cmake_policy(SET CMP0069 NEW)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT IPO_SUPPORTED OUTPUT IPO_NOT_SUPPORTED)
+    if(IPO_SUPPORTED)
+        message(STATUS "IPO/LTO is supported, enabling")
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    else()
+        message(STATUS "IPO/LTO is not supported: <${IPO_NOT_SUPPORTED}>")
+    endif()
+else()
+    message(STATUS "IPO/LTO not enabled.")
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
@@ -24,11 +39,6 @@ endif ()
 
 # Write compile_commands.json
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-
-
-set (MAX_COMPILER_MEMORY 2000 CACHE INTERNAL "")
-set (MAX_LINKER_MEMORY 3500 CACHE INTERNAL "")
-include (cmake/limit_jobs.cmake)
 
 include (cmake/find_ccache.cmake)
 
@@ -86,16 +96,18 @@ option (ENABLE_TESTS "Enables tests" ON)
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
-    if (OS_LINUX)
+    if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
         option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
-    endif()
+        if (GLIBC_COMPATIBILITY)
+            message (STATUS "Some symbols from glibc will be replaced for compatibility")
+            link_libraries(glibc-compatibility)
+        endif ()
+    endif ()
 endif ()
 
 if (GLIBC_COMPATIBILITY)
     set (USE_INTERNAL_MEMCPY ON)
 endif ()
-
-set (COMPILER_FLAGS "${COMPILER_FLAGS}")
 
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
@@ -113,12 +125,19 @@ if (LINKER_NAME)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
 endif ()
 
-option (PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
-if (PIPE)
-    set (COMPILER_FLAGS                  "${COMPILER_FLAGS} -pipe")
-endif ()
+cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
+if(NOT AVAILABLE_PHYSICAL_MEMORY OR AVAILABLE_PHYSICAL_MEMORY GREATER 8000)
+    option(COMPILER_PIPE "-pipe compiler option [less /tmp usage, more ram usage]" ON)
+endif()
+if(COMPILER_PIPE)
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -pipe")
+else()
+    message(STATUS "Disabling compiler -pipe option (have only ${AVAILABLE_PHYSICAL_MEMORY} mb of memory)")
+endif()
 
-include (cmake/test_cpu.cmake)
+if(NOT DISABLE_CPU_OPTIMIZE)
+    include(cmake/test_cpu.cmake)
+endif()
 
 if(NOT COMPILER_CLANG) # clang: error: the clang compiler does not support '-march=native'
     option(ARCH_NATIVE "Enable -march=native compiler flag" ${ARCH_ARM})
@@ -181,8 +200,8 @@ endif (TEST_COVERAGE)
 
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
-    enable_testing()
 endif ()
+enable_testing() # Enable for tests without binary
 
 # when installing to /usr - place configs to /etc but for /usr/local place to /usr/local/etc
 if (CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -227,9 +246,14 @@ include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
-include (cmake/find_cpuid.cmake)
+include (cmake/find_cpuid.cmake) # Freebsd, bundled
+if (NOT USE_CPUID)
+    include (cmake/find_cpuinfo.cmake) # Debian
+endif()
 include (cmake/find_libgsasl.cmake)
 include (cmake/find_libxml2.cmake)
+include (cmake/find_protobuf.cmake)
+include (cmake/find_pdqsort.cmake)
 include (cmake/find_hdfs3.cmake)
 include (cmake/find_consistent-hashing.cmake)
 include (cmake/find_base64.cmake)
@@ -253,7 +277,7 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
-add_subdirectory (contrib)
+add_subdirectory (contrib EXCLUDE_FROM_ALL)
 add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)

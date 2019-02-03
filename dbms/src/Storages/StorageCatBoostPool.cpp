@@ -3,7 +3,7 @@
 #include <boost/filesystem.hpp>
 
 #include <Storages/StorageCatBoostPool.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 namespace
 {
-class CatBoostDatasetBlockInputStream : public IProfilingBlockInputStream
+class CatBoostDatasetBlockInputStream : public IBlockInputStream
 {
 public:
 

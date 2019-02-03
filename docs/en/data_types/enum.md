@@ -8,7 +8,7 @@ Includes the `Enum8` and `Enum16` types. `Enum` saves the finite set of pairs of
 
 ## Usage examples
 
-Here we create a table with an `Enum8('hello' = 1, 'world' = 2)`  type column:
+Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
 ```
 CREATE TABLE t_enum

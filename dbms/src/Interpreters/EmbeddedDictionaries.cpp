@@ -64,7 +64,7 @@ bool EmbeddedDictionaries::reloadDictionary(
 
 bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool force_reload)
 {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock lock(mutex);
 
     /** If you can not update the directories, then despite this, do not throw an exception (use the old directories).
       * If there are no old correct directories, then when using functions that depend on them,
@@ -150,7 +150,7 @@ EmbeddedDictionaries::EmbeddedDictionaries(
     , reload_period(context_.getConfigRef().getInt("builtin_dictionaries_reload_interval", 3600))
 {
     reloadImpl(throw_on_error);
-    reloading_thread = std::thread([this] { reloadPeriodically(); });
+    reloading_thread = ThreadFromGlobalPool([this] { reloadPeriodically(); });
 }
 
 

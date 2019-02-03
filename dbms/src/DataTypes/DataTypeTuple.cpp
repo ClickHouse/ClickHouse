@@ -100,7 +100,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 void DataTypeTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     const auto & tuple = get<const Tuple &>(field).toUnderType();
-    for (const auto & idx_elem : ext::enumerate(elems))
+    for (const auto idx_elem : ext::enumerate(elems))
         idx_elem.second->serializeBinary(tuple[idx_elem.first], ostr);
 }
 
@@ -115,7 +115,7 @@ void DataTypeTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
 
 void DataTypeTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    for (const auto & idx_elem : ext::enumerate(elems))
+    for (const auto idx_elem : ext::enumerate(elems))
         idx_elem.second->serializeBinary(extractElementColumn(column, idx_elem.first), row_num, ostr);
 }
 
@@ -405,6 +405,12 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
         elems[i]->deserializeBinaryBulkWithMultipleStreams(element_col, limit, settings, tuple_state->states[i]);
     }
     settings.path.pop_back();
+}
+
+void DataTypeTuple::serializeProtobuf(const IColumn & column, size_t row_num, ProtobufWriter & protobuf) const
+{
+    for (const auto i : ext::range(0, ext::size(elems)))
+        elems[i]->serializeProtobuf(extractElementColumn(column, i), row_num, protobuf);
 }
 
 MutableColumnPtr DataTypeTuple::createColumn() const

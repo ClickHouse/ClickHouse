@@ -109,7 +109,6 @@ public:
     std::shared_ptr<const Join> join;
     Names join_key_names_left;
     NamesAndTypesList columns_added_by_join;
-    NameSet columns_added_by_join_from_right_keys;
 
     /// For PROJECT.
     NamesWithAliases projection;
@@ -126,7 +125,7 @@ public:
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
-        const NamesAndTypesList & columns_added_by_join_, const NameSet & columns_added_by_join_from_right_keys_);
+                                         const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -246,10 +245,10 @@ public:
 
     struct ActionsHash
     {
-        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        UInt128 operator()(const ExpressionActions::Actions & elems) const
         {
             SipHash hash;
-            for (const ExpressionAction & act : actions)
+            for (const ExpressionAction & act : elems)
                 hash.update(ExpressionAction::ActionHash{}(act));
             UInt128 result;
             hash.get128(result.low, result.high);

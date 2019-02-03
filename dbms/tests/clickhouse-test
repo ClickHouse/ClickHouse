@@ -132,6 +132,9 @@ def main(args):
             if 'stateful' in suite and not is_data_present():
                 print("Won't run stateful tests because test data wasn't loaded.")
                 continue
+            if 'stateless' in suite and args.no_stateless:
+                print("Won't run stateless tests because they were manually disabled.")
+                continue
 
             # Reverse sort order: we want run newest test first.
             # And not reverse subtests
@@ -325,6 +328,14 @@ def main(args):
         print(colored("\n{passed_total} tests passed. {skipped_total} tests skipped.".format(passed_total = passed_total, skipped_total = skipped_total), "green", attrs=["bold"]))
         sys.exit(0)
 
+def find_binary(name):
+    paths = os.environ.get("PATH").split(':')
+    for path in paths:
+        if os.access(os.path.join(path, name), os.X_OK):
+            return True
+
+    # maybe it wasn't in PATH
+    return os.access(os.path.join('/usr/bin', name), os.X_OK)
 
 if __name__ == '__main__':
     parser = ArgumentParser(description = 'ClickHouse functional tests')
@@ -343,6 +354,7 @@ if __name__ == '__main__':
     parser.add_argument('--order', default = 'desc', help = 'Run order (asc, desc, random)')
     parser.add_argument('--testname', action = 'store_true', default = None, dest = 'testname', help = 'Make query with test name before test run')
 
+    parser.add_argument('--no-stateless', action = 'store_true', help = 'Disable all stateless tests')
     parser.add_argument('--skip', nargs='+', help = "Skip these tests")
     parser.add_argument('--no-long', action = 'store_false', dest = 'no_long', help = 'Do not run long tests')
     group = parser.add_mutually_exclusive_group(required = False)
@@ -365,12 +377,16 @@ if __name__ == '__main__':
             args.tmp = '/tmp/clickhouse-test'
     if args.tmp is None:
         args.tmp = args.queries
-
     if args.client is None:
-        if os.access(args.binary + '-client', os.X_OK):
+        if find_binary(args.binary + '-client'):
             args.client = args.binary + '-client'
-        else:
+        elif find_binary(args.binary):
             args.client = args.binary + ' client'
+        else:
+            print("No 'clickhouse' binary found in PATH")
+            parser.print_help()
+            exit(1)
+
         if args.configclient:
             args.client += ' --config-file=' + args.configclient
         if os.getenv("CLICKHOUSE_HOST"):

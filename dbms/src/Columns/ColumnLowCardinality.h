@@ -133,7 +133,7 @@ public:
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
-    bool isFixedAndContiguous() const override { return getDictionary().isFixedAndContiguous(); }
+    bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
     bool lowCardinality() const override { return true; }

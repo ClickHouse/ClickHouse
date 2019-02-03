@@ -1,7 +1,7 @@
 
 # Function reference
 
-## count()
+## count() {#agg_function-count}
 
 Counts the number of rows. Accepts zero arguments and returns UInt64.
 The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate function exists for this purpose.
@@ -179,15 +179,15 @@ binary     decimal
 01101000 = 104
 ```
 
-## min(x)
+## min(x) {#agg_function-min}
 
 Calculates the minimum.
 
-## max(x)
+## max(x) {#agg_function-max}
 
 Calculates the maximum.
 
-## argMin(arg, val)
+## argMin(arg, val) {#agg_function-argMin}
 
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
@@ -206,7 +206,7 @@ SELECT argMin(user, salary) FROM salary
 └──────────────────────┘
 ```
 
-## argMax(arg, val)
+## argMax(arg, val) {#agg_function-argMax}
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
@@ -259,7 +259,7 @@ GROUP BY timeslot
 └─────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## avg(x)
+## avg(x) {#agg_function-avg}
 
 Calculates the average.
 Only works for numbers.
@@ -295,7 +295,7 @@ Uses the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm to a
 
 The result is determinate (it doesn't depend on the order of query processing).
 
-We don't recommend using this function. In most cases, use the  `uniq` or `uniqCombined` function.
+We don't recommend using this function. In most cases, use the `uniq` or `uniqCombined` function.
 
 ## uniqExact(x)
 
@@ -382,8 +382,8 @@ For its purpose (calculating quantiles of page loading times), using this functi
 
 ## quantileTimingWeighted(level)(x, weight)
 
-Differs from the `quantileTiming`  function in that it has a second argument, "weights". Weight is a non-negative integer.
-The result is calculated as if the `x`  value were passed `weight` number of times to the `quantileTiming` function.
+Differs from the `quantileTiming` function in that it has a second argument, "weights". Weight is a non-negative integer.
+The result is calculated as if the `x` value were passed `weight` number of times to the `quantileTiming` function.
 
 ## quantileExact(level)(x)
 
@@ -437,7 +437,7 @@ The result is equal to the square root of `varPop(x)`.
 
 Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
 
-Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
 ```
 topK(N)(column)

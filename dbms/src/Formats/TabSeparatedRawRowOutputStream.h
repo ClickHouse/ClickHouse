@@ -13,8 +13,8 @@ namespace DB
 class TabSeparatedRawRowOutputStream : public TabSeparatedRowOutputStream
 {
 public:
-    TabSeparatedRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_, const FormatSettings & format_settings)
-        : TabSeparatedRowOutputStream(ostr_, sample_, with_names_, with_types_, format_settings) {}
+    TabSeparatedRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+        : TabSeparatedRowOutputStream(ostr_, sample_, with_names_, with_types_, format_settings_) {}
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override
     {

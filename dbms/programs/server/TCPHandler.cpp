@@ -12,13 +12,12 @@
 #include <Common/setThreadName.h>
 #include <Common/config_version.h>
 #include <IO/Progress.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -32,6 +31,7 @@
 #include <Core/ExternalTable.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Compression/CompressionFactory.h>
 
 #include "TCPHandler.h"
 
@@ -55,6 +55,7 @@ namespace ErrorCodes
 void TCPHandler::runImpl()
 {
     setThreadName("TCPHandler");
+    ThreadStatus thread_status;
 
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);
@@ -485,53 +486,44 @@ void TCPHandler::processTablesStatusRequest()
 
 void TCPHandler::sendProfileInfo()
 {
-    if (const IProfilingBlockInputStream * input = dynamic_cast<const IProfilingBlockInputStream *>(state.io.in.get()))
-    {
-        writeVarUInt(Protocol::Server::ProfileInfo, *out);
-        input->getProfileInfo().write(*out);
-        out->next();
-    }
+    writeVarUInt(Protocol::Server::ProfileInfo, *out);
+    state.io.in->getProfileInfo().write(*out);
+    out->next();
 }
 
 
 void TCPHandler::sendTotals()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    const Block & totals = state.io.in->getTotals();
+
+    if (totals)
     {
-        const Block & totals = input->getTotals();
+        initBlockOutput(totals);
 
-        if (totals)
-        {
-            initBlockOutput(totals);
+        writeVarUInt(Protocol::Server::Totals, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Totals, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(totals);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(totals);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
 
 void TCPHandler::sendExtremes()
 {
-    if (IProfilingBlockInputStream * input = dynamic_cast<IProfilingBlockInputStream *>(state.io.in.get()))
+    Block extremes = state.io.in->getExtremes();
+
+    if (extremes)
     {
-        Block extremes = input->getExtremes();
+        initBlockOutput(extremes);
 
-        if (extremes)
-        {
-            initBlockOutput(extremes);
+        writeVarUInt(Protocol::Server::Extremes, *out);
+        writeStringBinary("", *out);
 
-            writeVarUInt(Protocol::Server::Extremes, *out);
-            writeStringBinary("", *out);
-
-            state.block_out->write(extremes);
-            state.maybe_compressed_out->next();
-            out->next();
-        }
+        state.block_out->write(extremes);
+        state.maybe_compressed_out->next();
+        out->next();
     }
 }
 
@@ -728,7 +720,7 @@ bool TCPHandler::receiveData()
             {
                 NamesAndTypesList columns = block.getNamesAndTypesList();
                 storage = StorageMemory::create(external_table_name,
-                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}});
+                    ColumnsDescription{columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, ColumnComments{}, ColumnCodecs{}});
                 storage->startup();
                 query_context.addExternalTable(external_table_name, storage);
             }
@@ -772,9 +764,14 @@ void TCPHandler::initBlockOutput(const Block & block)
     {
         if (!state.maybe_compressed_out)
         {
+            std::string method = query_context.getSettingsRef().network_compression_method;
+            std::optional<int> level;
+            if (method == "ZSTD")
+                level = query_context.getSettingsRef().network_zstd_compression_level;
+
             if (state.compression == Protocol::Compression::Enable)
                 state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionSettings(query_context.getSettingsRef()));
+                    *out, CompressionCodecFactory::instance().get(method, level));
             else
                 state.maybe_compressed_out = out;
         }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/SetVariants.h>
 
 namespace DB
@@ -13,7 +13,7 @@ namespace DB
   * set limit_hint to non zero value. So we stop emitting new rows after
   * count of already emitted rows will reach the limit_hint.
   */
-class DistinctBlockInputStream : public IProfilingBlockInputStream
+class DistinctBlockInputStream : public IBlockInputStream
 {
 public:
     /// Empty columns_ means all collumns.

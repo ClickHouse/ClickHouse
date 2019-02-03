@@ -164,7 +164,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## graphite_rollup
+## graphite_rollup {#server_settings-graphite_rollup}
 
 Настройка прореживания данных для Graphite.
 
@@ -268,7 +268,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 **Пример**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 
@@ -416,7 +416,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## merge_tree
+## merge_tree {#server_settings-merge_tree}
 
 Тонкая настройка таблиц семейства [MergeTree](../../operations/table_engines/mergetree.md).
 
@@ -456,7 +456,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - requireTLSv1_2 - Требование соединения TLSv1.2. Допустимые значения: ``true``, ``false``.
 - fips - Активация режима OpenSSL FIPS. Поддерживается, если версия OpenSSL, с которой собрана библиотека поддерживает fips.
 - privateKeyPassphraseHandler - Класс (подкласс PrivateKeyPassphraseHandler)запрашивающий кодовую фразу доступа к секретному ключу. Например, ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
-- invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтвеждения невалидных сертификатов. Например,  ``<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>``.
+- invalidCertificateHandler - Класс (подкласс CertificateHandler) для подтвеждения невалидных сертификатов. Например, ``<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>``.
 - disableProtocols - Запрещенные к искользованию протоколы.
 - preferServerCiphers - Предпочтение серверных шифров на клиенте.
 

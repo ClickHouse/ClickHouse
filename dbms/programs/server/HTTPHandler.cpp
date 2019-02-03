@@ -19,8 +19,8 @@
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
-#include <IO/CompressedReadBuffer.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromFile.h>
@@ -31,7 +31,7 @@
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
@@ -563,7 +563,8 @@ void HTTPHandler::processQuery(
         context.setProgressCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type) { response.setContentType(content_type); });
+        [&response] (const String & content_type) { response.setContentType(content_type); },
+        [&response] (const String & current_query_id) { response.add("Query-Id", current_query_id); });
 
     if (used_output.hasDelayed())
     {
@@ -647,6 +648,7 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     setThreadName("HTTPHandler");
+    ThreadStatus thread_status;
 
     Output used_output;
 

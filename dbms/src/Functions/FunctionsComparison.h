@@ -371,7 +371,7 @@ struct StringEqualsImpl
                     && !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
     }
 
-#if __SSE2__
+#ifdef __SSE2__
     static void NO_INLINE fixed_string_vector_fixed_string_vector_16(
         const ColumnString::Chars & a_data,
         const ColumnString::Chars & b_data,
@@ -428,7 +428,7 @@ struct StringEqualsImpl
         /** Specialization if both sizes are 16.
           * To more efficient comparison of IPv6 addresses stored in FixedString(16).
           */
-#if __SSE2__
+#ifdef __SSE2__
         if (a_n == 16 && b_n == 16)
         {
             fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
@@ -448,7 +448,7 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         ColumnString::Offset b_n = b.size();
-#if __SSE2__
+#ifdef __SSE2__
         if (a_n == 16 && b_n == 16)
         {
             fixed_string_vector_constant_16(a_data, b, c);
@@ -1146,10 +1146,16 @@ public:
         const DataTypePtr & left_type = col_with_type_and_name_left.type;
         const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
+        WhichDataType which_left{left_type};
+        WhichDataType which_right{right_type};
+
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
 
-        if (left_is_num && right_is_num)
+        bool date_and_datetime = (left_type != right_type) &&
+            which_left.isDateOrDateTime() && which_right.isDateOrDateTime();
+
+        if (left_is_num && right_is_num && !date_and_datetime)
         {
             if (!(executeNumLeftType<UInt8>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<UInt16>(block, result, col_left_untyped, col_right_untyped)

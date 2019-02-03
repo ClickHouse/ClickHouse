@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ConfigProcessor.h"
+#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <time.h>
@@ -75,12 +76,13 @@ private:
     std::string preprocessed_dir;
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;
+    bool need_reload_from_zk = false;
     zkutil::EventPtr zk_changed_event = std::make_shared<Poco::Event>();
 
     Updater updater;
 
     std::atomic<bool> quit{false};
-    std::thread thread;
+    ThreadFromGlobalPool thread;
 
     /// Locked inside reloadIfNewer.
     std::mutex reload_mutex;

@@ -19,6 +19,8 @@ namespace Nested
     /// Replace Array(Tuple(...)) columns to a multiple of Array columns in a form of `column_name.element_name`.
     NamesAndTypesList flatten(const NamesAndTypesList & names_and_types);
     Block flatten(const Block & block);
+    /// Works as normal flatten, but provide information about flattened columns
+    NamesAndTypesList flattenWithMapping(const NamesAndTypesList & names_and_types, std::unordered_map<std::string, std::vector<std::string>> & mapping);
 
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
