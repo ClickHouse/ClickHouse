@@ -104,9 +104,9 @@ public:
 
     void createDictionary(
         Context & context,
-        const String & table_name,
-        const DictionaryPtr & table,
-        const ASTPtr &query) override;
+        const String & dictionary_name,
+        const DictionaryPtr & dict_ptr,
+        const ASTPtr & query) override;
 
     void attachDictionary(
         const String & name,
