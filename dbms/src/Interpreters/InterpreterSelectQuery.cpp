@@ -33,6 +33,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -45,6 +46,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Field.h>
+#include <Core/Types.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
@@ -68,6 +70,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int INVALID_LIMIT_EXPRESSION;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -717,16 +720,26 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 }
 
 
-static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, size_t & offset)
+void InterpreterSelectQuery::getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, size_t & offset)
 {
     length = 0;
     offset = 0;
     if (query.limit_length)
     {
-        length = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_length).value);
+        getLimitUIntValue(query.limit_length, length);
         if (query.limit_offset)
-            offset = safeGet<UInt64>(typeid_cast<ASTLiteral &>(*query.limit_offset).value);
+            getLimitUIntValue(query.limit_offset, offset);
     }
+}
+
+
+void InterpreterSelectQuery::getLimitUIntValue(const ASTPtr& ptr, size_t& result)
+{
+    const auto& eval_result = evaluateConstantExpression(ptr, context);
+    if (!isNumber(eval_result.second)) {
+        throw Exception("Illegal limit expression", ErrorCodes::INVALID_LIMIT_EXPRESSION);
+    }
+    result = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), eval_result.first);
 }
 
 
@@ -1230,7 +1243,7 @@ static SortDescription getSortDescription(ASTSelectQuery & query)
     return order_descr;
 }
 
-static size_t getLimitForSorting(ASTSelectQuery & query)
+size_t InterpreterSelectQuery::getLimitForSorting(ASTSelectQuery & query)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
     size_t limit = 0;
