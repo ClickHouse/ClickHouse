@@ -171,6 +171,11 @@ private:
      */
     void getDatabaseAndTableNames(String & database_name, String & table_name);
 
+    size_t getLimitForSorting(ASTSelectQuery & query);
+
+    void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, size_t & offset);
+
+    void getLimitUIntValue(const ASTPtr& ptr, size_t& result);
     /// Different stages of query execution.
 
     /// dry_run - don't read from table, use empty header block instead.

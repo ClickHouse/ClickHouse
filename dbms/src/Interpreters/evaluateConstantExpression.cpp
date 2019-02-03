@@ -40,18 +40,18 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
     expr_for_constant_folding->execute(block_with_constants);
 
     if (!block_with_constants || block_with_constants.rows() == 0)
-        throw Exception("Logical error: empty block after evaluation of constant expression for IN or VALUES", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: empty block after evaluation of constant expression for IN, VALUES or LIMIT", ErrorCodes::LOGICAL_ERROR);
 
     String name = node->getColumnName();
 
     if (!block_with_constants.has(name))
-        throw Exception("Element of set in IN or VALUES is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
 
     const ColumnWithTypeAndName & result = block_with_constants.getByName(name);
     const IColumn & result_column = *result.column;
 
     if (!result_column.isColumnConst())
-        throw Exception("Element of set in IN or VALUES is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Element of set in IN, VALUES or LIMIT is not a constant expression: " + name, ErrorCodes::BAD_ARGUMENTS);
 
     return std::make_pair(result_column[0], result.type);
 }
