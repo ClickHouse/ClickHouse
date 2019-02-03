@@ -67,14 +67,19 @@ void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Stri
 
 void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & data, const String & part_path, Checksums & out_checksums) const
 {
+    store(data.minmax_idx_columns, data.minmax_idx_column_types, part_path, out_checksums);
+}
+
+void MergeTreeDataPart::MinMaxIndex::store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & out_checksums) const
+{
     if (!initialized)
         throw Exception("Attempt to store uninitialized MinMax index for part " + part_path + ". This is a bug.",
             ErrorCodes::LOGICAL_ERROR);
 
-    for (size_t i = 0; i < data.minmax_idx_columns.size(); ++i)
+    for (size_t i = 0; i < column_names.size(); ++i)
     {
-        String file_name = "minmax_" + escapeForFileName(data.minmax_idx_columns[i]) + ".idx";
-        const DataTypePtr & type = data.minmax_idx_column_types[i];
+        String file_name = "minmax_" + escapeForFileName(column_names[i]) + ".idx";
+        const DataTypePtr & type = data_types.at(i);
 
         WriteBufferFromFile out(part_path + file_name);
         HashingWriteBuffer out_hashing(out);
@@ -517,7 +522,7 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
             minmax_idx.load(storage, full_path);
     }
 
-    String calculated_partition_id = partition.getID(storage);
+    String calculated_partition_id = partition.getID(storage.partition_key_sample);
     if (calculated_partition_id != info.partition_id)
         throw Exception(
             "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id

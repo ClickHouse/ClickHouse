@@ -22,6 +22,7 @@
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
+#include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
@@ -196,6 +197,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             JoinToSubqueryTransformVisitor::Data join_to_subs_data;
             JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
             if (join_to_subs_data.done)
+                logQuery(queryToString(*ast), context);
+        }
+
+        if (settings.allow_experimental_cross_to_join_conversion)
+        {
+            CrossToInnerJoinVisitor::Data cross_to_inner;
+            CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
+            if (cross_to_inner.done)
                 logQuery(queryToString(*ast), context);
         }
 
@@ -435,7 +444,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &)> set_content_type)
+    std::function<void(const String &)> set_content_type,
+    std::function<void(const String &)> set_query_id)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -517,6 +527,9 @@ void executeQuery(
 
             if (set_content_type)
                 set_content_type(out->getContentType());
+
+            if (set_query_id)
+                set_query_id(context.getClientInfo().current_query_id);
 
             copyData(*streams.in, *out);
         }
