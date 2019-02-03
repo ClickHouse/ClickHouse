@@ -1211,8 +1211,8 @@ public:
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1]))
             || (isBigInteger(*types[1]) && isFloatingPoint(*types[0]))
-            || (isDate(*types[0]) && isDateTime(*types[1]))
-            || (isDate(*types[1]) && isDateTime(*types[0])))
+            || (WhichDataType(types[0]).isDate() && WhichDataType(types[1]).isDateTime())
+            || (WhichDataType(types[1]).isDate() && WhichDataType(types[0]).isDateTime()))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
         return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
