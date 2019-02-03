@@ -5,12 +5,16 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/TraceCollector.h>
+#include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 
 #include <csignal>
 #include <time.h>
 #include <signal.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 namespace DB
@@ -127,8 +131,16 @@ void ThreadStatus::finalizePerformanceCounters()
 }
 
 namespace {
-    void queryProfilerTimerHandler(int /* sig */, siginfo_t * /* info */, void * /* context */) {
+    void queryProfilerTimerHandler(int sig, siginfo_t * /* info */, void * /* context */) {
         LOG_INFO(&Logger::get("laplab"), "Hello from handler!");
+
+        char buffer[TraceCollector::buf_size];
+        DB::WriteBufferFromFileDescriptor out(PipeSingleton::instance().write_fd, TraceCollector::buf_size, buffer);
+
+        DB::writeBinary(sig, out);
+        out.next();
+
+        ::sleep(10);
     }
 }
 

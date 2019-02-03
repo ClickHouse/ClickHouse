@@ -52,6 +52,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
+#include "TraceCollector.h"
 
 
 namespace ProfileEvents
@@ -149,6 +150,9 @@ struct ContextShared
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
+
+    Poco::Thread trace_collector_thread;                    /// Thread collecting traces from threads executing queries
+    std::unique_ptr<Poco::Runnable> trace_collector;
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -267,7 +271,11 @@ struct ContextShared
 private:
     void initialize()
     {
-       security_manager = runtime_components_factory->createSecurityManager();
+        security_manager = runtime_components_factory->createSecurityManager();
+
+        /// Set up trace collector for query profiler
+        trace_collector.reset(new TraceCollector());
+        trace_collector_thread.start(*trace_collector);
     }
 };
 
@@ -483,7 +491,6 @@ DatabasePtr Context::tryGetDatabase(const String & database_name)
         return {};
     return it->second;
 }
-
 
 String Context::getPath() const
 {
