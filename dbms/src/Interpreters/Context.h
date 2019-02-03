@@ -18,9 +18,6 @@
 #include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
-#include <IO/CompressionSettings.h>
-#include <Poco/Runnable.h>
-#include <Poco/Thread.h>
 
 
 namespace Poco
@@ -63,6 +60,7 @@ class Clusters;
 class QueryLog;
 class QueryThreadLog;
 class PartLog;
+class TraceLog;
 struct MergeTreeSettings;
 class IDatabase;
 class DDLGuard;
@@ -137,6 +135,7 @@ private:
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
     SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
+
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -393,9 +392,13 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    void initializeTraceCollector();
+
     /// Nullptr if the query log is not ready for this moment.
     QueryLog * getQueryLog();
     QueryThreadLog * getQueryThreadLog();
+
+    TraceLog * getTraceLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.

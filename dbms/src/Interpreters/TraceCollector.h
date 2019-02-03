@@ -4,6 +4,8 @@
 #include <Poco/Logger.h>
 #include <Common/Pipe.h>
 #include <ext/singleton.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TraceLog.h>
 
 namespace DB
 {
@@ -14,12 +16,17 @@ namespace DB
     {
     private:
         Logger * log;
+        TraceLog * trace_log;
 
     public:
-        explicit TraceCollector();
+        explicit TraceCollector(TraceLog * trace_log);
 
         void run() override;
 
         static const size_t buf_size;
+    };
+
+    class TracePipe : public ext::singleton<Pipe>
+    {
     };
 }

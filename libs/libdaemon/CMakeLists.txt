@@ -5,7 +5,6 @@ add_library (daemon ${LINK_MODE}
     src/OwnPatternFormatter.cpp
     src/OwnFormattingChannel.cpp
     src/OwnSplitChannel.cpp
-    src/Backtrace.cpp
 
     include/daemon/BaseDaemon.h
     include/daemon/GraphiteWriter.h
@@ -13,14 +12,8 @@ add_library (daemon ${LINK_MODE}
     include/daemon/OwnPatternFormatter.h
     include/daemon/OwnFormattingChannel.h
     include/daemon/OwnSplitChannel.h
-    include/daemon/Backtrace.h
-    include/daemon/Pipe.h)
-
-if (USE_UNWIND)
-    target_compile_definitions (daemon PRIVATE USE_UNWIND=1)
-    target_include_directories (daemon BEFORE PRIVATE ${UNWIND_INCLUDE_DIR})
-    target_link_libraries (daemon PRIVATE ${UNWIND_LIBRARY})
-endif ()
+    include/daemon/Pipe.h
+)
 
 target_include_directories (daemon PUBLIC include)
 target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
