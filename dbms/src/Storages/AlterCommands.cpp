@@ -14,6 +14,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Common/typeid_cast.h>
+#include <Compression/CompressionFactory.h>
 
 
 namespace DB
@@ -30,6 +31,7 @@ namespace ErrorCodes
 std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+    const CompressionCodecFactory & compression_codec_factory = CompressionCodecFactory::instance();
 
     if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
     {
@@ -49,8 +51,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.codec)
+            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+
         if (command_ast->column)
-            command.after_column = typeid_cast<const ASTIdentifier &>(*command_ast->column).name;
+            command.after_column = *getIdentifierName(command_ast->column);
 
         command.if_not_exists = command_ast->if_not_exists;
 
@@ -63,7 +68,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         AlterCommand command;
         command.type = AlterCommand::DROP_COLUMN;
-        command.column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
+        command.column_name = *getIdentifierName(command_ast->column);
         command.if_exists = command_ast->if_exists;
         return command;
     }
@@ -86,6 +91,9 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.default_expression = ast_col_decl.default_expression;
         }
 
+        if (ast_col_decl.codec)
+            command.codec = compression_codec_factory.get(ast_col_decl.codec);
+
         if (ast_col_decl.comment)
         {
             const auto & ast_comment = typeid_cast<ASTLiteral &>(*ast_col_decl.comment);
@@ -99,8 +107,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.type = COMMENT_COLUMN;
-        const auto & ast_identifier = typeid_cast<ASTIdentifier &>(*command_ast->column);
-        command.column_name = ast_identifier.name;
+        command.column_name = *getIdentifierName(command_ast->column);
         const auto & ast_comment = typeid_cast<ASTLiteral &>(*command_ast->comment);
         command.comment = ast_comment.value.get<String>();
         command.if_exists = command_ast->if_exists;
@@ -169,6 +176,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
         if (default_expression)
             columns_description.defaults.emplace(column_name, ColumnDefault{default_kind, default_expression});
 
+        if (codec)
+            columns_description.codecs.emplace(column_name, codec);
+
         /// Slow, because each time a list is copied
         columns_description.ordinary = Nested::flatten(columns_description.ordinary);
     }
@@ -201,6 +211,9 @@ void AlterCommand::apply(ColumnsDescription & columns_description, ASTPtr & orde
     }
     else if (type == MODIFY_COLUMN)
     {
+        if (codec)
+            columns_description.codecs[column_name] = codec;
+
         if (!is_mutable())
         {
             auto & comments = columns_description.comments;
@@ -398,7 +411,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             {
                 const auto & default_expression = default_column.second.expression;
                 ASTPtr query = default_expression;
-                auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+                auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
                 const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
                 const auto required_columns = actions->getRequiredColumns();
 
@@ -473,7 +486,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
     }
 
     ASTPtr query = default_expr_list;
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(query, all_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(query, all_columns);
     const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
     const auto block = actions->getSampleBlock();
 

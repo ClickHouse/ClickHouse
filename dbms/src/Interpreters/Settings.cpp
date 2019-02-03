@@ -202,7 +202,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     if (column_names)
     {
         auto & offsets = column_names->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+        offsets.push_back(offsets.back() + size);
     }
 
     /// Nested columns case
@@ -211,7 +211,7 @@ void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_valu
     if (column_values && !the_same_offsets)
     {
         auto & offsets = column_values->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+        offsets.push_back(offsets.back() + size);
     }
 }
 

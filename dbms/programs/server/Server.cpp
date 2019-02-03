@@ -11,6 +11,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -27,6 +28,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -115,6 +117,21 @@ void Server::uninitialize()
     BaseDaemon::uninitialize();
 }
 
+int Server::run()
+{
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        std::stringstream header;
+        header << commandName() << " [OPTION] [-- [ARG]...]\n";
+        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
+        helpFormatter.setHeader(header.str());
+        helpFormatter.format(std::cout);
+        return 0;
+    }
+    return Application::run();
+}
+
 void Server::initialize(Poco::Util::Application & self)
 {
     BaseDaemon::initialize(self);
@@ -126,11 +143,22 @@ std::string Server::getDefaultCorePath() const
     return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
 }
 
+void Server::defineOptions(Poco::Util::OptionSet & _options)
+{
+    _options.addOption(
+        Poco::Util::Option("help", "h", "show help and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("help"));
+    BaseDaemon::defineOptions(_options);
+}
+
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
-
     UseSSL use_ssl;
+
+    ThreadStatus thread_status;
 
     registerFunctions();
     registerAggregateFunctions();
@@ -411,14 +439,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setMarkCache(mark_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", std::numeric_limits<UInt64>::max());
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     if (compiled_expression_cache_size)
         global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");
@@ -565,7 +593,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -582,7 +610,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
                         socket,
@@ -602,7 +630,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::TCPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                         new TCPHandlerFactory(*this),
                         server_pool,
                         socket,
@@ -619,7 +647,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::TCPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                         new TCPHandlerFactory(*this, /* secure= */ true),
                         server_pool,
                         socket,
@@ -642,7 +670,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -658,7 +686,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,

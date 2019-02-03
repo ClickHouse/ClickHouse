@@ -44,16 +44,19 @@ struct AlterCommand
     String after_column;
 
     /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
-    bool if_exists;
+    bool if_exists = false;
 
     /// For ADD_COLUMN
-    bool if_not_exists;
+    bool if_not_exists = false;
 
     /// For MODIFY_ORDER_BY
     ASTPtr order_by;
 
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
+
+    /// For ADD and MODIFY
+    CompressionCodecPtr codec;
 
     AlterCommand() = default;
     AlterCommand(const Type type, const String & column_name, const DataTypePtr & data_type,

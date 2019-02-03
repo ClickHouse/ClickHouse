@@ -10,12 +10,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
@@ -196,7 +196,7 @@ Aggregator::Aggregator(const Params & params_)
 
 void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard lock(mutex);
 
     if (compiled_if_possible)
         return;
@@ -598,10 +598,6 @@ void NO_INLINE Aggregator::executeImpl(
         executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
 
 template <bool no_more_keys, typename Method>
 void NO_INLINE Aggregator::executeImplCase(
@@ -617,7 +613,7 @@ void NO_INLINE Aggregator::executeImplCase(
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
 
     /// For all rows.
-    typename Method::Key prev_key;
+    typename Method::Key prev_key{};
     AggregateDataPtr value = nullptr;
     for (size_t i = 0; i < rows; ++i)
     {
@@ -707,9 +703,6 @@ void NO_INLINE Aggregator::executeImplCase(
     }
 }
 
-#ifndef __clang__
-#pragma GCC diagnostic pop
-#endif
 
 void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
@@ -775,11 +768,12 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         materialized_columns.push_back(block.safeGetByPosition(params.keys[i]).column->convertToFullColumnIfConst());
         key_columns[i] = materialized_columns.back().get();
 
-        if (const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
+        if (!result.isLowCardinality())
         {
-            if (!result.isLowCardinality())
+            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
+            if (column_no_lc.get() != key_columns[i])
             {
-                materialized_columns.push_back(low_cardinality_column->convertToFullColumn());
+                materialized_columns.emplace_back(std::move(column_no_lc));
                 key_columns[i] = materialized_columns.back().get();
             }
         }
@@ -795,9 +789,10 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
             materialized_columns.push_back(block.safeGetByPosition(params.aggregates[i].arguments[j]).column->convertToFullColumnIfConst());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
-            if (auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(aggregate_columns[i][j]))
+            auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
+            if (column_no_lc.get() != aggregate_columns[i][j])
             {
-                materialized_columns.push_back(col_low_cardinality->convertToFullColumn());
+                materialized_columns.emplace_back(std::move(column_no_lc));
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
         }
@@ -966,7 +961,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     double uncompressed_bytes = compressed_buf.count();
 
     {
-        std::lock_guard<std::mutex> lock(temporary_files.mutex);
+        std::lock_guard lock(temporary_files.mutex);
         temporary_files.files.emplace_back(std::move(file));
         temporary_files.sum_size_uncompressed += uncompressed_bytes;
         temporary_files.sum_size_compressed += compressed_bytes;
@@ -1730,7 +1725,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
   * (This is important for distributed processing.)
   * In doing so, it can handle different buckets in parallel, using up to `threads` threads.
   */
-class MergingAndConvertingBlockInputStream : public IProfilingBlockInputStream
+class MergingAndConvertingBlockInputStream : public IBlockInputStream
 {
 public:
     /** The input is a set of non-empty sets of partially aggregated data,
@@ -1819,7 +1814,7 @@ protected:
 
             while (true)
             {
-                std::unique_lock<std::mutex> lock(parallel_merge_data->mutex);
+                std::unique_lock lock(parallel_merge_data->mutex);
 
                 if (parallel_merge_data->exception)
                     std::rethrow_exception(parallel_merge_data->exception);
@@ -1909,12 +1904,12 @@ private:
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)
         #undef M
 
-            std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
+            std::lock_guard lock(parallel_merge_data->mutex);
             parallel_merge_data->ready_blocks[bucket_num] = std::move(block);
         }
         catch (...)
         {
-            std::lock_guard<std::mutex> lock(parallel_merge_data->mutex);
+            std::lock_guard lock(parallel_merge_data->mutex);
             if (!parallel_merge_data->exception)
                 parallel_merge_data->exception = std::current_exception();
         }

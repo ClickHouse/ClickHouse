@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -9,7 +9,7 @@ namespace DB
 
 /** Implements the LIMIT relational operation.
   */
-class LimitBlockInputStream : public IProfilingBlockInputStream
+class LimitBlockInputStream : public IBlockInputStream
 {
 public:
     /** If always_read_till_end = false (by default), then after reading enough data,

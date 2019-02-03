@@ -37,7 +37,7 @@ Pattern syntax:
 
 Any quantity of any type of events is allowed over the specified time.
 
-Instead of `>=`,  the following operators can be used:`<`, `>`, `<=`.
+Instead of `>=`, the following operators can be used:`<`, `>`, `<=`.
 
 Any number may be specified in place of 1800.
 
@@ -155,3 +155,8 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 ```
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
+
+
+## sumMapFiltered(keys_to_keep)(keys, values)
+
+Same behavior as [sumMap](reference.md#sumMap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.

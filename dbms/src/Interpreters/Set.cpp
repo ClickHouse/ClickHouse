@@ -9,7 +9,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -147,7 +147,6 @@ void Set::setHeader(const Block & block)
         for (const auto & type : data_types)
             set_elements.emplace_back(removeNullable(type)->createColumn());
     }
-
 
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));

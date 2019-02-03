@@ -3,7 +3,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
 
 #include <DataStreams/MarkInCompressedFile.h>
 #include <DataStreams/NativeBlockOutputStream.h>

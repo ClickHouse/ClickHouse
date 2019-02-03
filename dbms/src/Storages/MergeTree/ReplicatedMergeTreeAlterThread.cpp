@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
+#include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/setThreadName.h>
@@ -27,7 +28,7 @@ ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicated
     , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeAlterThread)")
     , log(&Logger::get(log_name))
 {
-    task = storage_.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage_.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeAlterThread::run()
@@ -155,32 +156,9 @@ void ReplicatedMergeTreeAlterThread::run()
                 if (!transaction)
                     continue;
 
+                storage.updatePartHeaderInZooKeeperAndCommit(zookeeper, *transaction);
+
                 ++changed_parts;
-
-                /// Update part metadata in ZooKeeper.
-                Coordination::Requests ops;
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
-                ops.emplace_back(zkutil::makeSetRequest(
-                    storage.replica_path + "/parts/" + part->name + "/checksums",
-                    storage.getChecksumsForZooKeeper(transaction->getNewChecksums()),
-                    -1));
-
-                try
-                {
-                    zookeeper->multi(ops);
-                }
-                catch (const Coordination::Exception & e)
-                {
-                    /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-                    if (e.code == Coordination::ZNONODE)
-                        storage.enqueuePartForCheck(part->name);
-
-                    throw;
-                }
-
-                /// Apply file changes.
-                transaction->commit();
             }
 
             /// Columns sizes could be quietly changed in case of MODIFY/ADD COLUMN

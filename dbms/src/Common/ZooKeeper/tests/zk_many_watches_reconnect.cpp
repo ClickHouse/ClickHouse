@@ -5,7 +5,7 @@
 
 /// A tool for reproducing https://issues.apache.org/jira/browse/ZOOKEEPER-706
 /// Original libzookeeper can't reconnect the session if the length of SET_WATCHES message
-/// exceeeds jute.maxbuffer (0xfffff by default).
+/// exceeds jute.maxbuffer (0xfffff by default).
 /// This happens when the number of watches exceeds ~29000.
 ///
 /// Session reconnect can be caused by forbidding packets to the current zookeeper server, e.g.
@@ -63,6 +63,4 @@ int main(int argc, char ** argv)
         std::cerr << "Some exception" << std::endl;
         return 2;
     }
-
-    return 0;
 }

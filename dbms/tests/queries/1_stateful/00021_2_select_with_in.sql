@@ -1,1 +1,1 @@
-select sum(Sign) from test.visits where CounterID in (722545, 731962);
+select sum(Sign) from test.visits where CounterID in (942285, 577322);
