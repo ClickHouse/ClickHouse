@@ -1,10 +1,38 @@
 #pragma once
 
 #include <Databases/DatabasesCommon.h>
+#include <Dictionaries/IDictionary.h>
+
+#include <Poco/Path.h>
+
+#include <unordered_map>
 
 
 namespace DB
 {
+
+class DatabaseSnapshotDictionariesIterator final : public IDatabaseIterator
+{
+private:
+    DictionariesMap dictionaries;
+    DictionariesMap::iterator it;
+    mutable StoragePtr storage_ptr = {};
+
+public:
+    explicit DatabaseSnapshotDictionariesIterator(DictionariesMap & dictionaries_)
+        : dictionaries(dictionaries_), it(dictionaries.begin()) {}
+
+    void next() override { ++it; }
+
+    bool isValid() const override { return it != dictionaries.end(); }
+
+    const String & name() const override { return it->first; }
+
+    DictionaryPtr & dictionary() const override { return it->second; }
+
+    StoragePtr & table() const override { return storage_ptr; }
+};
+
 
 /** Default engine of databases.
   * It stores tables list in filesystem using list of .sql files,
@@ -56,6 +84,40 @@ public:
         const Context & context,
         const String & table_name) const override;
 
+    void loadDictionaries(
+        Context & context,
+        ThreadPool * thread_pool,
+        bool has_force_restore_data_flag) override;
+
+    void createDictionary(
+        Context & context,
+        const String & dictionary_name,
+        const DictionaryPtr & dictionary,
+        const ASTPtr & query) override;
+
+    void attachDictionary(
+        const String & dictionary_name,
+        DictionaryPtr & dictionary);
+
+    bool isDictionaryExist(
+        const Context & context,
+        const String & dictionary_name) const override;
+
+    DictionaryPtr tryGetDictionary(
+        const Context & context,
+        const String & dictionary_name) const override;
+
+    DictionaryPtr getDictionary(
+        const Context & context,
+        const String & dictionary_name) const override;
+
+    void removeDictionary(
+        Context & context,
+        const String & dictionary_name) override;
+
+
+    DatabaseIteratorPtr getDictionaryIterator(const Context & context) override;
+
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     String getDataPath() const override;
@@ -66,13 +128,21 @@ public:
     void drop() override;
 
 private:
-    const String metadata_path;
+    Poco::Path metadata_path;
+    Poco::Path dictionaries_metadata_path;
     const String data_path;
     Poco::Logger * log;
+
+    mutable std::mutex dictionaries_mutex;
+    DictionariesMap dictionaries;
+
+private:
 
     void startupTables(ThreadPool * thread_pool);
 
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
+
+    std::string getDictionaryMetadataPath(const std::string & dictionary_name) const;
 };
 
 }

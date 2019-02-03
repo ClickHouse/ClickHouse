@@ -213,9 +213,11 @@ BlockIO InterpreterDropQuery::executeToDictionary(
         throw Exception("Can't execute drop query: dictionary_name is empty", ErrorCodes::BAD_ARGUMENTS);
 
     auto ddl_guard = context.getDDLGuard(database_name, dictionary_name);
-    auto [database, dictionary] = tryGetDatabaseAndDictionary(database_name, dictionary_name, if_exists);
+    DatabaseAndDictionary database_and_dictionary = tryGetDatabaseAndDictionary(database_name, dictionary_name, if_exists);
 
-    database->removeDictionary(context, dictionary_name);
+    if (database_and_dictionary.first && database_and_dictionary.second)
+        database_and_dictionary.first->removeDictionary(context, dictionary_name);
+
     return {};
 }
 

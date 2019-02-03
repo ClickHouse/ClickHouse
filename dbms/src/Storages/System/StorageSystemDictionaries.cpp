@@ -19,6 +19,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
     return {
         { "name", std::make_shared<DataTypeString>() },
+        { "database", std::make_shared<DataTypeString>() },
         { "definition_type", std::make_shared<DataTypeString>() },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
@@ -46,6 +47,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         size_t i = 0;
 
         res_columns[i++]->insert(dict_info.first);
+        res_columns[i++]->insertDefault(); // database
         res_columns[i++]->insert("xml configuration");
         res_columns[i++]->insert(dict_info.second.origin);
 
@@ -91,9 +93,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     const auto & databases = context.getDatabases();
     for (const auto & db : databases)
     {
-        if (db.second->getEngineName() != "Dictionary")
-            continue;
-
         auto it = db.second->getDictionaryIterator(context);
         while (true)
         {
@@ -103,6 +102,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
             const auto dict = it->dictionary();
             size_t column_index = 0;
             res_columns[column_index++]->insert(dict->getName());
+            res_columns[column_index++]->insert(db.first);
             res_columns[column_index++]->insert("DDL");
             res_columns[column_index++]->insertDefault(); // Origin
             res_columns[column_index++]->insert(dict->getTypeName());

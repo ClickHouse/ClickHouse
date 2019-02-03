@@ -18,33 +18,6 @@ namespace DB
 {
 class ExternalDictionaries;
 
-// TODO: describe it later
-using DictionariesMap = std::map<String, DictionaryPtr>;
-
-class DatabaseSnapshotDictionariesIterator final : public IDatabaseIterator
-{
-private:
-    DictionariesMap dictionaries;
-    DictionariesMap::iterator it;
-    mutable StoragePtr storage_ptr = {};
-
-public:
-    explicit DatabaseSnapshotDictionariesIterator(DictionariesMap & dictionaries_)
-        : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
-    void next() override { ++it; }
-
-    bool isValid() const override { return it != dictionaries.end(); }
-
-    const String & name() const override { return it->first; }
-
-    DictionaryPtr & dictionary() const override { return it->second; }
-
-    StoragePtr & table() const override { return storage_ptr; }
-};
-
-
-// TODO: rewrite this description
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
@@ -111,7 +84,6 @@ public:
     void attachDictionary(
         const String & name,
         DictionaryPtr dictionary);
-    // TODO: do I need detachDictionary function ?
 
     void removeTable(
         const Context & context,
@@ -152,19 +124,14 @@ public:
 
     String getMetadataPath() const override;
 
-    String getDictionaryMetadataPath(const String & dictionary_name) const;
-
     void shutdown() override;
 
 private:
     const String name;
     Poco::Path metadata_path;
-    Poco::Path dictionaries_metadata_path;
     mutable std::mutex mutex;
     const ExternalDictionaries & external_dictionaries;
     std::unordered_set<String> deleted_tables;
-
-    DictionariesMap dictionaries;
 
     Poco::Logger * log;
 

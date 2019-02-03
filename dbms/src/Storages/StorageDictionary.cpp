@@ -58,7 +58,7 @@ BlockInputStreams StorageDictionary::read(
     else
     {
         auto db = context.getDatabase(database_name);
-        if (db->getEngineName() != "Dictionary")
+        if (db->getEngineName() != "Ordinary")
             throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
 
         dictionary = db->getDictionary(context, dictionary_name);
@@ -138,12 +138,10 @@ void registerStorageDictionary(StorageFactory & factory)
         else
         {
             auto db = args.context.getDatabase(database_name);
-            if (db->getEngineName() != "Dictionary")
+            if (db->getEngineName() != "Ordinary") // TODO: возможно это не надо проверять
                 throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
 
-            dictionary = db->tryGetDictionary(args.context, dictionary_name);
-            if (!dictionary) // TODO: it would be great if tryGet throws an exception
-                throw Exception("There is no " + dictionary_name + " dictionary", ErrorCodes::BAD_ARGUMENTS);
+            dictionary = db->getDictionary(args.context, dictionary_name);
         }
 
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();

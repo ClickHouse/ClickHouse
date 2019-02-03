@@ -23,6 +23,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <ext/scope_guard.h>
+#include <Interpreters/ExternalLoader.h>
+#include <Interpreters/ExternalDictionaries.h>
 
 
 namespace DB
@@ -38,12 +40,60 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int SYNTAX_ERROR;
+    extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
 }
 
 
 static constexpr size_t PRINT_MESSAGE_EACH_N_TABLES = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
+
+
+namespace
+{
+    void loadDictionary(
+        Context & context,
+        DatabaseOrdinary & database,
+        const String & database_name,
+        const Poco::Path & dictionaries_metadata_path,
+        const String & filename)
+    {
+        Logger * log = &Logger::get("loadDictionary");
+        Poco::Path dictionary_metadata_path = dictionaries_metadata_path;
+        dictionary_metadata_path.append(filename);
+
+        String s;
+        {
+            char in_buf[METADATA_FILE_BUFFER_SIZE];
+            ReadBufferFromFile in(dictionary_metadata_path.toString(), METADATA_FILE_BUFFER_SIZE, -1, in_buf);
+            readStringUntilEOF(s, in);
+        }
+
+        if (s.empty())
+        {
+            LOG_ERROR(log, "File " << dictionary_metadata_path.toString() << " is empty. Removing");
+            Poco::File(dictionary_metadata_path).remove();
+            return;
+        }
+
+        try
+        {
+            // TODO: убрать возврат конфигурации из createDictionaryFromDefinition
+            auto [dictionary_name, dictionary_ptr] = createDictionaryFromDefinition(
+                s, database_name, context, "in file " + dictionary_metadata_path.toString());
+            database.attachDictionary(dictionary_name, dictionary_ptr);
+
+            context.getExternalDictionaries().addObjectFromDatabase(database_name, dictionary_name, dictionary_ptr);
+        }
+        catch (const Exception & e)
+        {
+            throw Exception("Cannot create dictionary from metadata file " + dictionary_metadata_path.toString() + ", error: " + e.displayText() +
+                            ", stack trace:\n" + e.getStackTrace().toString(),
+                            ErrorCodes::CANNOT_CREATE_DICTIONARY_FROM_METADATA);
+        }
+    }
+}
 
 namespace detail
 {
@@ -109,10 +159,13 @@ static void loadTable(
 DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context)
     : DatabaseWithOwnTablesBase(std::move(name_))
     , metadata_path(metadata_path_)
+    , dictionaries_metadata_path(metadata_path_)
     , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
     , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
 {
+    dictionaries_metadata_path.append("dictionaries");
     Poco::File(data_path).createDirectories();
+    Poco::File(dictionaries_metadata_path).createDirectory();
 }
 
 
@@ -127,6 +180,9 @@ void DatabaseOrdinary::loadTables(
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(metadata_path); dir_it != dir_end; ++dir_it)
     {
+        if (dir_it->isDirectory() && dir_it.name() == "dictionaries")
+            continue;
+
         /// For '.svn', '.gitignore' directory and similar.
         if (dir_it.name().at(0) == '.')
             continue;
@@ -147,7 +203,7 @@ void DatabaseOrdinary::loadTables(
         if (endsWith(dir_it.name(), ".sql"))
             file_names.push_back(dir_it.name());
         else
-            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + metadata_path,
+            throw Exception("Incorrect file extension: " + dir_it.name() + " in metadata directory " + metadata_path.toString(),
                 ErrorCodes::INCORRECT_FILE_NAME);
     }
 
@@ -183,7 +239,7 @@ void DatabaseOrdinary::loadTables(
             watch.restart();
         }
 
-        loadTable(context, metadata_path, *this, name, data_path, table, has_force_restore_data_flag);
+        loadTable(context, metadata_path.toString(), *this, name, data_path, table, has_force_restore_data_flag);
     };
 
     for (const auto & filename : file_names)
@@ -274,7 +330,7 @@ void DatabaseOrdinary::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
     {
-        std::lock_guard lock(mutex);
+        std::lock_guard lock(tables_mutex);
         if (tables.find(table_name) != tables.end())
             throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
     }
@@ -299,7 +355,7 @@ void DatabaseOrdinary::createTable(
     {
         /// Add a table to the map of known tables.
         {
-            std::lock_guard lock(mutex);
+            std::lock_guard lock(tables_mutex);
             if (!tables.emplace(table_name, table).second)
                 throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
@@ -407,7 +463,7 @@ void DatabaseOrdinary::renameTable(
         throw Exception{Exception::CreateFromPoco, e};
     }
 
-    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
+    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path.toString(), table_name));
     if (!ast)
         throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
@@ -441,7 +497,7 @@ ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
 {
     ASTPtr ast;
 
-    auto table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
+    auto table_metadata_path = detail::getTableMetadataPath(metadata_path.toString(), table_name);
     ast = getCreateQueryFromMetadata(table_metadata_path, name, throw_on_error);
     if (!ast && throw_on_error)
     {
@@ -472,7 +528,7 @@ ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) con
 {
     ASTPtr ast;
 
-    auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path);
+    auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path.toString());
     ast = getCreateQueryFromMetadata(database_metadata_path, name, true);
     if (!ast)
     {
@@ -495,8 +551,8 @@ void DatabaseOrdinary::alterTable(
     /// Read the definition of the table and replace the necessary parts with new ones.
 
     String table_name_escaped = escapeForFileName(table_name);
-    String table_metadata_tmp_path = metadata_path + "/" + table_name_escaped + ".sql.tmp";
-    String table_metadata_path = metadata_path + "/" + table_name_escaped + ".sql";
+    String table_metadata_tmp_path = metadata_path.toString() + "/" + table_name_escaped + ".sql.tmp";
+    String table_metadata_path = metadata_path.toString() + "/" + table_name_escaped + ".sql";
     String statement;
 
     {
@@ -547,6 +603,152 @@ void DatabaseOrdinary::drop()
 }
 
 
+void DatabaseOrdinary::loadDictionaries(Context & context, ThreadPool *, bool)
+{
+    LOG_INFO(log, "Loading dictionaries.");
+
+    using FileNames = std::vector<std::string>;
+    FileNames file_names;
+
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator dir_it(dictionaries_metadata_path); dir_it != dir_end; ++dir_it)
+    {
+        const String & filename = dir_it.name();
+        /// For '.svn', '.gitignore' and similar
+        if (filename.at(0) == '.')
+            continue;
+
+        /// There are files .sql.tmp - delete.
+        if (endsWith(filename, ".sql.tmp"))
+        {
+            LOG_INFO(log, "Removing file " << filename);
+            Poco::File(filename).remove();
+            continue;
+        }
+
+        /// The required files have names like `dictionary_name.sql`
+        if (endsWith(filename, ".sql"))
+            file_names.push_back(filename);
+        else
+            throw Exception("Incorrect file extension: " + filename + " in metadata directory " + dictionaries_metadata_path.toString(),
+                            ErrorCodes::INCORRECT_FILE_NAME);
+    }
+
+    if (file_names.empty())
+        return;
+
+    /*
+     * TODO: explanation about placing on disk and ext4 filesystem.
+     */
+    std::sort(file_names.begin(), file_names.end());
+    size_t total_dictionaries = file_names.size();
+    LOG_INFO(log, "Total " << total_dictionaries << " dictionaries.");
+
+    for (const auto & filename : file_names)
+    {
+        loadDictionary(context, *this, name, dictionaries_metadata_path, filename);
+    }
+}
+
+
+void DatabaseOrdinary::createDictionary(Context & context, const String & dictionary_name, const DictionaryPtr & dict_ptr, const ASTPtr & query)
+{
+    const auto & settings = context.getSettingsRef();
+    if (isTableExist(context, dictionary_name))
+        throw Exception("Table already exists with the same name `" + name + '.' + dictionary_name + '`', ErrorCodes::TABLE_ALREADY_EXISTS);
+
+    if (isDictionaryExist(context, dictionary_name))
+        throw Exception("Dictionary " + name + '.' + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+
+    Poco::Path dictionary_metadata_path = getDictionaryMetadataPath(dictionary_name);
+    Poco::Path dictionary_metadata_tmp_path = dictionary_metadata_path;
+    dictionary_metadata_tmp_path.setExtension("tmp");
+    String statement;
+
+    {
+        statement = getDictionaryDefinitionFromCreateQuery(query);
+        WriteBufferFromFile out(dictionary_metadata_tmp_path.toString(), statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+        writeString(statement, out);
+        out.next();
+        if (settings.fsync_metadata)
+            out.sync();
+        out.close();
+    }
+
+    try
+    {
+        std::lock_guard tables_lock{tables_mutex};
+        if (tables.count(dictionary_name) > 0)
+            throw Exception("Table already exists with the same name `" + name + '.' + dictionary_name + "`", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+        std::lock_guard dict_lock{dictionaries_mutex};
+        if (!dictionaries.emplace(dictionary_name, dict_ptr).second)
+            throw Exception("Dictionary " + name + '.' + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+
+        Poco::File(dictionary_metadata_tmp_path).renameTo(dictionary_metadata_path.toString());
+        context.getExternalDictionaries().addObjectFromDatabase(name, dictionary_name, dict_ptr);
+    }
+    catch (...)
+    {
+        Poco::File(dictionary_metadata_tmp_path).remove();
+    }
+}
+
+
+void DatabaseOrdinary::attachDictionary(const String & dictionary_name, DictionaryPtr & dictionary)
+{
+    std::lock_guard dict_lock(dictionaries_mutex);
+    if (!dictionaries.emplace(dictionary_name, dictionary).second)
+        throw Exception("Dictionary " + name + '.' + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
+}
+
+
+bool DatabaseOrdinary::isDictionaryExist(const Context & context [[maybe_unused]], const String & dictionary_name) const
+{
+    std::lock_guard dict_lock{dictionaries_mutex};
+    return dictionaries.count(dictionary_name) != 0;
+}
+
+
+DictionaryPtr DatabaseOrdinary::tryGetDictionary(const Context & context [[maybe_unused]], const String & dictionary_name) const
+{
+    std::lock_guard dict_lock{dictionaries_mutex};
+    auto it = dictionaries.find(dictionary_name);
+    if (it != dictionaries.end())
+        return it->second;
+
+    return {};
+}
+
+
+DictionaryPtr DatabaseOrdinary::getDictionary(const Context & context [[maybe_unused]], const String & dictionary_name) const
+{
+    std::lock_guard dict_lock{dictionaries_mutex};
+    auto it = dictionaries.find(dictionary_name);
+    if (it != dictionaries.end())
+        return it->second;
+
+    throw Exception("No such dictionary " + name + '.' + dictionary_name, ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+void DatabaseOrdinary::removeDictionary(Context & context [[maybe_unused]], const String & dictionary_name)
+{
+    std::lock_guard dict_lock{dictionaries_mutex};
+    auto dictionary_path = getDictionaryMetadataPath(dictionary_name);
+    Poco::File(dictionary_path).remove();
+    dictionaries.erase(dictionary_name);
+    context.getExternalDictionaries().removeObject(name, dictionary_name);
+}
+
+
+DatabaseIteratorPtr DatabaseOrdinary::getDictionaryIterator(const Context & context [[maybe_unused]])
+{
+    std::lock_guard dict_lock(dictionaries_mutex);
+    return std::make_unique<DatabaseSnapshotDictionariesIterator>(dictionaries);
+}
+
+
 String DatabaseOrdinary::getDataPath() const
 {
     return data_path;
@@ -554,7 +756,7 @@ String DatabaseOrdinary::getDataPath() const
 
 String DatabaseOrdinary::getMetadataPath() const
 {
-    return metadata_path;
+    return metadata_path.toString();
 }
 
 String DatabaseOrdinary::getDatabaseName() const
@@ -564,7 +766,16 @@ String DatabaseOrdinary::getDatabaseName() const
 
 String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const
 {
-    return detail::getTableMetadataPath(metadata_path, table_name);
+    return detail::getTableMetadataPath(metadata_path.toString(), table_name);
+}
+
+
+std::string DatabaseOrdinary::getDictionaryMetadataPath(const std::string & dictionary_name) const
+{
+    Poco::Path dictionary_metadata_path = dictionaries_metadata_path;
+    dictionary_metadata_path.append(escapeForFileName(dictionary_name));
+    dictionary_metadata_path.setExtension("sql");
+    return dictionary_metadata_path.toString();
 }
 
 }

@@ -16,6 +16,9 @@ namespace DB
 class Context;
 
 
+using DictionariesMap = std::unordered_map<std::string, DictionaryPtr>;
+
+
 /** Get the row with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.
   * See the implementation.
@@ -124,7 +127,7 @@ public:
 protected:
     String name;
 
-    mutable std::mutex mutex;
+    mutable std::mutex tables_mutex;
     Tables tables;
 
     DatabaseWithOwnTablesBase(String name_) : name(std::move(name_)) { }

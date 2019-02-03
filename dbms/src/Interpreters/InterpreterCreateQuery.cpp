@@ -129,7 +129,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     Poco::Path metadata_path = path;
     metadata_path.append("metadata").append(database_name_escaped);
     Poco::File(metadata_path).createDirectory();
-    if (database_engine_name == "Dictionary")
+    if (database_engine_name == "Ordinary")
         Poco::File(Poco::Path(metadata_path).append("dictionaries")).createDirectory();
 
     DatabasePtr database = DatabaseFactory::get(database_engine_name, database_name, metadata_path.toString(), context);
