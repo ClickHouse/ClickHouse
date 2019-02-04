@@ -131,7 +131,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 
 
-## graphite
+## graphite {#server_settings-graphite}
 
 Отправка даных в [Graphite](https://github.com/graphite-project).
 
@@ -272,7 +272,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## listen_host
+## listen_host {#server_settings-listen_host}
 
 Ограничение по хостам, с которых может прийти запрос. Если необходимо, чтобы сервер отвечал всем, то надо указать `::`.
 
@@ -284,7 +284,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## logger
+## logger {#server_settings-logger}
 
 Настройки логгирования.
 
@@ -602,7 +602,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 ```
 
 
-## tcp_port
+## tcp_port {#server_settings-tcp_port}
 
 Порт для взаимодействия с клиентами по протоколу TCP.
 
