@@ -14,6 +14,8 @@
 namespace DB
 {
 
+const Field UNKNOWN_FIELD = Field(3);
+
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
@@ -162,7 +164,7 @@ UniqueCondition::UniqueCondition(
         expression_ast = select.prewhere_expression->clone();
     else
         /// 0b11 -- can be true and false at the same time
-        expression_ast = std::make_shared<ASTLiteral>(Field(3));
+        expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
     /// Do not proceed if index is useless for this query.
     if ((useless = checkASTAlwaysUnknownOrTrue(expression_ast)))
@@ -218,7 +220,7 @@ void UniqueCondition::traverseAST(ASTPtr & node) const
     }
 
     if (!atomFromAST(node))
-        node = std::make_shared<ASTLiteral>(Field(3)); /// can_be_true=1 can_be_false=1
+        node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD); /// can_be_true=1 can_be_false=1
 }
 
 bool UniqueCondition::atomFromAST(ASTPtr & node) const
