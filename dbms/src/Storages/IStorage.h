@@ -8,6 +8,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/ITableDeclaration.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/CancellationCode.h>
 #include <shared_mutex>
 #include <memory>
 #include <optional>
@@ -258,7 +259,7 @@ public:
     }
 
     /// Cancel a mutation.
-    virtual void killMutation(const String & /*mutation_id*/)
+    virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

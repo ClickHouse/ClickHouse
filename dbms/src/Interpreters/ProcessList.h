@@ -19,6 +19,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/CancellationCode.h>
 #include <DataStreams/BlockIO.h>
 
 
@@ -311,15 +312,6 @@ public:
         std::lock_guard lock(mutex);
         max_size = max_size_;
     }
-
-    enum class CancellationCode
-    {
-        NotFound = 0,                     /// already cancelled
-        QueryIsNotInitializedYet = 1,
-        CancelCannotBeSent = 2,
-        CancelSent = 3,
-        Unknown
-    };
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill = false);

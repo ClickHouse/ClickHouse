@@ -5,6 +5,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/CancellationCode.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeString.h>
@@ -27,8 +28,6 @@ namespace ErrorCodes
     extern const int CANNOT_KILL;
 }
 
-
-using CancellationCode = ProcessList::CancellationCode;
 
 static const char * cancellationCodeToStatus(CancellationCode code)
 {
@@ -249,10 +248,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
-                {
-                    storage->killMutation(mutation_id);
-                    code = CancellationCode::CancelSent;
-                }
+                    code = storage->killMutation(mutation_id);
             }
 
             insertResultRow(i, code, mutations_block, header, res_columns);

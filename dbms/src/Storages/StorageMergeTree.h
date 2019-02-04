@@ -64,7 +64,7 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
-    void killMutation(const String & mutation_id) override;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     void drop() override;
     void truncate(const ASTPtr &, const Context &) override;

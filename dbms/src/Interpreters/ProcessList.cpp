@@ -356,7 +356,7 @@ QueryStatus * ProcessList::tryGetProcessListElement(const String & current_query
 }
 
 
-ProcessList::CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
+CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id, const String & current_user, bool kill)
 {
     std::lock_guard lock(mutex);
 
