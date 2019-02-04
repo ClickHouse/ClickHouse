@@ -17,6 +17,7 @@
 #include <Common/setThreadName.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
+#include <IO/BrotliReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -396,19 +397,25 @@ void HTTPHandler::processQuery(
     String http_request_compression_method_str = request.get("Content-Encoding", "");
     if (!http_request_compression_method_str.empty())
     {
-        ZlibCompressionMethod method;
-        if (http_request_compression_method_str == "gzip")
-        {
-            method = ZlibCompressionMethod::Gzip;
-        }
-        else if (http_request_compression_method_str == "deflate")
-        {
-            method = ZlibCompressionMethod::Zlib;
-        }
-        else
+        do {
+            if (http_request_compression_method_str == "gzip")
+            {
+                in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Gzip);
+                break;
+            }
+            if (http_request_compression_method_str == "deflate")
+            {
+                in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, ZlibCompressionMethod::Zlib);
+                break;
+            }
+            if (http_request_compression_method_str == "br")
+            {
+                in_post = std::make_unique<BrotliReadBuffer>(*in_post_raw);
+                break;
+            }
             throw Exception("Unknown Content-Encoding of HTTP request: " + http_request_compression_method_str,
-                ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
-        in_post = std::make_unique<ZlibInflatingReadBuffer>(*in_post_raw, method);
+                            ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+        } while(0);
     }
     else
         in_post = std::move(in_post_raw);
