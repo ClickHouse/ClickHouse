@@ -459,10 +459,24 @@ void addLayoutFieldsFromAST(
         throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout may contain only one parameter", ErrorCodes::BAD_ARGUMENTS);
 
     const auto & layout_type = typeid_cast<const ASTKeyValueFunction &>(*ast_expr_list->children[0].get());
+    if (layout_type.children.size() > 1)
+        throw Exception(std::string(__PRETTY_FUNCTION__) + ": layout type may contain only one parameter", ErrorCodes::BAD_ARGUMENTS);
+
     Poco::AutoPtr<Poco::XML::Element> layout_element = doc->createElement("layout");
     root->appendChild(layout_element);
     Poco::AutoPtr<Poco::XML::Element> layout_type_element = doc->createElement(layout_type.name);
     layout_element->appendChild(layout_type_element);
+
+    const auto * layout_parameter_expr_list = layout_type.children.at(0).get();
+    if (layout_parameter_expr_list->children.size() == 1)
+    {
+        const ASTPair & pair = typeid_cast<const ASTPair &>(*layout_parameter_expr_list->children[0].get());
+        Poco::AutoPtr<Poco::XML::Element> layout_type_parameter_element = doc->createElement(pair.first);
+        const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair.second.get());
+        layout_type_parameter_element->appendChild(doc->createTextNode(toString(literal->value.get<UInt64>())));
+        layout_type_element->appendChild(layout_type_parameter_element);
+    }
+
     // TODO: add here parameter in layout_type_element
 }
 
@@ -513,6 +527,9 @@ void addStructureFieldsFromAST(
     {
         const auto * child = create.columns->children[index].get();
         const ASTColumnDeclaration * column_declaration = typeid_cast<const ASTColumnDeclaration *>(child);
+
+        if (!column_declaration->type || !column_declaration->default_expression)
+            throw Exception("Column declaration of dictionary should contain type and default expression", ErrorCodes::BAD_ARGUMENTS);
 
         Poco::AutoPtr<Poco::XML::Element> attribute_element = doc->createElement("attribute");
         structure_element->appendChild(attribute_element);

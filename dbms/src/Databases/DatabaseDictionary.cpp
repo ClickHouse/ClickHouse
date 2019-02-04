@@ -30,12 +30,6 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DICTIONARY_FROM_METADATA;
 }
 
-
-namespace
-{
-    constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-}
-
 DatabaseDictionary::DatabaseDictionary(const String & name_, const Poco::Path & metadata_path_, const Context & context_)
     : name(name_)
     , metadata_path(metadata_path_)
