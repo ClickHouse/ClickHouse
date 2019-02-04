@@ -58,9 +58,6 @@ BlockInputStreams StorageDictionary::read(
     else
     {
         auto db = context.getDatabase(database_name);
-        if (db->getEngineName() != "Ordinary")
-            throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
-
         dictionary = db->getDictionary(context, dictionary_name);
     }
 
@@ -138,9 +135,6 @@ void registerStorageDictionary(StorageFactory & factory)
         else
         {
             auto db = args.context.getDatabase(database_name);
-            if (db->getEngineName() != "Ordinary") // TODO: возможно это не надо проверять
-                throw Exception("Database should have Dictionary engine", ErrorCodes::BAD_ARGUMENTS);
-
             dictionary = db->getDictionary(args.context, dictionary_name);
         }
 
