@@ -146,12 +146,13 @@ public:
         return res;
     }
 
-    void cancelMutation(Int64 mutation_version)
+    void cancelPartMutations(const String & partition_id, Int64 mutation_version)
     {
         std::lock_guard lock{mutex};
         for (auto & merge_element : merges)
         {
-            if (merge_element.source_data_version < mutation_version
+            if ((partition_id.empty() || merge_element.partition_id == partition_id)
+                && merge_element.source_data_version < mutation_version
                 && merge_element.result_data_version >= mutation_version)
                 merge_element.is_cancelled = true;
         }
