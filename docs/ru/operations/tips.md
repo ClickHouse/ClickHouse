@@ -241,4 +241,4 @@ script
 end script
 ```
 
-[Original article](https://clickhouse.yandex/docs/ru/operations/tips/) <!--hide-->
+[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/tips/) <!--hide-->
