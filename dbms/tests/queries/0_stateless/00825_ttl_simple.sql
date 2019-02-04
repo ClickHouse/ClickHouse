@@ -28,6 +28,6 @@ select * from test.ttl order by d;
 SET send_logs_level = 'none';
 
 drop table if exists test.ttl;
-create table test.ttl (d DateTime ttl 2 + 2) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 434}
-create table test.ttl (d DateTime ttl toDateTime(1)) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 434}
-create table test.ttl (d DateTime ttl d - d) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 434}
+create table test.ttl (d DateTime ttl 2 + 2) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 440}
+create table test.ttl (d DateTime ttl toDateTime(1)) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 440}
+create table test.ttl (d DateTime ttl d - d) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 440}

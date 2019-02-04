@@ -408,7 +408,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE = 431;
     extern const int UNKNOWN_CODEC = 432;
     extern const int ILLEGAL_CODEC_PARAMETER = 433;
-    extern const int BAD_TTL_EXPRESSION = 434;
+    extern const int BAD_TTL_EXPRESSION = 440;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
