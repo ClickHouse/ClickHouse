@@ -151,6 +151,4 @@ private:
     void attachToThreadGroup();
 };
 
-using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;
-
 }
