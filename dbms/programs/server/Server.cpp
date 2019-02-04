@@ -157,11 +157,10 @@ void Server::defineOptions(Poco::Util::OptionSet & _options)
             .repeatable(false)
             .binding("help"));
     _options.addOption(
-            Poco::Util::Option("version", "V", "show version and exit")
-                    .required(false)
-                    .repeatable(false)
-                    .binding("version")
-    );
+        Poco::Util::Option("version", "V", "show version and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("version"));
     BaseDaemon::defineOptions(_options);
 }
 
