@@ -388,7 +388,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     return result;
 }
 
-void StorageMergeTree::killMutation(const String & mutation_id)
+CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
     LOG_TRACE(log, "Killing mutation " << mutation_id);
 
@@ -404,12 +404,13 @@ void StorageMergeTree::killMutation(const String & mutation_id)
         }
     }
 
-    if (to_kill)
-    {
-        global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
-        to_kill->removeFile();
-        LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
-    }
+    if (!to_kill)
+        return CancellationCode::NotFound;
+
+    global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
+    to_kill->removeFile();
+    LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+    return CancellationCode::CancelSent;
 }
 
 

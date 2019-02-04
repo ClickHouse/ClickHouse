@@ -4401,7 +4401,7 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
     return queue.getMutationsStatus();
 }
 
-void StorageReplicatedMergeTree::killMutation(const String & mutation_id)
+CancellationCode StorageReplicatedMergeTree::killMutation(const String & mutation_id)
 {
     assertNotReadonly();
 
@@ -4411,7 +4411,7 @@ void StorageReplicatedMergeTree::killMutation(const String & mutation_id)
 
     auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
     if (!mutation_entry)
-        return;
+        return CancellationCode::NotFound;
 
     /// After this point no new part mutations will start and part mutations that still exist
     /// in the queue will be skipped.
@@ -4423,6 +4423,7 @@ void StorageReplicatedMergeTree::killMutation(const String & mutation_id)
         Int64 block_number = pair.second;
         global_context.getMergeList().cancelPartMutations(partition_id, block_number);
     }
+    return CancellationCode::CancelSent;
 }
 
 

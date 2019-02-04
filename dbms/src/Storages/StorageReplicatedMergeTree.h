@@ -122,7 +122,7 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
-    void killMutation(const String & mutation_id) override;
+    CancellationCode killMutation(const String & mutation_id) override;
 
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
