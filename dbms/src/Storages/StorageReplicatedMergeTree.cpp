@@ -4403,7 +4403,26 @@ std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsSta
 
 void StorageReplicatedMergeTree::killMutation(const String & mutation_id)
 {
-    LOG_TRACE(log, "KILL MUTATION " << mutation_id);
+    assertNotReadonly();
+
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+
+    LOG_TRACE(log, "Killing mutation " << mutation_id);
+
+    auto mutation_entry = queue.removeMutation(zookeeper, mutation_id);
+    if (!mutation_entry)
+        return;
+
+    /// After this point no new part mutations will start and part mutations that still exist
+    /// in the queue will be skipped.
+
+    /// Cancel already running part mutations.
+    for (const auto & pair : mutation_entry->block_numbers)
+    {
+        const String & partition_id = pair.first;
+        Int64 block_number = pair.second;
+        global_context.getMergeList().cancelPartMutations(partition_id, block_number);
+    }
 }
 
 

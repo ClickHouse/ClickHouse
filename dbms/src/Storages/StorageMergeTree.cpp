@@ -406,7 +406,7 @@ void StorageMergeTree::killMutation(const String & mutation_id)
 
     if (to_kill)
     {
-        global_context.getMergeList().cancelMutation(to_kill->block_number);
+        global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
         to_kill->removeFile();
         LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
     }

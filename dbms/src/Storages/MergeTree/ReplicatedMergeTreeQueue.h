@@ -262,6 +262,10 @@ public:
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
     void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
+    /// Remove a mutation from ZooKeeper and from the local set. Returns the removed entry or nullptr
+    /// if it could not be found.
+    ReplicatedMergeTreeMutationEntryPtr removeMutation(zkutil::ZooKeeperPtr zookeeper, const String & mutation_id);
+
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */

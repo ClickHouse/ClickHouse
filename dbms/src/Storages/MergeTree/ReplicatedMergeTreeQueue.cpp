@@ -651,6 +651,37 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 }
 
 
+ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
+    zkutil::ZooKeeperPtr zookeeper, const String & mutation_id)
+{
+    std::lock_guard lock(update_mutations_mutex);
+
+    auto rc = zookeeper->tryRemove(zookeeper_path + "/mutations/" + mutation_id);
+    if (rc == Coordination::ZOK)
+        LOG_DEBUG(log, "Removed mutation " + mutation_id + " from ZooKeeper.");
+
+    std::lock_guard state_lock(state_mutex);
+
+    auto it = mutations_by_znode.find(mutation_id);
+    if (it == mutations_by_znode.end())
+        return nullptr;
+
+    auto entry = it->second.entry;
+    for (const auto & partition_and_block_num : entry->block_numbers)
+    {
+        auto & in_partition = mutations_by_partition[partition_and_block_num.first];
+        in_partition.erase(partition_and_block_num.second);
+        if (in_partition.empty())
+            mutations_by_partition.erase(partition_and_block_num.first);
+    }
+
+    mutations_by_znode.erase(it);
+    LOG_DEBUG(log, "Removed mutation " + entry->znode_name + " from local state.");
+
+    return entry;
+}
+
+
 ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsForMergeToEndOfQueue(const String & part_name)
 {
     std::lock_guard lock(state_mutex);
@@ -1167,8 +1198,8 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     auto in_partition = mutations_by_partition.find(part->info.partition_id);
     if (in_partition == mutations_by_partition.end())
     {
-        LOG_ERROR(log, "There are no mutations for partition ID " << part->info.partition_id
-            << " (trying to mutate part " << part->name << "to " << toString(desired_mutation_version) << ")");
+        LOG_WARNING(log, "There are no mutations for partition ID " << part->info.partition_id
+            << " (trying to mutate part " << part->name << " to " << toString(desired_mutation_version) << ")");
         return MutationCommands{};
     }
 
@@ -1176,7 +1207,7 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     auto end = in_partition->second.lower_bound(desired_mutation_version);
     if (end == in_partition->second.end() || end->first != desired_mutation_version)
-        LOG_ERROR(log, "Mutation with version " << desired_mutation_version
+        LOG_WARNING(log, "Mutation with version " << desired_mutation_version
             << " not found in partition ID " << part->info.partition_id
             << " (trying to mutate part " << part->name + ")");
     else
