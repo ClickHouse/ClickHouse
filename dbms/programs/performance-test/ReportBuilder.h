@@ -9,14 +9,18 @@ namespace DB
 class ReportBuilder
 {
 public:
-    explicit ReportBuilder(const std::string & server_version_);
+    ReportBuilder(const std::string & server_version_);
     std::string buildFullReport(
         const PerformanceTestInfo & test_info,
-        std::vector<TestStats> & stats) const;
+        std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run) const;
+
 
     std::string buildCompactReport(
         const PerformanceTestInfo & test_info,
-        std::vector<TestStats> & stats) const;
+        std::vector<TestStats> & stats,
+        const std::vector<std::size_t> & queries_to_run) const;
+
 private:
     std::string server_version;
     std::string hostname;
