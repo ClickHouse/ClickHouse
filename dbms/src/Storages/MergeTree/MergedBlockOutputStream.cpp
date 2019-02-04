@@ -381,7 +381,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     if (new_part->min_ttl)
     {
-        /// need comment
+        /// Write a file with value of minimal ttl.
         WriteBufferFromFile out(part_path + "min_ttl.txt", 4096);
         writeIntText(new_part->min_ttl, out);
     }

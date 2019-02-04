@@ -471,10 +471,7 @@ bool StorageMergeTree::merge(
         data.removeEmptyColumnsFromPart(new_part);
 
         if (!new_part->columns.size())
-        {
             data.removePartsFromWorkingSet({new_part}, true);
-            data.clearOldPartsFromFilesystem();
-        }
 
         write_part_log({});
     }

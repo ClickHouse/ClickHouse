@@ -614,7 +614,7 @@ void MergeTreeDataPart::loadMinTTLValue()
         assertEOF(file);
     }
     else
-        min_ttl = 0; /// need comment
+        min_ttl = 0;
 }
 
 void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const

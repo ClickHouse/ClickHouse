@@ -24,3 +24,10 @@ insert into test.ttl values (toDateTime('2000-10-11 00:00:00'), 2);
 insert into test.ttl values (toDateTime('2000-10-12 00:00:00'), 3);
 select sleep(0.1);
 select * from test.ttl order by d;
+
+SET send_logs_level = 'none';
+
+drop table if exists test.ttl;
+create table test.ttl (d DateTime ttl 2 + 2) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 434}
+create table test.ttl (d DateTime ttl toDateTime(1)) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 434}
+create table test.ttl (d DateTime ttl d - d) engine = MergeTree order by tuple() partition by toSecond(d); -- { serverError 434}

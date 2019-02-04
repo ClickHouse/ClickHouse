@@ -209,14 +209,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     }
 
     /// Compute ttls and find minimal
-
     new_data_part->min_ttl = 0;
     if (!data.ttl_expressions_by_column.empty())
     {
         for (const auto & [input_column, output_column] : data.ttl_result_columns_by_name)
         {
-            auto & expr = data.ttl_expressions_by_column[input_column];
-            expr->execute(block);
+            if (!block.has(output_column))
+            {
+                const auto & expr = data.ttl_expressions_by_column[input_column];
+                expr->execute(block);
+            }
 
             const auto & current = block.getByName(output_column);
             const ColumnUInt32 * column = typeid_cast<const ColumnUInt32 *>(current.column.get());
@@ -225,8 +227,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             for (auto val : vec)
                 if (!new_data_part->min_ttl || val < new_data_part->min_ttl)
                     new_data_part->min_ttl = val;
-
-            block.erase(output_column);
         }
     }
 

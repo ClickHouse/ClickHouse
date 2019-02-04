@@ -630,7 +630,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         }
     }
 
-
     time_t current_time = time(nullptr);
     bool need_remove_expired_values = false;
     new_data_part->min_ttl = 0;
@@ -719,8 +718,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     const size_t initial_reservation = disk_reservation ? disk_reservation->getSize() : 0;
 
     NameSet empty_columns;
-    for (const auto & elem : data.ttl_expressions_by_column)
-        empty_columns.emplace(elem.first);
+    if (need_remove_expired_values)
+        for (const auto & elem : data.ttl_expressions_by_column)
+            empty_columns.emplace(elem.first);
 
     Block block;
     while (!actions_blocker.isCancelled() && (block = merged_stream->read()))
@@ -1121,16 +1121,20 @@ void MergeTreeDataMergerMutator::removeValuesWithExpiredTTL(
     time_t current_time = time(nullptr);
     for (const auto & [name, ttl_expr] : data.ttl_expressions_by_column)
     {
-        ttl_expr->execute(block);
+        const String & ttl_result_column_name = data.ttl_result_columns_by_name[name];
+
+        if (!block.has(ttl_result_column_name))
+            ttl_expr->execute(block);
 
         auto & column_with_type = block.getByName(name);
         const IColumn * values_column = column_with_type.column.get();
         MutableColumnPtr result_column = values_column->cloneEmpty();
         result_column->reserve(block.rows());
 
-        const auto & ttl_column = block.getByName(data.ttl_result_columns_by_name[name]);
+        const auto & ttl_result_column = block.getByName(ttl_result_column_name);
+
         const ColumnUInt32::Container & ttl_vec =
-            (typeid_cast<const ColumnUInt32 *>(ttl_column.column.get()))->getData();
+            (typeid_cast<const ColumnUInt32 *>(ttl_result_column.column.get()))->getData();
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
@@ -1146,8 +1150,6 @@ void MergeTreeDataMergerMutator::removeValuesWithExpiredTTL(
             }
         }
         column_with_type.column = std::move(result_column);
-
-        block.erase(data.ttl_result_columns_by_name[name]);
     }
 }
 

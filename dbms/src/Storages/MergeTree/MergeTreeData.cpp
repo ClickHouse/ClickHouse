@@ -82,6 +82,7 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_MUNMAP;
     extern const int CANNOT_MREMAP;
+    extern const int BAD_TTL_EXPRESSION;
 }
 
 
@@ -162,14 +163,9 @@ MergeTreeData::MergeTreeData(
         auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
         auto expr = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
 
-        const Names & input_columns = expr->getRequiredColumns();
-        NameSet input_columns_set = NameSet(input_columns.begin(), input_columns.end());
-        const Names & output_columns = expr->getSampleBlock().getNames();
+        String result_column = extractTTLResultColumn(expr);
 
-        for (const auto & column : output_columns)
-            if (!input_columns_set.count(column))
-                ttl_result_columns_by_name.emplace(name, column);
-
+        ttl_result_columns_by_name.emplace(name, result_column);
         ttl_expressions_by_column.emplace(name, std::move(expr));
     }
 
@@ -2567,6 +2563,50 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
     }
 
     LOG_DEBUG(log, "Freezed " << parts_processed << " parts");
+}
+
+String MergeTreeData::extractTTLResultColumn(const ExpressionActionsPtr & ttl_expression)
+{
+    const auto & input_columns_with_types = ttl_expression->getRequiredColumnsWithTypes();
+    bool has_date_column = false;
+    for (const auto & elem : input_columns_with_types)
+    {
+        if (typeid_cast<const DataTypeDateTime *>(elem.type.get())
+            || typeid_cast<const DataTypeDate *>(elem.type.get()))
+        {
+            has_date_column = true;
+            break;
+        }
+    }
+
+    if (!has_date_column)
+        throw Exception("TTL expression should use at least one Date or DateTime column", ErrorCodes::BAD_TTL_EXPRESSION);
+
+    const auto & input_columns = input_columns_with_types.getNames();
+    NameSet input_columns_set = NameSet(input_columns.begin(), input_columns.end());
+    const NamesAndTypesList & output_columns = ttl_expression->getSampleBlock().getNamesAndTypesList();
+
+    NameAndTypePair result_column;
+
+    for (const auto & column : output_columns)
+    {
+        if (!input_columns_set.count(column.name))
+        {
+            if (result_column.name.empty())
+                result_column = column;
+            else
+                throw Exception("TTL expression has more than one result column", ErrorCodes::BAD_TTL_EXPRESSION);
+        }
+    }
+
+    if (!typeid_cast<const DataTypeDateTime *>(result_column.type.get())
+        && !typeid_cast<const DataTypeDate *>(result_column.type.get()))
+    {
+        throw Exception("TTL expression result column should have DateTime or Date type, but has "
+            + result_column.type->getName(), ErrorCodes::BAD_TTL_EXPRESSION);
+    }
+
+    return result_column.name;
 }
 
 }

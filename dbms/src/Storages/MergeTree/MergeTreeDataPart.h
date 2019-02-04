@@ -283,7 +283,7 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    /// need comment
+    /// Loads min_ttl value from min_ttl.txt. If file doesn`t exists assume min_ttl = 0
     void loadMinTTLValue();
 
     void loadPartitionAndMinMaxIndex();

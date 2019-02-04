@@ -1070,6 +1070,13 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
         data.removeEmptyColumnsFromPart(part);
 
+        if (!part->columns.size())
+        {
+            MergeTreeData::DataPartsVector part_vec = {part};
+            data.removePartsFromWorkingSet(part_vec, true);
+            tryRemovePartsFromZooKeeperWithRetries(part_vec);
+        }
+
         try
         {
             checkPartChecksumsAndCommit(transaction, part);
