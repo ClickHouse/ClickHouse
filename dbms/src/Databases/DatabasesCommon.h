@@ -110,7 +110,7 @@ public:
         ThreadPool * thread_pool,
         bool has_force_restore_data_flag) override;
 
-    DatabaseIteratorPtr getDictionaryIterator(const Context&) override { return {}; };
+    DatabaseIteratorPtr getDictionaryIterator(const Context&) override { return {}; }
 
     bool empty(const Context & context) const override;
 

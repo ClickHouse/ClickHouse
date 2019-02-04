@@ -421,7 +421,7 @@ void buildXMLRecursive(
             const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(pair->second.get());
             current_xml_element->appendChild(doc->createTextNode(literal->value.get<String>()));
         }
-        else if(startsWith(ast_element->getID(), "KeyValueFunction"))
+        else if (startsWith(ast_element->getID(), "KeyValueFunction"))
         {
             const ASTKeyValueFunction * current_func = typeid_cast<const ASTKeyValueFunction *>(ast_element);
             buildXMLRecursive(doc, xml_element, current_func);
