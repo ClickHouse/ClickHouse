@@ -29,6 +29,7 @@ public:
     PerformanceTestInfo(XMLConfigurationPtr config, const std::string & profiles_file_);
 
     std::string test_name;
+    std::string path;
     std::string main_metric;
 
     Strings queries;
@@ -42,6 +43,10 @@ public:
     std::string profiles_file;
     std::vector<TestStopConditions> stop_conditions_by_run;
 
+    Strings create_queries;
+    Strings fill_queries;
+    Strings drop_queries;
+
 private:
     void applySettings(XMLConfigurationPtr config);
     void extractQueries(XMLConfigurationPtr config);
@@ -49,6 +54,7 @@ private:
     void getExecutionType(XMLConfigurationPtr config);
     void getStopConditions(XMLConfigurationPtr config);
     void getMetrics(XMLConfigurationPtr config);
+    void extractAuxiliaryQueries(XMLConfigurationPtr config);
 };
 
 }

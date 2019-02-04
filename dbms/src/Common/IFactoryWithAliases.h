@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/NamePrompter.h>
 #include <Core/Types.h>
 #include <Poco/String.h>
 
@@ -105,6 +106,12 @@ public:
         return aliases.count(name) || case_insensitive_aliases.count(name);
     }
 
+    std::vector<String> getHints(const String & name) const
+    {
+        static const auto registered_names = getAllRegisteredNames();
+        return prompter.getHints(name, registered_names);
+    }
+
     virtual ~IFactoryWithAliases() {}
 
 private:
@@ -120,6 +127,12 @@ private:
 
     /// Case insensitive aliases
     AliasMap case_insensitive_aliases;
+
+    /**
+      * prompter for names, if a person makes a typo for some function or type, it
+      * helps to find best possible match (in particular, edit distance is one or two symbols)
+      */
+    NamePrompter</*MistakeFactor=*/2, /*MaxNumHints=*/2> prompter;
 };
 
 }
