@@ -57,6 +57,8 @@ function gen_revision_author {
                 fi
 
                 VERSION_PATCH=$(($VERSION_PATCH + 1))
+            elif [ "$TYPE" == "env" ]; then
+                echo "Will build revision from env variables -- $VERSION_MAJOR.$VERSION_MINOR.$VERSION_PATCH"
             else
                 echo "Unknown version type $TYPE"
                 exit 1
@@ -98,27 +100,35 @@ function gen_revision_author {
             gen_dockerfiles "$VERSION_STRING"
             dbms/src/Storages/System/StorageSystemContributors.sh ||:
             git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/src/Storages/System/StorageSystemContributors.generated.cpp
-            git push
+            if [ -z $NO_PUSH ]; then
+                git push
+            fi
 
             echo "Generated version: ${VERSION_STRING}, revision: ${VERSION_REVISION}."
 
             # Second tag for correct version information in version.cmake inside tag
             if git tag --force -a "$tag" -m "$tag"
             then
-                echo -e "\nTrying to push tag to origin: $tag"
-                git push origin "$tag"
-                if [ $? -ne 0 ]
-                then
-                    git tag -d "$tag"
-                    echo "Fail to create tag"
-                    exit 1
+                if [ -z $NO_PUSH ]; then
+                    echo -e "\nTrying to push tag to origin: $tag"
+                    git push origin "$tag"
+                    if [ $? -ne 0 ]
+                    then
+                        git tag -d "$tag"
+                        echo "Fail to create tag"
+                        exit 1
+                    fi
                 fi
             fi
+
 
             # Reset testing branch to current commit.
             git checkout testing
             git reset --hard "$tag"
-            git push
+
+            if [ -z $NO_PUSH ]; then
+                git push
+            fi
 
         else
             get_version
