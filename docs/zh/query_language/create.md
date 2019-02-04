@@ -10,7 +10,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 如果查询中存在`IF NOT EXISTS`，则当数据库已经存在时，该查询不会返回任何错误。
 
 
-## CREATE TABLE
+## CREATE TABLE {#create-table-query}
 
 对于`CREATE TABLE`，存在以下几种方式。
 
