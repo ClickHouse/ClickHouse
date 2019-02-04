@@ -1,23 +1,13 @@
 #pragma once
 
+#include <Interpreters/PreparedSets.h>
 #include <memory>
-#include <unordered_map>
-#include <Parsers/StringRange.h>
 
 namespace DB
 {
 
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
-
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-
-/// Information about calculated sets in right hand side of IN.
-using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 struct PrewhereInfo
 {
@@ -37,6 +27,8 @@ struct PrewhereInfo
 
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 
+struct SyntaxAnalyzerResult;
+using SyntaxAnalyzerResultPtr = std::shared_ptr<const SyntaxAnalyzerResult>;
 
 /** Query along with some additional data,
   *  that can be used during query processing
@@ -45,6 +37,8 @@ using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
 struct SelectQueryInfo
 {
     ASTPtr query;
+
+    SyntaxAnalyzerResultPtr syntax_analyzer_result;
 
     PrewhereInfoPtr prewhere_info;
 

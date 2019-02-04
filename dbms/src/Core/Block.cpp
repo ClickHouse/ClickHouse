@@ -99,6 +99,13 @@ void Block::insertUnique(ColumnWithTypeAndName && elem)
 }
 
 
+void Block::erase(const std::set<size_t> & positions)
+{
+    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
+        erase(*it);
+}
+
+
 void Block::erase(size_t position)
 {
     if (data.empty())
@@ -415,6 +422,18 @@ Names Block::getNames() const
 
     for (const auto & elem : data)
         res.push_back(elem.name);
+
+    return res;
+}
+
+
+DataTypes Block::getDataTypes() const
+{
+    DataTypes res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.push_back(elem.type);
 
     return res;
 }

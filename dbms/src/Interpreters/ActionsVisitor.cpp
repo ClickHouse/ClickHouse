@@ -27,7 +27,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
-#include <Interpreters/ProjectionManipulation.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/ActionsVisitor.h>
@@ -49,12 +48,15 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-/// defined in ExpressionAnalyser.cpp
-NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols);
+NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
+{
+    return std::find_if(cols.begin(), cols.end(),
+                        [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
+}
 
-
-void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
-                     const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
+SetPtr makeExplicitSet(
+    const ASTFunction * node, const Block & sample_block, bool create_ordered_set,
+    const Context & context, const SizeLimits & size_limits, PreparedSets & prepared_sets)
 {
     const IAST & args = *node->arguments;
 
@@ -63,6 +65,21 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     const ASTPtr & left_arg = args.children.at(0);
     const ASTPtr & right_arg = args.children.at(1);
+
+    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
+
+    DataTypes set_element_types = {left_arg_type};
+    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+        set_element_types = left_tuple_type->getElements();
+
+    for (auto & element_type : set_element_types)
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
+            element_type = low_cardinality_type->getDictionaryType();
+
+    auto set_key = PreparedSetKey::forLiteral(*right_arg, set_element_types);
+    if (prepared_sets.count(set_key))
+        return prepared_sets.at(set_key); /// Already prepared.
 
     auto getTupleTypeFromAst = [&context](const ASTPtr & tuple_ast) -> DataTypePtr
     {
@@ -78,7 +95,6 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
         return evaluateConstantExpression(tuple_ast, context).second;
     };
 
-    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
     const DataTypePtr & right_arg_type = getTupleTypeFromAst(right_arg);
 
     std::function<size_t(const DataTypePtr &)> getTupleDepth;
@@ -92,15 +108,6 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     size_t left_tuple_depth = getTupleDepth(left_arg_type);
     size_t right_tuple_depth = getTupleDepth(right_arg_type);
-
-    DataTypes set_element_types = {left_arg_type};
-    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
-    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
-        set_element_types = left_tuple_type->getElements();
-
-    for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
-            element_type = low_cardinality_type->getDictionaryType();
 
     ASTPtr elements_ast = nullptr;
 
@@ -130,7 +137,8 @@ void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool 
 
     SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
     set->createFromAST(set_element_types, elements_ast, context);
-    prepared_sets[right_arg->range] = std::move(set);
+    prepared_sets[set_key] = set;
+    return set;
 }
 
 static String getUniqueName(const Block & block, const String & prefix)
@@ -221,7 +229,7 @@ const Block & ScopeStack::getSampleBlock() const
 
 
 ActionsVisitor::ActionsVisitor(
-        const Context & context_, SizeLimits set_size_limit_, bool is_conditional_tree, size_t subquery_depth_,
+        const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
         const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
         PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
         bool no_subqueries_, bool only_consts_, bool no_storage_or_local_, std::ostream * ostr_)
@@ -238,10 +246,6 @@ ActionsVisitor::ActionsVisitor(
     ostr(ostr_),
     actions_stack(actions, context)
 {
-    if (is_conditional_tree)
-        projection_manipulator = std::make_shared<ConditionalTree>(actions_stack, context);
-    else
-        projection_manipulator = std::make_shared<DefaultProjectionManipulator>(actions_stack);
 }
 
 void ActionsVisitor::visit(const ASTPtr & ast)
@@ -259,12 +263,12 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
     /// If the result of the calculation already exists in the block.
     if ((typeid_cast<ASTFunction *>(ast.get()) || typeid_cast<ASTLiteral *>(ast.get()))
-        && projection_manipulator->tryToGetFromUpperProjection(getColumnName()))
+        && actions_stack.getSampleBlock().has(getColumnName()))
         return;
 
-    if (typeid_cast<ASTIdentifier *>(ast.get()))
+    if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (!only_consts && !projection_manipulator->tryToGetFromUpperProjection(getColumnName()))
+        if (!only_consts && !actions_stack.getSampleBlock().has(getColumnName()))
         {
             /// The requested column is not in the block.
             /// If such a column exists in the table, then the user probably forgot to surround it with an aggregate function or add it to GROUP BY.
@@ -277,6 +281,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             if (found)
                 throw Exception("Column " + getColumnName() + " is not under aggregate function and not in GROUP BY.",
                     ErrorCodes::NOT_AN_AGGREGATE);
+
+            /// Special check for WITH statement alias. Add alias action to be able to use this alias.
+            if (identifier->prefer_alias_to_column_name && !identifier->alias.empty())
+                actions_stack.addAction(ExpressionAction::addAliases({{identifier->name, identifier->alias}}));
         }
     }
     else if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
@@ -294,8 +302,8 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             visit(arg);
             if (!only_consts)
             {
-                String result_name = projection_manipulator->getColumnName(getColumnName());
-                actions_stack.addAction(ExpressionAction::copyColumn(projection_manipulator->getColumnName(arg->getColumnName()), result_name));
+                String result_name = getColumnName();
+                actions_stack.addAction(ExpressionAction::copyColumn(arg->getColumnName(), result_name));
                 NameSet joined_columns;
                 joined_columns.insert(result_name);
                 actions_stack.addAction(ExpressionAction::arrayJoin(joined_columns, false, context));
@@ -304,6 +312,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             return;
         }
 
+        SetPtr prepared_set;
         if (functionIsInOrGlobalInOperator(node->name))
         {
             /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
@@ -312,7 +321,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             if (!no_subqueries)
             {
                 /// Transform tuple or subquery into a set.
-                makeSet(node, actions_stack.getSampleBlock());
+                prepared_set = makeSet(node, actions_stack.getSampleBlock());
             }
             else
             {
@@ -324,8 +333,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                     actions_stack.addAction(ExpressionAction::applyFunction(
                             FunctionFactory::instance().get("ignore", context),
                             { node->arguments->children.at(0)->getColumnName() },
-                            projection_manipulator->getColumnName(getColumnName()),
-                            projection_manipulator->getProjectionSourceColumn()));
+                            getColumnName()));
                 }
                 return;
             }
@@ -337,7 +345,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         {
             actions_stack.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
                 ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
-                    projection_manipulator->getColumnName(getColumnName())), projection_manipulator->getProjectionSourceColumn(), false));
+                    getColumnName())));
             return;
         }
 
@@ -349,8 +357,18 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             ? context.getQueryContext()
             : context;
 
-        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, function_context);
-        auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), function_context);
+        FunctionBuilderPtr function_builder;
+        try
+        {
+            function_builder = FunctionFactory::instance().get(node->name, function_context);
+        }
+        catch (DB::Exception & e)
+        {
+            auto hints = AggregateFunctionFactory::instance().getHints(node->name);
+            if (!hints.empty())
+                e.addMessage("Or unknown aggregate function " + node->name + ". Maybe you meant: " + toString(hints));
+            e.rethrow();
+        }
 
         Names argument_names;
         DataTypes argument_types;
@@ -381,27 +399,23 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 /// Select the name in the next cycle.
                 argument_names.emplace_back();
             }
-            else if (prepared_sets.count(child->range) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
+            else if (functionIsInOrGlobalInOperator(node->name) && arg == 1 && prepared_set)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
-                const SetPtr & set = prepared_sets[child->range];
-
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
-                if (!set->empty())
+                if (!prepared_set->empty())
                     column.name = getUniqueName(actions_stack.getSampleBlock(), "__set");
                 else
                     column.name = child_column_name;
 
-                column.name = projection_manipulator->getColumnName(column.name);
-
                 if (!actions_stack.getSampleBlock().has(column.name))
                 {
-                    column.column = ColumnSet::create(1, set);
+                    column.column = ColumnSet::create(1, prepared_set);
 
-                    actions_stack.addAction(ExpressionAction::addColumn(column, projection_manipulator->getProjectionSourceColumn(), false));
+                    actions_stack.addAction(ExpressionAction::addColumn(column));
                 }
 
                 argument_types.push_back(column.type);
@@ -410,10 +424,8 @@ void ActionsVisitor::visit(const ASTPtr & ast)
             else
             {
                 /// If the argument is not a lambda expression, call it recursively and find out its type.
-                projection_action->preArgumentAction();
                 visit(child);
-                std::string name = projection_manipulator->getColumnName(child_column_name);
-                projection_action->postArgumentAction(child_column_name);
+                std::string name = child_column_name;
                 if (actions_stack.getSampleBlock().has(name))
                 {
                     argument_types.push_back(actions_stack.getSampleBlock().getByName(name).type);
@@ -422,13 +434,9 @@ void ActionsVisitor::visit(const ASTPtr & ast)
                 else
                 {
                     if (only_consts)
-                    {
                         arguments_present = false;
-                    }
                     else
-                    {
-                        throw Exception("Unknown identifier: " + name + ", projection layer " + projection_manipulator->getProjectionExpression() , ErrorCodes::UNKNOWN_IDENTIFIER);
-                    }
+                        throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
                 }
             }
         }
@@ -455,21 +463,18 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
                     for (size_t j = 0; j < lambda_arg_asts.size(); ++j)
                     {
-                        ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(lambda_arg_asts[j].get());
-                        if (!identifier)
+                        auto opt_arg_name = getIdentifierName(lambda_arg_asts[j]);
+                        if (!opt_arg_name)
                             throw Exception("lambda argument declarations must be identifiers", ErrorCodes::TYPE_MISMATCH);
 
-                        String arg_name = identifier->name;
-
-                        lambda_arguments.emplace_back(arg_name, lambda_type->getArgumentTypes()[j]);
+                        lambda_arguments.emplace_back(*opt_arg_name, lambda_type->getArgumentTypes()[j]);
                     }
 
-                    projection_action->preArgumentAction();
                     actions_stack.pushLevel(lambda_arguments);
                     visit(lambda->arguments->children.at(1));
                     ExpressionActionsPtr lambda_actions = actions_stack.popLevel();
 
-                    String result_name = projection_manipulator->getColumnName(lambda->arguments->children.at(1)->getColumnName());
+                    String result_name = lambda->arguments->children.at(1)->getColumnName();
                     lambda_actions->finalize(Names(1, result_name));
                     DataTypePtr result_type = lambda_actions->getSampleBlock().getByName(result_name).type;
 
@@ -485,12 +490,10 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
                     auto function_capture = std::make_shared<FunctionCapture>(
                             lambda_actions, captured, lambda_arguments, result_type, result_name);
-                    actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name,
-                                            projection_manipulator->getProjectionSourceColumn()));
+                    actions_stack.addAction(ExpressionAction::applyFunction(function_capture, captured, lambda_name));
 
                     argument_types[i] = std::make_shared<DataTypeFunction>(lambda_type->getArgumentTypes(), result_type);
                     argument_names[i] = lambda_name;
-                    projection_action->postArgumentAction(lambda_name);
                 }
             }
         }
@@ -509,15 +512,8 @@ void ActionsVisitor::visit(const ASTPtr & ast)
 
         if (arguments_present)
         {
-            projection_action->preCalculation();
-            if (projection_action->isCalculationRequired())
-            {
-                actions_stack.addAction(
-                    ExpressionAction::applyFunction(function_builder,
-                                                    argument_names,
-                                                    projection_manipulator->getColumnName(getColumnName()),
-                                                    projection_manipulator->getProjectionSourceColumn()));
-            }
+            actions_stack.addAction(
+                ExpressionAction::applyFunction(function_builder, argument_names, getColumnName()));
         }
     }
     else if (ASTLiteral * literal = typeid_cast<ASTLiteral *>(ast.get()))
@@ -529,8 +525,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
         column.type = type;
         column.name = getColumnName();
 
-        actions_stack.addAction(ExpressionAction::addColumn(column, "", false));
-        projection_manipulator->tryToGetFromUpperProjection(column.name);
+        actions_stack.addAction(ExpressionAction::addColumn(column));
     }
     else
     {
@@ -544,7 +539,7 @@ void ActionsVisitor::visit(const ASTPtr & ast)
     }
 }
 
-void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_block)
+SetPtr ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_block)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -553,16 +548,13 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
     const IAST & args = *node->arguments;
     const ASTPtr & arg = args.children.at(1);
 
-    /// Already converted.
-    if (prepared_sets.count(arg->range))
-        return;
-
     /// If the subquery or table name for SELECT.
     const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
     if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
     {
-        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
-        String set_id = arg->getColumnName();
+        auto set_key = PreparedSetKey::forSubquery(*arg);
+        if (prepared_sets.count(set_key))
+            return prepared_sets.at(set_key);
 
         /// A special case is if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
@@ -574,22 +566,24 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
             if (table)
             {
                 StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get());
-
                 if (storage_set)
                 {
-                    prepared_sets[arg->range] = storage_set->getSet();
-                    return;
+                    prepared_sets[set_key] = storage_set->getSet();
+                    return storage_set->getSet();
                 }
             }
         }
+
+        /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
+        String set_id = arg->getColumnName();
 
         SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
 
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            prepared_sets[arg->range] = subquery_for_set.set;
-            return;
+            prepared_sets[set_key] = subquery_for_set.set;
+            return subquery_for_set.set;
         }
 
         SetPtr set = std::make_shared<Set>(set_size_limit, false);
@@ -634,12 +628,13 @@ void ActionsVisitor::makeSet(const ASTFunction * node, const Block & sample_bloc
         }
 
         subquery_for_set.set = set;
-        prepared_sets[arg->range] = set;
+        prepared_sets[set_key] = set;
+        return set;
     }
     else
     {
         /// An explicit enumeration of values in parentheses.
-        makeExplicitSet(node, sample_block, false, context, set_size_limit, prepared_sets);
+        return makeExplicitSet(node, sample_block, false, context, set_size_limit, prepared_sets);
     }
 }
 

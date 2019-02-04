@@ -43,9 +43,9 @@ public:
     virtual const char * getFamilyName() const = 0;
 
     /** If column isn't constant, returns nullptr (or itself).
-      * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
+      * If column is constant, transforms constant to full column (if column type allows such transform) and return it.
       */
-    virtual Ptr convertToFullColumnIfConst() const { return {}; }
+    virtual Ptr convertToFullColumnIfConst() const { return getPtr(); }
 
     /// If column isn't ColumnLowCardinality, return itself.
     /// If column is ColumnLowCardinality, transforms is to full column.
@@ -84,7 +84,7 @@ public:
     }
 
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
-    /// If column stores floting point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
+    /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
     virtual UInt64 get64(size_t /*n*/) const
     {
@@ -143,20 +143,13 @@ public:
     /// Parameter length could be ignored if column values have fixed size.
     virtual void insertData(const char * pos, size_t length) = 0;
 
-    /// Like getData, but has special behavior for columns that contain variable-length strings.
-    /// In this special case inserting data should be zero-ending (i.e. length is 1 byte greater than real string size).
-    virtual void insertDataWithTerminatingZero(const char * pos, size_t length)
-    {
-        insertData(pos, length);
-    }
-
     /// Appends "default value".
     /// Is used when there are need to increase column size, but inserting value doesn't make sense.
     /// For example, ColumnNullable(Nested) absolutely ignores values of nested column if it is marked as NULL.
     virtual void insertDefault() = 0;
 
     /** Removes last n elements.
-      * Is used to support exeption-safety of several operations.
+      * Is used to support exception-safety of several operations.
       *  For example, sometimes insertion should be reverted if we catch an exception during operation processing.
       * If column has less than n elements or n == 0 - undefined behavior.
       */
@@ -241,8 +234,8 @@ public:
     virtual void gather(ColumnGathererStream & gatherer_stream) = 0;
 
     /** Computes minimum and maximum element of the column.
-      * In addition to numeric types, the funtion is completely implemented for Date and DateTime.
-      * For strings and arrays function should retrurn default value.
+      * In addition to numeric types, the function is completely implemented for Date and DateTime.
+      * For strings and arrays function should return default value.
       *  (except for constant columns; they should return value of the constant).
       * If column is empty function should return default value.
       */
@@ -337,7 +330,9 @@ public:
     virtual bool lowCardinality() const { return false; }
 
 
-    virtual ~IColumn() {}
+    virtual ~IColumn() = default;
+    IColumn() = default;
+    IColumn(const IColumn &) = default;
 
     /** Print column name, size, and recursively print all subcolumns.
       */
@@ -377,7 +372,7 @@ protected:
 };
 
 using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr  = IColumn::MutablePtr;
+using MutableColumnPtr = IColumn::MutablePtr;
 using Columns = std::vector<ColumnPtr>;
 using MutableColumns = std::vector<MutableColumnPtr>;
 

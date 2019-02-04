@@ -1,8 +1,5 @@
-<a name="table_engines-custom_partitioning_key"></a>
 
 # Custom Partitioning Key
-
-Starting with version 1.1.54310, you can create tables in the MergeTree family with any partitioning expression (not only partitioning by month).
 
 The partition key can be an expression from the table columns, or a tuple of such expressions (similar to the primary key). The partition key can be omitted. When creating a table, specify the partition key in the ENGINE description with the new syntax:
 
@@ -39,7 +36,7 @@ In the `system.parts` table, the `partition` column specifies the value of the p
 
 Old: `20140317_20140323_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
 
-Now: `201403_2_2_0`  (partition ID -  minimum block number - maximum block number - level).
+Now: `201403_2_2_0` (partition ID - minimum block number - maximum block number - level).
 
 The partition ID is its string identifier (human-readable, if possible) that is used for the names of data parts in the file system and in ZooKeeper. You can specify it in ALTER queries in place of the partition key. Example: Partition key `toYYYYMM(EventDate)`; ALTER can specify either `PARTITION 201710` or `PARTITION ID '201710'`.
 

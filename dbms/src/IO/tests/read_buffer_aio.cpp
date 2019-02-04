@@ -338,7 +338,7 @@ bool test9(const std::string & filename, const std::string & buf)
         newbuf.resize(buf.length());
 
         DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-        size_t count =  in.read(newbuf.data(), newbuf.length());
+        size_t count = in.read(newbuf.data(), newbuf.length());
         if (count != newbuf.length())
             return false;
         in.setMaxBytes(9 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -411,7 +411,7 @@ bool test12(const std::string & filename, const std::string &)
         newbuf.resize(4 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
         DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-        size_t count =  in.read(newbuf.data(), newbuf.length());
+        size_t count = in.read(newbuf.data(), newbuf.length());
         if (count != newbuf.length())
             return false;
 

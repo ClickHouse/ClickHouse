@@ -18,12 +18,14 @@ public:
     /// The same as getNestedColumn, but removes null map if nested column is nullable.
     virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
 
+    virtual bool nestedColumnIsNullable() const = 0;
+
     /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
     /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
     /// Uses thread-safe cache.
     virtual const UInt64 * tryGetSavedHash() const = 0;
 
-    size_t size() const override { return getNestedColumn()->size(); }
+    size_t size() const override { return getNestedNotNullableColumn()->size(); }
 
     /// Appends new value at the end of column (column's size is increased by 1).
     /// Is used to transform raw strings to Blocks (for example, inside input format parsers)
@@ -49,7 +51,6 @@ public:
     /// Is used to optimize some computations (in aggregation, for example).
     /// Parameter length could be ignored if column values have fixed size.
     virtual size_t uniqueInsertData(const char * pos, size_t length) = 0;
-    virtual size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) = 0;
 
     virtual size_t getDefaultValueIndex() const = 0;  /// Nullable ? getNullValueIndex : getNestedTypeDefaultValueIndex
     virtual size_t getNullValueIndex() const = 0;  /// Throws if not nullable.

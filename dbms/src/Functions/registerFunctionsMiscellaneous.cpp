@@ -1,7 +1,7 @@
-#include <Functions/FunctionFactory.h>
-
 namespace DB
 {
+
+class FunctionFactory;
 
 void registerFunctionCurrentDatabase(FunctionFactory &);
 void registerFunctionHostName(FunctionFactory &);
@@ -40,6 +40,8 @@ void registerFunctionToLowCardinality(FunctionFactory &);
 void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
+void registerFunctionJoinGet(FunctionFactory &);
+void registerFunctionFilesystem(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
@@ -80,6 +82,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionLowCardinalityIndices(factory);
     registerFunctionLowCardinalityKeys(factory);
     registerFunctionsIn(factory);
+    registerFunctionJoinGet(factory);
+    registerFunctionFilesystem(factory);
 }
 
 }

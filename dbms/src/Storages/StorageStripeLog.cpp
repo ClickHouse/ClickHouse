@@ -11,12 +11,12 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <IO/CompressedReadBufferFromFile.h>
-#include <IO/CompressedWriteBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
@@ -48,7 +48,7 @@ namespace ErrorCodes
 }
 
 
-class StripeLogBlockInputStream final : public IProfilingBlockInputStream
+class StripeLogBlockInputStream final : public IBlockInputStream
 {
 public:
     StripeLogBlockInputStream(StorageStripeLog & storage_, size_t max_read_buffer_size_,
@@ -136,10 +136,10 @@ public:
     explicit StripeLogBlockOutputStream(StorageStripeLog & storage_)
         : storage(storage_), lock(storage.rwlock),
         data_out_compressed(storage.full_path() + "data.bin", DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
-        data_out(data_out_compressed, CompressionSettings(CompressionMethod::LZ4), storage.max_compress_block_size),
+        data_out(data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size),
         index_out_compressed(storage.full_path() + "index.mrk", INDEX_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
         index_out(index_out_compressed),
-        block_out(data_out, 0, storage.getSampleBlock(), &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
+        block_out(data_out, 0, storage.getSampleBlock(), false, &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
     {
     }
 
@@ -288,7 +288,7 @@ bool StorageStripeLog::checkData() const
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr &)
+void StorageStripeLog::truncate(const ASTPtr &, const Context &)
 {
     if (name.empty())
         throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);

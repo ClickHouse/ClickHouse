@@ -1,14 +1,12 @@
 #pragma once
 
+#include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
-
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
-#include <Dictionaries/IDictionarySource.h>
-
-#include <IO/ConnectionTimeouts.h>
 #include <Common/XDBCBridgeHelper.h>
+#include "DictionaryStructure.h"
+#include "ExternalQueryBuilder.h"
+#include "IDictionarySource.h"
 
 
 namespace Poco
@@ -28,7 +26,8 @@ namespace DB
 class XDBCDictionarySource final : public IDictionarySource
 {
 public:
-    XDBCDictionarySource(const DictionaryStructure & dict_struct_,
+    XDBCDictionarySource(
+        const DictionaryStructure & dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix_,
         const Block & sample_block_,
@@ -83,4 +82,5 @@ private:
     ConnectionTimeouts timeouts;
     const Context & global_context;
 };
+
 }

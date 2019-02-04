@@ -12,6 +12,6 @@ cd $DIR
 ln -sf "${DIR}/build/lib/catboost/libs/model_interface/libcatboostmodel.so" libcatboostmodel.so
 
 cd "${DIR}/catboost/catboost/python-package/catboost"
-../../../ya make -r -DUSE_ARCADIA_PYTHON=no -DPYTHON_CONFIG=python2-config -j4
+../../../ya make -r -DUSE_ARCADIA_PYTHON=no -DOS_SDK=local -DPYTHON_CONFIG=python2-config -j4
 cd $DIR
 ln -sf "${DIR}/catboost/catboost/python-package" python-package

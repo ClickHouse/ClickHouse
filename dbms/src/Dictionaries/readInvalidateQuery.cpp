@@ -1,17 +1,16 @@
-#include <Dictionaries/readInvalidateQuery.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include "readInvalidateQuery.h"
+#include <DataStreams/IBlockInputStream.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
-extern const int TOO_MANY_COLUMNS;
-extern const int TOO_MANY_ROWS;
-extern const int RECEIVED_EMPTY_DATA;
+    extern const int TOO_MANY_COLUMNS;
+    extern const int TOO_MANY_ROWS;
+    extern const int RECEIVED_EMPTY_DATA;
 }
 
-std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)
+std::string readInvalidateQuery(IBlockInputStream & block_input_stream)
 {
     block_input_stream.readPrefix();
     std::string response;

@@ -18,7 +18,7 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -43,6 +43,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -55,10 +56,13 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Common/Config/configReadClient.h>
+#include <Storages/ColumnsDescription.h>
 
 #if USE_READLINE
 #include "Suggest.h" // Y_IGNORE
@@ -68,12 +72,11 @@
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
-
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
 /// Similar codes \e[s, \e[u don't work in VT100 and Mosh.
-#define SAVE_CURSOR_POSITION "\e7"
-#define RESTORE_CURSOR_POSITION "\e8"
+#define SAVE_CURSOR_POSITION "\033""7"
+#define RESTORE_CURSOR_POSITION "\033""8"
 
 #define CLEAR_TO_END_OF_LINE "\033[K"
 
@@ -86,9 +89,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
-    extern const int UNKNOWN_EXCEPTION;
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
@@ -209,22 +209,7 @@ private:
         if (home_path_cstr)
             home_path = home_path_cstr;
 
-        std::string config_path;
-        if (config().has("config-file"))
-            config_path = config().getString("config-file");
-        else if (Poco::File("./clickhouse-client.xml").exists())
-            config_path = "./clickhouse-client.xml";
-        else if (!home_path.empty() && Poco::File(home_path + "/.clickhouse-client/config.xml").exists())
-            config_path = home_path + "/.clickhouse-client/config.xml";
-        else if (Poco::File("/etc/clickhouse-client/config.xml").exists())
-            config_path = "/etc/clickhouse-client/config.xml";
-
-        if (!config_path.empty())
-        {
-            ConfigProcessor config_processor(config_path);
-            auto loaded_config = config_processor.loadConfig();
-            config().add(loaded_config.configuration);
-        }
+        configReadClient(config(), home_path);
 
         context.setApplicationType(Context::ApplicationType::CLIENT);
 
@@ -235,6 +220,9 @@ private:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
+        /// Set path for format schema files
+        if (config().has("format_schema_path"))
+            context.setFormatSchemaPath(Poco::Path(config().getString("format_schema_path")).toString());
     }
 
 
@@ -529,7 +517,7 @@ private:
 
         if (max_client_network_bandwidth)
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0,  "");
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
             connection->setThrottler(throttler);
         }
 
@@ -570,10 +558,10 @@ private:
 
     void loop()
     {
-        String query;
-        String prev_query;
+        String input;
+        String prev_input;
 
-        while (char * line_ = readline(query.empty() ? prompt().c_str() : ":-] "))
+        while (char * line_ = readline(input.empty() ? prompt().c_str() : ":-] "))
         {
             String line = line_;
             free(line_);
@@ -593,17 +581,17 @@ private:
             if (ends_with_backslash)
                 line = line.substr(0, ws - 1);
 
-            query += line;
+            input += line;
 
             if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
             {
-                if (query != prev_query)
+                if (input != prev_input)
                 {
                     /// Replace line breaks with spaces to prevent the following problem.
                     /// Every line of multi-line query is saved to history file as a separate line.
                     /// If the user restarts the client then after pressing the "up" button
                     /// every line of the query will be displayed separately.
-                    std::string logged_query = query;
+                    std::string logged_query = input;
                     std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
                     add_history(logged_query.c_str());
 
@@ -612,18 +600,18 @@ private:
                         throwFromErrno("Cannot append history to file " + history_file, ErrorCodes::CANNOT_APPEND_HISTORY);
 #endif
 
-                    prev_query = query;
+                    prev_input = input;
                 }
 
                 if (has_vertical_output_suffix)
-                    query = query.substr(0, query.length() - 2);
+                    input = input.substr(0, input.length() - 2);
 
                 try
                 {
                     /// Determine the terminal size.
                     ioctl(0, TIOCGWINSZ, &terminal_size);
 
-                    if (!process(query))
+                    if (!process(input))
                         break;
                 }
                 catch (const Exception & e)
@@ -633,8 +621,14 @@ private:
                     {
                         std::cerr << std::endl
                             << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                            << std::endl;
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl
+                                      << e.getStackTrace().toString() << std::endl;
+
+                        std::cerr << std::endl;
+
                     }
 
                     /// Client-side exception during query execution can result in the loss of
@@ -643,11 +637,11 @@ private:
                     connect();
                 }
 
-                query = "";
+                input = "";
             }
             else
             {
-                query += '\n';
+                input += '\n';
             }
         }
     }
@@ -676,10 +670,14 @@ private:
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
+            {   /// disable logs if expects errors
+                TestHint test_hint(test_mode, text);
+                if (test_hint.clientError() || test_hint.serverError())
+                    process("SET send_logs_level = 'none'");
+            }
+
             /// Several queries separated by ';'.
             /// INSERT data is ended by the end of line, not ';'.
-
-            String query;
 
             const char * begin = text.data();
             const char * end = begin + text.size();
@@ -712,19 +710,19 @@ private:
                     insert->end = pos;
                 }
 
-                query = text.substr(begin - text.data(), pos - begin);
+                String str = text.substr(begin - text.data(), pos - begin);
 
                 begin = pos;
                 while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
-                TestHint test_hint(test_mode, query);
+                TestHint test_hint(test_mode, str);
                 expected_client_error = test_hint.clientError();
                 expected_server_error = test_hint.serverError();
 
                 try
                 {
-                    if (!processSingleQuery(query, ast) && !ignore_error)
+                    if (!processSingleQuery(str, ast) && !ignore_error)
                         return false;
                 }
                 catch (...)
@@ -732,7 +730,7 @@ private:
                     last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     actual_client_error = last_exception->code();
                     if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
-                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
+                        std::cerr << "Error on processing query: " << str << std::endl << last_exception->message();
                     got_exception = true;
                 }
 
@@ -866,7 +864,7 @@ private:
     }
 
 
-    /// Process the query that doesn't require transfering data blocks to the server.
+    /// Process the query that doesn't require transferring data blocks to the server.
     void processOrdinaryQuery()
     {
         connection->sendQuery(query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -875,7 +873,7 @@ private:
     }
 
 
-    /// Process the query that requires transfering data blocks to the server.
+    /// Process the query that requires transferring data blocks to the server.
     void processInsertQuery()
     {
         /// Send part of query without data, because data will be sent separately.
@@ -892,11 +890,12 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
+            sendData(sample, columns_description);
             receiveEndOfQuery();
         }
     }
@@ -906,8 +905,6 @@ private:
     {
         ParserQuery parser(end, true);
         ASTPtr res;
-
-        const auto ignore_error = config().getBool("ignore-error", false);
 
         if (is_interactive || ignore_error)
         {
@@ -934,7 +931,7 @@ private:
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const ColumnsDescription & columns_description)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -945,19 +942,19 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, columns_description);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, columns_description);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDescription & columns_description)
     {
         String current_format = insert_format;
 
@@ -968,6 +965,10 @@ private:
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
+
+        const auto & column_defaults = columns_description.defaults;
+        if (!column_defaults.empty())
+            block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
 
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
 
@@ -1136,7 +1137,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, ColumnsDescription & columns_description)
     {
         while (true)
         {
@@ -1157,6 +1158,10 @@ private:
                     onLogData(packet.block);
                     break;
 
+                case Protocol::Server::TableColumns:
+                    columns_description = ColumnsDescription::parse(packet.multistring_message[1]);
+                    return receiveSampleBlock(out, columns_description);
+
                 default:
                     throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
                         + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
@@ -1165,7 +1170,7 @@ private:
     }
 
 
-    /// Process Log packets, exit when recieve Exception or EndOfStream
+    /// Process Log packets, exit when receive Exception or EndOfStream
     bool receiveEndOfQuery()
     {
         while (true)
@@ -1234,6 +1239,10 @@ private:
                         throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                     const auto & id = typeid_cast<const ASTIdentifier &>(*query_with_output->format);
                     current_format = id.name;
+                }
+                if (query_with_output->settings_ast)
+                {
+                    InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
                 }
             }
 
@@ -1557,18 +1566,25 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string>(), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c", po::value<std::string>(), "config-file path")
+            ("config-file,C", po::value<std::string>(), "config-file path")
+            ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
             ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
             ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
-            ("password", po::value<std::string>(), "password")
+            /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
+              * implicit_value is used to avoid this exception (to allow user to type just "--password")
+              * Since currently boost provides no way to check if a value has been set implicitly for an option,
+              * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
+              * as the password.
+              */
+            ("password", po::value<std::string>()->implicit_value("\n"), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1606,13 +1622,11 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
-
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
-
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1641,10 +1655,10 @@ public:
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            po::parsed_options parsed = po::command_line_parser(
+            po::parsed_options parsed_tables = po::command_line_parser(
                 external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
             po::variables_map external_options;
-            po::store(parsed, external_options);
+            po::store(parsed_tables, external_options);
 
             try
             {
@@ -1673,9 +1687,14 @@ public:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
+        if (options.count("config-file") && options.count("config"))
+            throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
+
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
+        if (options.count("config"))
+            config().setString("config-file", options["config"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
         if (options.count("query_id"))
@@ -1734,11 +1753,11 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-    DB::Client client;
-
     try
     {
+        DB::Client client;
         client.init(argc, argv);
+        return client.run();
     }
     catch (const boost::program_options::error & e)
     {
@@ -1750,6 +1769,4 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
-
-    return client.run();
 }

@@ -28,8 +28,8 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<UInt8>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Int16>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -41,8 +41,8 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<UInt8, Data>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Int16, Data>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -54,8 +54,8 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<Int8, Data<Int8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<Int16, Data<Int16>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -106,8 +106,8 @@ static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & se
     if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<FirstType, TYPE>(std::forward<TArgs>(args)...);
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, UInt8>(std::forward<TArgs>(args)...);
-    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, UInt16>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, Int8>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, Int16>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -121,9 +121,9 @@ static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_ty
     FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
     if (which.idx == TypeIndex::Enum8)
-        return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+        return createWithTwoNumericTypesSecond<Int8, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::Enum16)
-        return createWithTwoNumericTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+        return createWithTwoNumericTypesSecond<Int16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     return nullptr;
 }
 

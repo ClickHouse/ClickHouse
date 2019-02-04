@@ -1,11 +1,10 @@
-#include <Dictionaries/Embedded/GeodataProviders/HierarchiesProvider.h>
-#include <Dictionaries/Embedded/GeodataProviders/HierarchyFormatReader.h>
+#include "HierarchiesProvider.h"
 
 #include <IO/ReadBufferFromFile.h>
-
-#include <Poco/Util/Application.h>
-#include <Poco/Exception.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/Exception.h>
+#include <Poco/Util/Application.h>
+#include "HierarchyFormatReader.h"
 
 
 bool RegionsHierarchyDataSource::isModified() const
@@ -21,8 +20,7 @@ IRegionsHierarchyReaderPtr RegionsHierarchyDataSource::createReader()
 }
 
 
-RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string & path)
-    : path(path)
+RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string & path) : path(path)
 {
     discoverFilesWithCustomHierarchies();
 }
@@ -38,9 +36,8 @@ void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
     {
         std::string candidate_basename = dir_it.path().getBaseName();
 
-        if ((0 == candidate_basename.compare(0, basename.size(), basename)) &&
-            (candidate_basename.size() > basename.size() + 1) &&
-            (candidate_basename[basename.size()] == '_'))
+        if ((0 == candidate_basename.compare(0, basename.size(), basename)) && (candidate_basename.size() > basename.size() + 1)
+            && (candidate_basename[basename.size()] == '_'))
         {
             const std::string suffix = candidate_basename.substr(basename.size() + 1);
             hierarchy_files.emplace(suffix, dir_it->path());

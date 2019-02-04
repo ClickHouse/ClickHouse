@@ -187,8 +187,8 @@ template <bool result_is_nullable>
 class AggregateFunctionNullUnary final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>
 {
 public:
-    AggregateFunctionNullUnary(AggregateFunctionPtr nested_function)
-        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(nested_function)
+    AggregateFunctionNullUnary(AggregateFunctionPtr nested_function_)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullUnary<result_is_nullable>>(std::move(nested_function_))
     {
     }
 
@@ -209,8 +209,8 @@ template <bool result_is_nullable>
 class AggregateFunctionNullVariadic final : public AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>
 {
 public:
-    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function, const DataTypes & arguments)
-        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(nested_function),
+    AggregateFunctionNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments)
+        : AggregateFunctionNullBase<result_is_nullable, AggregateFunctionNullVariadic<result_is_nullable>>(std::move(nested_function_)),
         number_of_arguments(arguments.size())
     {
         if (number_of_arguments == 1)
