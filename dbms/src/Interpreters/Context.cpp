@@ -150,6 +150,7 @@ struct ContextShared
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
+    SystemLogsPtr system_logs;                              /// Used to log queries and operations on parts
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -243,6 +244,8 @@ struct ContextShared
             return;
         shutdown_called = true;
 
+        system_logs.reset();
+
         /** At this point, some tables may have threads that block our mutex.
           * To complete them correctly, we will copy the current list of tables,
           *  and ask them all to finish their work.
@@ -290,18 +293,7 @@ Context Context::createGlobal()
     return createGlobal(std::make_unique<RuntimeComponentsFactory>());
 }
 
-Context::~Context()
-{
-    try
-    {
-        /// Destroy system logs while at least one Context is alive
-        system_logs.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-}
+Context::~Context() = default;
 
 
 InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
@@ -1549,7 +1541,7 @@ void Context::initializeSystemLogs()
     if (!global_context)
         throw Exception("Logical error: no global context for system logs", ErrorCodes::LOGICAL_ERROR);
 
-    system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
+    shared->system_logs = std::make_shared<SystemLogs>(*global_context, getConfigRef());
 }
 
 
@@ -1557,10 +1549,10 @@ QueryLog * Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!system_logs || !system_logs->query_log)
+    if (!shared->system_logs || !shared->system_logs->query_log)
         return nullptr;
 
-    return system_logs->query_log.get();
+    return shared->system_logs->query_log.get();
 }
 
 
@@ -1568,10 +1560,10 @@ QueryThreadLog * Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
-    if (!system_logs || !system_logs->query_thread_log)
+    if (!shared->system_logs || !shared->system_logs->query_thread_log)
         return nullptr;
 
-    return system_logs->query_thread_log.get();
+    return shared->system_logs->query_thread_log.get();
 }
 
 
@@ -1580,16 +1572,16 @@ PartLog * Context::getPartLog(const String & part_database)
     auto lock = getLock();
 
     /// System logs are shutting down.
-    if (!system_logs || !system_logs->part_log)
+    if (!shared->system_logs || !shared->system_logs->part_log)
         return nullptr;
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == system_logs->part_log_database)
+    if (part_database == shared->system_logs->part_log_database)
         return nullptr;
 
-    return system_logs->part_log.get();
+    return shared->system_logs->part_log.get();
 }
 
 
@@ -1734,7 +1726,6 @@ void Context::reloadConfig() const
 
 void Context::shutdown()
 {
-    system_logs.reset();
     shared->shutdown();
 }
 
