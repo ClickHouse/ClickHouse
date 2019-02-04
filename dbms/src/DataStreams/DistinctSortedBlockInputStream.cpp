@@ -85,8 +85,8 @@ bool DistinctSortedBlockInputStream::buildFilter(
     size_t rows,
     ClearableSetVariants & variants) const
 {
-    typename Method::State state;
-    state.init(columns);
+    typename Method::State state(columns, key_sizes, nullptr);
+    //state.init(columns);
 
     /// Compare last row of previous block and first row of current block,
     /// If rows not equal, we can clear HashSet,
@@ -106,21 +106,23 @@ bool DistinctSortedBlockInputStream::buildFilter(
         if (i > 0 && !clearing_hint_columns.empty() && !rowsEqual(clearing_hint_columns, i, clearing_hint_columns, i - 1))
             method.data.clear();
 
-        /// Make a key.
-        typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
-        typename Method::Data::iterator it = method.data.find(key);
-        bool inserted;
-        method.data.emplace(key, it, inserted);
+//        /// Make a key.
+//        typename Method::Key key = state.getKey(columns, columns.size(), i, key_sizes);
+//        typename Method::Data::iterator it = method.data.find(key);
+//        bool inserted;
+//        method.data.emplace(key, it, inserted);
 
-        if (inserted)
+        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+
+        if (emplace_result.isInserted())
         {
-            method.onNewKey(*it, columns.size(), variants.string_pool);
+            // method.onNewKey(*it, columns.size(), variants.string_pool);
             has_new_data = true;
         }
 
         /// Emit the record if there is no such key in the current set yet.
         /// Skip it otherwise.
-        filter[i] = inserted;
+        filter[i] = emplace_result.isInserted();
     }
     return has_new_data;
 }

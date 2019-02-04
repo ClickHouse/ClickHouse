@@ -137,12 +137,17 @@ protected:
 
     HashMethodBase()
     {
-        if constexpr (has_mapped && consecutive_keys_optimization)
+        if constexpr (consecutive_keys_optimization)
         {
-            /// Init PairNoInit elements.
-            cache.value.second = Mapped();
-            using Key = decltype(cache.value.first);
-            cache.value.first = Key();
+            if constexpr (has_mapped)
+            {
+                /// Init PairNoInit elements.
+                cache.value.second = Mapped();
+                using Key = decltype(cache.value.first);
+                cache.value.first = Key();
+            }
+            else
+                cache.value = Value();
         }
     }
 
@@ -171,8 +176,8 @@ protected:
         bool inserted = false;
         data.emplace(key, it, inserted);
 
-        Mapped * cached = nullptr;
-        if (has_mapped)
+        [[maybe_unused]] Mapped * cached = nullptr;
+        if constexpr (has_mapped)
             cached = &it->second;
 
         if (inserted)
@@ -190,7 +195,9 @@ protected:
             cache.value = *it;
             cache.found = true;
             cache.empty = false;
-            cached = &cache.value.second;
+
+            if constexpr (has_mapped)
+                cached = &cache.value.second;
         }
 
         if constexpr (has_mapped)

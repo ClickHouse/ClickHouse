@@ -78,8 +78,8 @@ void NO_INLINE Set::insertFromBlockImplCase(
     ConstNullMapPtr null_map,
     ColumnUInt8::Container * out_filter)
 {
-    typename Method::State state;
-    state.init(key_columns);
+    typename Method::State state(key_columns, key_sizes, nullptr);
+    /// state.init(key_columns);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -88,17 +88,19 @@ void NO_INLINE Set::insertFromBlockImplCase(
             continue;
 
         /// Obtain a key to insert to the set
-        typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+        /// typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
-        typename Method::Data::iterator it;
-        bool inserted;
-        method.data.emplace(key, it, inserted);
-
-        if (inserted)
-            method.onNewKey(*it, keys_size, variants.string_pool);
+        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+//
+//        typename Method::Data::iterator it;
+//        bool inserted;
+//        method.data.emplace(key, it, inserted);
+//
+//        if (inserted)
+//            method.onNewKey(*it, keys_size, variants.string_pool);
 
         if (build_filter)
-            (*out_filter)[i] = inserted;
+            (*out_filter)[i] = emplace_result.isInserted();
     }
 }
 
@@ -392,8 +394,9 @@ void NO_INLINE Set::executeImplCase(
     size_t rows,
     ConstNullMapPtr null_map) const
 {
-    typename Method::State state;
-    state.init(key_columns);
+    Arena pool;
+    typename Method::State state(key_columns, key_sizes, nullptr);
+    /// state.init(key_columns);
 
     /// NOTE Optimization is not used for consecutive identical values.
 
@@ -404,9 +407,13 @@ void NO_INLINE Set::executeImplCase(
             vec_res[i] = negative;
         else
         {
+            auto find_result = state.findKey(method.data, i, pool);
+
             /// Build the key
-            typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-            vec_res[i] = negative ^ method.data.has(key);
+            /// typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
+            ///vec_res[i] = negative ^ method.data.has(key);
+
+            vec_res[i] = negative ^ find_result.isFound();
         }
     }
 }
