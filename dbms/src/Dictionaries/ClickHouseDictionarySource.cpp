@@ -75,7 +75,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
-    context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1"), {});
+    context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
 }
 
 
