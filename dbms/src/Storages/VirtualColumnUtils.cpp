@@ -1,8 +1,10 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/IdentifierSemantic.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -95,11 +97,9 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
         if (!isValidFunction(expression->children[i], columns))
             return false;
 
-    if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&*expression))
-    {
-        if (identifier->general())
-            return columns.count(identifier->name);
-    }
+    if (auto opt_name = IdentifierSemantic::getColumnName(expression))
+        return columns.count(*opt_name);
+
     return true;
 }
 
@@ -156,7 +156,8 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
         return;
 
     /// Let's analyze and calculate the expression.
-    ExpressionAnalyzer analyzer(expression_ast, context, {}, block.getNamesAndTypesList());
+    auto syntax_result = SyntaxAnalyzer(context).analyze(expression_ast, block.getNamesAndTypesList());
+    ExpressionAnalyzer analyzer(expression_ast, syntax_result, context);
     ExpressionActionsPtr actions = analyzer.getActions(false);
 
     Block block_with_filter = block;
@@ -164,9 +165,7 @@ void filterBlockWithQuery(const ASTPtr & query, Block & block, const Context & c
 
     /// Filter the block.
     String filter_column_name = expression_ast->getColumnName();
-    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column;
-    if (ColumnPtr converted = filter_column->convertToFullColumnIfConst())
-        filter_column = converted;
+    ColumnPtr filter_column = block_with_filter.getByName(filter_column_name).column->convertToFullColumnIfConst();
     const IColumn::Filter & filter = typeid_cast<const ColumnUInt8 &>(*filter_column).getData();
 
     for (size_t i = 0; i < block.columns(); ++i)

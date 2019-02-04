@@ -1,4 +1,4 @@
-#include <Common/TaskStatsInfoGetter.h>
+#include "TaskStatsInfoGetter.h"
 #include <Common/Exception.h>
 #include <Core/Types.h>
 
@@ -6,6 +6,7 @@
 
 #if defined(__linux__)
 
+#include "hasLinuxCapability.h"
 #include <common/unaligned.h>
 
 #include <errno.h>
@@ -79,11 +80,6 @@ struct NetlinkMessage
         ::nlmsgerr error;
     };
 
-    size_t payload_size() const
-    {
-        return header.nlmsg_len - sizeof(header) - sizeof(generic_header);
-    }
-
     const Attribute * end() const
     {
         return reinterpret_cast<const Attribute *>(reinterpret_cast<const char *>(this) + header.nlmsg_len);
@@ -154,7 +150,7 @@ NetlinkMessage query(
     request.generic_header.version = 1;
 
     request.payload.attribute.header.nla_type = attribute_type;
-    request.payload.attribute.header.nla_len = attribute_size + 1 + NLA_HDRLEN;
+    request.payload.attribute.header.nla_len = attribute_size + NLA_HDRLEN;
 
     memcpy(&request.payload.attribute.payload, attribute_data, attribute_size);
 
@@ -185,18 +181,8 @@ UInt16 getFamilyIdImpl(int fd)
 
 bool checkPermissionsImpl()
 {
-    /// See man getcap.
-    __user_cap_header_struct request{};
-    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
-    request.pid = getpid();
-
-    __user_cap_data_struct response{};
-
-    /// Avoid dependency on 'libcap'.
-    if (0 != syscall(SYS_capget, &request, &response))
-        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
-
-    if (!((1 << CAP_NET_ADMIN) & response.effective))
+    static bool res = hasLinuxCapability(CAP_NET_ADMIN);
+    if (!res)
         return false;
 
     /// Check that we can successfully initialize TaskStatsInfoGetter.

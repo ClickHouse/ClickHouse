@@ -2,11 +2,16 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <errno.h>
+#include <pwd.h>
+#include <unistd.h>
 #include <Poco/Version.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Util/HelpFormatter.h>
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/ErrorHandlers.h>
@@ -23,6 +28,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
@@ -36,11 +42,18 @@
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
+#include <Dictionaries/registerDictionaries.h>
 #include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
+#include "Common/config_version.h"
+
+#if defined(__linux__)
+#include <Common/hasLinuxCapability.h>
+#include <sys/mman.h>
+#endif
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
@@ -50,6 +63,7 @@
 namespace CurrentMetrics
 {
     extern const Metric Revision;
+    extern const Metric VersionInteger;
 }
 
 namespace DB
@@ -61,6 +75,10 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int INVALID_CONFIG_PARAMETER;
+    extern const int SYSTEM_ERROR;
+    extern const int FAILED_TO_GETPWUID;
+    extern const int MISMATCHING_USERS_FOR_PROCESS_AND_DATA;
 }
 
 
@@ -68,16 +86,56 @@ static std::string getCanonicalPath(std::string && path)
 {
     Poco::trimInPlace(path);
     if (path.empty())
-        throw Exception("path configuration parameter is empty");
+        throw Exception("path configuration parameter is empty", ErrorCodes::INVALID_CONFIG_PARAMETER);
     if (path.back() != '/')
         path += '/';
     return std::move(path);
+}
+
+static std::string getUserName(uid_t user_id)
+{
+    /// Try to convert user id into user name.
+    auto buffer_size = sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (buffer_size <= 0)
+        buffer_size = 1024;
+    std::string buffer;
+    buffer.reserve(buffer_size);
+
+    struct passwd passwd_entry;
+    struct passwd * result = nullptr;
+    const auto error = getpwuid_r(user_id, &passwd_entry, buffer.data(), buffer_size, &result);
+
+    if (error)
+        throwFromErrno("Failed to find user name for " + toString(user_id), ErrorCodes::FAILED_TO_GETPWUID, error);
+    else if (result)
+        return result->pw_name;
+    return toString(user_id);
 }
 
 void Server::uninitialize()
 {
     logger().information("shutting down");
     BaseDaemon::uninitialize();
+}
+
+int Server::run()
+{
+    if (config().hasOption("help"))
+    {
+        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        std::stringstream header;
+        header << commandName() << " [OPTION] [-- [ARG]...]\n";
+        header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
+        helpFormatter.setHeader(header.str());
+        helpFormatter.format(std::cout);
+        return 0;
+    }
+    if (config().hasOption("version"))
+    {
+        std::cout << DBMS_NAME << " server version " << VERSION_STRING << "." << std::endl;
+        return 0;
+    }
+    return Application::run();
 }
 
 void Server::initialize(Poco::Util::Application & self)
@@ -88,21 +146,39 @@ void Server::initialize(Poco::Util::Application & self)
 
 std::string Server::getDefaultCorePath() const
 {
-    return getCanonicalPath(config().getString("path")) + "cores";
+    return getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH)) + "cores";
+}
+
+void Server::defineOptions(Poco::Util::OptionSet & _options)
+{
+    _options.addOption(
+        Poco::Util::Option("help", "h", "show help and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("help"));
+    _options.addOption(
+        Poco::Util::Option("version", "V", "show version and exit")
+            .required(false)
+            .repeatable(false)
+            .binding("version"));
+    BaseDaemon::defineOptions(_options);
 }
 
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
-
     UseSSL use_ssl;
+
+    ThreadStatus thread_status;
 
     registerFunctions();
     registerAggregateFunctions();
     registerTableFunctions();
     registerStorages();
+    registerDictionaries();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::get());
+    CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
@@ -114,19 +190,66 @@ int Server::main(const std::vector<std::string> & /*args*/)
     bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
+    zkutil::EventPtr main_config_zk_changed_event = std::make_shared<Poco::Event>();
     if (loaded_config.has_zk_includes)
     {
         auto old_configuration = loaded_config.configuration;
         ConfigProcessor config_processor(config_path);
         loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
-            main_config_zk_node_cache, /* fallback_to_preprocessed = */ true);
-        config_processor.savePreprocessedConfig(loaded_config);
+            main_config_zk_node_cache, main_config_zk_changed_event, /* fallback_to_preprocessed = */ true);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         config().removeConfiguration(old_configuration.get());
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
-    std::string path = getCanonicalPath(config().getString("path"));
+    const auto memory_amount = getMemoryAmount();
+
+#if defined(__linux__)
+    /// After full config loaded
+    {
+        if (config().getBool("mlock_executable", false))
+        {
+            if (hasLinuxCapability(CAP_IPC_LOCK))
+            {
+                LOG_TRACE(log, "Will mlockall to prevent executable memory from being paged out. It may take a few seconds.");
+                if (0 != mlockall(MCL_CURRENT))
+                    LOG_WARNING(log, "Failed mlockall: " + errnoToString(ErrorCodes::SYSTEM_ERROR));
+                else
+                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed");
+            }
+            else
+            {
+                LOG_INFO(log, "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep /usr/bin/clickhouse'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.");
+            }
+        }
+    }
+#endif
+
+    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
+
+    /// Check that the process' user id matches the owner of the data.
+    const auto effective_user_id = geteuid();
+    struct stat statbuf;
+    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    {
+        const auto effective_user = getUserName(effective_user_id);
+        const auto data_owner = getUserName(statbuf.st_uid);
+        std::string message = "Effective user of the process (" + effective_user +
+            ") does not match the owner of the data (" + data_owner + ").";
+        if (effective_user_id == 0)
+        {
+            message += " Run under 'sudo -u " + data_owner + "'.";
+            throw Exception(message, ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA);
+        }
+        else
+        {
+            LOG_WARNING(log, message);
+        }
+    }
 
     global_context->setPath(path);
 
@@ -266,7 +389,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
+        config().getString("path", ""),
         std::move(main_config_zk_node_cache),
+        main_config_zk_changed_event,
         [&](ConfigurationPtr config)
         {
             buildLoggers(*config);
@@ -287,7 +412,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
     auto users_config_reloader = std::make_unique<ConfigReloader>(users_config_path,
         include_from_path,
+        config().getString("path", ""),
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
+        std::make_shared<Poco::Event>(),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
 
@@ -323,24 +450,32 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setMarkCache(mark_cache_size);
 
 #if USE_EMBEDDED_COMPILER
-    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", std::numeric_limits<UInt64>::max());
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", 500);
     if (compiled_expression_cache_size)
         global_context->setCompiledExpressionCache(compiled_expression_cache_size);
 #endif
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
-    global_context->setFormatSchemaPath(format_schema_path.path() + "/");
+    global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
     LOG_INFO(log, "Loading metadata.");
-    loadMetadataSystem(*global_context);
-    /// After attaching system databases we can initialize system log.
-    global_context->initializeSystemLogs();
-    /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-    attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
-    /// Then, load remaining databases
-    loadMetadata(*global_context);
+    try
+    {
+        loadMetadataSystem(*global_context);
+        /// After attaching system databases we can initialize system log.
+        global_context->initializeSystemLogs();
+        /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
+        attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+        /// Then, load remaining databases
+        loadMetadata(*global_context);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception while loading metadata");
+        throw;
+    }
     LOG_DEBUG(log, "Loaded metadata.");
 
     global_context->setCurrentDatabase(default_database);
@@ -469,7 +604,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -486,7 +621,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
                         socket,
@@ -506,7 +641,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::TCPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
                         new TCPHandlerFactory(*this),
                         server_pool,
                         socket,
@@ -523,11 +658,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
                     socket.setSendTimeout(settings.send_timeout);
-                    servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this, /* secure= */ true ),
-                                                                  server_pool,
-                                                                  socket,
-                                                                  new Poco::Net::TCPServerParams));
+                    servers.emplace_back(std::make_unique<Poco::Net::TCPServer>(
+                        new TCPHandlerFactory(*this, /* secure= */ true),
+                        server_pool,
+                        socket,
+                        new Poco::Net::TCPServerParams));
                     LOG_INFO(log, "Listening tcp_secure: " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -546,7 +681,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -562,7 +697,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
                     socket.setSendTimeout(settings.http_send_timeout);
-                    servers.emplace_back(new Poco::Net::HTTPServer(
+                    servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
                         socket,
@@ -599,10 +734,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         {
             std::stringstream message;
-            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(getMemoryAmount()) << ";"
+            message << "Available RAM = " << formatReadableSizeWithBinarySuffix(memory_amount) << ";"
                 << " physical cores = " << getNumberOfPhysicalCPUCores() << ";"
                 // on ARM processors it can show only enabled at current moment cores
-                << " threads = " <<  std::thread::hardware_concurrency() << ".";
+                << " threads = " << std::thread::hardware_concurrency() << ".";
             LOG_INFO(log, message.str());
         }
 

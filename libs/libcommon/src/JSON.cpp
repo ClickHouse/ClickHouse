@@ -4,7 +4,7 @@
 #include <Poco/UTF8Encoding.h>
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
-#include <common/find_first_symbols.h>
+#include <common/find_symbols.h>
 #include <common/preciseExp10.h>
 
 #include <iostream>
@@ -56,7 +56,7 @@ static UInt64 readUIntText(const char * buf, const char * end)
 static Int64 readIntText(const char * buf, const char * end)
 {
     bool negative = false;
-    Int64 x = 0;
+    UInt64 x = 0;
 
     if (buf == end)
         throw JSONException("JSON: cannot parse signed integer: unexpected end of data.");
@@ -90,10 +90,8 @@ static Int64 readIntText(const char * buf, const char * end)
         }
         ++buf;
     }
-    if (negative)
-        x = -x;
 
-    return x;
+    return negative ? -x : x;
 }
 
 

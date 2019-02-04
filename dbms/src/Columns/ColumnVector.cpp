@@ -1,22 +1,20 @@
+#include "ColumnVector.h"
+
 #include <cstring>
 #include <cmath>
-
 #include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/NaNUtils.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-
-#include <Columns/ColumnVector.h>
-
+#include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
-
 #include <ext/bit_cast.h>
+#include <pdqsort.h>
 
-#if __SSE2__
+#ifdef __SSE2__
     #include <emmintrin.h>
 #include <Columns/ColumnsCommon.h>
 
@@ -93,9 +91,9 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     else
     {
         if (reverse)
-            std::sort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
         else
-            std::sort(res.begin(), res.end(), less(*this, nan_direction_hint));
+            pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
     }
 }
 
@@ -165,7 +163,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
-#if __SSE2__
+#ifdef __SSE2__
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.
@@ -314,8 +312,8 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min);
-    max = typename NearestFieldType<T>::Type(cur_max);
+    min = NearestFieldType<T>(cur_min);
+    max = NearestFieldType<T>(cur_max);
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.

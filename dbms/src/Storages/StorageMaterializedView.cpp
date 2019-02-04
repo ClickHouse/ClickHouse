@@ -1,3 +1,5 @@
+#include <Storages/StorageMaterializedView.h>
+
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -7,8 +9,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
-#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
 
 #include <Common/typeid_cast.h>
@@ -28,7 +30,7 @@ namespace ErrorCodes
 static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
 
     if (!db_and_table && !subquery)
         return;
@@ -40,7 +42,8 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
         if (db_and_table->database.empty())
         {
             db_and_table->database = select_database_name;
-            query.setDatabaseIfNeeded(select_database_name);
+            AddDefaultDatabaseVisitor visitor(select_database_name);
+            visitor.visit(query);
         }
         else
             select_database_name = db_and_table->database;
@@ -66,7 +69,7 @@ static void checkAllowedQueries(const ASTSelectQuery & query)
     if (query.prewhere_expression || query.final() || query.sample_size())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
-    ASTPtr subquery = getTableFunctionOrSubquery(query, 0);
+    ASTPtr subquery = extractTableExpression(query, 0);
     if (!subquery)
         return;
 
@@ -182,12 +185,21 @@ BlockInputStreams StorageMaterializedView::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return getTargetTable()->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    auto storage = getTargetTable();
+    auto lock = storage->lockStructure(false);
+    auto streams = storage->read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    for (auto & stream : streams)
+        stream->addTableLock(lock);
+    return streams;
 }
 
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Settings & settings)
 {
-    return getTargetTable()->write(query, settings);
+    auto storage = getTargetTable();
+    auto lock = storage->lockStructure(true);
+    auto stream = storage->write(query, settings);
+    stream->addTableLock(lock);
+    return stream;
 }
 
 
@@ -217,7 +229,7 @@ void StorageMaterializedView::drop()
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
 }
 
-void StorageMaterializedView::truncate(const ASTPtr &)
+void StorageMaterializedView::truncate(const ASTPtr &, const Context &)
 {
     if (has_inner_table)
         executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_database_name, target_table_name);
@@ -237,28 +249,10 @@ bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & part
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
 }
 
-void StorageMaterializedView::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+void StorageMaterializedView::alterPartition(const ASTPtr & query, const PartitionCommands &commands, const Context &context)
 {
     checkStatementCanBeForwarded();
-    getTargetTable()->dropPartition(query, partition, detach, context);
-}
-
-void StorageMaterializedView::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->clearColumnInPartition(partition, column_name, context);
-}
-
-void StorageMaterializedView::attachPartition(const ASTPtr & partition, bool part, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->attachPartition(partition, part, context);
-}
-
-void StorageMaterializedView::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
-{
-    checkStatementCanBeForwarded();
-    getTargetTable()->freezePartition(partition, with_name, context);
+    getTargetTable()->alterPartition(query, commands, context);
 }
 
 void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)

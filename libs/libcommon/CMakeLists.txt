@@ -18,9 +18,8 @@ add_library (common ${LINK_MODE}
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
-    src/ThreadPool.cpp
     src/demangle.cpp
-    src/SetTerminalEcho.cpp
+    src/setTerminalEcho.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -31,17 +30,16 @@ add_library (common ${LINK_MODE}
     include/common/ErrorHandlers.h
     include/common/preciseExp10.h
     include/common/shift10.h
-    include/common/intExp.h
     include/common/mremap.h
     include/common/likely.h
     include/common/logger_useful.h
-    include/common/MultiVersion.h
     include/common/strong_typedef.h
     include/common/JSON.h
     include/common/getMemoryAmount.h
-    include/common/ThreadPool.h
     include/common/demangle.h
-    include/common/SetTerminalEcho.h
+    include/common/setTerminalEcho.h
+    include/common/find_symbols.h
+    include/common/constexpr_helpers.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -82,10 +80,6 @@ else ()
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
-if (GLIBC_COMPATIBILITY)
-    set (GLIBC_COMPATIBILITY_LIBRARIES glibc-compatibility)
-endif ()
-
 if (USE_INTERNAL_MEMCPY)
     set (MEMCPY_LIBRARIES memcpy)
 endif ()
@@ -93,27 +87,30 @@ endif ()
 find_package (Threads)
 
 target_include_directories (common BEFORE PRIVATE ${CCTZ_INCLUDE_DIR})
-target_include_directories (common BEFORE PUBLIC ${CITYHASH_INCLUDE_DIR})
 target_include_directories (common PUBLIC ${COMMON_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (common BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-target_link_libraries (
-    common
+target_link_libraries (common
+        PRIVATE
     pocoext
+        PUBLIC
+    ${Poco_Foundation_LIBRARY}
     ${CITYHASH_LIBRARIES}
+        PRIVATE
     ${CCTZ_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
+        PUBLIC
     ${Boost_SYSTEM_LIBRARY}
+        PRIVATE
     ${MALLOC_LIBRARIES}
-    ${CMAKE_THREAD_LIBS_INIT}
-    ${GLIBC_COMPATIBILITY_LIBRARIES}
+    Threads::Threads
     ${MEMCPY_LIBRARIES})
 
 if (RT_LIBRARY)
-    target_link_libraries (common ${RT_LIBRARY})
+    target_link_libraries (common PRIVATE ${RT_LIBRARY})
 endif ()
 
 if (ENABLE_TESTS)

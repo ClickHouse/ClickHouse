@@ -7,8 +7,8 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sys/fcntl.h>
 #include <sys/time.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
@@ -39,10 +39,8 @@
 #include <Poco/Observer.h>
 #include <Poco/Logger.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/SplitterChannel.h>
 #include <Poco/Ext/LevelFilterChannel.h>
 #include <Poco/Ext/ThreadNumber.h>
-#include <Poco/FormattingChannel.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/TaskManager.h>
@@ -70,21 +68,6 @@
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 
-
-using Poco::Logger;
-using Poco::AutoPtr;
-using Poco::Observer;
-using Poco::FormattingChannel;
-using Poco::SplitterChannel;
-using Poco::ConsoleChannel;
-using Poco::FileChannel;
-using Poco::Path;
-using Poco::Message;
-using Poco::Util::AbstractConfiguration;
-
-
-constexpr char BaseDaemon::DEFAULT_GRAPHITE_CONFIG_NAME[];
-
 /** For transferring information from signal handler to a separate thread.
   * If you need to do something serious in case of a signal (example: write a message to the log),
   *  then sending information to a separate thread through pipe and doing all the stuff asynchronously
@@ -109,7 +92,7 @@ struct Pipe
         write_fd = -1;
 
         if (0 != pipe(fds))
-            DB::throwFromErrno("Cannot create pipe");
+            DB::throwFromErrno("Cannot create pipe", 0);
     }
 
     void close()
@@ -602,7 +585,10 @@ void BaseDaemon::reloadConfiguration()
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
     config_path = config().getString("config-file", "config.xml");
-    loaded_config = ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
+    DB::ConfigProcessor config_processor(config_path, false, true);
+    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
+    loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
+
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);
     last_configuration = loaded_config.configuration.duplicate();
@@ -610,8 +596,10 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-/// For creating and destroying unique_ptr of incomplete type.
-BaseDaemon::BaseDaemon() = default;
+BaseDaemon::BaseDaemon()
+{
+    checkRequiredInstructions();
+}
 
 
 BaseDaemon::~BaseDaemon()
@@ -619,6 +607,127 @@ BaseDaemon::~BaseDaemon()
     writeSignalIDtoSignalPipe(SignalListener::StopThread);
     signal_listener_thread.join();
     signal_pipe.close();
+}
+
+
+enum class InstructionFail
+{
+    NONE = 0,
+    SSE3 = 1,
+    SSSE3 = 2,
+    SSE4_1 = 3,
+    SSE4_2 = 4,
+    AVX = 5,
+    AVX2 = 6,
+    AVX512 = 7
+};
+
+static std::string instructionFailToString(InstructionFail fail)
+{
+    switch(fail)
+    {
+        case InstructionFail::NONE:
+            return "NONE";
+        case InstructionFail::SSE3:
+            return "SSE3";
+        case InstructionFail::SSSE3:
+            return "SSSE3";
+        case InstructionFail::SSE4_1:
+            return "SSE4.1";
+        case InstructionFail::SSE4_2:
+            return "SSE4.2";
+        case InstructionFail::AVX:
+            return "AVX";
+        case InstructionFail::AVX2:
+            return "AVX2";
+        case InstructionFail::AVX512:
+            return "AVX512";
+    }
+    __builtin_unreachable();
+}
+
+
+static sigjmp_buf jmpbuf;
+
+static void sigIllCheckHandler(int sig, siginfo_t * info, void * context)
+{
+    siglongjmp(jmpbuf, 1);
+}
+
+/// Check if necessary sse extensions are available by trying to execute some sse instructions.
+/// If instruction is unavailable, SIGILL will be sent by kernel.
+static void checkRequiredInstructions(volatile InstructionFail & fail)
+{
+#if __SSE3__
+    fail = InstructionFail::SSE3;
+    __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSSE3__
+    fail = InstructionFail::SSSE3;
+    __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
+
+#endif
+
+#if __SSE4_1__
+    fail = InstructionFail::SSE4_1;
+    __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __SSE4_2__
+    fail = InstructionFail::SSE4_2;
+    __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if __AVX__
+    fail = InstructionFail::AVX;
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if __AVX2__
+    fail = InstructionFail::AVX2;
+    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if __AVX512__
+    fail = InstructionFail::AVX512;
+    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
+#endif
+
+    fail = InstructionFail::NONE;
+}
+
+
+void BaseDaemon::checkRequiredInstructions()
+{
+    struct sigaction sa{};
+    struct sigaction sa_old{};
+    sa.sa_sigaction = sigIllCheckHandler;
+    sa.sa_flags = SA_SIGINFO;
+    auto signal = SIGILL;
+    if (sigemptyset(&sa.sa_mask) != 0
+        || sigaddset(&sa.sa_mask, signal) != 0
+        || sigaction(signal, &sa, &sa_old) != 0)
+    {
+        std::cerr << "Can not set signal handler\n";
+        exit(1);
+    }
+
+    volatile InstructionFail fail = InstructionFail::NONE;
+
+    if (sigsetjmp(jmpbuf, 1))
+    {
+        std::cerr << "Instruction check fail. There is no " << instructionFailToString(fail) << " instruction set\n";
+        exit(1);
+    }
+
+    ::checkRequiredInstructions(fail);
+
+    if (sigaction(signal, &sa_old, nullptr))
+    {
+        std::cerr << "Can not set signal handler\n";
+        exit(1);
+    }
 }
 
 
@@ -669,7 +778,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
-        log_file = new FileChannel;
+        log_file = new Poco::FileChannel;
         log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
@@ -691,7 +800,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         createDirectory(errorlog_path);
         std::cerr << "Logging errors to " << errorlog_path << std::endl;
 
-        error_log_file = new FileChannel;
+        error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
@@ -703,7 +812,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
 
         Poco::AutoPtr<DB::OwnFormattingChannel> errorlog = new DB::OwnFormattingChannel(pf, error_log_file);
-        errorlog->setLevel(Message::PRIO_NOTICE);
+        errorlog->setLevel(Poco::Message::PRIO_NOTICE);
         errorlog->open();
         split->addChannel(errorlog);
     }
@@ -767,12 +876,12 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
     Logger::root().setChannel(logger().getChannel());
 
     // Explicitly specified log levels for specific loggers.
-    AbstractConfiguration::Keys levels;
+    Poco::Util::AbstractConfiguration::Keys levels;
     config.keys("logger.levels", levels);
 
-    if(!levels.empty())
-        for(AbstractConfiguration::Keys::iterator it = levels.begin(); it != levels.end(); ++it)
-            Logger::get(*it).setLevel(config.getString("logger.levels." + *it, "trace"));
+    if (!levels.empty())
+        for (const auto & level : levels)
+            Logger::get(level).setLevel(config.getString("logger.levels." + level, "trace"));
 }
 
 
@@ -801,23 +910,25 @@ void BaseDaemon::closeFDs()
 #endif
     if (proc_path.isDirectory()) /// Hooray, proc exists
     {
-        Poco::DirectoryIterator itr(proc_path), end;
-        for (; itr != end; ++itr)
+        std::vector<std::string> fds;
+        /// in /proc/self/fd directory filenames are numeric file descriptors
+        proc_path.list(fds);
+        for (const auto & fd_str : fds)
         {
-            long fd = DB::parse<long>(itr.name());
+            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
         }
     }
     else
     {
-        long max_fd = -1;
+        int max_fd = -1;
 #ifdef _SC_OPEN_MAX
         max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
             max_fd = 256; /// bad fallback
-        for (long fd = 3; fd < max_fd; ++fd)
+        for (int fd = 3; fd < max_fd; ++fd)
             if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
                 ::close(fd);
     }
@@ -900,18 +1011,17 @@ void BaseDaemon::initialize(Application & self)
     reloadConfiguration();
 
     /// This must be done before creation of any files (including logs).
+    mode_t umask_num = 0027;
     if (config().has("umask"))
     {
         std::string umask_str = config().getString("umask");
-        mode_t umask_num = 0;
         std::stringstream stream;
         stream << umask_str;
         stream >> std::oct >> umask_num;
-
-        umask(umask_num);
     }
+    umask(umask_num);
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config);
+    DB::ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
     /// Write core dump on crash.
     {
@@ -1011,8 +1121,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     initializeTerminationAndSignalProcessing();
-
-    DB::CurrentThread::get();   /// TODO Why do we need this?
     logRevision();
 
     for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
@@ -1077,7 +1185,7 @@ void BaseDaemon::logRevision() const
 /// Makes server shutdown if at least one Poco::Task have failed.
 void BaseDaemon::exitOnTaskError()
 {
-    Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
+    Poco::Observer<BaseDaemon, Poco::TaskFailedNotification> obs(*this, &BaseDaemon::handleNotification);
     getTaskManager().addObserver(obs);
 }
 
@@ -1085,7 +1193,7 @@ void BaseDaemon::exitOnTaskError()
 void BaseDaemon::handleNotification(Poco::TaskFailedNotification *_tfn)
 {
     task_failed = true;
-    AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
+    Poco::AutoPtr<Poco::TaskFailedNotification> fn(_tfn);
     Logger *lg = &(logger());
     LOG_ERROR(lg, "Task '" << fn->task()->name() << "' failed. Daemon is shutting down. Reason - " << fn->reason().displayText());
     ServerApplication::terminate();
@@ -1205,7 +1313,7 @@ void BaseDaemon::handleSignal(int signal_id)
         onInterruptSignals(signal_id);
     }
     else
-        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id));
+        throw DB::Exception(std::string("Unsupported signal: ") + strsignal(signal_id), 0);
 }
 
 void BaseDaemon::onInterruptSignals(int signal_id)

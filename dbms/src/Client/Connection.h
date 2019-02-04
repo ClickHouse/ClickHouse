@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <common/logger_useful.h>
 
 #include <Poco/Net/StreamSocket.h>
@@ -16,11 +18,12 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/BlockStreamProfileInfo.h>
 
-#include <IO/CompressionSettings.h>
 #include <IO/ConnectionTimeouts.h>
 
 #include <Interpreters/Settings.h>
 #include <Interpreters/TablesStatus.h>
+
+#include <Compression/ICompressionCodec.h>
 
 #include <atomic>
 #include <optional>
@@ -96,6 +99,7 @@ public:
 
         Block block;
         std::unique_ptr<Exception> exception;
+        std::vector<String> multistring_message;
         Progress progress;
         BlockStreamProfileInfo profile_info;
 
@@ -165,11 +169,6 @@ public:
       */
     void disconnect();
 
-    /** Fill in the information that is needed when getting the block for some tasks
-      * (so far only for a DESCRIBE TABLE query with Distributed tables).
-      */
-    void fillBlockExtraInfo(BlockExtraInfo & info) const;
-
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
@@ -213,7 +212,7 @@ private:
     Protocol::Secure secure;             /// Enable data encryption for communication.
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
-    CompressionSettings compression_settings;
+    CompressionCodecPtr compression_codec;
 
     /** If not nullptr, used to limit network traffic.
       * Only traffic for transferring blocks is accounted. Other packets don't.
@@ -265,6 +264,7 @@ private:
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type);
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
     BlockStreamProfileInfo receiveProfileInfo();
