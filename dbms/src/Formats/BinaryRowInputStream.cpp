@@ -1,4 +1,3 @@
-#include <Core/Block.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/BinaryRowInputStream.h>
@@ -30,7 +29,7 @@ bool BinaryRowInputStream::read(MutableColumns & columns, RowReadExtension &)
 
 void BinaryRowInputStream::readPrefix()
 {
-    UInt64 columns;
+    UInt64 columns = 0;
     String tmp;
 
     if (with_names || with_types)
