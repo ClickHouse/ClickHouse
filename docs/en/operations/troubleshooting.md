@@ -40,12 +40,12 @@ sudo service clickhouse-server start
 
 **Check logs**
 
-The main log of `clickhouse-server` is in `/var/log/clickhouse-server.log` by default.
+The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse-server.log` by default.
 
 In case of successful start you should see the strings:
 
-    - `starting up` — Server started to run.
-    - `Ready for connections` — Server runs and ready for connections.
+- `<Information> Application: starting up.` — Server started to run.
+- `<Information> Application: Ready for connections.` — Server runs and ready for connections.
 
 If `clickhouse-server` start failed by the configuration error you should see the `<Error>` string with an error description. For example:
 
@@ -113,12 +113,12 @@ Check:
 
     Check:
 
-    - `tcp_port_secure` setting.
+    - The `tcp_port_secure` setting.
     - Settings for SSL sertificates.
 
      Use proper parameters while connecting. For example, use parameter `port_secure` with `clickhouse_client`.
 
-- User settings
+- User settings.
 
     You may use the wrong user name or password for it.
 
