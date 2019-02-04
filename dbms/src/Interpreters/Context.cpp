@@ -1,8 +1,8 @@
 #include <map>
 #include <set>
-#include <boost/functional/hash/hash.hpp>
+#include <optional>
+#include <memory>
 #include <Poco/Mutex.h>
-#include <Poco/File.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
 #include <common/logger_useful.h>
@@ -98,7 +98,7 @@ struct ContextShared
 {
     Logger * log = &Logger::get("Context");
 
-    std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
+    std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     /// For access of most of shared objects. Recursive mutex.
     mutable std::recursive_mutex mutex;
@@ -124,12 +124,12 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
-    mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
-    mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
-    mutable std::shared_ptr<ExternalModels> external_models;
+    mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
+    mutable std::optional<ExternalDictionaries> external_dictionaries;
+    mutable std::optional<ExternalModels> external_models;
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
-    std::shared_ptr<ISecurityManager> security_manager;     /// Known users.
+    std::unique_ptr<ISecurityManager> security_manager;     /// Known users.
     Quotas quotas;                                          /// Known quotas for resource use.
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
@@ -138,14 +138,14 @@ struct ContextShared
     ViewDependencies view_dependencies;                     /// Current dependencies
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
-    BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
-    BackgroundSchedulePoolPtr schedule_pool;                /// A thread pool that can run different jobs in background (used in replicated tables)
+    std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
+    std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
+    std::optional<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector;
-    std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
+    std::optional<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
@@ -207,7 +207,7 @@ struct ContextShared
 
     Context::ConfigReloadCallback config_reload_callback;
 
-    ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
+    ContextShared(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
         : runtime_components_factory(std::move(runtime_components_factory_)), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
@@ -266,6 +266,15 @@ struct ContextShared
             std::lock_guard lock(mutex);
             databases.clear();
         }
+
+        /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
+        /// TODO: Get rid of this.
+
+        embedded_dictionaries.reset();
+        external_dictionaries.reset();
+        external_models.reset();
+        background_pool.reset();
+        schedule_pool.reset();
     }
 
 private:
@@ -279,11 +288,10 @@ private:
 Context::Context() = default;
 
 
-Context Context::createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory)
+Context Context::createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory)
 {
     Context res;
-    res.runtime_components_factory = runtime_components_factory;
-    res.shared = std::make_shared<ContextShared>(runtime_components_factory);
+    res.shared = std::make_shared<ContextShared>(std::move(runtime_components_factory));
     res.quota = std::make_shared<QuotaForIntervals>();
     return res;
 }
@@ -1180,9 +1188,9 @@ EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_
 
     if (!shared->embedded_dictionaries)
     {
-        auto geo_dictionaries_loader = runtime_components_factory->createGeoDictionariesLoader();
+        auto geo_dictionaries_loader = shared->runtime_components_factory->createGeoDictionariesLoader();
 
-        shared->embedded_dictionaries = std::make_shared<EmbeddedDictionaries>(
+        shared->embedded_dictionaries.emplace(
             std::move(geo_dictionaries_loader),
             *this->global_context,
             throw_on_error);
@@ -1201,9 +1209,9 @@ ExternalDictionaries & Context::getExternalDictionariesImpl(const bool throw_on_
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = runtime_components_factory->createExternalDictionariesConfigRepository();
+        auto config_repository = shared->runtime_components_factory->createExternalDictionariesConfigRepository();
 
-        shared->external_dictionaries = std::make_shared<ExternalDictionaries>(
+        shared->external_dictionaries.emplace(
             std::move(config_repository),
             *this->global_context,
             throw_on_error);
@@ -1221,9 +1229,9 @@ ExternalModels & Context::getExternalModelsImpl(bool throw_on_error) const
         if (!this->global_context)
             throw Exception("Logical error: there is no global context", ErrorCodes::LOGICAL_ERROR);
 
-        auto config_repository = runtime_components_factory->createExternalModelsConfigRepository();
+        auto config_repository = shared->runtime_components_factory->createExternalModelsConfigRepository();
 
-        shared->external_models = std::make_shared<ExternalModels>(
+        shared->external_models.emplace(
             std::move(config_repository),
             *this->global_context,
             throw_on_error);
@@ -1341,7 +1349,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 {
     auto lock = getLock();
     if (!shared->background_pool)
-        shared->background_pool = std::make_shared<BackgroundProcessingPool>(settings.background_pool_size);
+        shared->background_pool.emplace(settings.background_pool_size);
     return *shared->background_pool;
 }
 
@@ -1349,7 +1357,7 @@ BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
-        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.background_schedule_pool_size);
+        shared->schedule_pool.emplace(settings.background_schedule_pool_size);
     return *shared->schedule_pool;
 }
 
@@ -1528,7 +1536,7 @@ Compiler & Context::getCompiler()
     auto lock = getLock();
 
     if (!shared->compiler)
-        shared->compiler = std::make_unique<Compiler>(shared->path + "build/", 1);
+        shared->compiler.emplace(shared->path + "build/", 1);
 
     return *shared->compiler;
 }
@@ -1611,7 +1619,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
     if (!shared->merge_tree_settings)
     {
         auto & config = getConfigRef();
-        shared->merge_tree_settings = std::make_unique<MergeTreeSettings>();
+        shared->merge_tree_settings.emplace();
         shared->merge_tree_settings->loadFromConfig("merge_tree", config);
     }
 
