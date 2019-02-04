@@ -182,7 +182,7 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
 
-## SHOW DATABASES
+## SHOW DATABASES {#show-databases}
 
 ``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]

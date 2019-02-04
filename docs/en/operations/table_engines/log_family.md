@@ -1,6 +1,6 @@
-# The Family of Log Engines
+#Log Engine Family
 
-These engines developed for scenarios when you need to write many tables with the small amount of data (less than 1 million rows).
+These engines were developed for scenarios when you need to write many tables with the small amount of data (less than 1 million rows).
 
 Engines of the family:
 
@@ -14,14 +14,14 @@ Engines:
 
 - Store data on a disk.
 - Append data to the end of file when writing.
+- Do not support [mutation](../../query_language/alter.md#alter-mutations) operations.
 - Do not support indexes.
 
     This means that `SELECT` queries for ranges of data are not efficient.
 
-- Do not support `ALTER UPDATE` and `ALTER DELETE` operations.
 - Do not write data atomically.
 
-    You can get a table with corrupted data if something brakes the write operation, for example, server shutdown.
+    You can get a table with corrupted data if something breaks the write operation, for example, abnormal server shutdown.
 
 ## Differences
 
@@ -29,7 +29,7 @@ The `Log` and `StripeLog` engines support:
 
 - Locks for concurrent data access.
 
-    During `INSERT` query the table is locked, and other queries for reading and writing data both wait for unlocking. If there are no writing data queries, any number of reading data queries can be performed at the same time.
+    During `INSERT` query the table is locked, and other queries for reading and writing data both wait for unlocking. If there are no writing data queries, any number of reading data queries can be performed concurrently.
 
 - Parallel reading of data.
 

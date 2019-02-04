@@ -1,6 +1,6 @@
 # StripeLog
 
-Engine belongs to the [family of log engines](log_family.md).
+Engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log_family.md) article.
 
 Use this engine in scenarios, when you need to write many tables with the small amount of data (less than 1 million rows).
 
@@ -24,7 +24,7 @@ The `StripeLog` engine stores all the columns in one file. The `Log` and `TinyLo
 For each table ClickHouse writes two files:
 
 - `data.bin` — Data file.
-- `index.mkr` — File with marks. Marks contain offsets for each column of each data block inserted.
+- `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
 The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 

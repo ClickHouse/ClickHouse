@@ -1,6 +1,6 @@
 # TinyLog
 
-Engine belongs to the [Family of log engines](log_family.md).
+Engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log_family.md) article.
 
 The simplest table engine, which stores data on a disk.
 Each column is stored in a separate compressed file.
