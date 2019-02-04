@@ -24,11 +24,21 @@ The function also works for arrays.
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 The result type is UInt64.
 
-## lower
+## char_length, CHAR_LENGTH
+
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+The result type is UInt64.
+
+## character_length, CHARACTER_LENGTH
+
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+The result type is UInt64.
+
+## lower, lcase
 
 Converts ASCII Latin symbols in a string to lowercase.
 
-## upper
+## upper, ucase
 
 Converts ASCII Latin symbols in a string to uppercase.
 
@@ -58,7 +68,11 @@ Reverses a sequence of Unicode code points, assuming that the string contains a 
 
 Concatenates the strings listed in the arguments, without a separator.
 
-## substring(s, offset, length)
+## concatAssumeInjective(s1, s2, ...)
+
+Same as [concat](./string_functions.md#concat-s1-s2), the difference is that you need to ensure that concat(s1, s2, s3) -> s4 is injective, it will be used for optimization of GROUP BY
+
+## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length)
 
 Returns a substring starting with the byte from the 'offset' index that is 'length' bytes long. Character indexing starts from one (as in standard SQL). The 'offset' and 'length' arguments must be constants.
 
@@ -82,5 +96,25 @@ Decode base64-encoded string 's' into original string. In case of failure raises
 
 ## tryBase64Decode(s)
 Similar to base64Decode, but in case of error an empty string would be returned.
+
+## endsWith(s, suffix)
+
+Returns whether to end with the specified suffix. Returns 1 if the string ends with the specified suffix, otherwise it returns 0.
+
+## startsWith(s, prefix)
+
+Returns whether to end with the specified prefix. Returns 1 if the string ends with the specified prefix, otherwise it returns 0.
+
+## trimLeft(s)
+
+Returns a string that removes the whitespace characters on left side.
+
+## trimRight(s)
+
+Returns a string that removes the whitespace characters on right side.
+
+## trimBoth(s)
+
+Returns a string that removes the whitespace characters on either side.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/string_functions/) <!--hide-->

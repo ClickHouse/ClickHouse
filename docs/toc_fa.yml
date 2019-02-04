@@ -122,7 +122,11 @@ nav:
 
 - 'Operations':
   - 'hidden': 'operations/index.md'
-  - 'Table Engines':
+  - 'Requirements': 'operations/requirements.md'
+  - 'Monitoring': 'operations/monitoring.md'
+  - 'Troubleshooting': 'operations/troubleshooting.md'
+  - 'Usage recommendations': 'operations/tips.md'
+  - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
     - 'MergeTree Family':
       - 'MergeTree': 'operations/table_engines/mergetree.md'
@@ -160,9 +164,14 @@ nav:
   - 'Data Backup': 'operations/backup.md'
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
+<<<<<<< HEAD
   - 'System Tables': 'operations/system_tables.md'
   - 'Usage Recommendations': 'operations/tips.md'
   - 'Server Configuration Parameters':
+=======
+  - 'System tables': 'operations/system_tables.md'
+  - 'Server configuration parameters':
+>>>>>>> 37b1d8369c177ded183562dc2bd30f1fbdd136a2
     - 'Introduction': 'operations/server_settings/index.md'
     - 'Server Settings': 'operations/server_settings/settings.md'
   - 'Settings':
