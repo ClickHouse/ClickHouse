@@ -130,7 +130,7 @@ The path to the directory with the schemes for the input data, such as schemas f
 ```
 
 
-## graphite
+## graphite {#server_settings-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -271,7 +271,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 ```
 
 
-## listen_host
+## listen_host {#server_settings-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -283,7 +283,7 @@ Examples:
 ```
 
 
-## logger
+## logger {#server_settings-logger}
 
 Logging settings.
 
@@ -599,7 +599,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 ```
 
 
-## tcp_port
+## tcp_port {#server_settings-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 

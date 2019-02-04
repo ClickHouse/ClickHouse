@@ -120,6 +120,10 @@ nav:
 
 - '运维':
   - 'hidden': 'operations/index.md'
+  - 'Requirements': 'operations/requirements.md'
+  - 'Monitoring': 'operations/monitoring.md'
+  - 'Troubleshooting': 'operations/troubleshooting.md'
+  - 'Usage recommendations': 'operations/tips.md'
   - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
     - 'MergeTree family':
@@ -157,7 +161,6 @@ nav:
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System tables': 'operations/system_tables.md'
-  - 'Usage recommendations': 'operations/tips.md'
   - 'Server configuration parameters':
     - 'Introduction': 'operations/server_settings/index.md'
     - 'Server settings': 'operations/server_settings/settings.md'
