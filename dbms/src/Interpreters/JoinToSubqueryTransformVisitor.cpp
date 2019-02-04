@@ -59,6 +59,9 @@ struct RewriteTablesVisitorData
 
 static bool needRewrite(ASTSelectQuery & select)
 {
+    if (!select.tables)
+        return false;
+
     auto tables = typeid_cast<const ASTTablesInSelectQuery *>(select.tables.get());
     if (!tables)
         return false;

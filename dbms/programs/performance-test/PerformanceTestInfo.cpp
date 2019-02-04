@@ -90,6 +90,7 @@ PerformanceTestInfo::PerformanceTestInfo(
     getExecutionType(config);
     getStopConditions(config);
     getMetrics(config);
+    extractAuxiliaryQueries(config);
 }
 
 void PerformanceTestInfo::applySettings(XMLConfigurationPtr config)
@@ -267,6 +268,18 @@ void PerformanceTestInfo::getMetrics(XMLConfigurationPtr config)
 
     if (metrics.size() > 0)
         checkMetricsInput(metrics, exec_type);
+}
+
+void PerformanceTestInfo::extractAuxiliaryQueries(XMLConfigurationPtr config)
+{
+    if (config->has("create_query"))
+        create_queries = getMultipleValuesFromConfig(*config, "", "create_query");
+
+    if (config->has("fill_query"))
+        fill_queries = getMultipleValuesFromConfig(*config, "", "fill_query");
+
+    if (config->has("drop_query"))
+        drop_queries = getMultipleValuesFromConfig(*config, "", "drop_query");
 }
 
 }

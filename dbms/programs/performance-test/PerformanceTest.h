@@ -25,12 +25,15 @@ public:
         Context & context_);
 
     bool checkPreconditions() const;
+    void prepare() const;
     std::vector<TestStats> execute();
+    void finish() const;
 
     const PerformanceTestInfo & getTestInfo() const
     {
         return test_info;
     }
+
     bool checkSIGINT() const
     {
         return got_SIGINT;

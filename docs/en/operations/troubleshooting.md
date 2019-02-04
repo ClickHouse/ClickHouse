@@ -113,12 +113,20 @@ Check:
 
     Check:
 
+<<<<<<< HEAD
     - The `tcp_port_secure` setting.
+=======
+    - `tcp_port_secure` setting.
+>>>>>>> 39f8eb571faff8f8312d38b93cf6948d154b4508
     - Settings for SSL sertificates.
 
      Use proper parameters while connecting. For example, use parameter `port_secure` with `clickhouse_client`.
 
+<<<<<<< HEAD
 - User settings.
+=======
+- User settings
+>>>>>>> 39f8eb571faff8f8312d38b93cf6948d154b4508
 
     You may use the wrong user name or password for it.
 

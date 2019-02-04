@@ -1542,12 +1542,19 @@ public:
         po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c", po::value<std::string>(), "config-file path")
+            ("config-file,C", po::value<std::string>(), "config-file path")
+            ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
             ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
             ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
-            ("password", po::value<std::string>(), "password")
+            /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
+              * implicit_value is used to avoid this exception (to allow user to type just "--password")
+              * Since currently boost provides no way to check if a value has been set implicitly for an option,
+              * the "\n" is used to distinguish this case because there is hardly a chance an user would use "\n"
+              * as the password.
+              */
+            ("password", po::value<std::string>()->implicit_value("\n"), "password")
             ("ask-password", "ask-password")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
@@ -1585,13 +1592,11 @@ public:
             ("structure", po::value<std::string>(), "structure")
             ("types", po::value<std::string>(), "types")
         ;
-
         /// Parse main commandline options.
         po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
         po::variables_map options;
         po::store(parsed, options);
-
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
@@ -1649,9 +1654,14 @@ public:
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
 #undef EXTRACT_SETTING
 
+        if (options.count("config-file") && options.count("config"))
+            throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
+
         /// Save received data into the internal config.
         if (options.count("config-file"))
             config().setString("config-file", options["config-file"].as<std::string>());
+        if (options.count("config"))
+            config().setString("config-file", options["config"].as<std::string>());
         if (options.count("host") && !options["host"].defaulted())
             config().setString("host", options["host"].as<std::string>());
         if (options.count("query_id"))
@@ -1710,11 +1720,11 @@ public:
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
-    DB::Client client;
-
     try
     {
+        DB::Client client;
         client.init(argc, argv);
+        return client.run();
     }
     catch (const boost::program_options::error & e)
     {
@@ -1726,6 +1736,4 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
-
-    return client.run();
 }
