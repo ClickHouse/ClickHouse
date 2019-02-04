@@ -46,6 +46,7 @@ std::string ReportBuilder::buildFullReport(
     json_output.set("server_version", server_version);
     json_output.set("time", getCurrentTime());
     json_output.set("test_name", test_info.test_name);
+    json_output.set("path", test_info.path);
     json_output.set("main_metric", test_info.main_metric);
 
     auto has_metric = [&test_info] (const std::string & metric_name)

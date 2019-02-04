@@ -70,7 +70,7 @@ Calculates FarmHash64 from a string.
 Accepts a String-type argument. Returns UInt64.
 For more information, see the link: [FarmHash64](https://github.com/google/farmhash)
 
-## javaHash
+## javaHash {#hash_functions-javahash}
 
 Calculates JavaHash from a string.
 Accepts a String-type argument. Returns Int32.
@@ -80,7 +80,7 @@ For more information, see the link: [JavaHash](http://hg.openjdk.java.net/jdk8u/
 
 Calculates HiveHash from a string.
 Accepts a String-type argument. Returns Int32.
-Same as for [JavaHash](./hash_functions.md#javaHash), except that the return value never has a negative number.
+Same as for [JavaHash](#hash_functions-javahash), except that the return value never has a negative number.
 
 ## metroHash64
 
