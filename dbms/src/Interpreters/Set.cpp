@@ -75,8 +75,8 @@ void NO_INLINE Set::insertFromBlockImplCase(
     const ColumnRawPtrs & key_columns,
     size_t rows,
     SetVariants & variants,
-    ConstNullMapPtr null_map,
-    ColumnUInt8::Container * out_filter)
+    [[maybe_unused]] ConstNullMapPtr null_map,
+    [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
     typename Method::State state(key_columns, key_sizes, nullptr);
     /// state.init(key_columns);
@@ -84,13 +84,14 @@ void NO_INLINE Set::insertFromBlockImplCase(
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
     {
-        if (has_null_map && (*null_map)[i])
-            continue;
+        if constexpr (has_null_map)
+            if ((*null_map)[i])
+                continue;
 
         /// Obtain a key to insert to the set
         /// typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
 
-        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+        [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 //
 //        typename Method::Data::iterator it;
 //        bool inserted;
@@ -99,7 +100,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 //        if (inserted)
 //            method.onNewKey(*it, keys_size, variants.string_pool);
 
-        if (build_filter)
+        if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
     }
 }
