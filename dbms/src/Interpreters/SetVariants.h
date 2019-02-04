@@ -68,7 +68,7 @@ struct SetMethodString
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, false>;
 
 //    struct State
 //    {
@@ -111,7 +111,7 @@ struct SetMethodFixedString
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void>;
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, false>;
 
 //    struct State
 //    {
