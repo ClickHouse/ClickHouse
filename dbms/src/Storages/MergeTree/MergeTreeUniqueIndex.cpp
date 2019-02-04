@@ -78,7 +78,7 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
 
 String MergeTreeUniqueGranule::toString() const
 {
-    String res = "";
+    String res;
 
     const auto & columns = set->getSetElements();
     for (size_t i = 0; i < index.columns.size(); ++i)
@@ -151,29 +151,22 @@ UniqueCondition::UniqueCondition(
 
     /// Replace logical functions with bit functions.
     /// Working with UInt8: last bit = can be true, previous = can be false.
-    ASTPtr new_expression;
     if (select.where_expression && select.prewhere_expression)
-        new_expression = makeASTFunction(
+        expression_ast = makeASTFunction(
                 "and",
                 select.where_expression->clone(),
                 select.prewhere_expression->clone());
     else if (select.where_expression)
-        new_expression = select.where_expression->clone();
+        expression_ast = select.where_expression->clone();
     else if (select.prewhere_expression)
-        new_expression = select.prewhere_expression->clone();
+        expression_ast = select.prewhere_expression->clone();
     else
         /// 0b11 -- can be true and false at the same time
-        new_expression = std::make_shared<ASTLiteral>(Field(3));
+        expression_ast = std::make_shared<ASTLiteral>(Field(3));
 
-    useless = checkASTAlwaysUnknownOrTrue(new_expression);
     /// Do not proceed if index is useless for this query.
-    if (useless)
+    if ((useless = checkASTAlwaysUnknownOrTrue(expression_ast)))
         return;
-
-    expression_ast = makeASTFunction(
-            "bitAnd",
-            new_expression,
-            std::make_shared<ASTLiteral>(Field(1)));
 
     traverseAST(expression_ast);
 
@@ -203,11 +196,10 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     Block result = granule->getElementsBlock();
     actions->execute(result);
 
-
     const auto & column = result.getByName(expression_ast->getColumnName()).column;
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getBool(i))
+        if (column->getInt(i) & 1)
             return true;
 
     return false;
