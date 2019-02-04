@@ -79,7 +79,6 @@ void NO_INLINE Set::insertFromBlockImplCase(
     [[maybe_unused]] ColumnUInt8::Container * out_filter)
 {
     typename Method::State state(key_columns, key_sizes, nullptr);
-    /// state.init(key_columns);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -88,17 +87,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
             if ((*null_map)[i])
                 continue;
 
-        /// Obtain a key to insert to the set
-        /// typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-
         [[maybe_unused]] auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-//
-//        typename Method::Data::iterator it;
-//        bool inserted;
-//        method.data.emplace(key, it, inserted);
-//
-//        if (inserted)
-//            method.onNewKey(*it, keys_size, variants.string_pool);
 
         if constexpr (build_filter)
             (*out_filter)[i] = emplace_result.isInserted();
@@ -397,9 +386,8 @@ void NO_INLINE Set::executeImplCase(
 {
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
-    /// state.init(key_columns);
 
-    /// NOTE Optimization is not used for consecutive identical values.
+    /// NOTE Optimization is not used for consecutive identical strings.
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -409,11 +397,6 @@ void NO_INLINE Set::executeImplCase(
         else
         {
             auto find_result = state.findKey(method.data, i, pool);
-
-            /// Build the key
-            /// typename Method::Key key = state.getKey(key_columns, keys_size, i, key_sizes);
-            ///vec_res[i] = negative ^ method.data.has(key);
-
             vec_res[i] = negative ^ find_result.isFound();
         }
     }
