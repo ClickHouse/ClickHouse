@@ -48,6 +48,7 @@
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
+#include "Common/config_version.h"
 
 #if defined(__linux__)
 #include <Common/hasLinuxCapability.h>
@@ -129,6 +130,11 @@ int Server::run()
         helpFormatter.format(std::cout);
         return 0;
     }
+    if (config().hasOption("version"))
+    {
+        std::cout << DBMS_NAME << " server version " << VERSION_STRING << "." << std::endl;
+        return 0;
+    }
     return Application::run();
 }
 
@@ -150,6 +156,12 @@ void Server::defineOptions(Poco::Util::OptionSet & _options)
             .required(false)
             .repeatable(false)
             .binding("help"));
+    _options.addOption(
+            Poco::Util::Option("version", "V", "show version and exit")
+                    .required(false)
+                    .repeatable(false)
+                    .binding("version")
+    );
     BaseDaemon::defineOptions(_options);
 }
 
