@@ -1077,6 +1077,13 @@ void Context::setCurrentQueryId(const String & query_id)
     client_info.current_query_id = query_id_to_set;
 }
 
+void Context::killCurrentQuery()
+{
+    if (process_list_elem)
+    {
+        process_list_elem->cancelQuery(true);
+    }
+};
 
 String Context::getDefaultFormat() const
 {
