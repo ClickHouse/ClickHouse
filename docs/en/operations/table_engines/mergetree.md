@@ -34,6 +34,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
+    INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1,
+    INDEX index_name2 expr2 TYPE type2(...) GRANULARITY value2
 ) ENGINE = MergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
@@ -224,6 +226,56 @@ SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../settings/settings.md#settings-force_index_by_date) and [force_primary_key](../settings/settings.md).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
+
+
+### Data Skipping Indices
+
+Index declaration in the columns section of the `CREATE` query.
+```sql
+INDEX index_name expr TYPE type(...) GRANULARITY granularity_value
+```
+
+For tables from the `*MergeTree` family data skipping indices can be specified.
+
+These indices aggregate some information about the specified expression on blocks, which consist of `granularity_value` granules,
+then these aggregates are used in `SELECT` queries for reducing the amount of data to read from the disk by skipping big blocks of data where `where` query cannot be satisfied.
+
+
+Example
+```sql
+CREATE TABLE table_name
+(
+    u64 UInt64,
+    i32 Int32,
+    s String,
+    ...
+    INDEX a (u64 * i32, s) TYPE minmax GRANULARITY 3,
+    INDEX b (u64 * length(s)) TYPE unique GRANULARITY 4
+) ENGINE = MergeTree()
+...
+```
+
+Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in following queries.
+```sql
+SELECT count() FROM table WHERE s < 'z'
+SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
+```
+
+#### Available Types of Indices
+
+* `minmax`
+Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of the data like the primary key.
+
+* `unique(max_rows)`
+Stores unique values of the specified expression (no more than `max_rows` rows), use them to check if the `WHERE` expression is not satisfiable on a block of the data.
+If `max_rows=0`, then there are no limits for storing values. `unique` without parameters is equal to `unique(0)`.  
+
+```sql
+INDEX sample_index (u64 * length(s)) TYPE minmax GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique GRANULARITY 4
+INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE unique(100) GRANULARITY 4
+```
+
 
 ## Concurrent Data Access
 
