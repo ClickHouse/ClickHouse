@@ -20,7 +20,10 @@ musl/glob.c
 musl/exp2f.c
 musl/pwritev.c
 musl/getrandom.c
-musl/fcntl.c)
+musl/fcntl.c
+musl/timespec_get.c
+musl/sched_getcpu.c
+)
 
 if (MAKE_STATIC_LIBRARIES)
     set (GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}
@@ -31,4 +34,15 @@ add_library (glibc-compatibility ${GLIBC_COMPATIBILITY_SOURCES})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
 
-add_subdirectory (tests)
+# glibc-compatibility does not depend on any libraries but is linked to all libraries implicitly.
+# Avoid linking of the library to itself.
+set_target_properties(glibc-compatibility PROPERTIES LINK_LIBRARIES "")
+
+# Garbage. Rough explanation: some libraries want to install itself and CMake forces us to also install the glibc-compatibility library.
+install(TARGETS glibc-compatibility EXPORT CapnProtoTargets ARCHIVE DESTINATION "/tmp")
+install(TARGETS glibc-compatibility EXPORT protobuf-targets ARCHIVE DESTINATION "/tmp")
+install(TARGETS glibc-compatibility EXPORT double-conversionTargets ARCHIVE DESTINATION "/tmp")
+
+if(ENABLE_TESTS)
+    add_subdirectory(tests)
+endif()

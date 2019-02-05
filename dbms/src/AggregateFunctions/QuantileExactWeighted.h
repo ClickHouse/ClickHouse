@@ -12,9 +12,9 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** Calculates quantile by counting number of occurences for each value in a hash map.
+/** Calculates quantile by counting number of occurrences for each value in a hash map.
   *
-  * It use O(distinct(N)) memory. Can be naturally applied for values with weight.
+  * It uses O(distinct(N)) memory. Can be naturally applied for values with weight.
   * In case of many identical values, it can be more efficient than QuantileExact even when weight is not used.
   */
 template <typename Value>

@@ -13,6 +13,8 @@
 #include <Poco/Timestamp.h>
 #include <Core/Types.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
+
 
 
 namespace DB
@@ -60,7 +62,7 @@ protected:
     friend class BackgroundProcessingPoolTaskInfo;
 
     using Tasks = std::multimap<Poco::Timestamp, TaskHandle>;    /// key is desired next time to execute (priority).
-    using Threads = std::vector<std::thread>;
+    using Threads = std::vector<ThreadFromGlobalPool>;
 
     const size_t size;
 
@@ -77,8 +79,6 @@ protected:
 
     void threadFunction();
 };
-
-using BackgroundProcessingPoolPtr = std::shared_ptr<BackgroundProcessingPool>;
 
 
 class BackgroundProcessingPoolTaskInfo

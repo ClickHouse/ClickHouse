@@ -59,12 +59,7 @@ void CreatingSetsBlockInputStream::readPrefixImpl()
 
 Block CreatingSetsBlockInputStream::getTotals()
 {
-    auto input = dynamic_cast<IProfilingBlockInputStream *>(children.back().get());
-
-    if (input)
-        return input->getTotals();
-    else
-        return totals;
+    return children.back()->getTotals();
 }
 
 
@@ -125,17 +120,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_join)
         {
-            for (const auto & name_with_alias : subquery.joined_block_aliases)
-            {
-                if (block.has(name_with_alias.first))
-                {
-                    auto pos = block.getPositionByName(name_with_alias.first);
-                    auto column = block.getByPosition(pos);
-                    block.erase(pos);
-                    column.name = name_with_alias.second;
-                    block.insert(std::move(column));
-                }
-            }
+            subquery.renameColumns(block);
 
             if (subquery.joined_block_actions)
                 subquery.joined_block_actions->execute(block);
@@ -158,9 +143,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (done_with_set && done_with_join && done_with_table)
         {
-            if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-                profiling_in->cancel(false);
-
+            subquery.source->cancel(false);
             break;
         }
     }
@@ -171,15 +154,12 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     watch.stop();
 
     size_t head_rows = 0;
-    if (IProfilingBlockInputStream * profiling_in = dynamic_cast<IProfilingBlockInputStream *>(&*subquery.source))
-    {
-        const BlockStreamProfileInfo & profile_info = profiling_in->getProfileInfo();
+    const BlockStreamProfileInfo & profile_info = subquery.source->getProfileInfo();
 
-        head_rows = profile_info.rows;
+    head_rows = profile_info.rows;
 
-        if (subquery.join)
-            subquery.join->setTotals(profiling_in->getTotals());
-    }
+    if (subquery.join)
+        subquery.join->setTotals(subquery.source->getTotals());
 
     if (head_rows != 0)
     {

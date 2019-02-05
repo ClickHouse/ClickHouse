@@ -1,26 +1,14 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
 
-using PredicateExpressions = std::vector<ASTPtr>;
-using ProjectionWithAlias = std::pair<ASTPtr, String>;
-using ProjectionsWithAliases = std::vector<ProjectionWithAlias>;
-using SubqueriesProjectionColumns = std::map<IAST *, ProjectionsWithAliases>;
-using IdentifierWithQualifiedName = std::pair<ASTIdentifier *, String>;
-using IdentifiersWithQualifiedNameSet = std::vector<IdentifierWithQualifiedName>;
-
+class ASTIdentifier;
+class ASTSelectQuery;
+class ASTSubquery;
+class Context;
 
 /** This class provides functions for Push-Down predicate expressions
  *
@@ -35,6 +23,10 @@ using IdentifiersWithQualifiedNameSet = std::vector<IdentifierWithQualifiedName>
  */
 class PredicateExpressionsOptimizer
 {
+    using ProjectionWithAlias = std::pair<ASTPtr, String>;
+    using SubqueriesProjectionColumns = std::map<ASTSelectQuery *, std::vector<ProjectionWithAlias>>;
+    using IdentifierWithQualifier = std::pair<ASTIdentifier *, String>;
+
     /// Extracts settings, mostly to show which are used and which are not.
     struct ExtractedSettings
     {
@@ -73,29 +65,29 @@ private:
         PUSH_TO_HAVING,
     };
 
-    bool isAggregateFunction(ASTPtr & node);
-
     bool isArrayJoinFunction(const ASTPtr & node);
 
-    PredicateExpressions splitConjunctionPredicate(ASTPtr & predicate_expression);
+    std::vector<ASTPtr> splitConjunctionPredicate(ASTPtr & predicate_expression);
 
-    void getDependenciesAndQualifiedOfExpression(const ASTPtr & expression, IdentifiersWithQualifiedNameSet & dependencies_and_qualified,
-                                                 std::vector<DatabaseAndTableWithAlias> & tables_with_aliases);
+    std::vector<IdentifierWithQualifier> getDependenciesAndQualifiers(ASTPtr & expression,
+                                                                      std::vector<DatabaseAndTableWithAlias> & tables_with_aliases);
 
     bool optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery);
 
-    bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, bool is_prewhere);
+    bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, OptimizeKind optimize_kind);
 
-    bool cannotPushDownOuterPredicate(const ProjectionsWithAliases & subquery_projection_columns, ASTSelectQuery * subquery,
-        IdentifiersWithQualifiedNameSet & outer_predicate_dependencies, bool & is_prewhere, OptimizeKind & optimize_kind);
+    bool allowPushDown(const ASTSelectQuery * subquery);
 
-    void cloneOuterPredicateForInnerPredicate(const ASTPtr & outer_predicate, const ProjectionsWithAliases & projection_columns,
-                                              std::vector<DatabaseAndTableWithAlias> & tables, ASTPtr & inner_predicate);
+    bool canPushDownOuterPredicate(const std::vector<ProjectionWithAlias> & subquery_projection_columns,
+                                   const std::vector<IdentifierWithQualifier> & outer_predicate_dependencies,
+                                   OptimizeKind & optimize_kind);
 
-    void getAllSubqueryProjectionColumns(SubqueriesProjectionColumns & all_subquery_projection_columns);
+    void setNewAliasesForInnerPredicate(const std::vector<ProjectionWithAlias> & projection_columns,
+                                        const std::vector<IdentifierWithQualifier> & inner_predicate_dependencies);
 
-    void getSubqueryProjectionColumns(SubqueriesProjectionColumns & all_subquery_projection_columns,
-                                      String & qualified_name_prefix, const ASTPtr & subquery);
+    SubqueriesProjectionColumns getAllSubqueryProjectionColumns();
+
+    void getSubqueryProjectionColumns(const ASTPtr & subquery, SubqueriesProjectionColumns & all_subquery_projection_columns);
 
     ASTs getSelectQueryProjectionColumns(ASTPtr & ast);
 

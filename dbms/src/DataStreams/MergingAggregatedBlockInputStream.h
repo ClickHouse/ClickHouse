@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Aggregator.h>
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -11,7 +11,7 @@ namespace DB
 /** A pre-aggregate stream of blocks in which each block is already aggregated.
   * Aggregate functions in blocks should not be finalized so that their states can be merged.
   */
-class MergingAggregatedBlockInputStream : public IProfilingBlockInputStream
+class MergingAggregatedBlockInputStream : public IBlockInputStream
 {
 public:
     MergingAggregatedBlockInputStream(const BlockInputStreamPtr & input, const Aggregator::Params & params, bool final_, size_t max_threads_)

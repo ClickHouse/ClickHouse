@@ -199,7 +199,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         min_saved_log_pointer = std::min(min_saved_log_pointer, min_log_pointer_lost_candidate);
 
     /// We will not touch the last `min_replicated_logs_to_keep` records.
-    entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
+    entries.erase(entries.end() - std::min<UInt64>(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
     /// We will not touch records that are no less than `min_saved_log_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_saved_log_pointer)), entries.end());
 
@@ -295,7 +295,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     /// Virtual node, all nodes that are "greater" than this one will be deleted
     NodeWithStat block_threshold{{}, time_threshold};
 
-    size_t current_deduplication_window = std::min(timed_blocks.size(), storage.data.settings.replicated_deduplication_window.value);
+    size_t current_deduplication_window = std::min<size_t>(timed_blocks.size(), storage.data.settings.replicated_deduplication_window.value);
     auto first_outdated_block_fixed_threshold = timed_blocks.begin() + current_deduplication_window;
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);

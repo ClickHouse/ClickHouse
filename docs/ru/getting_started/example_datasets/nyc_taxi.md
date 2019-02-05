@@ -1,5 +1,10 @@
 # Данные о такси в Нью-Йорке
 
+Этот датасет может быть получен двумя способами:
+
+- импорт из сырых данных;
+- скачивание готовых партиций.
+
 ## Как импортировать сырые данные
 
 См. <https://github.com/toddwschneider/nyc-taxi-data> и <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> для описания набора данных и инструкций по загрузке.
@@ -272,7 +277,21 @@ WHERE (table = 'trips_mergetree') AND active
 
 Между прочим, на MergeTree можно запустить запрос OPTIMIZE. Но это не обязательно, всё будет в порядке и без этого.
 
-## Results on single server
+## Скачивание готовых партиций
+
+```bash
+curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
+tar xvf trips_mergetree.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
+# убедитесь, что установлены корректные права доступа на файлы
+sudo service clickhouse-server restart
+clickhouse-client --query "SELECT COUNT(*) FROM datasets.trips_mergetree"
+```
+
+!!!info
+    Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
+    нужно добавить имя базы, `datasets.trips_mergetree`.
+
+## Результаты на одном сервере
 
 Q1:
 

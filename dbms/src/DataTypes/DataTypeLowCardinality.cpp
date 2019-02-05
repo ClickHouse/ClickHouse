@@ -713,7 +713,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min(limit, low_cardinality_state->num_pending_rows);
+        size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
         readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
@@ -729,10 +729,11 @@ void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr)
     dictionary_type->deserializeBinary(field, istr);
 }
 
-template <typename ... Args>
+template <typename OutputStream, typename ... Args>
 void DataTypeLowCardinality::serializeImpl(
-        const IColumn & column, size_t row_num, WriteBuffer & ostr,
-        DataTypeLowCardinality::SerealizeFunctionPtr<Args ...> func, Args & ... args) const
+        const IColumn & column, size_t row_num,
+        DataTypeLowCardinality::SerializeFunctionPtr<OutputStream, Args ...> func,
+        OutputStream & ostr, Args & ... args) const
 {
     auto & low_cardinality_column = getColumnLowCardinality(column);
     size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
@@ -741,8 +742,9 @@ void DataTypeLowCardinality::serializeImpl(
 
 template <typename ... Args>
 void DataTypeLowCardinality::deserializeImpl(
-        IColumn & column, ReadBuffer & istr,
-        DataTypeLowCardinality::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
+        IColumn & column,
+        DataTypeLowCardinality::DeserializeFunctionPtr<Args ...> func,
+        ReadBuffer & istr, Args & ... args) const
 {
     auto & low_cardinality_column= getColumnLowCardinality(column);
     auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();

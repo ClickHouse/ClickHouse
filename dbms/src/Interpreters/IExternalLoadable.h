@@ -3,6 +3,7 @@
 #include <chrono>
 #include <string>
 #include <memory>
+#include <boost/noncopyable.hpp>
 #include <Core/Types.h>
 
 
@@ -26,7 +27,7 @@ struct ExternalLoadableLifetime final
 
 
 /// Basic interface for external loadable objects. Is used in ExternalLoader.
-class IExternalLoadable : public std::enable_shared_from_this<IExternalLoadable>
+class IExternalLoadable : public std::enable_shared_from_this<IExternalLoadable>, private boost::noncopyable
 {
 public:
     virtual ~IExternalLoadable() = default;

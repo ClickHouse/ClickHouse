@@ -8,6 +8,8 @@
 
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
+/// TODO It doesn't make sense.
+
 namespace DB
 {
 
@@ -17,27 +19,25 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
-    if (!thread_group)
-        return;
+    query_id = query_context->getCurrentQueryId();
 
-    std::unique_lock lock(thread_group->mutex);
-    thread_group->query_context = query_context;
-    if (!thread_group->global_context)
-        thread_group->global_context = global_context;
+    if (thread_group)
+    {
+        std::unique_lock lock(thread_group->mutex);
+        thread_group->query_context = query_context;
+        if (!thread_group->global_context)
+            thread_group->global_context = global_context;
+    }
 }
 
-String ThreadStatus::getQueryID()
+const std::string & ThreadStatus::getQueryId() const
 {
-    if (query_context)
-        return query_context->getClientInfo().current_query_id;
-
-    return {};
+    return query_id;
 }
 
 void CurrentThread::defaultThreadDeleter()
 {
-    ThreadStatus & thread = *CurrentThread::get();
-    LOG_TRACE(thread.log, "Thread " << thread.thread_number << " exited");
+    ThreadStatus & thread = CurrentThread::get();
     thread.detachQuery(true, true);
 }
 
@@ -51,8 +51,8 @@ void ThreadStatus::initializeQuery()
     memory_tracker.setParent(&thread_group->memory_tracker);
     thread_group->memory_tracker.setDescription("(for query)");
 
-    thread_group->master_thread = shared_from_this();
-    thread_group->thread_statuses.emplace(thread_number, shared_from_this());
+    thread_group->master_thread = this;
+    thread_group->thread_statuses.emplace(thread_number, this);
 
     initPerformanceCounters();
     thread_state = ThreadState::AttachedToQuery;
@@ -87,8 +87,8 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
         if (!global_context)
             global_context = thread_group->global_context;
 
-        if (!thread_group->thread_statuses.emplace(thread_number, shared_from_this()).second)
-            throw Exception("Thread " + std::to_string(thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
+        /// NOTE: A thread may be attached multiple times if it is reused from a thread pool.
+        thread_group->thread_statuses.emplace(thread_number, this);
     }
 
     initPerformanceCounters();
@@ -193,48 +193,45 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 
 void CurrentThread::initializeQuery()
 {
-    get()->initializeQuery();
-    getScope()->deleter = CurrentThread::defaultThreadDeleter;
+    get().initializeQuery();
+    get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
-    get()->attachQuery(thread_group, true);
-    getScope()->deleter = CurrentThread::defaultThreadDeleter;
+    get().attachQuery(thread_group, true);
+    get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
-    get()->attachQuery(thread_group, false);
-    getScope()->deleter = CurrentThread::defaultThreadDeleter;
+    get().attachQuery(thread_group, false);
+    get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
-std::string CurrentThread::getCurrentQueryID()
+const std::string & CurrentThread::getQueryId()
 {
-    if (!get() || get().use_count() <= 0)
-        return {};
-
-    return get()->getQueryID();
+    return get().getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)
 {
-    return get()->attachQueryContext(query_context);
+    return get().attachQueryContext(query_context);
 }
 
 void CurrentThread::finalizePerformanceCounters()
 {
-    get()->finalizePerformanceCounters();
+    get().finalizePerformanceCounters();
 }
 
 void CurrentThread::detachQuery()
 {
-    get()->detachQuery(false);
+    get().detachQuery(false);
 }
 
 void CurrentThread::detachQueryIfNotDetached()
 {
-    get()->detachQuery(true);
+    get().detachQuery(true);
 }
 
 

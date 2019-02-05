@@ -8,13 +8,22 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeList
    set (MISSING_INTERNAL_GTEST_LIBRARY 1)
 endif ()
 
-if (NOT USE_INTERNAL_GTEST_LIBRARY)
-    find_package (GTest)
-endif ()
 
-if (NOT GTEST_INCLUDE_DIRS AND NOT MISSING_INTERNAL_GTEST_LIBRARY)
+if(NOT USE_INTERNAL_GTEST_LIBRARY)
+    # TODO: autodetect of GTEST_SRC_DIR by EXISTS /usr/src/googletest/CMakeLists.txt
+    if(NOT GTEST_SRC_DIR)
+        find_package(GTest)
+    endif()
+endif()
+
+if (NOT GTEST_SRC_DIR AND NOT GTEST_INCLUDE_DIRS AND NOT MISSING_INTERNAL_GTEST_LIBRARY)
     set (USE_INTERNAL_GTEST_LIBRARY 1)
     set (GTEST_MAIN_LIBRARIES gtest_main)
+    set (GTEST_INCLUDE_DIRS ${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest)
 endif ()
 
-message (STATUS "Using gtest: ${GTEST_INCLUDE_DIRS} : ${GTEST_MAIN_LIBRARIES}")
+if((GTEST_INCLUDE_DIRS AND GTEST_MAIN_LIBRARIES) OR GTEST_SRC_DIR)
+    set(USE_GTEST 1)
+endif()
+
+message (STATUS "Using gtest=${USE_GTEST}: ${GTEST_INCLUDE_DIRS} : ${GTEST_MAIN_LIBRARIES} : ${GTEST_SRC_DIR}")

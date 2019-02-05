@@ -30,8 +30,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         const size_t size);
 
-    CacheDictionary(const CacheDictionary & other);
-
     std::exception_ptr getCreationException() const override { return {}; }
 
     std::string getName() const override { return name; }
@@ -53,7 +51,10 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<CacheDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<CacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

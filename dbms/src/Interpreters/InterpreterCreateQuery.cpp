@@ -195,9 +195,11 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
     {
         auto & col_decl = typeid_cast<ASTColumnDeclaration &>(*ast);
 
+        DataTypePtr column_type = nullptr;
         if (col_decl.type)
         {
-            columns.emplace_back(col_decl.name, DataTypeFactory::instance().get(col_decl.type));
+            column_type = DataTypeFactory::instance().get(col_decl.type);
+            columns.emplace_back(col_decl.name, column_type);
         }
         else
             /// we're creating dummy DataTypeUInt8 in order to prevent the NullPointerException in ExpressionActions
@@ -228,7 +230,7 @@ static ColumnsDeclarationAndModifiers parseColumns(const ASTExpressionList & col
 
         if (col_decl.codec)
         {
-            auto codec = CompressionCodecFactory::instance().get(col_decl.codec);
+            auto codec = CompressionCodecFactory::instance().get(col_decl.codec, column_type);
             codecs.emplace(col_decl.name, codec);
         }
 
@@ -337,13 +339,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
         column_declaration->name = column.name;
 
-        StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto pos = type_name->data();
-        const auto end = pos + type_name->size();
-
         ParserIdentifierWithOptionalParameters storage_p;
+        String type_name = column.type->getName();
+        auto pos = type_name.data();
+        const auto end = pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -361,13 +361,11 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
 
         column_declaration->name = column.name;
 
-        StringPtr type_name = std::make_shared<String>(column.type->getName());
-        auto type_name_pos = type_name->data();
-        const auto type_name_end = type_name_pos + type_name->size();
-
         ParserIdentifierWithOptionalParameters storage_p;
+        String type_name = column.type->getName();
+        auto type_name_pos = type_name.data();
+        const auto type_name_end = type_name_pos + type_name.size();
         column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
-        column_declaration->type->owned_string = type_name;
 
         const auto defaults_it = columns.defaults.find(column.name);
         if (defaults_it != std::end(columns.defaults))

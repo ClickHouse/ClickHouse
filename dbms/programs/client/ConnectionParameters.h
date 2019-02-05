@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <IO/ConnectionTimeouts.h>
 
-#include <common/SetTerminalEcho.h>
+#include <common/setTerminalEcho.h>
 #include <ext/scope_guard.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -25,12 +25,12 @@ namespace ErrorCodes
 struct ConnectionParameters
 {
     String host;
-    UInt16 port;
+    UInt16 port{};
     String default_database;
     String user;
     String password;
-    Protocol::Secure security;
-    Protocol::Compression compression;
+    Protocol::Secure security = Protocol::Secure::Disable;
+    Protocol::Compression compression = Protocol::Compression::Enable;
     ConnectionTimeouts timeouts;
 
     ConnectionParameters() {}
@@ -48,27 +48,33 @@ struct ConnectionParameters
                 is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
         default_database = config.getString("database", "");
-        user = config.getString("user", "");
-
+        /// changed the default value to "default" to fix the issue when the user in the prompt is blank
+        user = config.getString("user", "default");
+        bool password_prompt = false;
         if (config.getBool("ask-password", false))
         {
             if (config.has("password"))
                 throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
-
-            std::cout << "Password for user " << user << ": ";
-            SetTerminalEcho(false);
-
-            SCOPE_EXIT({
-                SetTerminalEcho(true);
-            });
-            std::getline(std::cin, password);
-            std::cout << std::endl;
+            password_prompt = true;
         }
         else
         {
             password = config.getString("password", "");
+            /// if the value of --password is omitted, the password will be set implicitly to "\n"
+            if (password == "\n")
+                password_prompt = true;
         }
+        if (password_prompt)
+        {
+            std::cout << "Password for user (" << user << "): ";
+            setTerminalEcho(false);
 
+            SCOPE_EXIT({
+                setTerminalEcho(true);
+            });
+            std::getline(std::cin, password);
+            std::cout << std::endl;
+        }
         compression = config.getBool("compression", true)
             ? Protocol::Compression::Enable
             : Protocol::Compression::Disable;

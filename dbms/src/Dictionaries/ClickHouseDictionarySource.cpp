@@ -54,7 +54,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const Block & sample_block,
-    Context & context)
+    Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
     , host{config.getString(config_prefix + ".host")}
@@ -69,11 +69,13 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
     , sample_block{sample_block}
-    , context(context)
-    , is_local{isLocalAddress({host, port}, config.getInt("tcp_port", 0))}
+    , context(context_)
+    , is_local{isLocalAddress({host, port}, context.getTCPPort())}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)}
     , load_all_query{query_builder.composeLoadAllQuery()}
 {
+    /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
+    context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
 }
 
 
@@ -182,8 +184,9 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 {
     if (is_local)
     {
-        auto input_block = executeQuery(request, context, true).in;
-        return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream &>((*input_block)));
+        Context query_context = context;
+        auto input_block = executeQuery(request, query_context, true).in;
+        return readInvalidateQuery(*input_block);
     }
     else
     {
@@ -201,7 +204,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 Context & context) -> DictionarySourcePtr {
+                                 Context & context) -> DictionarySourcePtr
+    {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };
     factory.registerSource("clickhouse", createTableSource);

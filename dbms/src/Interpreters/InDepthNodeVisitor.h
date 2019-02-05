@@ -53,7 +53,7 @@ private:
 };
 
 /// Simple matcher for one node type without complex traversal logic.
-template <typename _Data>
+template <typename _Data, bool _visit_children = true>
 class OneTypeMatcher
 {
 public:
@@ -62,7 +62,7 @@ public:
 
     static constexpr const char * label = "";
 
-    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return _visit_children; }
 
     static std::vector<ASTPtr *> visit(ASTPtr & ast, Data & data)
     {
