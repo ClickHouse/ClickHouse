@@ -51,6 +51,12 @@ public:
             res->children.push_back(res->comment);
         }
 
+        if (expr_list)
+        {
+            res->expr_list = expr_list->clone();
+            res->children.push_back(res->expr_list);
+        }
+
         return res;
     }
 

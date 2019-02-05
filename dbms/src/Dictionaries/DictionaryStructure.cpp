@@ -498,6 +498,23 @@ void addLifetimeFieldsFromAST(
 }
 
 
+void addAdditionalColumnFields(
+    Poco::AutoPtr<Poco::XML::Document> doc,
+    Poco::AutoPtr<Poco::XML::Element> root,
+    const ASTColumnDeclaration * column_declaration)
+{
+    const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(column_declaration->expr_list.get());
+    for (size_t index = 0; index != expr_list->children.size(); ++index)
+    {
+        const auto * child = expr_list->children.at(index).get();
+        const ASTPair * pair = typeid_cast<const ASTPair *>(child);
+        auto pair_element = doc->createElement(pair->first);
+        pair_element->appendChild(doc->createTextNode(queryToString(pair->second)));
+        root->appendChild(pair_element);
+    }
+}
+
+
 void addStructureFieldsFromAST(
     Poco::AutoPtr<Poco::XML::Document> doc,
     Poco::AutoPtr<Poco::XML::Element> root,
@@ -508,9 +525,7 @@ void addStructureFieldsFromAST(
     root->appendChild(structure_element);
     if (source->primary_key)
     {
-        const auto * primary_key_ptr = source->primary_key;
         const ASTExpressionList * expr_list = typeid_cast<const ASTExpressionList *>(source->primary_key);
-        std::cerr << "Size: " << primary_key_ptr->children.size() << "\n";
         if (expr_list->children.size() != 1)
             throw Exception("Primary key may be only one column", ErrorCodes::CANNOT_CONSTRUCT_CONFIGURATION_FROM_AST); // TODO: this is wrong because of complex key
 
@@ -546,9 +561,9 @@ void addStructureFieldsFromAST(
         Poco::AutoPtr<Poco::XML::Element> null_value_element = doc->createElement("null_value");
         null_value_element->appendChild(doc->createTextNode(queryToString(column_declaration->default_expression)));
         attribute_element->appendChild(null_value_element);
-    }
 
-    // TODO: add here another additional fields like injective
+        addAdditionalColumnFields(doc, attribute_element, column_declaration);
+    }
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfigFromAST(const ASTCreateQuery & create)

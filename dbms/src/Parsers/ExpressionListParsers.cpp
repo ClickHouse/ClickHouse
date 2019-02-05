@@ -652,10 +652,19 @@ bool ParserKeyValueFunctionPairsList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
 bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    return ParserList(
-        std::make_unique<ParserKeyValuePair>(),
-        std::make_unique<ParserToken>(separator))
-        .parse(pos, node, expected);
+    if (separator == TokenType::Whitespace)
+    {
+        return ParserList(
+            std::make_unique<ParserKeyValuePair>(),
+            std::make_unique<ParserNothing>()).parse(pos, node, expected);
+    }
+    else
+    {
+        return ParserList(
+            std::make_unique<ParserKeyValuePair>(),
+            std::make_unique<ParserToken>(separator))
+            .parse(pos, node, expected);
+    }
 }
 
 

@@ -140,4 +140,17 @@ protected:
     }
 };
 
+
+// Parser always returns true and do nothing.
+class ParserNothing : public IParserBase
+{
+public:
+    const char * getName() const override { return "nothing"; }
+
+    bool parseImpl(Pos & /*pos*/, ASTPtr & /*node*/, Expected & /*expected*/) override
+    {
+        return true;
+    }
+};
+
 }
