@@ -1037,7 +1037,7 @@ private:
 
         while (true)
         {
-            Stopwatch watch(CLOCK_MONOTONIC_COARSE);
+            Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
 
             while (true)
             {
@@ -1062,7 +1062,7 @@ private:
                     }
                     else
                     {
-                        double elapsed = watch.elapsedSeconds();
+                        double elapsed = receive_watch.elapsedSeconds();
                         if (elapsed > receive_timeout.totalSeconds())
                         {
                             std::cout << "Timeout exceeded while receiving data from server."
