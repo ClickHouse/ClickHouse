@@ -398,9 +398,10 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
 {
     auto lock = lockStructureForAlter();
 
-    ColumnsDescription new_columns = getColumns();
+    auto new_columns = getColumns();
+    auto new_indices = getIndicesDescription();
     params.apply(new_columns);
-    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, {});
     setColumns(new_columns);
 }
 
