@@ -5,14 +5,19 @@ namespace DB
 BrotliReadBuffer::BrotliReadBuffer(ReadBuffer &in_, size_t buf_size, char *existing_memory, size_t alignment)
         : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
         , in(in_)
+        , bstate(BrotliDecoderCreateInstance(nullptr, nullptr, nullptr))
+        , bresult(BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT)
+        , in_available(0)
+        , in_data(nullptr)
+        , out_capacity(0)
+        , out_data(nullptr)
         , eof(false)
 {
-    bstate_ = BrotliDecoderCreateInstance(NULL,NULL,NULL);
 }
 
 BrotliReadBuffer::~BrotliReadBuffer()
 {
-    BrotliDecoderDestroyInstance(bstate_);
+    BrotliDecoderDestroyInstance(bstate);
 }
 
 bool BrotliReadBuffer::nextImpl()
@@ -20,20 +25,42 @@ bool BrotliReadBuffer::nextImpl()
     if (eof)
         return false;
 
-    auto ptr_in = reinterpret_cast<const uint8_t *>(in.position());
-    size_t size_in = in.buffer().end() - in.position();
+    if (!in_available)
+    {
+        in.nextIfAtEnd();
+        in_available = in.buffer().end() - in.position();
+        in_data = reinterpret_cast<uint8_t *>(in.position());
+    }
 
-    auto ptr_out = reinterpret_cast<uint8_t *>(internal_buffer.begin());
-    size_t size_out = internal_buffer.size();
+    if (bresult == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && (!in_available || in.eof()))
+    {
+        throw Exception(std::string("brotli decode error"), ErrorCodes::CANNOT_READ_ALL_DATA);
+    }
 
-    BrotliDecoderDecompressStream(bstate_, &size_in, &ptr_in, &size_out, &ptr_out, nullptr);
+    out_capacity = internal_buffer.size();
+    out_data = reinterpret_cast<uint8_t *>(internal_buffer.begin());
 
-    in.position() = in.buffer().end() - size_in;
-    working_buffer.resize(internal_buffer.size() - size_out);
+    bresult = BrotliDecoderDecompressStream(bstate, &in_available, &in_data, &out_capacity, &out_data, nullptr);
 
-    if (in.eof()) {
-        eof = true;
-        return working_buffer.size() != 0;
+    in.position() = in.buffer().end() - in_available;
+    working_buffer.resize(internal_buffer.size() - out_capacity);
+
+    if (bresult == BROTLI_DECODER_RESULT_SUCCESS)
+    {
+        if (in.eof())
+        {
+            eof = true;
+            return working_buffer.size() != 0;
+        }
+        else
+        {
+            throw Exception(std::string("brotli decode error"), ErrorCodes::CANNOT_READ_ALL_DATA);
+        }
+    }
+
+    if (bresult == BROTLI_DECODER_RESULT_ERROR)
+    {
+        throw Exception(std::string("brotli decode error"), ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
     return true;
