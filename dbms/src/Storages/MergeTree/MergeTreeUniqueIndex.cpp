@@ -155,28 +155,22 @@ UniqueCondition::UniqueCondition(
 
     /// Replace logical functions with bit functions.
     /// Working with UInt8: last bit = can be true, previous = can be false.
-    ASTPtr new_expression;
     if (select.where_expression && select.prewhere_expression)
-        new_expression = makeASTFunction(
+        expression_ast = makeASTFunction(
                 "and",
                 select.where_expression->clone(),
                 select.prewhere_expression->clone());
     else if (select.where_expression)
-        new_expression = select.where_expression->clone();
+        expression_ast = select.where_expression->clone();
     else if (select.prewhere_expression)
-        new_expression = select.prewhere_expression->clone();
+        expression_ast = select.prewhere_expression->clone();
     else
-        new_expression = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
+        expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
-    useless = checkASTUseless(new_expression);
+    useless = checkASTUseless(expression_ast);
     /// Do not proceed if index is useless for this query.
     if (useless)
         return;
-
-    expression_ast = makeASTFunction(
-            "bitAnd",
-            new_expression,
-            std::make_shared<ASTLiteral>(Field(1)));
 
     traverseAST(expression_ast);
 
@@ -214,7 +208,7 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     const auto & column = result.getByName(expression_ast->getColumnName()).column;
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getBool(i))
+        if (column->getInt(i) & 1)
             return true;
 
     return false;
@@ -274,7 +268,7 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
     if (!func)
         return false;
 
-    const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
+    ASTs & args = typeid_cast<ASTExpressionList &>(*func->arguments).children;
 
     if (func->name == "not")
     {
@@ -284,9 +278,43 @@ bool UniqueCondition::operatorFromAST(ASTPtr & node) const
         func->name = "__bitSwapLastTwo";
     }
     else if (func->name == "and" || func->name == "indexHint")
-        func->name = "bitAnd";
+    {
+        auto last_arg = args.back();
+        args.pop_back();
+
+        ASTPtr new_func;
+        if (args.size() > 1)
+            new_func = makeASTFunction(
+                    "bitAnd",
+                    node,
+                    last_arg);
+        else
+            new_func = makeASTFunction(
+                    "bitAnd",
+                    args.back(),
+                    last_arg);
+
+        node = new_func;
+    }
     else if (func->name == "or")
-        func->name = "bitOr";
+    {
+        auto last_arg = args.back();
+        args.pop_back();
+
+        ASTPtr new_func;
+        if (args.size() > 1)
+            new_func = makeASTFunction(
+                    "bitOr",
+                    node,
+                    last_arg);
+        else
+            new_func = makeASTFunction(
+                    "bitOr",
+                    args.back(),
+                    last_arg);
+
+        node = new_func;
+    }
     else
         return false;
 
