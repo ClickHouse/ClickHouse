@@ -460,14 +460,21 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
     ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
 {
     ColumnsDescription res;
+    IndicesDescription indices;
 
-    if (create.columns_list && create.columns_list->columns)
+    if (create.columns_list)
     {
-        res = getColumnsDescription(*create.columns_list->columns, context);
+        if (create.columns_list->columns)
+            res = getColumnsDescription(*create.columns_list->columns, context);
+        if (create.columns_list->indices)
+            for (const auto & index : create.columns_list->indices->children)
+                indices.indices.push_back(
+                        std::dynamic_pointer_cast<ASTIndexDeclaration>(index->clone()));
     }
     else if (!create.as_table.empty())
     {
         res = as_storage->getColumns();
+        indices = as_storage->getIndicesDescription();
     }
     else if (create.select)
     {
@@ -479,6 +486,8 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(res);
+    ASTPtr new_indices = formatIndices(indices);
+
     if (!create.columns_list)
     {
         auto new_columns_list = std::make_shared<ASTColumns>();
@@ -489,6 +498,11 @@ ColumnsDescription InterpreterCreateQuery::setColumns(
         create.columns_list->replace(create.columns_list->columns, new_columns);
     else
         create.columns_list->set(create.columns_list->columns, new_columns);
+
+    if (new_indices && create.columns_list->indices)
+        create.columns_list->replace(create.columns_list->indices, new_indices);
+    else if (new_indices)
+        create.columns_list->set(create.columns_list->indices, new_indices);
 
     /// Check for duplicates
     std::set<String> all_columns;

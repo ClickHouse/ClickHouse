@@ -14,12 +14,14 @@
 namespace DB
 {
 
-const Field UNKNOWN_FIELD = Field(3);
-
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
 }
+
+/// 0b11 -- can be true and false at the same time
+const Field UNKNOWN_FIELD(3);
+
 
 MergeTreeUniqueGranule::MergeTreeUniqueGranule(const MergeTreeUniqueIndex & index)
         : MergeTreeIndexGranule(), index(index), set(new Set(SizeLimits{}, true))
@@ -80,7 +82,7 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
 
 String MergeTreeUniqueGranule::toString() const
 {
-    String res;
+    String res = "";
 
     const auto & columns = set->getSetElements();
     for (size_t i = 0; i < index.columns.size(); ++i)
@@ -153,22 +155,28 @@ UniqueCondition::UniqueCondition(
 
     /// Replace logical functions with bit functions.
     /// Working with UInt8: last bit = can be true, previous = can be false.
+    ASTPtr new_expression;
     if (select.where_expression && select.prewhere_expression)
-        expression_ast = makeASTFunction(
+        new_expression = makeASTFunction(
                 "and",
                 select.where_expression->clone(),
                 select.prewhere_expression->clone());
     else if (select.where_expression)
-        expression_ast = select.where_expression->clone();
+        new_expression = select.where_expression->clone();
     else if (select.prewhere_expression)
-        expression_ast = select.prewhere_expression->clone();
+        new_expression = select.prewhere_expression->clone();
     else
-        /// 0b11 -- can be true and false at the same time
-        expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
+        new_expression = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
+    useless = checkASTUseless(new_expression);
     /// Do not proceed if index is useless for this query.
-    if ((useless = checkASTAlwaysUnknownOrTrue(expression_ast)))
+    if (useless)
         return;
+
+    expression_ast = makeASTFunction(
+            "bitAnd",
+            new_expression,
+            std::make_shared<ASTLiteral>(Field(1)));
 
     traverseAST(expression_ast);
 
@@ -198,10 +206,11 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     Block result = granule->getElementsBlock();
     actions->execute(result);
 
+
     const auto & column = result.getByName(expression_ast->getColumnName()).column;
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getInt(i) & 1)
+        if (column->getBool(i))
             return true;
 
     return false;
@@ -220,7 +229,7 @@ void UniqueCondition::traverseAST(ASTPtr & node) const
     }
 
     if (!atomFromAST(node))
-        node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD); /// can_be_true=1 can_be_false=1
+        node = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 }
 
 bool UniqueCondition::atomFromAST(ASTPtr & node) const
@@ -296,7 +305,7 @@ bool checkAtomName(const String & name)
     return atoms.find(name) != atoms.end();
 }
 
-bool UniqueCondition::checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atomic) const
+bool UniqueCondition::checkASTUseless(const ASTPtr &node, bool atomic) const
 {
     if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
     {
@@ -306,16 +315,16 @@ bool UniqueCondition::checkASTAlwaysUnknownOrTrue(const ASTPtr & node, bool atom
         const ASTs & args = typeid_cast<const ASTExpressionList &>(*func->arguments).children;
 
         if (func->name == "and" || func->name == "indexHint")
-            return checkASTAlwaysUnknownOrTrue(args[0], atomic) && checkASTAlwaysUnknownOrTrue(args[1], atomic);
+            return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
-            return checkASTAlwaysUnknownOrTrue(args[0], atomic) || checkASTAlwaysUnknownOrTrue(args[1], atomic);
+            return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
         else if (func->name == "not")
-            return checkASTAlwaysUnknownOrTrue(args[0], atomic);
+            return checkASTUseless(args[0], atomic);
         else if (!atomic && checkAtomName(func->name))
-            return checkASTAlwaysUnknownOrTrue(node, true);
+            return checkASTUseless(node, true);
         else
             return std::any_of(args.begin(), args.end(),
-                    [this, &atomic](const auto & arg) { return checkASTAlwaysUnknownOrTrue(arg, atomic); });
+                    [this, &atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
     }
     else if (const auto * literal = typeid_cast<const ASTLiteral *>(node.get()))
         return !atomic && literal->value.get<bool>();
