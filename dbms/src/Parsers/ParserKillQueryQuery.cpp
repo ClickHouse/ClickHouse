@@ -28,9 +28,9 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     if (p_query.ignore(pos, expected))
-        query->is_kill_mutation = false;
+        query->type = ASTKillQueryQuery::Type::Query;
     else if (p_mutation.ignore(pos, expected))
-        query->is_kill_mutation = true;
+        query->type = ASTKillQueryQuery::Type::Mutation;
     else
         return false;
 
