@@ -192,7 +192,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!internal)
             logQuery(query.substr(0, settings.log_queries_cut_to_length), context);
 
-        if (settings.allow_experimental_multiple_joins_emulation)
+        if (!internal && settings.allow_experimental_multiple_joins_emulation)
         {
             JoinToSubqueryTransformVisitor::Data join_to_subs_data;
             JoinToSubqueryTransformVisitor(join_to_subs_data).visit(ast);
@@ -200,7 +200,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logQuery(queryToString(*ast), context);
         }
 
-        if (settings.allow_experimental_cross_to_join_conversion)
+        if (!internal && settings.allow_experimental_cross_to_join_conversion)
         {
             CrossToInnerJoinVisitor::Data cross_to_inner;
             CrossToInnerJoinVisitor(cross_to_inner).visit(ast);
