@@ -1,22 +1,20 @@
 # Устранение неисправностей
 
-Известные неполадки:
+- [Установка дистрибутива](#troubleshooting-installation-errors)
+- [Соединение с сервером](#troubleshooting-accepts-no-connections)
+- [Обработка запросов](#troubleshooting-does-not-process-queries)
+- [Скорость обработки запросов](#troubleshooting-too-slow)
 
-- [Ошибки установки](#troubleshooting-installation-errors).
-- [Сервер не принимает соединения](#troubleshooting-accepts-no-connections).
-- [ClickHouse не обрабатывает запросы](#troubleshooting-does-not-process-queries).
-- [ClickHouse обрабатывает запросы слишком медленно](#troubleshooting-too-slow).
+## Установка дистрибутива {#troubleshooting-installation-errors}
 
-## Ошибки установки {#troubleshooting-installation-errors}
-
-### Не получается скачать Deb-пакеты из репозитория ClickHouse с помощью apt-get
+### Не получается скачать deb-пакеты из репозитория ClickHouse с помощью apt-get
 
 - Проверьте настройки брандмауэра.
 - Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting_started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
 
-## Сервер не принимает соединения {#troubleshooting-accepts-no-connections}
+## Соединение с сервером {#troubleshooting-accepts-no-connections}
 
-Возможные причины:
+Возможные проблемы:
 
 - Сервер не запущен.
 - Неожиданные или неправильные параметры конфигурации.
@@ -121,7 +119,7 @@ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-serv
 
     Возможно, вы используете неверное имя пользователя или пароль.
 
-## ClickHouse не обрабатывает запросы {#troubleshooting-does-not-process-queries}
+## Обработка запросов {#troubleshooting-does-not-process-queries}
 
 Если ClickHouse не может обработать запрос, он отправляет клиенту описание ошибки. В `clickhouse-client` вы получаете описание ошибки в консоли. При использовании интерфейса HTTP, ClickHouse отправляет описание ошибки в теле ответа. Например:
 
@@ -130,11 +128,11 @@ $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there is no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-Если вы запускаете `clickhouse-client` c параметром `stack-trace`, то ClickHouse возвращает stack trace сервера с описанием ошибки.
+Если вы запускаете `clickhouse-client` c параметром `stack-trace`, то ClickHouse возвращает описание ошибки и соответствущий стек вызовов функций на сервере.
 
 Может появиться сообщение о разрыве соединения. В этом случае необходимо повторить запрос. Если соединение прерывается каждый раз при выполнении запроса, следует проверить журналы сервера на наличие ошибок.
 
-## ClickHouse обрабатывает запросы недостаточно быстро {#troubleshooting-too-slow}
+## Скорость обработки запросов {#troubleshooting-too-slow}
 
 Если вы видите, что ClickHouse работает слишком медленно, необходимо профилировать загрузку ресурсов сервера и сети для ваших запросов.
 
