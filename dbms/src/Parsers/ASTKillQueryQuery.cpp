@@ -11,7 +11,7 @@ String ASTKillQueryQuery::getID(char delim) const
 void ASTKillQueryQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "KILL "
-        << (is_kill_mutation ? "MUTATION" : "QUERY");
+        << (type == Type::Query ? "QUERY" : "MUTATION");
 
     formatOnCluster(settings);
 

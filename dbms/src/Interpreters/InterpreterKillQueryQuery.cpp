@@ -182,7 +182,9 @@ BlockIO InterpreterKillQueryQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, context, {"system"});
 
     BlockIO res_io;
-    if (!query.is_kill_mutation)
+    switch (query.type)
+    {
+    case ASTKillQueryQuery::Type::Query:
     {
         Block processes_block = getSelectResult("query_id, user, query", "system.processes");
         if (!processes_block)
@@ -217,8 +219,10 @@ BlockIO InterpreterKillQueryQuery::execute()
             res_io.in = std::make_shared<SyncKillQueryInputStream>(
                 process_list, std::move(queries_to_stop), std::move(processes_block), header);
         }
+
+        break;
     }
-    else
+    case ASTKillQueryQuery::Type::Mutation:
     {
         /// TODO: check permissions
 
@@ -255,6 +259,9 @@ BlockIO InterpreterKillQueryQuery::execute()
         }
 
         res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
+
+        break;
+    }
     }
 
     return res_io;
