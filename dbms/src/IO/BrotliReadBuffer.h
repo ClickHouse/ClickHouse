@@ -5,9 +5,11 @@
 
 #include <brotli/decode.h>
 
-namespace DB {
+namespace DB
+{
 
-class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer> {
+class BrotliReadBuffer : public BufferWithOwnMemory<ReadBuffer>
+{
 public:
     BrotliReadBuffer(
             ReadBuffer &in_,
@@ -21,7 +23,16 @@ private:
     bool nextImpl() override;
 
     ReadBuffer &in;
-    BrotliDecoderState * bstate_;
+
+    BrotliDecoderState * bstate;
+    BrotliDecoderResult bresult;
+
+    size_t in_available;
+    const uint8_t * in_data;
+
+    size_t out_capacity;
+    uint8_t  * out_data;
+
     bool eof;
 };
 }
