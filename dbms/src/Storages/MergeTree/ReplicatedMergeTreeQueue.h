@@ -97,6 +97,11 @@ private:
 
     struct MutationStatus
     {
+        MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_)
+            : entry(entry_)
+        {
+        }
+
         ReplicatedMergeTreeMutationEntryPtr entry;
 
         /// A number of parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
@@ -105,6 +110,11 @@ private:
         /// Note that is_done is not equivalent to parts_to_do == 0
         /// (even if parts_to_do == 0 some relevant parts can still commit in the future).
         bool is_done = false;
+
+        String latest_failed_part;
+        MergeTreePartInfo latest_failed_part_info;
+        time_t latest_fail_time = 0;
+        String latest_fail_reason;
     };
 
     std::map<String, MutationStatus> mutations_by_znode;

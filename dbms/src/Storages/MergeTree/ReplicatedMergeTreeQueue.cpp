@@ -237,9 +237,18 @@ void ReplicatedMergeTreeQueue::updateMutationsPartsToDo(const String & part_name
     auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
     for (auto it = from_it; it != in_partition->second.end(); ++it)
     {
-        it->second->parts_to_do += (add ? +1 : -1);
-        if (it->second->parts_to_do <= 0)
+        MutationStatus & status = *it->second;
+        status.parts_to_do += (add ? +1 : -1);
+        if (status.parts_to_do <= 0)
             some_mutations_are_probably_done = true;
+
+        if (!add && !status.latest_failed_part.empty() && part_info.contains(status.latest_failed_part_info))
+        {
+            status.latest_failed_part.clear();
+            status.latest_failed_part_info = MergeTreePartInfo();
+            status.latest_fail_time = 0;
+            status.latest_fail_reason.clear();
+        }
     }
 
     if (some_mutations_are_probably_done)
@@ -603,7 +612,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
             for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
-                auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus{entry, 0, false})
+                auto & mutation = mutations_by_znode.emplace(entry->znode_name, MutationStatus(entry))
                     .first->second;
 
                 for (const auto & pair : entry->block_numbers)
@@ -1060,7 +1069,33 @@ bool ReplicatedMergeTreeQueue::processEntry(
     if (saved_exception)
     {
         std::lock_guard lock(state_mutex);
+
         entry->exception = saved_exception;
+
+        if (entry->type == ReplicatedMergeTreeLogEntryData::MUTATE_PART)
+        {
+            /// Record the exception in the system.mutations table.
+            Int64 result_data_version = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version)
+                .getDataVersion();
+            auto source_part_info = MergeTreePartInfo::fromPartName(
+                entry->source_parts.at(0), format_version);
+
+            auto in_partition = mutations_by_partition.find(source_part_info.partition_id);
+            if (in_partition != mutations_by_partition.end())
+            {
+                auto mutations_begin_it = in_partition->second.upper_bound(source_part_info.getDataVersion());
+                auto mutations_end_it = in_partition->second.upper_bound(result_data_version);
+                for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
+                {
+                    MutationStatus & status = *it->second;
+                    status.latest_failed_part = entry->source_parts.at(0);
+                    status.latest_failed_part_info = source_part_info;
+                    status.latest_fail_time = time(nullptr);
+                    status.latest_fail_reason = getExceptionMessage(saved_exception, false);
+                }
+            }
+        }
+
         return false;
     }
 
@@ -1326,6 +1361,9 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 entry.block_numbers,
                 status.parts_to_do,
                 status.is_done,
+                status.latest_failed_part,
+                status.latest_fail_time,
+                status.latest_fail_reason,
             });
         }
     }
