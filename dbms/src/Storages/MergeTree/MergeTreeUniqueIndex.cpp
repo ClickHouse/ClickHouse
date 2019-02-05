@@ -9,7 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <Poco/Logger.h>
-
+#include <sstream>
 
 namespace DB
 {
@@ -173,12 +173,17 @@ UniqueCondition::UniqueCondition(
     if (useless)
         return;
 
-    expression_ast = new_expression; /*makeASTFunction(
+    expression_ast = makeASTFunction(
             "bitAnd",
             new_expression,
-            std::make_shared<ASTLiteral>(Field(1)));*/
+            std::make_shared<ASTLiteral>(Field(1)));
 
     traverseAST(expression_ast);
+
+    auto * log = &Poco::Logger::get("unique");
+    std::ostringstream out;
+    expression_ast->format(IAST::FormatSettings(out, false));
+    LOG_DEBUG(log, out.str());
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
             expression_ast, index.header.getNamesAndTypesList());
@@ -206,11 +211,10 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     Block result = granule->getElementsBlock();
     actions->execute(result);
 
-
     const auto & column = result.getByName(expression_ast->getColumnName()).column;
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getInt(i) & 1)
+        if (column->getBool(i))
             return true;
 
     return false;
