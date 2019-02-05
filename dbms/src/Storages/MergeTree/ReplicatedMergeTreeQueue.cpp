@@ -560,6 +560,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
 
     /// Compare with the local state, delete obsolete entries and determine which new entries to load.
     Strings entries_to_load;
+    bool some_active_mutations_were_killed = false;
     {
         std::lock_guard state_lock(state_mutex);
 
@@ -568,7 +569,14 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
             const ReplicatedMergeTreeMutationEntry & entry = *it->second.entry;
             if (!entries_in_zk_set.count(entry.znode_name))
             {
-                LOG_DEBUG(log, "Removing obsolete mutation " + entry.znode_name + " from local state.");
+                if (!it->second.is_done)
+                {
+                    LOG_DEBUG(log, "Removing killed mutation " + entry.znode_name + " from local state.");
+                    some_active_mutations_were_killed = true;
+                }
+                else
+                    LOG_DEBUG(log, "Removing obsolete mutation " + entry.znode_name + " from local state.");
+
                 for (const auto & partition_and_block_num : entry.block_numbers)
                 {
                     auto & in_partition = mutations_by_partition[partition_and_block_num.first];
@@ -589,6 +597,9 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                 entries_to_load.push_back(znode);
         }
     }
+
+    if (some_active_mutations_were_killed)
+        storage.queue_task_handle->wake();
 
     if (!entries_to_load.empty())
     {
@@ -660,23 +671,32 @@ ReplicatedMergeTreeMutationEntryPtr ReplicatedMergeTreeQueue::removeMutation(
     if (rc == Coordination::ZOK)
         LOG_DEBUG(log, "Removed mutation " + mutation_id + " from ZooKeeper.");
 
-    std::lock_guard state_lock(state_mutex);
-
-    auto it = mutations_by_znode.find(mutation_id);
-    if (it == mutations_by_znode.end())
-        return nullptr;
-
-    auto entry = it->second.entry;
-    for (const auto & partition_and_block_num : entry->block_numbers)
+    ReplicatedMergeTreeMutationEntryPtr entry;
+    bool mutation_was_active = false;
     {
-        auto & in_partition = mutations_by_partition[partition_and_block_num.first];
-        in_partition.erase(partition_and_block_num.second);
-        if (in_partition.empty())
-            mutations_by_partition.erase(partition_and_block_num.first);
+        std::lock_guard state_lock(state_mutex);
+
+        auto it = mutations_by_znode.find(mutation_id);
+        if (it == mutations_by_znode.end())
+            return nullptr;
+
+        mutation_was_active = !it->second.is_done;
+
+        entry = it->second.entry;
+        for (const auto & partition_and_block_num : entry->block_numbers)
+        {
+            auto & in_partition = mutations_by_partition[partition_and_block_num.first];
+            in_partition.erase(partition_and_block_num.second);
+            if (in_partition.empty())
+                mutations_by_partition.erase(partition_and_block_num.first);
+        }
+
+        mutations_by_znode.erase(it);
+        LOG_DEBUG(log, "Removed mutation " + entry->znode_name + " from local state.");
     }
 
-    mutations_by_znode.erase(it);
-    LOG_DEBUG(log, "Removed mutation " + entry->znode_name + " from local state.");
+    if (mutation_was_active)
+        storage.queue_task_handle->wake();
 
     return entry;
 }

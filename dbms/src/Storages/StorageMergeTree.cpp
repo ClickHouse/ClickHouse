@@ -410,6 +410,10 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     global_context.getMergeList().cancelPartMutations({}, to_kill->block_number);
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file " << mutation_id);
+
+    /// Maybe there is another mutation that was blocked by the killed one. Try to execute it immediately.
+    background_task_handle->wake();
+
     return CancellationCode::CancelSent;
 }
 
