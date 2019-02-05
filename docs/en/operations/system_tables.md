@@ -6,7 +6,7 @@ System tables don't have files with data on the disk or files with metadata. The
 System tables are read-only.
 They are located in the 'system' database.
 
-## system.asynchronous_metrics
+## system.asynchronous_metrics {#system_tables-asynchronous_metrics}
 
 Contain metrics used for profiling and monitoring.
 They usually reflect the number of events currently in the system, or the total resources consumed by the system.
@@ -70,7 +70,7 @@ Columns:
 
 Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
 
-## system.events
+## system.events {#system_tables-events}
 
 Contains information about the number of events that have occurred in the system. This is used for profiling and monitoring purposes.
 Example: The number of processed SELECT queries.
@@ -104,7 +104,7 @@ Columns:
 - `bytes_written_uncompressed UInt64` — Number of bytes written, uncompressed.
 - `rows_written UInt64` — Number of lines rows written.
 
-## system.metrics
+## system.metrics {#system_tables-metrics}
 
 ## system.numbers
 

@@ -26,9 +26,6 @@ namespace ErrorCodes
     extern const int CANNOT_KILL;
 }
 
-
-using CancellationCode = ProcessList::CancellationCode;
-
 static const char * cancellationCodeToStatus(CancellationCode code)
 {
     switch (code)

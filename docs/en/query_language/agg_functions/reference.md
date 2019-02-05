@@ -223,7 +223,7 @@ Computes the sum of the numbers, using the same data type for the result as for 
 Only works for numbers.
 
 
-## sumMap(key, value)
+## sumMap(key, value) {#agg_functions-summap}
 
 Totals the 'value' array according to the keys specified in the 'key' array.
 The number of elements in 'key' and 'value' must be the same for each row that is totaled.

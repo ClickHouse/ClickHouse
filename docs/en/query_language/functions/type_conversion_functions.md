@@ -152,12 +152,12 @@ Converts a Number type argument to a Interval type (duration).
 The interval type is actually very useful, you can use this type of data to perform arithmetic operations directly with Date or DateTime. At the same time, ClickHouse provides a more convenient syntax for declaring Interval type data. For example:
 
 ```sql
-WITH 
-    toDate('2019-01-01') AS date, 
-    INTERVAL 1 WEEK AS interval_week, 
+WITH
+    toDate('2019-01-01') AS date,
+    INTERVAL 1 WEEK AS interval_week,
     toIntervalWeek(1) AS interval_to_week
-SELECT 
-    date + interval_week, 
+SELECT
+    date + interval_week,
     date + interval_to_week
 ```
 
@@ -167,7 +167,7 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTimeBestEffort
+## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
 
 Parse a number type argument to a Date or DateTime type.
 different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.
@@ -175,10 +175,10 @@ For more information, see the link: [Complex Date Format](https://xkcd.com/1179/
 
 ## parseDateTimeBestEffortOrNull
 
-Same as for [parseDateTimeBestEffort](./type_conversion_functions.md#parseDateTimeBestEffort) except that it returns null when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) except that it returns null when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffortOrZero
 
-Same as for [parseDateTimeBestEffort](./type_conversion_functions.md#parseDateTimeBestEffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

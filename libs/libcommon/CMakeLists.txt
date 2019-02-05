@@ -19,7 +19,7 @@ add_library (common ${LINK_MODE}
     src/JSON.cpp
     src/getMemoryAmount.cpp
     src/demangle.cpp
-    src/SetTerminalEcho.cpp
+    src/setTerminalEcho.cpp
 
     include/common/Types.h
     include/common/DayNum.h
@@ -37,7 +37,7 @@ add_library (common ${LINK_MODE}
     include/common/JSON.h
     include/common/getMemoryAmount.h
     include/common/demangle.h
-    include/common/SetTerminalEcho.h
+    include/common/setTerminalEcho.h
     include/common/find_symbols.h
     include/common/constexpr_helpers.h
 
