@@ -200,7 +200,7 @@ The 'detached' directory contains parts that were detached from the table using 
 ALTER TABLE table_name DETACH PARTITION partition_expr
 ```
 
-Moves all data for the specified partition to the 'detached' directory (read about setting the partition in a section [How to specify the partition expression](#alter-how-to-specify-part-expr)). The server forgets about the detached partition. Example:
+Moves all data for the specified partition to the 'detached' directory (read about setting the partition in a section [how to specify the partition expression](#alter-how-to-specify-part-expr)). The server forgets about the detached partition. Example:
 
 ``` sql
 ALTER TABLE visits DETACH PARTITION 201901
@@ -216,7 +216,7 @@ This query is replicated – it moves the data to the 'detached' directory on al
 ALTER TABLE table_name DROP PARTITION partition_expr
 ```
 
-Deletes the data of specified partition from the table ([How to specify the partition expression](#alter-how-to-specify-part-expr)). This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
+Deletes the data of specified partition from the table ([how to specify the partition expression](#alter-how-to-specify-part-expr)). This query tags the partition as inactive and deletes data completely, approximately in 10 minutes.
 
 The query is replicated – it deletes data on all replicas.
 
@@ -334,7 +334,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
 - In the [ALTER ATTACH PART](#alter_attach-partition) query, to specify the name of a part, use a value from the `name` column of the `system.parts` table. For example, `ALTER TABLE visits ATTACH PART 201901_1_1_0`.
 
-The quotes usage in the partition expression depends on the type of the partition key, that was specified when creating a table. For example, for the String type partitions, you have to specify its name in quotes (`'`). For the Date and Int* types no quotes needed.
+Correct usage of quotes in the partition expression depends on the type of the partition key, that was specified when creating a table. For example, for the String type partitions, you have to specify its name in quotes (`'`). For the Date and Int* types no quotes needed.
 
 For old-style tables, you can specify the partition either as a number `201901` or a string `'201901'`. The syntax for the new-style tables is stricter with types (similar to the parser for the VALUES input format).
 
