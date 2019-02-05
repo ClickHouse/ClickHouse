@@ -174,7 +174,16 @@ start()
     fi
 
     if [ $EXIT_STATUS -eq 0 ]; then
-        echo "DONE"
+        attempts=0
+        while ! is_running && [ $attempts -le 10 ]; do
+            attempts=$(($attempts + 1))
+            sleep 1
+        done
+        if is_running; then
+            echo "DONE"
+        else
+            echo "UNKNOWN"
+        fi
     else
         echo "FAILED"
     fi
