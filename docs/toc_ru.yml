@@ -155,7 +155,7 @@ nav:
   - 'Общий синтаксис': 'query_language/syntax.md'
 
 - 'Эксплуатация':
-  - 'hidden': 'operations/index.md'
+  - 'Введение': 'operations/index.md'
   - 'Требования': 'operations/requirements.md'
   - 'Мониторинг': 'operations/monitoring.md'
   - 'Решение проблем': 'operations/troubleshooting.md'
