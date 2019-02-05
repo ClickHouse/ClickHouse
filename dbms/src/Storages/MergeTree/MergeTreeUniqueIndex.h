@@ -21,7 +21,6 @@ struct MergeTreeUniqueGranule : public MergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    String toString() const override;
     size_t size() const { return set->getTotalRowCount(); }
     bool empty() const override { return !size(); }
 

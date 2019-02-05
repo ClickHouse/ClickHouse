@@ -80,29 +80,6 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
     set->insertFromBlock(block);
 }
 
-String MergeTreeUniqueGranule::toString() const
-{
-    String res;
-
-    const auto & columns = set->getSetElements();
-    for (size_t i = 0; i < index.columns.size(); ++i)
-    {
-        const auto & column = columns[i];
-        res += " [";
-        for (size_t j = 0; j < column->size(); ++j)
-        {
-            if (j != 0)
-                res += ", ";
-            Field field;
-            column->get(j, field);
-            res += applyVisitor(FieldVisitorToString(), field);
-        }
-        res += "]\n";
-    }
-
-    return res;
-}
-
 void MergeTreeUniqueGranule::update(const Block & new_block, size_t * pos, size_t limit)
 {
     size_t rows_read = std::min(limit, new_block.rows() - *pos);

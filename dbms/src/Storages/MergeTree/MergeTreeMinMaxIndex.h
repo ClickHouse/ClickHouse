@@ -20,9 +20,7 @@ struct MergeTreeMinMaxGranule : public MergeTreeIndexGranule
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
 
-    String toString() const override;
     bool empty() const override { return parallelogram.empty(); }
-
     void update(const Block & block, size_t * pos, size_t limit) override;
 
     ~MergeTreeMinMaxGranule() override = default;
