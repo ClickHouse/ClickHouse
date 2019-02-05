@@ -192,7 +192,7 @@ private:
 
     Logger * log;
     /// Loadable object name to use in log messages.
-    std::string object_name;
+    std::string loader_name;
 
     std::unordered_map<std::string, Poco::Timestamp> last_modification_times;
 

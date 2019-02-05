@@ -79,7 +79,7 @@ ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config_
     , config_settings(config_settings)
     , config_repository(std::move(config_repository))
     , log(log)
-    , object_name(loadable_object_name)
+    , loader_name(loadable_object_name)
 {
 }
 
@@ -188,7 +188,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed reloading '" + name + "' " + object_name);
+            tryLogCurrentException(log, loader_name + ": Failed reloading '" + name + "'");
             if (throw_on_error)
                 throw;
         }
@@ -278,7 +278,7 @@ void ExternalLoader::updateObjects(
         }
         else
         {
-            tryLogException(exception, log, "Cannot update " + object_name + " '" + name + "', leaving old version");
+            tryLogException(exception, log, loader_name + ": Cannot update '" + name + "', leaving old version");
             if (throw_on_error)
                 std::rethrow_exception(exception);
         }
@@ -393,12 +393,12 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                 if (object_it != std::end(loadable_objects_from_filesystem) &&
                     object_it->second.source_type == ConfigurationSourceType::DDL)
                 {
-                    throw Exception(object_name + " '" + name + "' from file " + config_path + " already declared in ddl.",
+                    throw Exception(loader_name + ": '" + name + "' from file " + config_path + " already declared in ddl.",
                                     ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
                 }
 
                 if (object_it != std::end(loadable_objects_from_filesystem) && object_it->second.origin != config_path)
-                    throw Exception(object_name + " '" + name + "' from file " + config_path
+                    throw Exception(loader_name + ": '" + name + "' from file " + config_path
                                     + " already declared in file " + object_it->second.origin,
                                     ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
@@ -474,8 +474,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                     loadable_it->second.exception = exception_ptr;
             }
 
-            tryLogCurrentException(log, "Cannot create " + object_name + " '"
-                                        + name + "' from config path " + config_path);
+            tryLogCurrentException(log, loader_name + ": Cannot create '" + name + "' from config path " + config_path);
 
             if (throw_on_error)
                 throw;
@@ -498,7 +497,7 @@ void ExternalLoader::reload(const std::string & name)
     /// Check that specified object was loaded
     std::lock_guard lock{map_mutex};
     if (!loadable_objects_from_filesystem.count(name))
-        throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception(loader_name + ": Failed to load '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
 }
 
 
@@ -511,7 +510,7 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & 
     if (it == std::end(loadable_objects_from_filesystem))
     {
         if (throw_on_error)
-            throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(loader_name + ": No such object " + name, ErrorCodes::BAD_ARGUMENTS);
         return nullptr;
     }
 
@@ -520,7 +519,7 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & 
         if (it->second.exception)
             std::rethrow_exception(it->second.exception);
         else
-            throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
+            throw Exception{loader_name + ": '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
     }
 
     return it->second.loadable;
@@ -535,7 +534,7 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableFromDatabasesImpl(const s
     if (it == std::end(loadable_objects_from_databases))
     {
         if (throw_on_error)
-            throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(loader_name + ": No such object " + name, ErrorCodes::BAD_ARGUMENTS);
         return nullptr;
     }
 
@@ -544,7 +543,7 @@ ExternalLoader::LoadablePtr ExternalLoader::getLoadableFromDatabasesImpl(const s
         if (it->second.exception)
             std::rethrow_exception(it->second.exception);
         else
-            throw Exception(object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(loader_name + ": '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR);
     }
 
     return it->second.loadable;
