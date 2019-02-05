@@ -82,7 +82,7 @@ void MergeTreeUniqueGranule::deserializeBinary(ReadBuffer & istr)
 
 String MergeTreeUniqueGranule::toString() const
 {
-    String res = "";
+    String res;
 
     const auto & columns = set->getSetElements();
     for (size_t i = 0; i < index.columns.size(); ++i)
@@ -173,10 +173,10 @@ UniqueCondition::UniqueCondition(
     if (useless)
         return;
 
-    expression_ast = makeASTFunction(
+    expression_ast = new_expression; /*makeASTFunction(
             "bitAnd",
             new_expression,
-            std::make_shared<ASTLiteral>(Field(1)));
+            std::make_shared<ASTLiteral>(Field(1)));*/
 
     traverseAST(expression_ast);
 
@@ -210,7 +210,7 @@ bool UniqueCondition::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) c
     const auto & column = result.getByName(expression_ast->getColumnName()).column;
 
     for (size_t i = 0; i < column->size(); ++i)
-        if (column->getBool(i))
+        if (column->getInt(i) & 1)
             return true;
 
     return false;
