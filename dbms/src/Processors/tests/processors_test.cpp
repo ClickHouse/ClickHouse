@@ -14,7 +14,7 @@
 #include <Processors/printPipeline.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -97,7 +97,7 @@ public:
     OutputPort & getPort() { return output; }
 
 private:
-    ThreadPool pool{1};
+    ThreadPool pool{1, 1, 0};
     Block current_block;
     std::atomic_bool active {false};
 
@@ -128,6 +128,7 @@ public:
 private:
     String prefix;
     WriteBufferFromFileDescriptor out{STDOUT_FILENO};
+    FormatSettings settings;
 
     void consume(Block block) override
     {
@@ -141,7 +142,7 @@ private:
             {
                 if (column_num != 0)
                     writeChar('\t', out);
-                getPort().getHeader().getByPosition(column_num).type->serializeText(*block.getByPosition(column_num).column, row_num, out);
+                getPort().getHeader().getByPosition(column_num).type->serializeText(*block.getByPosition(column_num).column, row_num, out, settings);
             }
             writeChar('\n', out);
         }
@@ -207,7 +208,7 @@ try
 
     printPipeline({source0, source1, source2, source3, source4, limit0, limit3, limit4, limit, queue, concat, fork, print_after_concat, resize, sink});
 
-    ThreadPool pool(4, 10);
+    ThreadPool pool(4, 4, 10);
     ParallelPipelineExecutor executor({sink, print_after_concat}, pool);
     //SequentialPipelineExecutor executor({sink});
 
@@ -225,7 +226,7 @@ try
         else if (status == IProcessor::Status::Wait)
             watch.wait();
         else
-            throw Exception("Bad status");
+            throw Exception("Bad status", ErrorCodes::LOGICAL_ERROR);
     }
 
     return 0;

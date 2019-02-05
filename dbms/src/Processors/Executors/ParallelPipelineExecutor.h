@@ -5,8 +5,10 @@
 #include <mutex>
 #include <Processors/IProcessor.h>
 
-
-class ThreadPool;
+template <typename>
+class ThreadPoolImpl;
+class ThreadFromGlobalPool;
+using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
 
 namespace DB
 {
