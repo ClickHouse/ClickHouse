@@ -18,7 +18,7 @@ void traverse(IProcessor & processor, Visit && visit)
 
     if (status == IProcessor::Status::NeedData)
         for (auto & input : processor.getInputs())
-            if (input.isNeeded())
+            if (input.isNeeded() && !input.hasData())
                 traverse(input.getOutputPort().getProcessor(), std::forward<Visit>(visit));
 
     if (status == IProcessor::Status::PortFull)
