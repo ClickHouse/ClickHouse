@@ -66,6 +66,7 @@
 	url = https://github.com/mfontanini/cppkafka.git
 [submodule "contrib/pdqsort"]
 	path = contrib/pdqsort
+	url = https://github.com/orlp/pdqsort
 [submodule "contrib/brotli"]
 	path = contrib/brotli
 	url = https://github.com/google/brotli.git
