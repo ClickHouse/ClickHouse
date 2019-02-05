@@ -8,6 +8,8 @@
 
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
+/// TODO It doesn't make sense.
+
 namespace DB
 {
 
@@ -17,21 +19,20 @@ void ThreadStatus::attachQueryContext(Context & query_context_)
     if (!global_context)
         global_context = &query_context->getGlobalContext();
 
-    if (!thread_group)
-        return;
+    query_id = query_context->getCurrentQueryId();
 
-    std::unique_lock lock(thread_group->mutex);
-    thread_group->query_context = query_context;
-    if (!thread_group->global_context)
-        thread_group->global_context = global_context;
+    if (thread_group)
+    {
+        std::unique_lock lock(thread_group->mutex);
+        thread_group->query_context = query_context;
+        if (!thread_group->global_context)
+            thread_group->global_context = global_context;
+    }
 }
 
-String ThreadStatus::getQueryID()
+const std::string & ThreadStatus::getQueryId() const
 {
-    if (query_context)
-        return query_context->getClientInfo().current_query_id;
-
-    return {};
+    return query_id;
 }
 
 void CurrentThread::defaultThreadDeleter()
@@ -208,11 +209,9 @@ void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group
     get().deleter = CurrentThread::defaultThreadDeleter;
 }
 
-std::string CurrentThread::getCurrentQueryID()
+const std::string & CurrentThread::getQueryId()
 {
-    if (!current_thread)
-        return {};
-    return get().getQueryID();
+    return get().getQueryId();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)
