@@ -32,7 +32,14 @@ public:
 
     DictionaryPtr getDictionary(const std::string & name) const
     {
-        return std::static_pointer_cast<IDictionaryBase>(getLoadable(name));
+        if (size_t index = name.find('.'); index != std::string::npos)
+        {
+            return getDictionary(name.substr(0, index), name.substr(index + 1));
+        }
+        else
+        {
+            return std::static_pointer_cast<IDictionaryBase>(getLoadable(name));
+        }
     }
 
     DictionaryPtr getDictionary(const std::string & database_name, const std::string & dictionary_name) const
@@ -42,7 +49,14 @@ public:
 
     DictionaryPtr tryGetDictionary(const std::string & name) const
     {
-        return std::static_pointer_cast<IDictionaryBase>(tryGetLoadable(name));
+        if (size_t index = name.find('.'); index != std::string::npos)
+        {
+            return tryGetDictionary(name.substr(0, index), name.substr(index + 1));
+        }
+        else
+        {
+            return std::static_pointer_cast<IDictionaryBase>(tryGetLoadable(name));
+        }
     }
 
     DictionaryPtr tryGetDictionary(const std::string & database_name, const std::string & name) const
