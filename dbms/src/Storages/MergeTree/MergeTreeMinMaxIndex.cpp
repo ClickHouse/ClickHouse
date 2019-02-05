@@ -52,20 +52,6 @@ void MergeTreeMinMaxGranule::deserializeBinary(ReadBuffer & istr)
     }
 }
 
-String MergeTreeMinMaxGranule::toString() const
-{
-    String res = "";
-
-    for (size_t i = 0; i < parallelogram.size(); ++i)
-    {
-        res += "["
-                + applyVisitor(FieldVisitorToString(), parallelogram[i].left) + ", "
-                + applyVisitor(FieldVisitorToString(), parallelogram[i].right) + "]";
-    }
-
-    return res;
-}
-
 void MergeTreeMinMaxGranule::update(const Block & block, size_t * pos, size_t limit)
 {
     size_t rows_read = std::min(limit, block.rows() - *pos);
