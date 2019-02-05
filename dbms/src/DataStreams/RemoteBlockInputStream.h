@@ -4,7 +4,7 @@
 
 #include <common/logger_useful.h>
 
-#include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/Throttler.h>
 #include <Interpreters/Context.h>
 #include <Client/ConnectionPool.h>
@@ -17,7 +17,7 @@ namespace DB
 
 /** This class allows one to launch queries on remote replicas of one shard and get results
   */
-class RemoteBlockInputStream : public IProfilingBlockInputStream
+class RemoteBlockInputStream : public IBlockInputStream
 {
 public:
     /// Takes already set connection.

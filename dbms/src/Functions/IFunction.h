@@ -151,6 +151,8 @@ public:
 
 #endif
 
+    virtual bool isStateful() const { return false; }
+
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
       * If we will call it during query analysis, we will sleep extra amount of time.
@@ -163,7 +165,7 @@ public:
       * Function could be injective with some arguments fixed to some constant values.
       * Examples:
       *  plus(const, x);
-      *  multiply(const, x) where x is an integer and constant is not divisable by two;
+      *  multiply(const, x) where x is an integer and constant is not divisible by two;
       *  concat(x, 'const');
       *  concat(x, 'const', y) where const contain at least one non-numeric character;
       *  concat with FixedString
@@ -229,6 +231,9 @@ public:
 
     /// Get the main function name.
     virtual String getName() const = 0;
+
+    /// Override and return true if function needs to depend on the state of the data.
+    virtual bool isStateful() const { return false; }
 
     /// Override and return true if function could take different number of arguments.
     virtual bool isVariadic() const { return false; }
@@ -322,6 +327,9 @@ class IFunction : public std::enable_shared_from_this<IFunction>,
 {
 public:
     String getName() const override = 0;
+
+    bool isStateful() const override { return false; }
+
     /// TODO: make const
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override = 0;
 
@@ -478,6 +486,7 @@ public:
     }
 
     String getName() const override { return function->getName(); }
+    bool isStateful() const override { return function->isStateful(); }
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 

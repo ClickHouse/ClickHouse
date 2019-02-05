@@ -50,7 +50,7 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 ### Из исходникого кода
 
-Для компиляции ClickHouse вручную, испольщуйте инструкцию для [Linux](../development/build.md) или [Mac OS X](../development/build_osx.md).
+Для компиляции ClickHouse вручную, используйте инструкцию для [Linux](../development/build.md) или [Mac OS X](../development/build_osx.md).
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 
@@ -73,7 +73,7 @@ Server: dbms/programs/clickhouse-server
 Для запуска сервера в качестве демона, выполните:
 
 ``` bash
-% sudo service clickhouse-server start
+$ sudo service clickhouse-server start
 ```
 
 Смотрите логи в директории `/var/log/clickhouse-server/`.
@@ -97,7 +97,7 @@ $ clickhouse-client
 
 По умолчанию он соединяется с localhost:9000, от имени пользователя `default` без пароля. Также клиент может быть использован для соединения с удалённым сервером с помощью аргемента `--host`.
 
-Терминал должен использлвать кодировку UTF-8.
+Терминал должен использовать кодировку UTF-8.
 
 Более подробная информация о клиенте располагается в разделе [«Клиент командной строки»](../interfaces/cli.md).
 

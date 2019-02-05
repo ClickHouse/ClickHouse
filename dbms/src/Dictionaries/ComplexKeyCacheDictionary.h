@@ -47,8 +47,6 @@ public:
         const DictionaryLifetime dict_lifetime,
         const size_t size);
 
-    ComplexKeyCacheDictionary(const ComplexKeyCacheDictionary & other);
-
     std::string getKeyDescription() const { return key_description; }
 
     std::exception_ptr getCreationException() const override { return {}; }
@@ -76,7 +74,10 @@ public:
 
     bool isCached() const override { return true; }
 
-    std::unique_ptr<IExternalLoadable> clone() const override { return std::make_unique<ComplexKeyCacheDictionary>(*this); }
+    std::unique_ptr<IExternalLoadable> clone() const override
+    {
+        return std::make_unique<ComplexKeyCacheDictionary>(name, dict_struct, source_ptr->clone(), dict_lifetime, size);
+    }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
 

@@ -87,6 +87,20 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 └──────────────┘
 ```
 
+### arrayCumSumNonNegative(arr)
+
+Same as arrayCumSum, returns an array of partial sums of elements in the source array (a running sum). Different arrayCumSum, when then returned value contains a value less than zero, the value is replace with zero and the subsequent calculation is performed with zero parameters. For example:
+
+``` sql
+SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
+```
+
+```
+┌─res───────┐
+│ [1,2,0,1] │
+└───────────┘
+```
+
 ### arraySort(\[func,\] arr1, ...)
 
 Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
@@ -112,6 +126,6 @@ Returns an array as result of sorting the elements of `arr1` in descending order
 
 
 
- 
+
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

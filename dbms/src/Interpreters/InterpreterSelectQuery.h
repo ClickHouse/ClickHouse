@@ -132,7 +132,7 @@ private:
 
     struct AnalysisResult
     {
-        bool has_join       = false;
+        bool hasJoin() const { return before_join.get(); }
         bool has_where      = false;
         bool need_aggregate = false;
         bool has_having     = false;

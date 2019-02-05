@@ -1,5 +1,6 @@
 #include <sstream>
 
+#include <Common/typeid_cast.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>

@@ -13,6 +13,8 @@
 #include <boost/noncopyable.hpp>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
+
 
 namespace DB
 {
@@ -119,7 +121,7 @@ public:
     ~BackgroundSchedulePool();
 
 private:
-    using Threads = std::vector<std::thread>;
+    using Threads = std::vector<ThreadFromGlobalPool>;
 
     void threadFunction();
     void delayExecutionThreadFunction();
@@ -141,7 +143,7 @@ private:
     std::condition_variable wakeup_cond;
     std::mutex delayed_tasks_mutex;
     /// Thread waiting for next delayed task.
-    std::thread delayed_thread;
+    ThreadFromGlobalPool delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
 
@@ -150,7 +152,5 @@ private:
 
     void attachToThreadGroup();
 };
-
-using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;
 
 }

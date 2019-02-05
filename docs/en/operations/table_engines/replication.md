@@ -18,9 +18,9 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
-- `The CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
-- `The DROP TABLE` query deletes the replica located on the server where the query is run.
-- `The RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
+- The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
+- The `DROP TABLE` query deletes the replica located on the server where the query is run.
+- The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
 To use replication, set the addresses of the ZooKeeper cluster in the config file. Example:
 
@@ -47,7 +47,7 @@ You can specify any existing ZooKeeper cluster and the system will use a directo
 
 If ZooKeeper isn't set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
 
-ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](../settings/settings.md#settings-max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](../settings/settings.md).
+ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](../settings/settings.md#settings-max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](../settings/settings.md#settings-fallback_to_stale_replicas_for_distributed_queries).
 
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it doesn't create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
@@ -59,7 +59,7 @@ By default, an INSERT query waits for confirmation of writing the data from only
 
 Each block of data is written atomically. The INSERT query is divided into blocks up to `max_insert_block_size = 1048576` rows. In other words, if the `INSERT` query has less than 1048576 rows, it is made atomically.
 
-Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application doesn't know if the data was written to the DB, so the `INSERT` query can simply be repeated. It doesn't matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](../server_settings/settings.md) server settings.
+Data blocks are deduplicated. For multiple writes of the same data block (data blocks of the same size containing the same rows in the same order), the block is only written once. The reason for this is in case of network failures when the client application doesn't know if the data was written to the DB, so the `INSERT` query can simply be repeated. It doesn't matter which replica INSERTs were sent to with identical data. `INSERTs` are idempotent. Deduplication parameters are controlled by [merge_tree](../server_settings/settings.md#server_settings-merge_tree) server settings.
 
 During replication, only the source data to insert is transferred over the network. Further data transformation (merging) is coordinated and performed on all the replicas in the same way. This minimizes network usage, which means that replication works well when replicas reside in different datacenters. (Note that duplicating data in different datacenters is the main goal of replication.)
 
@@ -68,7 +68,7 @@ You can have any number of replicas of the same data. Yandex.Metrica uses double
 The system monitors data synchronicity on replicas and is able to recover after a failure. Failover is automatic (for small differences in data) or semi-automatic (when data differs too much, which may indicate a configuration error).
 
 
-## Creating Replicated Tables
+## Creating Replicated Tables {#creating-replicated-tables}
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 

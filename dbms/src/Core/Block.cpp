@@ -427,7 +427,7 @@ Names Block::getNames() const
 }
 
 
-DataTypes Block::getTypes() const
+DataTypes Block::getDataTypes() const
 {
     DataTypes res;
     res.reserve(columns());

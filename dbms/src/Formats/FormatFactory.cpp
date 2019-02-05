@@ -111,6 +111,7 @@ void registerInputFormatTSKV(FormatFactory & factory);
 void registerOutputFormatTSKV(FormatFactory & factory);
 void registerInputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatJSONEachRow(FormatFactory & factory);
+void registerOutputFormatProtobuf(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -146,6 +147,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatTSKV(*this);
     registerInputFormatJSONEachRow(*this);
     registerOutputFormatJSONEachRow(*this);
+    registerOutputFormatProtobuf(*this);
     registerInputFormatCapnProto(*this);
 
     registerOutputFormatPretty(*this);

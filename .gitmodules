@@ -61,3 +61,9 @@
 [submodule "contrib/libgsasl"]
 	path = contrib/libgsasl
 	url = https://github.com/ClickHouse-Extras/libgsasl.git
+[submodule "contrib/cppkafka"]
+	path = contrib/cppkafka
+	url = https://github.com/mfontanini/cppkafka.git
+[submodule "contrib/pdqsort"]
+	path = contrib/pdqsort
+	url = https://github.com/orlp/pdqsort
