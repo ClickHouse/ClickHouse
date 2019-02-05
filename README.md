@@ -13,4 +13,5 @@ ClickHouse is an open-source column-oriented database management system that all
 
 ## Upcoming Events
 
-* [C++ ClickHouse and CatBoost Sprints](https://events.yandex.ru/events/ClickHouse/2-feb-2019/) in Moscow on February 2.
+* [ClickHouse Community Meetup](https://www.eventbrite.com/e/meetup-clickhouse-in-the-wild-deployment-success-stories-registration-55305051899) in San Francisco on February 19.
+* [ClickHouse Community Meetup](https://www.eventbrite.com/e/clickhouse-meetup-in-madrid-registration-55376746339) in Madrid on April 2.

@@ -15,7 +15,6 @@ namespace Poco
 
 namespace DB
 {
-class ExternalDictionaries;
 
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
@@ -23,7 +22,7 @@ class ExternalDictionaries;
 class DatabaseDictionary : public IDatabase
 {
 public:
-    DatabaseDictionary(const String & name_, const Context & context);
+    DatabaseDictionary(const String & name_);
 
     String getDatabaseName() const override;
 
@@ -94,13 +93,10 @@ public:
 private:
     const String name;
     mutable std::mutex mutex;
-    const ExternalDictionaries & external_dictionaries;
-    std::unordered_set<String> deleted_tables;
 
     Poco::Logger * log;
 
-    Tables loadTables();
-
+    Tables listTables(const Context & context);
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 

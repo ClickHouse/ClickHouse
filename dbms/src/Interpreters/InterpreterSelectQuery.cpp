@@ -195,7 +195,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     syntax_analyzer_result = SyntaxAnalyzer(context, subquery_depth).analyze(
         query_ptr, source_header.getNamesAndTypesList(), required_result_column_names, storage);
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, syntax_analyzer_result, context, NamesAndTypesList(),
+        NameSet(required_result_column_names.begin(), required_result_column_names.end()), subquery_depth, !only_analyze);
 
     if (!only_analyze)
     {
@@ -379,8 +380,9 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
         if (query_analyzer->appendJoin(chain, dry_run || !res.first_stage))
         {
-            res.has_join = true;
             res.before_join = chain.getLastActions();
+            if (!res.hasJoin())
+                throw Exception("No expected JOIN", ErrorCodes::LOGICAL_ERROR);
             chain.addStep();
         }
 
@@ -547,7 +549,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
         if (expressions.first_stage)
         {
-            if (expressions.has_join)
+            if (expressions.hasJoin())
             {
                 const ASTTableJoin & join = static_cast<const ASTTableJoin &>(*query.join()->table_join);
                 if (join.kind == ASTTableJoin::Kind::Full || join.kind == ASTTableJoin::Kind::Right)
