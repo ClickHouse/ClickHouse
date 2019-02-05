@@ -1,10 +1,6 @@
 # Custom Partitioning Key
 
-Partitioning is available for the following table engines:
-
-- [MergeTree](mergetree.md) family tables (including
-[replicated](replication.md) tables).
-- [MaterializedView](materializedview.md). 
+Partitioning is available for the [MergeTree](mergetree.md) family tables (including [replicated](replication.md) tables). [Materialized views](materializedview.md) based on MergeTree table support partitioning as well.
 
 A partition is a logic combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion. For example: by month, by day, by event type and so on. Each partition is stored separately in order to simplify manipulations with this data. When accessing the data ClickHouse only uses the corresponding partition.
 

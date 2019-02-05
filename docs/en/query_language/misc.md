@@ -16,6 +16,7 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
 
+You can use the `ATTACH` query also for the table partitions. For details, see the section [Manipulations With Partitions and Parts](alter.md#alter_manipulations-with-partitions).
 
 ## CHECK TABLE
 
@@ -75,6 +76,8 @@ Similarly, a "detached" table can be re-attached using the `ATTACH` query (with 
 
 There is no `DETACH DATABASE` query.
 
+You can use the `DETACH` query also for the table partitions. For details, see the section [Manipulations With Partitions and Parts](alter.md#alter_manipulations-with-partitions).
+
 ## DROP
 
 This query has two types: `DROP DATABASE` and `DROP TABLE`.
@@ -92,6 +95,8 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Deletes the table.
 If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exist or the database doesn't exist.
+
+You can use the `DROP` query also for the table partitions. For details, see the section [Manipulations With Partitions and Parts](alter.md#alter_manipulations-with-partitions).
 
 ## EXISTS
 
