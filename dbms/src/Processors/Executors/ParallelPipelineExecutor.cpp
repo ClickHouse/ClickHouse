@@ -1,5 +1,5 @@
 #include <Common/EventCounter.h>
-#include <common/ThreadPool.h>
+#include <Common/ThreadPool.h>
 #include <Processors/Executors/ParallelPipelineExecutor.h>
 #include <Processors/Executors/traverse.h>
 
@@ -60,9 +60,9 @@ ParallelPipelineExecutor::Status ParallelPipelineExecutor::prepare()
     for (auto & element : processors)
     {
         if (element->prepare() == Status::NeedData)
-            throw Exception("Pipeline stuck: " + element->getName() + " processor needs input data but no one is going to generate it");
+            throw Exception("Pipeline stuck: " + element->getName() + " processor needs input data but no one is going to generate it", ErrorCodes::LOGICAL_ERROR);
         if (element->prepare() == Status::PortFull)
-            throw Exception("Pipeline stuck: " + element->getName() + " processor has data in output port but no one is going to consume it");
+            throw Exception("Pipeline stuck: " + element->getName() + " processor has data in output port but no one is going to consume it", ErrorCodes::LOGICAL_ERROR);
     }
 
     return Status::Finished;
@@ -72,7 +72,7 @@ ParallelPipelineExecutor::Status ParallelPipelineExecutor::prepare()
 void ParallelPipelineExecutor::schedule(EventCounter & watch)
 {
     if (!current_processor)
-        throw Exception("Bad pipeline");
+        throw Exception("Bad pipeline", ErrorCodes::LOGICAL_ERROR);
 
     if (current_status == Status::Async)
     {

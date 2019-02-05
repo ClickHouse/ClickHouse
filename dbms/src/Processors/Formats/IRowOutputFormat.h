@@ -22,7 +22,7 @@ protected:
 
 public:
     IRowOutputFormat(Block header, WriteBuffer & out)
-        : IOutputFormat(header, out), types(header.getTypes())
+        : IOutputFormat(header, out), types(header.getDataTypes())
     {
     }
 

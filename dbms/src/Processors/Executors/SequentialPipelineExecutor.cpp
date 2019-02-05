@@ -49,9 +49,9 @@ SequentialPipelineExecutor::Status SequentialPipelineExecutor::prepare()
     for (auto & element : processors)
     {
         if (element->prepare() == Status::NeedData)
-            throw Exception("Pipeline stuck: " + element->getName() + " processor needs input data but no one is going to generate it");
+            throw Exception("Pipeline stuck: " + element->getName() + " processor needs input data but no one is going to generate it", ErrorCodes::LOGICAL_ERROR);
         if (element->prepare() == Status::PortFull)
-            throw Exception("Pipeline stuck: " + element->getName() + " processor has data in output port but no one is going to consume it");
+            throw Exception("Pipeline stuck: " + element->getName() + " processor has data in output port but no one is going to consume it", ErrorCodes::LOGICAL_ERROR);
     }
 
     return Status::Finished;
@@ -61,7 +61,7 @@ SequentialPipelineExecutor::Status SequentialPipelineExecutor::prepare()
 void SequentialPipelineExecutor::work()
 {
     if (!current_processor)
-        throw Exception("Bad pipeline");
+        throw Exception("Bad pipeline", ErrorCodes::LOGICAL_ERROR);
 
     current_processor->work();
 }
@@ -70,7 +70,7 @@ void SequentialPipelineExecutor::work()
 void SequentialPipelineExecutor::schedule(EventCounter & watch)
 {
     if (!current_processor)
-        throw Exception("Bad pipeline");
+        throw Exception("Bad pipeline", ErrorCodes::LOGICAL_ERROR);
 
     current_processor->schedule(watch);
 }

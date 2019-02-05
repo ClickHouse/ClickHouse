@@ -103,7 +103,7 @@ protected:
     OutputPorts outputs;
 
 public:
-    IProcessor() {}
+    IProcessor() = default;
 
     IProcessor(InputPorts inputs_, OutputPorts outputs_)
         : inputs(std::move(inputs_)), outputs(std::move(outputs_))
@@ -170,7 +170,7 @@ public:
       */
     virtual void work()
     {
-        throw Exception("Method 'work' is not implemented for " + getName() + " processor");
+        throw Exception("Method 'work' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** You may call this method if 'prepare' returned Async.
@@ -184,10 +184,10 @@ public:
       */
     virtual void schedule(EventCounter & /*watch*/)
     {
-        throw Exception("Method 'schedule' is not implemented for " + getName() + " processor");
+        throw Exception("Method 'schedule' is not implemented for " + getName() + " processor", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual ~IProcessor() {}
+    virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
     auto & getOutputs() { return outputs; }

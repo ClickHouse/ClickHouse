@@ -43,7 +43,7 @@ public:
     void assumeConnected() const
     {
         if (!isConnected())
-            throw Exception("Port is not connected");
+            throw Exception("Port is not connected", ErrorCodes::LOGICAL_ERROR);
     }
 
     bool hasData() const
@@ -61,14 +61,14 @@ public:
     IProcessor & getProcessor()
     {
         if (!processor)
-            throw Exception("Port does not belong to Processor");
+            throw Exception("Port does not belong to Processor", ErrorCodes::LOGICAL_ERROR);
         return *processor;
     }
 
     const IProcessor & getProcessor() const
     {
         if (!processor)
-            throw Exception("Port does not belong to Processor");
+            throw Exception("Port does not belong to Processor", ErrorCodes::LOGICAL_ERROR);
         return *processor;
     }
 };
@@ -87,7 +87,7 @@ public:
     Block pull()
     {
         if (!hasData())
-            throw Exception("Port has no data");
+            throw Exception("Port has no data", ErrorCodes::LOGICAL_ERROR);
 
         return std::move(state->data);
     }
@@ -137,7 +137,7 @@ public:
     void push(Block block)
     {
         if (hasData())
-            throw Exception("Port already has data");
+            throw Exception("Port already has data", ErrorCodes::LOGICAL_ERROR);
 
         state->data = std::move(block);
     }
