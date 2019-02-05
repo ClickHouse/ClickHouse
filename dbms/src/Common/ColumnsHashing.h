@@ -62,11 +62,11 @@ struct HashMethodOneNumber
 
 
 /// For the case where there is one string key.
-template <typename Value, typename Mapped, bool use_cache = true>
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true>
 struct HashMethodString
-    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, use_cache>, Value, Mapped, use_cache>
+    : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache>, Value, Mapped, use_cache>
 {
-    using Self = HashMethodString<Value, Mapped, use_cache>;
+    using Self = HashMethodString<Value, Mapped, place_string_to_arena, use_cache>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
     const IColumn::Offset * offsets;
@@ -90,20 +90,23 @@ struct HashMethodString
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
-    static ALWAYS_INLINE void onNewKey(StringRef & key, Arena & pool)
+    static ALWAYS_INLINE void onNewKey([[maybe_unused]] StringRef & key, [[maybe_unused]] Arena & pool)
     {
-        if (key.size)
-            key.data = pool.insert(key.data, key.size);
+        if constexpr (place_string_to_arena)
+        {
+            if (key.size)
+                key.data = pool.insert(key.data, key.size);
+        }
     }
 };
 
 
 /// For the case where there is one fixed-length string key.
-template <typename Value, typename Mapped, bool use_cache = true>
+template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true>
 struct HashMethodFixedString
-    : public columns_hashing_impl::HashMethodBase<HashMethodFixedString<Value, Mapped, use_cache>, Value, Mapped, use_cache>
+    : public columns_hashing_impl::HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache>, Value, Mapped, use_cache>
 {
-    using Self = HashMethodFixedString<Value, Mapped, use_cache>;
+    using Self = HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
 
     size_t n;
@@ -123,7 +126,11 @@ struct HashMethodFixedString
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache>;
-    static ALWAYS_INLINE void onNewKey(StringRef & key, Arena & pool) { key.data = pool.insert(key.data, key.size); }
+    static ALWAYS_INLINE void onNewKey([[maybe_unused]] StringRef & key, [[maybe_unused]] Arena & pool)
+    {
+        if constexpr (place_string_to_arena)
+            key.data = pool.insert(key.data, key.size);
+    }
 };
 
 

@@ -73,14 +73,14 @@ private:
     {
         using Set = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
                 HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-        using Method = ColumnsHashing::HashMethodString<typename Set::value_type, UInt32, false>;
+        using Method = ColumnsHashing::HashMethodString<typename Set::value_type, UInt32, false, false>;
     };
 
     struct MethodFixedString
     {
         using Set = ClearableHashMap<StringRef, UInt32, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
                 HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-        using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, UInt32, false>;
+        using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, UInt32, false, false>;
     };
 
     struct MethodFixed
