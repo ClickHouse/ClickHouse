@@ -46,7 +46,7 @@ The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree tabl
 
 ### SAMPLE Clause {#select-sample-clause}
 
-The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
+The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by \*MergeTree type tables, and only if the sampling expression was specified during table creation (see the section [MergeTree engine](../operations/table_engines/mergetree.md)).
 
 `SAMPLE` has the `SAMPLE k`, where `k` is a decimal number from 0 to 1, or `SAMPLE n`, where 'n' is a sufficiently large integer.
 
@@ -74,12 +74,49 @@ ORDER BY PageViews DESC LIMIT 1000
 
 In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value 'count()' is manually multiplied by 10.
 
-When using something like `SAMPLE 10000000`, there isn't any information about which relative percent of data was processed or what the aggregate functions should be multiplied by, so this method of writing is not always appropriate to the situation.
+When using something like `SAMPLE 10000000`, there isn't any information about which relative percent of data was processed or what the aggregate functions should be multiplied by. Use the `_sample_factor` virtual column to know the relative sampling ratio. For example:
+
+``` sql
+SELECT sum(RUB) * (SELECT _sample_factor from hits_distributed LIMIT 1) from hits_distributed SAMPLE 10000000
+```
 
 A sample with a relative coefficient is "consistent": if we look at all possible data that could be in the table, a sample (when using a single sampling expression specified during table creation) with the same coefficient always selects the same subset of possible data. In other words, a sample from different tables on different servers at different times is made the same way.
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
+**SAMPLE OFFSET**
+
+You can specify the `SAMPLE k OFFSET n` clause, where `k` and `n` are decimal numbers from 0 to 1. Examples are shown below.
+
+Example 1.
+
+``` sql
+SAMPLE 1/10
+```
+
+In this example, the sample is the 1/10th of all data:
+
+`[++------------------]`
+
+Example 2.
+
+``` sql
+SAMPLE 1/10 OFFSET 1/10
+```
+
+Here, the sample (10% of all data) is offset by 1/10th of data.
+
+`[--++----------------]`
+
+Example 3.
+
+``` sql
+SAMPLE 1/10 OFFSET 1/2
+```
+
+Here, the sample (10% of all data) is taken from the second half of data.
+
+`[----------++--------]`
 
 ### ARRAY JOIN Clause {#select-array-join-clause}
 
