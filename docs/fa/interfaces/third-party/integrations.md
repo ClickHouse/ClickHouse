@@ -24,6 +24,7 @@
 - مدیریت تنظیمات
     - [puppet](https://puppet.com)
         - [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
+        - [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 - نظارت بر
     - [Graphite](https://graphiteapp.org)
         - [graphouse](https://github.com/yandex/graphouse)
