@@ -183,7 +183,10 @@ protected:
         if (inserted)
         {
             if constexpr (has_mapped)
+            {
+                new(&it->second) Mapped();
                 static_cast<Derived &>(*this).onNewKey(it->first, pool);
+            }
             else
                 static_cast<Derived &>(*this).onNewKey(*it, pool);
         }

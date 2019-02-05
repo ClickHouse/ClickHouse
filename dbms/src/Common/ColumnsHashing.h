@@ -348,7 +348,10 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
         if (inserted)
         {
             if constexpr (has_mapped)
+            {
+                new(&it->second) Mapped();
                 Base::onNewKey(it->first, pool);
+            }
             else
                 Base::onNewKey(*it, pool);
         }

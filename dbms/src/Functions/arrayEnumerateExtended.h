@@ -193,7 +193,7 @@ void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const C
     }
     else
     {
-        if(!execute128bit(*offsets, data_columns, res_values))
+        if (!execute128bit(*offsets, data_columns, res_values))
             executeHashed(*offsets, data_columns, res_values);
     }
 
