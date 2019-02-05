@@ -262,13 +262,7 @@ struct ODBCBridgeMixin
 
 
         std::vector<std::string> cmd_args;
-        path.setFileName(
-#if CLICKHOUSE_SPLIT_BINARY
-            "clickhouse-odbc-bridge"
-#else
-            "clickhouse"
-#endif
-        );
+        path.setFileName("clickhouse-odbc-bridge");
 
         std::stringstream command;
 

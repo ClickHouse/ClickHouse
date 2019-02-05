@@ -200,6 +200,7 @@ struct MergeTreeDataPart
 
         void load(const MergeTreeData & storage, const String & part_path);
         void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
+        void store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
