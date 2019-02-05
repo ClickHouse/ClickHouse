@@ -22,7 +22,6 @@
 
 #include <Columns/IColumn.h>
 
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
@@ -39,7 +38,6 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageJoin.h>
 
-#include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Dictionaries/IDictionary.h>
@@ -83,7 +81,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
     const Context & context_,
     const NamesAndTypesList & additional_source_columns,
-    const Names & required_result_columns_,
+    const NameSet & required_result_columns_,
     size_t subquery_depth_,
     bool do_global_,
     const SubqueriesForSets & subqueries_for_sets_)
@@ -504,13 +502,12 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
         columns_added_by_join_list.push_back(joined_column.name_and_type);
 
     if (only_types)
-        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left,
-                columns_added_by_join_list, columns_added_by_join_from_right_keys));
+        actions->add(ExpressionAction::ordinaryJoin(nullptr, analyzedJoin().key_names_left, columns_added_by_join_list));
     else
         for (auto & subquery_for_set : subqueries_for_sets)
             if (subquery_for_set.second.join)
                 actions->add(ExpressionAction::ordinaryJoin(subquery_for_set.second.join, analyzedJoin().key_names_left,
-                        columns_added_by_join_list, columns_added_by_join_from_right_keys));
+                                                            columns_added_by_join_list));
 }
 
 bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_types)
@@ -569,9 +566,6 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
 
     if (!subquery_for_set.join)
     {
-        JoinPtr join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
-            settings.size_limits_for_join, join_params.kind, join_params.strictness);
-
         /** For GLOBAL JOINs (in the case, for example, of the push method for executing GLOBAL subqueries), the following occurs
           * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
           *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
@@ -588,39 +582,23 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             else if (table_to_join.database_and_table_name)
                 table = table_to_join.database_and_table_name;
 
+            const JoinedColumnsList & columns_from_joined_table = analyzedJoin().columns_from_joined_table;
+
             Names original_columns;
-            for (const auto & column : analyzedJoin().columns_from_joined_table)
+            for (const auto & column : columns_from_joined_table)
                 if (required_columns_from_joined_table.count(column.name_and_type.name))
                     original_columns.emplace_back(column.original_name);
 
             auto interpreter = interpretSubquery(table, context, subquery_depth, original_columns);
-            subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
-                interpreter->getSampleBlock(),
-                [interpreter]() mutable { return interpreter->execute().in; });
+            subquery_for_set.makeSource(interpreter, columns_from_joined_table, required_columns_from_joined_table);
         }
 
-        /// Alias duplicating columns as qualified.
-        for (const auto & column : analyzedJoin().columns_from_joined_table)
-            if (required_columns_from_joined_table.count(column.name_and_type.name))
-                subquery_for_set.joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
-
-        auto sample_block = subquery_for_set.source->getHeader();
-        for (const auto & name_with_alias : subquery_for_set.joined_block_aliases)
-        {
-            if (sample_block.has(name_with_alias.first))
-            {
-                auto pos = sample_block.getPositionByName(name_with_alias.first);
-                auto column = sample_block.getByPosition(pos);
-                sample_block.erase(pos);
-                column.name = name_with_alias.second;
-                sample_block.insert(std::move(column));
-            }
-        }
-
+        Block sample_block = subquery_for_set.renamedSampleBlock();
         joined_block_actions->execute(sample_block);
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
-        subquery_for_set.join = join;
+        subquery_for_set.join = std::make_shared<Join>(analyzedJoin().key_names_right, settings.join_use_nulls,
+            settings.size_limits_for_join, join_params.kind, join_params.strictness);
         subquery_for_set.join->setSampleBlock(sample_block);
         subquery_for_set.joined_block_actions = joined_block_actions;
     }
@@ -851,8 +829,7 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     for (size_t i = 0; i < asts.size(); ++i)
     {
         String result_name = asts[i]->getAliasOrColumnName();
-        if (required_result_columns.empty()
-            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) != required_result_columns.end())
+        if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
             result_columns.emplace_back(asts[i]->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);
@@ -1003,10 +980,6 @@ void ExpressionAnalyzer::collectUsedColumns()
         for (const auto & name : source_columns)
             avaliable_columns.insert(name.name);
 
-        NameSet right_keys;
-        for (const auto & right_key_name : analyzed_join.key_names_right)
-            right_keys.insert(right_key_name);
-
         /** You also need to ignore the identifiers of the columns that are obtained by JOIN.
         * (Do not assume that they are required for reading from the "left" table).
         */
@@ -1018,10 +991,6 @@ void ExpressionAnalyzer::collectUsedColumns()
             {
                 columns_added_by_join.push_back(joined_column);
                 required.erase(name);
-
-                /// Some columns from right join key may be used in query. This columns will be appended to block during join.
-                if (right_keys.count(name))
-                    columns_added_by_join_from_right_keys.insert(name);
             }
         }
 
@@ -1057,8 +1026,6 @@ void ExpressionAnalyzer::collectUsedColumns()
                         if (cropped_name == name)
                         {
                             columns_added_by_join.push_back(joined_column);
-                            if (right_keys.count(name))
-                                columns_added_by_join_from_right_keys.insert(name);
                             collated = true;
                             break;
                         }
@@ -1072,9 +1039,8 @@ void ExpressionAnalyzer::collectUsedColumns()
             required.swap(fixed_required);
         }
 
-        /// @note required_columns_from_joined_table is output
-        joined_block_actions = analyzed_join.createJoinedBlockActions(
-            columns_added_by_join, select_query, context, required_columns_from_joined_table);
+        joined_block_actions = analyzed_join.createJoinedBlockActions(columns_added_by_join, select_query, context);
+        required_columns_from_joined_table = analyzed_join.getRequiredColumnsFromJoinedTable(columns_added_by_join, joined_block_actions);
     }
 
     if (columns_context.has_array_join)

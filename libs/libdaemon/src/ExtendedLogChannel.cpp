@@ -23,7 +23,10 @@ ExtendedLogMessage ExtendedLogMessage::getFrom(const Poco::Message & base)
 
     msg_ext.time_seconds = static_cast<UInt32>(tv.tv_sec);
     msg_ext.time_microseconds = static_cast<UInt32>(tv.tv_usec);
-    msg_ext.query_id = CurrentThread::getCurrentQueryID();
+
+    if (current_thread)
+        msg_ext.query_id = CurrentThread::getQueryId();
+
     msg_ext.thread_number = Poco::ThreadNumber::get();
 
     return msg_ext;

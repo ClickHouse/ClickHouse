@@ -113,8 +113,6 @@ private:
     using Shared = std::shared_ptr<ContextShared>;
     Shared shared;
 
-    std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
-
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
 
@@ -133,7 +131,6 @@ private:
     Context * query_context = nullptr;
     Context * session_context = nullptr;    /// Session context or nullptr. Could be equal to this.
     Context * global_context = nullptr;     /// Global context or nullptr. Could be equal to this.
-    SystemLogsPtr system_logs;              /// Used to log queries and operations on parts
 
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
@@ -149,7 +146,7 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
+    static Context createGlobal(std::unique_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
     Context(const Context &) = default;
@@ -235,6 +232,8 @@ public:
     String getCurrentQueryId() const;
     void setCurrentDatabase(const String & name);
     void setCurrentQueryId(const String & query_id);
+
+    void killCurrentQuery();
 
     void setInsertionTable(std::pair<String, String> && db_and_table) { insertion_table = db_and_table; }
     const std::pair<String, String> & getInsertionTable() const { return insertion_table; }

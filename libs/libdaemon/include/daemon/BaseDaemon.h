@@ -231,6 +231,10 @@ private:
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
     std::string config_logger;
+
+    /// Check SSE and others instructions availability
+    /// Calls exit on fail
+    void checkRequiredInstructions();
 };
 
 

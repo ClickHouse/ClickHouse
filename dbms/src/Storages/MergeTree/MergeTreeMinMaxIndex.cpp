@@ -126,11 +126,11 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
     auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, new_columns);
+        expr_list, new_columns);
     auto minmax_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)
-            .getActions(true)->getSampleBlock();
+        .getActions(true)->getSampleBlock();
 
     Names columns;
     DataTypes data_types;
@@ -144,7 +144,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeMinMaxIndexCreator(
     }
 
     return std::make_unique<MergeTreeMinMaxIndex>(
-            node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity.get<size_t>());;
+        node->name, std::move(minmax_expr), columns, data_types, sample, node->granularity.get<size_t>());
 }
 
 }

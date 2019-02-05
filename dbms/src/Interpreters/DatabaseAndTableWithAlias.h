@@ -27,7 +27,7 @@ struct DatabaseAndTableWithAlias
     DatabaseAndTableWithAlias() = default;
     DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
     DatabaseAndTableWithAlias(const ASTIdentifier & identifier, const String & current_database = "");
-    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database);
+    DatabaseAndTableWithAlias(const ASTTableExpression & table_expression, const String & current_database = "");
 
     /// "alias." or "table." if alias is empty
     String getQualifiedNamePrefix() const;

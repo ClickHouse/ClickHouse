@@ -8,9 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Poco/Logger.h>
-#include <sstream>
-
 namespace DB
 {
 
@@ -150,11 +147,6 @@ UniqueCondition::UniqueCondition(
         return;
 
     traverseAST(expression_ast);
-
-    auto * log = &Poco::Logger::get("unique");
-    std::ostringstream out;
-    expression_ast->format(IAST::FormatSettings(out, false));
-    LOG_DEBUG(log, out.str());
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
             expression_ast, index.header.getNamesAndTypesList());
@@ -399,7 +391,7 @@ std::unique_ptr<MergeTreeIndex> MergeTreeUniqueIndexCreator(
     }
 
     return std::make_unique<MergeTreeUniqueIndex>(
-            node->name, std::move(unique_expr), columns, data_types, header, node->granularity.get<size_t>(), max_rows);;
+        node->name, std::move(unique_expr), columns, data_types, header, node->granularity.get<size_t>(), max_rows);
 }
 
 }
