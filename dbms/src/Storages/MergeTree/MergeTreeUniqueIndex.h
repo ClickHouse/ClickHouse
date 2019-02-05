@@ -68,14 +68,14 @@ class MergeTreeUniqueIndex : public MergeTreeIndex
 {
 public:
     MergeTreeUniqueIndex(
-            String name,
-            ExpressionActionsPtr expr,
-            const Names & columns,
-            const DataTypes & data_types,
-            const Block & header,
-            size_t granularity,
-            size_t _max_rows)
-            : MergeTreeIndex(std::move(name), std::move(expr), columns, data_types, header, granularity), max_rows(_max_rows) {}
+        String name_,
+        ExpressionActionsPtr expr_,
+        const Names & columns_,
+        const DataTypes & data_types_,
+        const Block & header_,
+        size_t granularity_,
+        size_t max_rows_)
+        : MergeTreeIndex(std::move(name_), std::move(expr_), columns_, data_types_, header_, granularity_), max_rows(max_rows_) {}
 
     ~MergeTreeUniqueIndex() override = default;
 
