@@ -224,7 +224,8 @@ BlockIO InterpreterKillQueryQuery::execute()
     }
     case ASTKillQueryQuery::Type::Mutation:
     {
-        /// TODO: check permissions
+        if (context.getSettingsRef().readonly)
+            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
 
         Block mutations_block = getSelectResult("database, table, mutation_id", "system.mutations");
         if (!mutations_block)
