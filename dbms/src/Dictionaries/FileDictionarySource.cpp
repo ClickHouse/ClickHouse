@@ -56,7 +56,8 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr {
+                                 Context & context) -> DictionarySourcePtr
+    {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
