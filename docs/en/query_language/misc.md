@@ -31,13 +31,13 @@ The query response contains the `result` column with a single row. The row has a
 
 - 0 - The data in the table is corrupted.
 - 1 - The data maintains integrity.
- 
+
 The `CHECK TABLE` query is only supported for the following table engines:
 
 - [Log](../operations/table_engines/log.md)
 - [TinyLog](../operations/table_engines/tinylog.md)
-- StripeLog
- 
+- [StripeLog](../operations/table_engines/stripelog.md)
+
 These engines do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
 To avoid data loss use the [MergeTree](../operations/table_engines/mergetree.md) family tables.
@@ -182,7 +182,7 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
 
-## SHOW DATABASES
+## SHOW DATABASES {#show-databases}
 
 ``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]

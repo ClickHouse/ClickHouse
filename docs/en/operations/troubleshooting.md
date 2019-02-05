@@ -1,13 +1,11 @@
 # Troubleshooting
 
-Known issues:
+- [Installation](#troubleshooting-installation-errors)
+- [Connecting to the server](#troubleshooting-accepts-no-connections)
+- [Queries processing](#troubleshooting-does-not-process-queries)
+- [Efficiency of queries processing](#troubleshooting-too-slow)
 
-- [Installation errors](#troubleshooting-installation-errors).
-- [The server does not accept the connections](#troubleshooting-accepts-no-connections).
-- [ClickHouse does not process queries](#troubleshooting-does-not-process-queries).
-- [ClickHouse processes queries too slow](#troubleshooting-too-slow).
-
-## Installation Errors {#troubleshooting-installation-errors}
+## Installation {#troubleshooting-installation-errors}
 
 ### You Can Not Get Deb-packages from ClickHouse Repository With apt-get
 
@@ -15,9 +13,9 @@ Known issues:
 - If you can not access the repository by any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually with `sudo dpkg -i <packages>` command. Also, you need `tzdata` package.
 
 
-## Server Does Not Accept the Connections {#troubleshooting-accepts-no-connections}
+## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
-Possible reasons:
+Possible issues:
 
 - The server is not running.
 - Unexpected or wrong configuration parameters.
@@ -40,12 +38,12 @@ sudo service clickhouse-server start
 
 **Check logs**
 
-The main log of `clickhouse-server` is in `/var/log/clickhouse-server.log` by default.
+The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse-server.log` by default.
 
 In case of successful start you should see the strings:
 
-    - `starting up` — Server started to run.
-    - `Ready for connections` — Server runs and ready for connections.
+- `<Information> Application: starting up.` — Server started to run.
+- `<Information> Application: Ready for connections.` — Server runs and ready for connections.
 
 If `clickhouse-server` start failed by the configuration error you should see the `<Error>` string with an error description. For example:
 
@@ -113,16 +111,16 @@ Check:
 
     Check:
 
-    - `tcp_port_secure` setting.
+    - The `tcp_port_secure` setting.
     - Settings for SSL sertificates.
 
      Use proper parameters while connecting. For example, use parameter `port_secure` with `clickhouse_client`.
 
-- User settings
+- User settings.
 
     You may use the wrong user name or password for it.
 
-## ClickHouse Does Not Process Queries {#troubleshooting-does-not-process-queries}
+## Queries Processing {#troubleshooting-does-not-process-queries}
 
 If ClickHouse can not process the query, it sends the description of an error to the client. In the `clickhouse-client` you get a description of an error in console. If you use HTTP interface, ClickHouse sends error description in response body. For example,
 
@@ -135,7 +133,7 @@ If you start `clickhouse-client` with `stack-trace` parameter, ClickHouse return
 
 It is possible that you see the message of connection broken. In this case, you can repeat query. If connection brakes any time you perform the query you should check the server logs for errors.
 
-## ClickHouse Processes Queries Not Fast Enough {#troubleshooting-too-slow}
+## Efficiency of Queries Processing {#troubleshooting-too-slow}
 
 If you see that ClickHouse works too slow, you need to profile the load of the server resources and network for your queries.
 

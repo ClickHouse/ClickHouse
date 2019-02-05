@@ -179,7 +179,7 @@ SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Возвращает один столбец statement типа `String`, содержащий одно значение - запрос `CREATE`, с помощью которого создана указанная таблица.
 
-## SHOW DATABASES
+## SHOW DATABASES {#show-databases}
 
 ```sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
@@ -256,4 +256,3 @@ USE db
 Позволяет установить текущую базу данных для сессии.
 Текущая база данных используется для поиска таблиц, если база данных не указана в запросе явно через точку перед именем таблицы.
 При использовании HTTP протокола запрос не может быть выполнен, так как понятия сессии не существует.
-
