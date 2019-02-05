@@ -156,7 +156,7 @@ nav:
   - 'General syntax': 'query_language/syntax.md'
 
 - '运维':
-  - 'hidden': 'operations/index.md'
+  - 'Introduction': 'operations/index.md'
   - 'Requirements': 'operations/requirements.md'
   - 'Monitoring': 'operations/monitoring.md'
   - 'Troubleshooting': 'operations/troubleshooting.md'
