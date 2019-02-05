@@ -75,14 +75,14 @@ private:
     {
         using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
                 HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-        using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false>;
+        using Method = ColumnsHashing::HashMethodString<typename Set::value_type, void, false, false>;
     };
 
     struct MethodFixedString
     {
         using Set = ClearableHashSet<StringRef, StringRefHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
                 HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
-        using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false>;
+        using Method = ColumnsHashing::HashMethodFixedString<typename Set::value_type, void, false, false>;
     };
 
     struct MethodFixed

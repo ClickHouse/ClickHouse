@@ -191,11 +191,11 @@ template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Typ
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key_string, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodString<Value, Mapped, false>;
+    using Type = ColumnsHashing::HashMethodString<Value, Mapped, true, false>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::key_fixed_string, Value, Mapped>
 {
-    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, false>;
+    using Type = ColumnsHashing::HashMethodFixedString<Value, Mapped, true, false>;
 };
 template <typename Value, typename Mapped> struct KeyGetterForTypeImpl<Join::Type::keys128, Value, Mapped>
 {

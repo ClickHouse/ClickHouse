@@ -40,7 +40,7 @@ struct SetMethodString
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, false>;
+    using State = ColumnsHashing::HashMethodString<typename Data::value_type, void, true, false>;
 };
 
 /// For the case when there is one fixed-length string key.
@@ -52,7 +52,7 @@ struct SetMethodFixedString
 
     Data data;
 
-    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, false>;
+    using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, void, true, false>;
 };
 
 namespace set_impl
