@@ -543,6 +543,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
+    // TODO: проверить, что column_declaration->expr_list пустой здесь
     if (!create.cluster.empty())
     {
         NameSet databases{create.database};

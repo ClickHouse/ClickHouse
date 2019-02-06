@@ -90,7 +90,7 @@ public:
             comment->formatImpl(settings, state, frame);
         }
 
-        if (expr_list)
+        if (expr_list && expr_list->children.size() > 0)
         {
             settings.ostr << " ";
             expr_list->formatImpl(settings, state, frame);
