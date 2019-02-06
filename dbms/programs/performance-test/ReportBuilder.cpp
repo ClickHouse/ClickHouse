@@ -142,14 +142,12 @@ std::string ReportBuilder::buildFullReport(
 
                 runJSON.set("total_time", statistics.total_time);
 
-                runJSON.set("queries_per_second",
-                    static_cast<double>(statistics.queries) / statistics.total_time);
-
-                runJSON.set("rows_per_second",
-                    static_cast<double>(statistics.total_rows_read) / statistics.total_time);
-
-                runJSON.set("bytes_per_second",
-                    static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
+                if (statistics.total_time != 0)
+                {
+                    runJSON.set("queries_per_second", static_cast<double>(statistics.queries) / statistics.total_time);
+                    runJSON.set("rows_per_second", static_cast<double>(statistics.total_rows_read) / statistics.total_time);
+                    runJSON.set("bytes_per_second", static_cast<double>(statistics.total_bytes_read) / statistics.total_time);
+                }
             }
             else
             {
