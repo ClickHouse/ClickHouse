@@ -71,7 +71,6 @@ struct QueryStatusInfo
     std::shared_ptr<Settings> query_settings;
 };
 
-
 /// Query and information about its execution.
 class QueryStatus
 {
@@ -192,6 +191,8 @@ public:
 
     /// Get query in/out pointers from BlockIO
     bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
+
+    CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
 };

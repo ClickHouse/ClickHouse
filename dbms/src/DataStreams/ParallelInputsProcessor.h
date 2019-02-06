@@ -183,7 +183,8 @@ private:
         try
         {
             setThreadName("ParalInputsProc");
-            CurrentThread::attachTo(thread_group);
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
 
             while (!finish)
             {

@@ -325,6 +325,29 @@ bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStream
     return true;
 }
 
+CancellationCode QueryStatus::cancelQuery(bool kill)
+{
+    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+    if (streamsAreReleased())
+        return CancellationCode::CancelSent;
+
+    BlockInputStreamPtr input_stream;
+    BlockOutputStreamPtr output_stream;
+
+    if (tryGetQueryStreams(input_stream, output_stream))
+    {
+        if (input_stream)
+        {
+            input_stream->cancel(kill);
+            return CancellationCode::CancelSent;
+        }
+        return CancellationCode::CancelCannotBeSent;
+    }
+    /// Query is not even started
+    is_killed.store(true);
+    return CancellationCode::CancelSent;
+}
+
 
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
@@ -365,25 +388,7 @@ CancellationCode ProcessList::sendCancelToQuery(const String & current_query_id,
     if (!elem)
         return CancellationCode::NotFound;
 
-    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
-    if (elem->streamsAreReleased())
-        return CancellationCode::CancelSent;
-
-    BlockInputStreamPtr input_stream;
-    BlockOutputStreamPtr output_stream;
-
-    if (elem->tryGetQueryStreams(input_stream, output_stream))
-    {
-        if (input_stream)
-        {
-            input_stream->cancel(kill);
-            return CancellationCode::CancelSent;
-        }
-        return CancellationCode::CancelCannotBeSent;
-    }
-    /// Query is not even started
-    elem->is_killed.store(true);
-    return CancellationCode::CancelSent;
+    return elem->cancelQuery(kill);
 }
 
 

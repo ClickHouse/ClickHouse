@@ -552,6 +552,7 @@ protected:
         bool attach,
         const String & path_, const String & database_name_, const String & name_,
         const ColumnsDescription & columns_,
+        const IndicesDescription & indices_,
         Context & context_,
         const String & date_column_name,
         const ASTPtr & partition_by_ast_,

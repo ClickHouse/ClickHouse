@@ -334,12 +334,19 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & all_columns,
     const ExpressionActionsPtr & sorting_key_expr,
+    const MergeTreeIndices & indexes,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
 {
     Names sort_key_columns_vec = sorting_key_expr->getRequiredColumns();
     std::set<String> key_columns(sort_key_columns_vec.cbegin(), sort_key_columns_vec.cend());
+    for (const auto & index : indexes)
+    {
+        Names index_columns_vec = index->expr->getRequiredColumns();
+        std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
+                  std::inserter(key_columns, key_columns.end()));
+    }
 
     /// Force sign column for Collapsing mode
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
@@ -520,7 +527,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
     extractMergingAndGatheringColumns(
-        all_columns, data.sorting_key_expr,
+        all_columns, data.sorting_key_expr, data.skip_indices,
         data.merging_params, gathering_columns, gathering_column_names, merging_columns, merging_column_names);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
@@ -600,11 +607,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         input->setProgressCallback(
             MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
 
-        if (data.hasPrimaryKey())
-            src_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(BlockInputStreamPtr(std::move(input)), data.sorting_key_expr)));
-        else
-            src_streams.emplace_back(std::move(input));
+        BlockInputStreamPtr stream = std::move(input);
+        if (data.hasPrimaryKey() || data.hasSkipIndices())
+            stream = std::make_shared<MaterializingBlockInputStream>(
+                    std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_and_skip_indices_expr));
+
+        src_streams.emplace_back(stream);
     }
 
     Names sort_columns = data.sorting_key_columns;
@@ -874,10 +882,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (in_header.columns() == all_columns.size())
     {
         /// All columns are modified, proceed to write a new part from scratch.
-
-        if (data.hasPrimaryKey())
+        if (data.hasPrimaryKey() || data.hasSkipIndices())
             in = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_expr));
+                std::make_shared<ExpressionBlockInputStream>(in, data.primary_key_and_skip_indices_expr));
 
         MergeTreeDataPart::MinMaxIndex minmax_idx;
 
@@ -906,6 +913,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
+
+        /// Checks if columns used in skipping indexes modified/
+        for (const auto & col : in_header.getNames())
+        {
+            for (const auto & index : data.skip_indices)
+            {
+                const auto & index_cols = index->expr->getRequiredColumns();
+                auto it = find(cbegin(index_cols), cend(index_cols), col);
+                if (it != cend(index_cols))
+                    throw Exception("You can not modify columns used in index. Index name: '"
+                                    + index->name
+                                    + "' bad column: '" + *it + "'", ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
         for (const auto & entry : in_header)
