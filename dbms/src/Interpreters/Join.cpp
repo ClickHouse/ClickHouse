@@ -469,9 +469,15 @@ bool Join::insertFromBlock(const Block & block)
     }
     else
     {
+        NameSet erased; /// HOTFIX: there could be duplicates in JOIN ON section
+
         /// Remove the key columns from stored_block, as they are not needed.
         for (const auto & name : key_names_right)
-            stored_block->erase(stored_block->getPositionByName(name));
+        {
+            if (!erased.count(name))
+                stored_block->erase(stored_block->getPositionByName(name));
+            erased.insert(name);
+        }
     }
 
     size_t size = stored_block->columns();
