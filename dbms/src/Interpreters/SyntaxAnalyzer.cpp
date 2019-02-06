@@ -22,7 +22,6 @@
 #include <Parsers/queryToString.h>
 
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeNullable.h>
 
 #include <Common/typeid_cast.h>
 #include <Core/NamesAndTypes.h>
@@ -641,29 +640,11 @@ void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery * s
     else if (table_join.on_expression)
         collectJoinedColumnsFromJoinOnExpr(analyzed_join, select_query, source_columns, context);
 
-    auto & columns_from_joined_table = analyzed_join.getColumnsFromJoinedTable(source_columns, context, select_query);
-
-    NameSet joined_columns;
-
     auto & settings = context.getSettingsRef();
+    bool make_nullable = settings.join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left ||
+                                                        table_join.kind == ASTTableJoin::Kind::Full);
 
-    for (auto & column : columns_from_joined_table)
-    {
-        auto & column_name = column.name_and_type.name;
-        auto & column_type = column.name_and_type.type;
-        auto & original_name = column.original_name;
-        {
-            if (joined_columns.count(column_name)) /// Duplicate columns in the subquery for JOIN do not make sense.
-                continue;
-
-            joined_columns.insert(column_name);
-
-            bool make_nullable = settings.join_use_nulls && (table_join.kind == ASTTableJoin::Kind::Left ||
-                                                             table_join.kind == ASTTableJoin::Kind::Full);
-            auto type = make_nullable ? makeNullable(column_type) : column_type;
-            analyzed_join.available_joined_columns.emplace_back(NameAndTypePair(column_name, std::move(type)), original_name);
-        }
-    }
+    analyzed_join.calculateAvailableJoinedColumns(source_columns, context, select_query, make_nullable);
 }
 
 }
