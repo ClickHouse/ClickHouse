@@ -19,7 +19,7 @@ namespace DB
 namespace ColumnsHashing
 {
 
-/// For the case where there is one numeric key.
+/// For the case when there is one numeric key.
 /// UInt8/16/32/64 for any type with corresponding bit width.
 template <typename Value, typename Mapped, typename FieldType, bool use_cache = true>
 struct HashMethodOneNumber
@@ -61,7 +61,7 @@ struct HashMethodOneNumber
 };
 
 
-/// For the case where there is one string key.
+/// For the case when there is one string key.
 template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true>
 struct HashMethodString
     : public columns_hashing_impl::HashMethodBase<HashMethodString<Value, Mapped, place_string_to_arena, use_cache>, Value, Mapped, use_cache>
@@ -101,7 +101,7 @@ protected:
 };
 
 
-/// For the case where there is one fixed-length string key.
+/// For the case when there is one fixed-length string key.
 template <typename Value, typename Mapped, bool place_string_to_arena = true, bool use_cache = true>
 struct HashMethodFixedString
     : public columns_hashing_impl::HashMethodBase<HashMethodFixedString<Value, Mapped, place_string_to_arena, use_cache>, Value, Mapped, use_cache>
@@ -445,7 +445,7 @@ struct LowCardinalityKeys
 template <>
 struct LowCardinalityKeys<false> {};
 
-/// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
+/// For the case when all keys are of fixed length, and they fit in N (for example, 128) bits.
 template <typename Value, typename Key, typename Mapped, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
@@ -531,7 +531,7 @@ protected:
     static ALWAYS_INLINE void onExistingKey(StringRef & key, Arena & pool) { pool.rollback(key.size); }
 };
 
-/// For the case where there is one string key.
+/// For the case when there is one string key.
 template <typename Value, typename Mapped, bool use_cache = true>
 struct HashMethodHashed
     : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache>, Value, Mapped, use_cache>
